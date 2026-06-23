@@ -58,6 +58,35 @@ func (r *Repo) GetByEmail(ctx context.Context, email string) (*User, error) {
 	return &u, err
 }
 
+// SetRole updates a user's role (used by EnsureAdmin bootstrap).
+func (r *Repo) SetRole(ctx context.Context, userID uuid.UUID, role string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users SET role = $1, updated_at = now() WHERE id = $2`, role, userID)
+	return err
+}
+
+// EnsureAdmin upserts a user with role='admin'. If the email exists, the
+// password stays unchanged (re-run-safe); if not, the user is created.
+func (r *Repo) EnsureAdmin(ctx context.Context, email, passwordHash, name string) (*User, error) {
+	if u, err := r.GetByEmail(ctx, email); err == nil {
+		if u.Role != "admin" {
+			if err := r.SetRole(ctx, u.ID, "admin"); err != nil {
+				return nil, err
+			}
+			u.Role = "admin"
+		}
+		return u, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	var u User
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash, name, role)
+		VALUES ($1, $2, $3, 'admin')
+		RETURNING id, email, password_hash, name, role, created_at
+	`, email, passwordHash, name).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt)
+	return &u, err
+}
+
 func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	var u User
 	err := r.pool.QueryRow(ctx,

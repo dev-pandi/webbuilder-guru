@@ -19,6 +19,11 @@ type Config struct {
 	RendererDefaultHost string
 	CORSOrigins        []string
 
+	// Admin bootstrap — if set, server upserts this user with role=admin on startup.
+	AdminEmail    string
+	AdminPassword string
+	AdminName     string
+
 	StorageDriver string
 
 	// S3 / MinIO
@@ -48,6 +53,10 @@ func Load() Config {
 		PublicAPIHost:       env("PUBLIC_API_HOST", "api.localhost"),
 		RendererDefaultHost: env("RENDERER_DEFAULT_HOST", "localhost"),
 		CORSOrigins:         splitCSV(env("CORS_ORIGINS", "http://localhost:3000,http://app.localhost")),
+
+		AdminEmail:    env("ADMIN_EMAIL", ""),
+		AdminPassword: env("ADMIN_PASSWORD", ""),
+		AdminName:     env("ADMIN_NAME", "Administrator"),
 
 		StorageDriver: env("STORAGE_DRIVER", "local"),
 

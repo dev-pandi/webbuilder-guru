@@ -49,6 +49,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
       JWT_ACCESS_TTL: "15m"
       JWT_REFRESH_TTL: "168h"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrator}
       CADDY_ASK_SECRET: ${CADDY_ASK_SECRET:-dev-caddy-secret}
       PUBLIC_APP_HOST: ${PUBLIC_APP_HOST:-app.localhost}
       PUBLIC_API_HOST: ${PUBLIC_API_HOST:-api.localhost}

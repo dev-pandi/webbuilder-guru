@@ -64,6 +64,24 @@ npm install
 API_INTERNAL_URL=http://localhost:8080 npm run dev -- -p 3001
 ```
 
+## Admin Panel
+
+Set `ADMIN_EMAIL` + `ADMIN_PASSWORD` di `.env`. Saat API start:
+- Jika user dengan email itu **belum ada**: dibuat baru dengan role `admin`.
+- Jika **sudah ada**: passwordnya tidak diubah, hanya role di-force jadi `admin`.
+
+Login dengan email/password tersebut → di header dashboard akan muncul tombol **⚙ Admin Panel** → buka `/admin`.
+
+Admin Panel berisi:
+- **Overview** — statistik platform (user, situs, halaman, domain, storage total).
+- **User** — list semua user, promote/demote admin, delete.
+- **Situs** — list semua situs lintas user dengan usage bar dan **Edit Quota** (set ulang `max_pages` + `max_storage_bytes` per situs).
+
+Membership admin & user benar-benar terpisah secara router:
+- `/api/v1/admin/*` butuh JWT + role=admin (lihat `internal/router/admin.go`)
+- `/api/v1/*` (selain `/admin`) untuk user biasa (lihat `internal/router/user.go`)
+- `/healthz`, `/public/*`, `/internal/caddy/ask`, `/uploads/*` tanpa auth (lihat `internal/router/global.go`)
+
 ## Alur Penggunaan
 
 1. Buka http://app.localhost dan daftar akun.

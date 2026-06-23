@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 
-type Me = { id: string; email: string; name: string };
+type Me = { id: string; email: string; name: string; role: string };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -43,6 +43,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Web<span className="text-brand-600">Builder</span>
           </Link>
           <div className="flex items-center gap-4 text-sm">
+            {me?.role === "admin" && (
+              <Link
+                href="/admin"
+                className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+              >
+                ⚙ Admin Panel
+              </Link>
+            )}
             <span className="text-slate-500">{me?.email}</span>
             <button onClick={logout} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
               Keluar

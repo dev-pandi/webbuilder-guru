@@ -38,3 +38,17 @@ func UserIDFrom(c *fiber.Ctx) uuid.UUID {
 	}
 	return uuid.Nil
 }
+
+// RequireAdmin must follow Required(). It 403s if the JWT role isn't "admin".
+func RequireAdmin() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		cl := ClaimsFrom(c)
+		if cl == nil {
+			return httpx.Unauthorized(c, "missing claims")
+		}
+		if cl.Role != "admin" {
+			return httpx.Forbidden(c, "admin only")
+		}
+		return c.Next()
+	}
+}
