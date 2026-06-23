@@ -40,6 +40,37 @@ func (r *Repo) CountAndSize(ctx context.Context, siteID uuid.UUID) (count int, t
 	return
 }
 
+// ListBySitePage returns one page of assets for a site (newest first), with optional
+// MIME prefix filter via `like` (e.g. "image/%" or "%" for everything).
+func (r *Repo) ListBySitePage(ctx context.Context, siteID uuid.UUID, like string, limit, offset int) ([]Asset, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM assets WHERE site_id = $1 AND LOWER(mime) LIKE $2`,
+		siteID, like,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, site_id, kind, url, size, mime, created_at
+		FROM assets WHERE site_id = $1 AND LOWER(mime) LIKE $2
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4
+	`, siteID, like, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []Asset{}
+	for rows.Next() {
+		var a Asset
+		if err := rows.Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, a)
+	}
+	return out, total, rows.Err()
+}
+
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Asset, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, site_id, kind, url, size, mime, created_at

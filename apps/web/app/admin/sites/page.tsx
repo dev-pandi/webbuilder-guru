@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtBytes, pct } from "@/lib/format";
+import { Pagination, SearchBar, useDebounced, type PaginatedResult } from "@/components/Pagination";
 
 type AdminSite = {
   id: string;
@@ -19,21 +20,49 @@ type AdminSite = {
   created_at: string;
 };
 
+const SORT_OPTIONS = [
+  { value: "newest", label: "Terbaru" },
+  { value: "oldest", label: "Terlama" },
+  { value: "name_asc", label: "Nama A→Z" },
+  { value: "storage_desc", label: "Storage Terbesar" },
+  { value: "pages_desc", label: "Halaman Terbanyak" },
+];
+
 export default function AdminSitesPage() {
-  const [sites, setSites] = useState<AdminSite[]>([]);
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("newest");
+  const [q, setQ] = useState("");
+  const debouncedQ = useDebounced(q, 300);
+  const [data, setData] = useState<PaginatedResult<AdminSite> | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<AdminSite | null>(null);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQ, sort]);
+
   async function refresh() {
+    setLoading(true);
     try {
-      setSites(await api<AdminSite[]>("/api/v1/admin/sites"));
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: "20",
+        sort,
+      });
+      if (debouncedQ) params.set("q", debouncedQ);
+      const r = await api<PaginatedResult<AdminSite>>(`/api/v1/admin/sites?${params}`);
+      setData(r);
+      setErr(null);
     } catch (e) {
       setErr((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => {
     refresh();
-  }, []);
+  }, [page, debouncedQ, sort]);
 
   async function remove(id: string, name: string) {
     if (!confirm(`Hapus situs ${name}? Tindakan ini tidak bisa dibatalkan.`)) return;
@@ -45,11 +74,31 @@ export default function AdminSitesPage() {
     }
   }
 
+  const sites = data?.items ?? [];
+
   return (
     <div>
-      <header>
-        <h1 className="text-2xl font-bold">Situs</h1>
-        <p className="text-sm text-slate-600">{sites.length} situs di platform.</p>
+      <header className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Situs</h1>
+          <p className="text-sm text-slate-600">
+            {data ? `${data.total} situs di platform` : "Memuat…"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <SearchBar value={q} onChange={setQ} placeholder="Cari nama/slug/email..." />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
 
@@ -65,7 +114,7 @@ export default function AdminSitesPage() {
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className={loading ? "opacity-60" : ""}>
             {sites.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="px-4 py-3">
@@ -85,11 +134,7 @@ export default function AdminSitesPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-xs">
-                  <QuotaCell
-                    used={s.pages_count}
-                    max={s.quota_max_pages}
-                    fmt={(n) => `${n}`}
-                  />
+                  <QuotaCell used={s.pages_count} max={s.quota_max_pages} fmt={(n) => `${n}`} />
                 </td>
                 <td className="px-4 py-3 text-xs">
                   <QuotaCell
@@ -114,15 +159,26 @@ export default function AdminSitesPage() {
                 </td>
               </tr>
             ))}
-            {sites.length === 0 && (
+            {sites.length === 0 && !loading && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                  Belum ada situs.
+                  {debouncedQ ? `Tidak ada hasil untuk "${debouncedQ}".` : "Belum ada situs."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        {data && (
+          <div className="border-t border-slate-100">
+            <Pagination
+              page={data.page}
+              totalPages={data.total_pages}
+              total={data.total}
+              pageSize={data.page_size}
+              onPage={setPage}
+            />
+          </div>
+        )}
       </div>
 
       {editing && (

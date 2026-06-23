@@ -125,7 +125,8 @@ func fmtBytes(n int64) string {
 	return fmt.Sprintf("%d B", n)
 }
 
-// GET /api/v1/sites/:id/assets
+// GET /api/v1/sites/:id/assets?page=&page_size=&q=
+// Returns Paginated[Asset]. `q` filters by MIME prefix (e.g. "image" -> image/*).
 func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	siteID, err := uuid.Parse(c.Params("id"))
@@ -135,9 +136,10 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
-	out, err := h.repo.ListBySite(c.Context(), siteID)
+	p := httpx.ParsePagination(c)
+	items, total, err := h.repo.ListBySitePage(c.Context(), siteID, p.LikePattern(), p.PageSize, p.Offset())
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}
-	return httpx.OK(c, out)
+	return httpx.OK(c, httpx.MakePaginated(items, p, total))
 }

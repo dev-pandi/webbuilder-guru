@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Pagination, SearchBar, useDebounced, type PaginatedResult } from "@/components/Pagination";
 
 type AdminUser = {
   id: string;
@@ -12,20 +13,49 @@ type AdminUser = {
   created_at: string;
 };
 
+const SORT_OPTIONS = [
+  { value: "newest", label: "Terbaru" },
+  { value: "oldest", label: "Terlama" },
+  { value: "email_asc", label: "Email A→Z" },
+  { value: "email_desc", label: "Email Z→A" },
+  { value: "sites_desc", label: "Jumlah Situs (banyak dulu)" },
+];
+
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("newest");
+  const [q, setQ] = useState("");
+  const debouncedQ = useDebounced(q, 300);
+  const [data, setData] = useState<PaginatedResult<AdminUser> | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Reset to page 1 when search/sort changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQ, sort]);
 
   async function refresh() {
+    setLoading(true);
     try {
-      setUsers(await api<AdminUser[]>("/api/v1/admin/users"));
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: "20",
+        sort,
+      });
+      if (debouncedQ) params.set("q", debouncedQ);
+      const r = await api<PaginatedResult<AdminUser>>(`/api/v1/admin/users?${params}`);
+      setData(r);
+      setErr(null);
     } catch (e) {
       setErr((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => {
     refresh();
-  }, []);
+  }, [page, debouncedQ, sort]);
 
   async function setRole(id: string, role: "user" | "admin") {
     try {
@@ -49,11 +79,31 @@ export default function AdminUsersPage() {
     }
   }
 
+  const users = data?.items ?? [];
+
   return (
     <div>
-      <header>
-        <h1 className="text-2xl font-bold">User</h1>
-        <p className="text-sm text-slate-600">{users.length} user terdaftar.</p>
+      <header className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">User</h1>
+          <p className="text-sm text-slate-600">
+            {data ? `${data.total} user terdaftar` : "Memuat…"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <SearchBar value={q} onChange={setQ} placeholder="Cari email/nama..." />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
       {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
 
@@ -69,7 +119,7 @@ export default function AdminUsersPage() {
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className={loading ? "opacity-60" : ""}>
             {users.map((u) => (
               <tr key={u.id} className="border-t border-slate-100">
                 <td className="px-4 py-3 font-mono text-xs">{u.email}</td>
@@ -114,15 +164,26 @@ export default function AdminUsersPage() {
                 </td>
               </tr>
             ))}
-            {users.length === 0 && (
+            {users.length === 0 && !loading && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                  Belum ada user.
+                  {debouncedQ ? `Tidak ada hasil untuk "${debouncedQ}".` : "Belum ada user."}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        {data && (
+          <div className="border-t border-slate-100">
+            <Pagination
+              page={data.page}
+              totalPages={data.total_pages}
+              total={data.total}
+              pageSize={data.page_size}
+              onPage={setPage}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

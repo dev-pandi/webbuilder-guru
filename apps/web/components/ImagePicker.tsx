@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api, getAccessToken } from "@/lib/api";
+import type { PaginatedResult } from "@/components/Pagination";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost";
 
@@ -84,7 +85,10 @@ function LibraryModal({
 
   async function refresh() {
     try {
-      setAssets(await api<Asset[]>(`/api/v1/sites/${params.id}/assets`));
+      const r = await api<PaginatedResult<Asset>>(
+        `/api/v1/sites/${params.id}/assets?page=1&page_size=48`,
+      );
+      setAssets(r.items);
     } catch (e) {
       setErr((e as Error).message);
     }

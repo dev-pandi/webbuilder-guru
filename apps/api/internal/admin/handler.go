@@ -18,11 +18,12 @@ func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
 // ---------- Users ----------
 
 func (h *Handler) ListUsers(c *fiber.Ctx) error {
-	out, err := h.repo.ListUsers(c.Context())
+	p := httpx.ParsePagination(c)
+	items, total, err := h.repo.ListUsersPage(c.Context(), p.LikePattern(), p.Sort, p.PageSize, p.Offset())
 	if err != nil {
 		return httpx.Internal(c, "list users failed")
 	}
-	return httpx.OK(c, out)
+	return httpx.OK(c, httpx.MakePaginated(items, p, total))
 }
 
 type updateRoleReq struct {
@@ -71,11 +72,12 @@ func (h *Handler) DeleteUser(c *fiber.Ctx) error {
 // ---------- Sites ----------
 
 func (h *Handler) ListSites(c *fiber.Ctx) error {
-	out, err := h.repo.ListSites(c.Context())
+	p := httpx.ParsePagination(c)
+	items, total, err := h.repo.ListSitesPage(c.Context(), p.LikePattern(), p.Sort, p.PageSize, p.Offset())
 	if err != nil {
 		return httpx.Internal(c, "list sites failed")
 	}
-	return httpx.OK(c, out)
+	return httpx.OK(c, httpx.MakePaginated(items, p, total))
 }
 
 type updateQuotaReq struct {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,27 +28,59 @@ type UserRow struct {
 	SiteCount int       `json:"site_count"`
 }
 
-func (r *Repo) ListUsers(ctx context.Context) ([]UserRow, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT u.id, u.email, u.name, u.role, u.created_at, COUNT(s.id) AS site_count
+// orderUsersSQL whitelists sort presets to safe ORDER BY fragments.
+func orderUsersSQL(sort string) string {
+	switch sort {
+	case "email_asc":
+		return "u.email ASC"
+	case "email_desc":
+		return "u.email DESC"
+	case "sites_desc":
+		return "site_count DESC, u.created_at DESC"
+	case "oldest":
+		return "u.created_at ASC"
+	case "newest", "":
+		return "u.created_at DESC"
+	}
+	return "u.created_at DESC"
+}
+
+// ListUsersPage returns one paginated page of users, with site counts and
+// an ILIKE filter over email/name. Total reflects the filtered count.
+func (r *Repo) ListUsersPage(ctx context.Context, like, sort string, limit, offset int) ([]UserRow, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM users u
+		WHERE LOWER(u.email) LIKE $1 OR LOWER(u.name) LIKE $1
+	`, like).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	q := fmt.Sprintf(`
+		SELECT u.id, u.email, u.name, u.role, u.created_at,
+		       COUNT(s.id) AS site_count
 		FROM users u
 		LEFT JOIN sites s ON s.user_id = u.id
+		WHERE LOWER(u.email) LIKE $1 OR LOWER(u.name) LIKE $1
 		GROUP BY u.id
-		ORDER BY u.created_at DESC
-	`)
+		ORDER BY %s
+		LIMIT $2 OFFSET $3
+	`, orderUsersSQL(sort))
+
+	rows, err := r.pool.Query(ctx, q, like, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []UserRow{}
 	for rows.Next() {
 		var u UserRow
 		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt, &u.SiteCount); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, u)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 func (r *Repo) UpdateUserRole(ctx context.Context, id uuid.UUID, role string) error {
@@ -89,8 +122,36 @@ type SiteRow struct {
 	CreatedAt            time.Time `json:"created_at"`
 }
 
-func (r *Repo) ListSites(ctx context.Context) ([]SiteRow, error) {
-	rows, err := r.pool.Query(ctx, `
+func orderSitesSQL(sort string) string {
+	switch sort {
+	case "storage_desc":
+		return "storage_bytes DESC, s.created_at DESC"
+	case "pages_desc":
+		return "pages_count DESC, s.created_at DESC"
+	case "name_asc":
+		return "s.name ASC"
+	case "oldest":
+		return "s.created_at ASC"
+	case "newest", "":
+		return "s.created_at DESC"
+	}
+	return "s.created_at DESC"
+}
+
+// ListSitesPage filters by name/slug/owner email and supports presets sort.
+func (r *Repo) ListSitesPage(ctx context.Context, like, sort string, limit, offset int) ([]SiteRow, int, error) {
+	var total int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM sites s
+		JOIN users u ON u.id = s.user_id
+		WHERE LOWER(s.name) LIKE $1
+		   OR LOWER(s.slug) LIKE $1
+		   OR LOWER(u.email) LIKE $1
+	`, like).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	q := fmt.Sprintf(`
 		SELECT s.id, s.slug, s.name, s.status,
 		       s.user_id, u.email,
 		       COALESCE(p.cnt, 0)   AS pages_count,
@@ -102,10 +163,16 @@ func (r *Repo) ListSites(ctx context.Context) ([]SiteRow, error) {
 		JOIN users u ON u.id = s.user_id
 		LEFT JOIN (SELECT site_id, COUNT(*) AS cnt FROM pages GROUP BY site_id) p ON p.site_id = s.id
 		LEFT JOIN (SELECT site_id, COUNT(*) AS cnt, COALESCE(SUM(size), 0) AS bytes FROM assets GROUP BY site_id) a ON a.site_id = s.id
-		ORDER BY s.created_at DESC
-	`)
+		WHERE LOWER(s.name) LIKE $1
+		   OR LOWER(s.slug) LIKE $1
+		   OR LOWER(u.email) LIKE $1
+		ORDER BY %s
+		LIMIT $2 OFFSET $3
+	`, orderSitesSQL(sort))
+
+	rows, err := r.pool.Query(ctx, q, like, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []SiteRow{}
@@ -118,11 +185,11 @@ func (r *Repo) ListSites(ctx context.Context) ([]SiteRow, error) {
 			&s.QuotaMaxPages, &s.QuotaMaxStorageBytes,
 			&s.CreatedAt,
 		); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, s)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 func (r *Repo) UpdateSiteQuota(ctx context.Context, id uuid.UUID, maxPages *int, maxStorageBytes *int64) error {
