@@ -4,12 +4,12 @@
 //   - apps/renderer/components/Blocks.tsx     (live render)
 //   - apps/api/internal/exports/render.go     (static export)
 
-export type FieldType = "string" | "textarea" | "number" | "items";
+export type FieldType = "string" | "textarea" | "number" | "image" | "items";
 
-export type ItemField = { name: string; label: string; type: "string" | "textarea" };
+export type ItemField = { name: string; label: string; type: "string" | "textarea" | "image" };
 
 export type FieldDef =
-  | { name: string; label: string; type: "string" | "textarea" | "number"; placeholder?: string }
+  | { name: string; label: string; type: "string" | "textarea" | "number" | "image"; placeholder?: string }
   | { name: string; label: string; type: "items"; itemFields: ItemField[] };
 
 export type BlockSchema = {
@@ -115,7 +115,7 @@ export const blockSchemas: BlockSchema[] = [
         itemFields: [
           { name: "name", label: "Nama", type: "string" },
           { name: "price", label: "Harga", type: "string" },
-          { name: "image", label: "URL Gambar", type: "string" },
+          { name: "image", label: "Gambar", type: "image" },
         ],
       },
     ],

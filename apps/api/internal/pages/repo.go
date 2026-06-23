@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -184,6 +185,32 @@ func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Duplicate clones a page (new id, "<slug>-copy", same tree+seo, is_home=false).
+// If the candidate slug is taken, "-copy-2", "-copy-3", ... are tried.
+func (r *Repo) Duplicate(ctx context.Context, id uuid.UUID) (*Page, error) {
+	src, err := r.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	base := src.Slug + "-copy"
+	candidate := base
+	for i := 2; i < 100; i++ {
+		_, err := r.GetBySiteAndSlug(ctx, src.SiteID, candidate)
+		if errors.Is(err, ErrNotFound) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		candidate = base + "-" + strconv.Itoa(i)
+	}
+	newTitle := src.Title
+	if newTitle != "" {
+		newTitle = newTitle + " (Salinan)"
+	}
+	return r.Create(ctx, src.SiteID, candidate, newTitle, src.Tree, src.SEO, false)
 }
 
 func pgErrCode(err error) string {

@@ -1,5 +1,6 @@
 "use client";
 
+import { ImagePicker } from "@/components/ImagePicker";
 import { schemaFor, type FieldDef, type ItemField } from "@/lib/blocks";
 
 export type BlockData = { type: string; props?: Record<string, unknown> };
@@ -74,6 +75,16 @@ function Field({
           className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
         />
       </label>
+    );
+  }
+  if (field.type === "image") {
+    return (
+      <div>
+        <span className="text-xs font-medium text-slate-600">{field.label}</span>
+        <div className="mt-1">
+          <ImagePicker value={typeof value === "string" ? value : ""} onChange={onChange} />
+        </div>
+      </div>
     );
   }
   // items
@@ -164,6 +175,20 @@ function ItemFieldInput({
           className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-xs"
         />
       </label>
+    );
+  }
+  if (sf.type === "image") {
+    return (
+      <div>
+        <span className="text-[10px] uppercase text-slate-500">{sf.label}</span>
+        <div className="mt-0.5">
+          <ImagePicker
+            size="sm"
+            value={typeof value === "string" ? value : ""}
+            onChange={onChange}
+          />
+        </div>
+      </div>
     );
   }
   return (

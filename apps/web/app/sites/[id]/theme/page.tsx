@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { FontPicker } from "@/components/FontPicker";
 
 type Site = { id: string; name: string; theme: ThemeJson | null };
 type ThemeJson = {
@@ -66,22 +67,20 @@ export default function ThemePage() {
         ))}
 
         <h2 className="mt-6 font-semibold">Font</h2>
-        <div>
-          <label className="block text-sm">Heading</label>
-          <input
-            value={theme.font?.heading ?? ""}
-            onChange={(e) => setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), heading: e.target.value } }))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm">Body</label>
-          <input
-            value={theme.font?.body ?? ""}
-            onChange={(e) => setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), body: e.target.value } }))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
+        <FontPicker
+          label="Heading"
+          value={theme.font?.heading ?? ""}
+          onChange={(name) =>
+            setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), heading: name } }))
+          }
+        />
+        <FontPicker
+          label="Body"
+          value={theme.font?.body ?? ""}
+          onChange={(name) =>
+            setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), body: name } }))
+          }
+        />
 
         <h2 className="mt-6 font-semibold">Radius</h2>
         <input

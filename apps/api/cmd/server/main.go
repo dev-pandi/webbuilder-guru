@@ -147,6 +147,7 @@ func main() {
 
 	// Templates (public list)
 	v1.Get("/templates", tplHandler.List)
+	v1.Get("/template-meta", tplHandler.Meta)
 	v1.Get("/templates/:slug", tplHandler.Get)
 
 	// Authed routes
@@ -166,6 +167,7 @@ func main() {
 	authed.Post("/sites/:id/pages", pageHandler.CreateForSite)
 	authed.Get("/pages/:id", pageHandler.Get)
 	authed.Patch("/pages/:id", pageHandler.Update)
+	authed.Post("/pages/:id/duplicate", pageHandler.Duplicate)
 	authed.Delete("/pages/:id", pageHandler.Delete)
 
 	if assetHandler != nil {

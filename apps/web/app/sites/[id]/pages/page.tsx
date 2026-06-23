@@ -57,6 +57,15 @@ export default function PagesPage() {
     refresh();
   }
 
+  async function duplicate(id: string) {
+    try {
+      await api(`/api/v1/pages/${id}/duplicate`, { method: "POST" });
+      refresh();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="rounded-xl border border-slate-200 bg-white">
@@ -84,6 +93,12 @@ export default function PagesPage() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => duplicate(p.id)}
+                    className="mr-3 text-xs text-slate-600 hover:underline"
+                  >
+                    Duplikat
+                  </button>
                   <button onClick={() => remove(p.id)} className="text-xs text-red-600 hover:underline">
                     Hapus
                   </button>

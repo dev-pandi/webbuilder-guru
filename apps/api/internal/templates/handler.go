@@ -31,6 +31,14 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	return httpx.OK(c, out)
 }
 
+// GET /api/v1/template-meta — returns category + variant lookup tables for the picker UI.
+func (h *Handler) Meta(c *fiber.Ctx) error {
+	return httpx.OK(c, fiber.Map{
+		"categories": Categories,
+		"variants":   Variants,
+	})
+}
+
 func (h *Handler) Get(c *fiber.Ctx) error {
 	t, err := h.repo.GetBySlug(c.Context(), c.Params("slug"))
 	if errors.Is(err, ErrNotFound) {

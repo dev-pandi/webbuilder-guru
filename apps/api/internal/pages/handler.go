@@ -142,6 +142,29 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	return httpx.OK(c, p)
 }
 
+func (h *Handler) Duplicate(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	p, err := h.pages.Duplicate(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "duplicate failed: "+err.Error())
+	}
+	return httpx.Created(c, p)
+}
+
 func (h *Handler) Delete(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	id, err := uuid.Parse(c.Params("id"))
