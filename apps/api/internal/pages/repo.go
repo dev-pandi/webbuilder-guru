@@ -32,6 +32,12 @@ func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
 var ErrNotFound = errors.New("not found")
 var ErrSlugTaken = errors.New("slug taken")
 
+func (r *Repo) CountBySite(ctx context.Context, siteID uuid.UUID) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM pages WHERE site_id = $1`, siteID).Scan(&n)
+	return n, err
+}
+
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at

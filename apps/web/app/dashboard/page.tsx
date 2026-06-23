@@ -3,13 +3,21 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { fmtBytes, pct } from "@/lib/format";
 
 type Site = {
   id: string;
   slug: string;
   name: string;
   status: "draft" | "published" | "archived";
+  quota_max_pages: number;
+  quota_max_storage_bytes: number;
   updated_at: string;
+};
+
+type SiteUsage = {
+  pages: { used: number; max: number };
+  storage_bytes: { used: number; max: number };
 };
 
 type Template = {
@@ -31,6 +39,7 @@ type Meta = { categories: Category[]; variants: Variant[] };
 
 export default function DashboardPage() {
   const [sites, setSites] = useState<Site[]>([]);
+  const [usageMap, setUsageMap] = useState<Record<string, SiteUsage>>({});
   const [templates, setTemplates] = useState<Template[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -40,6 +49,20 @@ export default function DashboardPage() {
     try {
       const list = await api<Site[]>("/api/v1/sites");
       setSites(list);
+      // fetch usage for each site in parallel; ignore individual failures
+      const entries = await Promise.all(
+        list.map(async (s) => {
+          try {
+            const u = await api<SiteUsage>(`/api/v1/sites/${s.id}/usage`);
+            return [s.id, u] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const m: Record<string, SiteUsage> = {};
+      for (const e of entries) if (e) m[e[0]] = e[1];
+      setUsageMap(m);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -89,6 +112,9 @@ export default function DashboardPage() {
                 {s.status}
               </span>
             </div>
+
+            <SiteUsageMini usage={usageMap[s.id]} />
+
             <div className="mt-4 flex gap-2 text-sm">
               <Link
                 href={`/sites/${s.id}/editor`}
@@ -97,10 +123,10 @@ export default function DashboardPage() {
                 Edit
               </Link>
               <Link
-                href={`/sites/${s.id}/pages`}
+                href={`/sites/${s.id}/usage`}
                 className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-center hover:bg-slate-100"
               >
-                Halaman
+                Usage
               </Link>
               <Link
                 href={`/sites/${s.id}/domains`}
@@ -124,6 +150,53 @@ export default function DashboardPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ---- Inline usage display for site cards ----
+
+function SiteUsageMini({ usage }: { usage: SiteUsage | undefined }) {
+  if (!usage) {
+    return <div className="mt-3 h-8 animate-pulse rounded bg-slate-50" />;
+  }
+  const pPct = pct(usage.pages.used, usage.pages.max);
+  const sPct = pct(usage.storage_bytes.used, usage.storage_bytes.max);
+  return (
+    <div className="mt-3 space-y-1.5 text-xs">
+      <UsageRow
+        label="Halaman"
+        usedText={`${usage.pages.used} / ${usage.pages.max}`}
+        percent={pPct}
+      />
+      <UsageRow
+        label="Storage"
+        usedText={`${fmtBytes(usage.storage_bytes.used)} / ${fmtBytes(usage.storage_bytes.max)}`}
+        percent={sPct}
+      />
+    </div>
+  );
+}
+
+function UsageRow({
+  label,
+  usedText,
+  percent,
+}: {
+  label: string;
+  usedText: string;
+  percent: number;
+}) {
+  const color = percent >= 90 ? "bg-red-500" : percent >= 70 ? "bg-amber-500" : "bg-emerald-500";
+  return (
+    <div>
+      <div className="flex items-center justify-between text-slate-500">
+        <span>{label}</span>
+        <span className="tabular-nums">{usedText}</span>
+      </div>
+      <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full ${color}`} style={{ width: `${percent}%` }} />
+      </div>
     </div>
   );
 }

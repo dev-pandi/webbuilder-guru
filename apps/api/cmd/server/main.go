@@ -26,6 +26,7 @@ import (
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/templates"
+	"github.com/webbuilder/api/internal/usage"
 )
 
 func main() {
@@ -88,6 +89,9 @@ func main() {
 		log.Printf("[storage] driver=%s", assetStorage.Driver())
 		assetHandler = assets.NewHandler(assetRepo, assetStorage, siteRepo)
 	}
+
+	usageRepo := usage.NewRepo(pool, siteRepo, pageRepo, assetRepo)
+	usageHandler := usage.NewHandler(usageRepo, siteRepo)
 
 	caddyHandler := caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost)
 	publicHandler := public.NewHandler(siteRepo, pageRepo, cfg.RendererDefaultHost)
@@ -161,6 +165,8 @@ func main() {
 	authed.Delete("/sites/:id", siteHandler.Delete)
 	authed.Post("/sites/:id/publish", siteHandler.Publish)
 	authed.Post("/sites/:id/export", exportHandler.Export)
+	authed.Get("/sites/:id/usage", usageHandler.Current)
+	authed.Get("/sites/:id/usage/history", usageHandler.History)
 	authed.Post("/sites/from-template/:slug", tplHandler.CreateSiteFromTemplate)
 
 	authed.Get("/sites/:id/pages", pageHandler.ListBySite)

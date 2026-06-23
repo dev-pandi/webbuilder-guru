@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -62,8 +63,19 @@ func (h *Handler) CreateForSite(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	site, err := h.sites.GetOwned(c.Context(), siteID, uid)
+	if err != nil {
 		return httpx.NotFound(c, "site not found")
+	}
+	// Quota check
+	if site.QuotaMaxPages > 0 {
+		count, err := h.pages.CountBySite(c.Context(), siteID)
+		if err != nil {
+			return httpx.Internal(c, "quota check failed")
+		}
+		if count >= site.QuotaMaxPages {
+			return httpx.Forbidden(c, "page quota reached ("+itoa(site.QuotaMaxPages)+" maks). Hapus halaman atau naikkan quota.")
+		}
 	}
 	var req createReq
 	if err := c.BodyParser(&req); err != nil {
@@ -82,6 +94,8 @@ func (h *Handler) CreateForSite(c *fiber.Ctx) error {
 	}
 	return httpx.Created(c, p)
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func (h *Handler) Get(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)

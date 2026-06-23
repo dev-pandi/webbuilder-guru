@@ -31,6 +31,15 @@ func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, kind, url, mime str
 	return &a, err
 }
 
+// CountAndSize returns the asset count and total bytes for a site.
+func (r *Repo) CountAndSize(ctx context.Context, siteID uuid.UUID) (count int, totalBytes int64, err error) {
+	err = r.pool.QueryRow(ctx,
+		`SELECT count(*), COALESCE(sum(size), 0) FROM assets WHERE site_id = $1`,
+		siteID,
+	).Scan(&count, &totalBytes)
+	return
+}
+
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Asset, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, site_id, kind, url, size, mime, created_at

@@ -40,7 +40,8 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	site, err := h.sites.GetOwned(c.Context(), siteID, uid)
+	if err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 
@@ -50,6 +51,24 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 	}
 	if fh.Size > MaxUploadBytes {
 		return httpx.BadRequest(c, "file too large (max 10MB)")
+	}
+
+	// Storage quota check
+	if site.QuotaMaxStorageBytes > 0 {
+		_, used, err := h.repo.CountAndSize(c.Context(), siteID)
+		if err != nil {
+			return httpx.Internal(c, "quota check failed")
+		}
+		if used+fh.Size > site.QuotaMaxStorageBytes {
+			remaining := site.QuotaMaxStorageBytes - used
+			if remaining < 0 {
+				remaining = 0
+			}
+			return httpx.Forbidden(c,
+				"storage quota exceeded: terpakai "+fmtBytes(used)+
+					" / kuota "+fmtBytes(site.QuotaMaxStorageBytes)+
+					", sisa "+fmtBytes(remaining)+", file "+fmtBytes(fh.Size))
+		}
 	}
 	mime := fh.Header.Get("Content-Type")
 	ext, ok := allowedMime[strings.ToLower(mime)]
@@ -88,6 +107,22 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 		return httpx.Internal(c, "save failed")
 	}
 	return httpx.Created(c, asset)
+}
+
+// fmtBytes pretty-prints byte sizes (e.g. "1.5 MB", "240 KB").
+func fmtBytes(n int64) string {
+	const KB = 1024
+	const MB = KB * 1024
+	const GB = MB * 1024
+	switch {
+	case n >= GB:
+		return fmt.Sprintf("%.2f GB", float64(n)/float64(GB))
+	case n >= MB:
+		return fmt.Sprintf("%.2f MB", float64(n)/float64(MB))
+	case n >= KB:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(KB))
+	}
+	return fmt.Sprintf("%d B", n)
 }
 
 // GET /api/v1/sites/:id/assets

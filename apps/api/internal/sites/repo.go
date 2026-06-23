@@ -14,16 +14,22 @@ import (
 const MaxSitesPerUser = 5
 
 type Site struct {
-	ID         uuid.UUID       `json:"id"`
-	UserID     uuid.UUID       `json:"user_id"`
-	Slug       string          `json:"slug"`
-	Name       string          `json:"name"`
-	TemplateID *uuid.UUID      `json:"template_id,omitempty"`
-	Theme      json.RawMessage `json:"theme"`
-	Status     string          `json:"status"`
-	CreatedAt  time.Time       `json:"created_at"`
-	UpdatedAt  time.Time       `json:"updated_at"`
+	ID                   uuid.UUID       `json:"id"`
+	UserID               uuid.UUID       `json:"user_id"`
+	Slug                 string          `json:"slug"`
+	Name                 string          `json:"name"`
+	TemplateID           *uuid.UUID      `json:"template_id,omitempty"`
+	Theme                json.RawMessage `json:"theme"`
+	Status               string          `json:"status"`
+	QuotaMaxPages        int             `json:"quota_max_pages"`
+	QuotaMaxStorageBytes int64           `json:"quota_max_storage_bytes"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
+
+// siteCols is the SELECT column list, kept in sync with scanSite.
+const siteCols = `id, user_id, slug, name, template_id, theme_json, status,
+    quota_max_pages, quota_max_storage_bytes, created_at, updated_at`
 
 type Repo struct{ pool *pgxpool.Pool }
 
@@ -54,10 +60,8 @@ func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, 
 	err = r.pool.QueryRow(ctx, `
 		INSERT INTO sites (user_id, slug, name, template_id, theme_json)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, user_id, slug, name, template_id, theme_json, status, created_at, updated_at
-	`, userID, slug, name, templateID, theme).Scan(
-		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status, &s.CreatedAt, &s.UpdatedAt,
-	)
+		RETURNING `+siteCols+`
+	`, userID, slug, name, templateID, theme).Scan(scanArgs(&s)...)
 	if pgErrCode(err) == "23505" {
 		return nil, ErrSlugTaken
 	}
@@ -67,9 +71,17 @@ func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, 
 	return &s, nil
 }
 
+// scanArgs returns the pointer list matching siteCols, in order.
+func scanArgs(s *Site) []any {
+	return []any{
+		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status,
+		&s.QuotaMaxPages, &s.QuotaMaxStorageBytes, &s.CreatedAt, &s.UpdatedAt,
+	}
+}
+
 func (r *Repo) ListByUser(ctx context.Context, userID uuid.UUID) ([]Site, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, user_id, slug, name, template_id, theme_json, status, created_at, updated_at
+		SELECT `+siteCols+`
 		FROM sites WHERE user_id = $1 ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
@@ -79,7 +91,7 @@ func (r *Repo) ListByUser(ctx context.Context, userID uuid.UUID) ([]Site, error)
 	out := []Site{}
 	for rows.Next() {
 		var s Site
-		if err := rows.Scan(&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(scanArgs(&s)...); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -90,9 +102,9 @@ func (r *Repo) ListByUser(ctx context.Context, userID uuid.UUID) ([]Site, error)
 func (r *Repo) GetOwned(ctx context.Context, id, userID uuid.UUID) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, user_id, slug, name, template_id, theme_json, status, created_at, updated_at
+		SELECT `+siteCols+`
 		FROM sites WHERE id = $1 AND user_id = $2
-	`, id, userID).Scan(&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	`, id, userID).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -108,10 +120,8 @@ func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, name *string, t
 			status     = COALESCE($5, status),
 			updated_at = now()
 		WHERE id = $1 AND user_id = $2
-		RETURNING id, user_id, slug, name, template_id, theme_json, status, created_at, updated_at
-	`, id, userID, name, theme, status).Scan(
-		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status, &s.CreatedAt, &s.UpdatedAt,
-	)
+		RETURNING `+siteCols+`
+	`, id, userID, name, theme, status).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -133,12 +143,12 @@ func (r *Repo) Delete(ctx context.Context, id, userID uuid.UUID) error {
 func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
-		SELECT s.id, s.user_id, s.slug, s.name, s.template_id, s.theme_json, s.status, s.created_at, s.updated_at
+		SELECT `+sitePrefixedCols("s")+`
 		FROM sites s
 		JOIN domains d ON d.site_id = s.id
 		WHERE d.hostname = $1 AND d.status = 'verified' AND s.status = 'published'
 		LIMIT 1
-	`, host).Scan(&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	`, host).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -149,13 +159,29 @@ func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 func (r *Repo) GetBySlug(ctx context.Context, slug string) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, user_id, slug, name, template_id, theme_json, status, created_at, updated_at
+		SELECT `+siteCols+`
 		FROM sites WHERE slug = $1 AND status = 'published'
-	`, slug).Scan(&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	`, slug).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &s, err
+}
+
+// sitePrefixedCols returns siteCols with a table alias for JOIN queries.
+func sitePrefixedCols(alias string) string {
+	cols := []string{
+		"id", "user_id", "slug", "name", "template_id", "theme_json", "status",
+		"quota_max_pages", "quota_max_storage_bytes", "created_at", "updated_at",
+	}
+	out := ""
+	for i, c := range cols {
+		if i > 0 {
+			out += ", "
+		}
+		out += alias + "." + c
+	}
+	return out
 }
 
 func pgErrCode(err error) string {
