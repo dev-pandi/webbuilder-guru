@@ -1,5 +1,6 @@
--- Users
-CREATE TABLE users (
+-- +goose Up
+
+CREATE TABLE IF NOT EXISTS users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
@@ -9,8 +10,7 @@ CREATE TABLE users (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Templates (seeded by app)
-CREATE TABLE templates (
+CREATE TABLE IF NOT EXISTS templates (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug        TEXT NOT NULL UNIQUE,
     category    TEXT NOT NULL,
@@ -23,22 +23,20 @@ CREATE TABLE templates (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Sites
-CREATE TABLE sites (
+CREATE TABLE IF NOT EXISTS sites (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     slug        TEXT NOT NULL UNIQUE,
     name        TEXT NOT NULL,
     template_id UUID REFERENCES templates(id) ON DELETE SET NULL,
     theme_json  JSONB NOT NULL DEFAULT '{}'::jsonb,
-    status      TEXT NOT NULL DEFAULT 'draft', -- draft | published | archived
+    status      TEXT NOT NULL DEFAULT 'draft',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_sites_user_id ON sites(user_id);
+CREATE INDEX IF NOT EXISTS idx_sites_user_id ON sites(user_id);
 
--- Pages
-CREATE TABLE pages (
+CREATE TABLE IF NOT EXISTS pages (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     site_id    UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     slug       TEXT NOT NULL,
@@ -51,23 +49,21 @@ CREATE TABLE pages (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (site_id, slug)
 );
-CREATE INDEX idx_pages_site_id ON pages(site_id);
+CREATE INDEX IF NOT EXISTS idx_pages_site_id ON pages(site_id);
 
--- Domains
-CREATE TABLE domains (
+CREATE TABLE IF NOT EXISTS domains (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     site_id         UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     hostname        TEXT NOT NULL UNIQUE,
-    status          TEXT NOT NULL DEFAULT 'pending', -- pending | verified | failed
+    status          TEXT NOT NULL DEFAULT 'pending',
     verified_at     TIMESTAMPTZ,
-    ssl_status      TEXT NOT NULL DEFAULT 'unknown', -- unknown | active | error
+    ssl_status      TEXT NOT NULL DEFAULT 'unknown',
     cert_renewed_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_domains_site_id ON domains(site_id);
+CREATE INDEX IF NOT EXISTS idx_domains_site_id ON domains(site_id);
 
--- Assets
-CREATE TABLE assets (
+CREATE TABLE IF NOT EXISTS assets (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     site_id    UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     kind       TEXT NOT NULL DEFAULT 'image',
@@ -76,10 +72,9 @@ CREATE TABLE assets (
     mime       TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_assets_site_id ON assets(site_id);
+CREATE INDEX IF NOT EXISTS idx_assets_site_id ON assets(site_id);
 
--- Refresh tokens (for rotation)
-CREATE TABLE refresh_tokens (
+CREATE TABLE IF NOT EXISTS refresh_tokens (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL UNIQUE,
@@ -87,4 +82,14 @@ CREATE TABLE refresh_tokens (
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
+-- +goose Down
+
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS assets;
+DROP TABLE IF EXISTS domains;
+DROP TABLE IF EXISTS pages;
+DROP TABLE IF EXISTS sites;
+DROP TABLE IF EXISTS templates;
+DROP TABLE IF EXISTS users;

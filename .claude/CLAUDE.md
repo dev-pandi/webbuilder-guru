@@ -85,10 +85,29 @@ infra/caddy/     Caddyfile
 
 ## Migrations
 
-- File baru: `NNNN_description.sql` di `apps/api/internal/db/migrations/`.
-- Idempotent saat memungkinkan: `CREATE INDEX IF NOT EXISTS`, `ALTER TABLE ADD COLUMN IF NOT EXISTS`.
-- Auto-applied saat startup (`db.Migrate`), tracked di `schema_migrations(version PK)`.
-- JANGAN edit migration yang sudah dijalankan — selalu buat migration baru.
+- **Goose v3** (`github.com/pressly/goose/v3@v3.21.1`) untuk schema migrations. Library mode, embedded via `embed.FS`, auto-applied saat startup.
+- File baru: `apps/api/internal/db/migrations/NNNN_description.sql` dengan format goose:
+  ```sql
+  -- +goose Up
+  CREATE TABLE IF NOT EXISTS ...;
+
+  -- +goose Down
+  DROP TABLE IF EXISTS ...;
+  ```
+- Idempotent saat memungkinkan: `CREATE TABLE/INDEX IF NOT EXISTS`, `ALTER TABLE ADD COLUMN IF NOT EXISTS`, `DROP ... IF EXISTS` di Down.
+- Multi-statement function/DO block butuh `-- +goose StatementBegin` / `-- +goose StatementEnd`.
+- Tracking: `goose_db_version` table.
+- Legacy compat: `internal/db/migrate.go::importLegacyMigrationState` otomatis migrasi dari `schema_migrations` (custom runner lama) ke `goose_db_version` pada startup pertama setelah upgrade.
+- JANGAN edit migration yang sudah di-apply — selalu buat file baru.
+
+## Seed
+
+- Package `apps/api/internal/seed/` (idempotent, dipanggil dari `main.go` setelah migrate).
+- `seed.Run(ctx, Deps, Options)` mengeksekusi:
+  - **`Templates`** — selalu jalan, upsert 15 built-in template dari `templates.BuiltinTemplates()`.
+  - **`Admin`** — jalan kalau `ADMIN_EMAIL` + `ADMIN_PASSWORD` set. Idempotent: kalau user sudah ada, hanya force role=admin, password tidak diubah.
+  - **`Demo`** — opt-in via `SEED_DEMO=true`. Buat 1 user demo + 1 situs UMKM + 5 produk + 3 artikel blog Markdown. Skip total kalau user demo sudah ada.
+- Tambah seeder baru = tambah function di `seed.go` + panggil dari `Run`.
 
 ## Caddy
 

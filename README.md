@@ -64,6 +64,24 @@ npm install
 API_INTERNAL_URL=http://localhost:8080 npm run dev -- -p 3001
 ```
 
+## Migrations & Seed
+
+**Migrations** dijalankan otomatis saat API start, pakai **Goose v3** (library mode, file di-embed ke binary).
+
+- File: `apps/api/internal/db/migrations/NNNN_*.sql` dengan marker `-- +goose Up` / `-- +goose Down`
+- Tracking di tabel `goose_db_version`
+- Manual CLI (untuk troubleshoot): `goose -dir apps/api/internal/db/migrations postgres "<DATABASE_URL>" status`
+
+**Seed** dijalankan setelah migrate. Tiga seeder:
+
+| Seeder    | Kapan jalan                                | Apa yang dibuat |
+|-----------|--------------------------------------------|---|
+| Templates | Selalu                                     | Upsert 15 built-in template |
+| Admin     | Saat `ADMIN_EMAIL` + `ADMIN_PASSWORD` set  | User admin (password tidak ditimpa jika user sudah ada) |
+| Demo      | Saat `SEED_DEMO=true`                      | User demo + situs UMKM + 5 produk + 3 artikel blog |
+
+Demo data berguna untuk dev/demo cepat. Login dengan `SEED_DEMO_EMAIL` / `SEED_DEMO_PASSWORD` (default `demo@example.com` / `demo1234`).
+
 ## Admin Panel
 
 Set `ADMIN_EMAIL` + `ADMIN_PASSWORD` di `.env`. Saat API start:

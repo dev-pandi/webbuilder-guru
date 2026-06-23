@@ -1,4 +1,5 @@
--- Per-site quotas for products + blog posts (separate from pages/storage).
+-- +goose Up
+
 ALTER TABLE sites
     ADD COLUMN IF NOT EXISTS quota_max_products    INT NOT NULL DEFAULT 100,
     ADD COLUMN IF NOT EXISTS quota_max_blog_posts  INT NOT NULL DEFAULT 100;
@@ -12,14 +13,14 @@ CREATE TABLE IF NOT EXISTS products (
     slug          TEXT NOT NULL,
     name          TEXT NOT NULL,
     description   TEXT NOT NULL DEFAULT '',
-    price         BIGINT NOT NULL DEFAULT 0,         -- smallest unit
+    price         BIGINT NOT NULL DEFAULT 0,
     currency      TEXT NOT NULL DEFAULT 'IDR',
-    stock         INTEGER,                            -- NULL = unlimited
+    stock         INTEGER,
     image_url     TEXT NOT NULL DEFAULT '',
-    gallery_json  JSONB NOT NULL DEFAULT '[]'::jsonb, -- array of urls
+    gallery_json  JSONB NOT NULL DEFAULT '[]'::jsonb,
     category      TEXT NOT NULL DEFAULT '',
-    status        TEXT NOT NULL DEFAULT 'active',     -- active | draft | archived
-    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb, -- payment SKU, attributes, etc.
+    status        TEXT NOT NULL DEFAULT 'active',
+    metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (site_id, slug)
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS blog_posts (
     cover_image_url TEXT NOT NULL DEFAULT '',
     author_name     TEXT NOT NULL DEFAULT '',
     tags_json       JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status          TEXT NOT NULL DEFAULT 'draft',   -- draft | published
+    status          TEXT NOT NULL DEFAULT 'draft',
     published_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -46,3 +47,10 @@ CREATE TABLE IF NOT EXISTS blog_posts (
 );
 CREATE INDEX IF NOT EXISTS idx_blog_posts_site_status    ON blog_posts(site_id, status);
 CREATE INDEX IF NOT EXISTS idx_blog_posts_site_published ON blog_posts(site_id, published_at DESC);
+
+-- +goose Down
+
+DROP TABLE IF EXISTS blog_posts;
+DROP TABLE IF EXISTS products;
+ALTER TABLE sites DROP COLUMN IF EXISTS quota_max_blog_posts;
+ALTER TABLE sites DROP COLUMN IF EXISTS quota_max_products;

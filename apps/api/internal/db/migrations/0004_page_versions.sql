@@ -1,3 +1,5 @@
+-- +goose Up
+
 CREATE TABLE IF NOT EXISTS page_versions (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     page_id     UUID NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
@@ -10,3 +12,7 @@ CREATE TABLE IF NOT EXISTS page_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_page_versions_page_id_created ON page_versions(page_id, created_at DESC);
+
+-- +goose Down
+
+DROP TABLE IF EXISTS page_versions;

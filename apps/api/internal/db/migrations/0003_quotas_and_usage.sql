@@ -1,9 +1,9 @@
--- Per-site quotas
+-- +goose Up
+
 ALTER TABLE sites
     ADD COLUMN IF NOT EXISTS quota_max_pages         INT    NOT NULL DEFAULT 20,
-    ADD COLUMN IF NOT EXISTS quota_max_storage_bytes BIGINT NOT NULL DEFAULT 104857600; -- 100 MB
+    ADD COLUMN IF NOT EXISTS quota_max_storage_bytes BIGINT NOT NULL DEFAULT 104857600;
 
--- Historical usage snapshots — populated on usage queries and (in future) by a cron.
 CREATE TABLE IF NOT EXISTS site_usage_snapshots (
     id            BIGSERIAL PRIMARY KEY,
     site_id       UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
@@ -14,3 +14,9 @@ CREATE TABLE IF NOT EXISTS site_usage_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_site_usage_snapshots_site_time
     ON site_usage_snapshots(site_id, captured_at DESC);
+
+-- +goose Down
+
+DROP TABLE IF EXISTS site_usage_snapshots;
+ALTER TABLE sites DROP COLUMN IF EXISTS quota_max_storage_bytes;
+ALTER TABLE sites DROP COLUMN IF EXISTS quota_max_pages;

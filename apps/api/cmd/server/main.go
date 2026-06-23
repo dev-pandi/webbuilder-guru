@@ -22,6 +22,7 @@ import (
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/router"
+	"github.com/webbuilder/api/internal/seed"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
@@ -39,7 +40,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	if err := db.Migrate(ctx, pool); err != nil {
+	if err := db.Migrate(ctx, pool, cfg.DatabaseURL); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
 
@@ -54,21 +55,23 @@ func main() {
 	blogRepo := blog.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
 
-	if err := templateRepo.Seed(ctx); err != nil {
-		log.Printf("warning: template seed failed: %v", err)
-	}
-
-	// Bootstrap admin user from env (idempotent).
-	if cfg.AdminEmail != "" && cfg.AdminPassword != "" {
-		hash, err := auth.HashPassword(cfg.AdminPassword)
-		if err != nil {
-			log.Fatalf("admin bootstrap hash: %v", err)
-		}
-		if _, err := authRepo.EnsureAdmin(ctx, cfg.AdminEmail, hash, cfg.AdminName); err != nil {
-			log.Printf("warning: ensure admin failed: %v", err)
-		} else {
-			log.Printf("[admin] ensured admin user %s", cfg.AdminEmail)
-		}
+	if err := seed.Run(ctx, seed.Deps{
+		Pool:      pool,
+		Auth:      authRepo,
+		Templates: templateRepo,
+		Sites:     siteRepo,
+		Pages:     pageRepo,
+		Products:  productRepo,
+		Blog:      blogRepo,
+	}, seed.Options{
+		AdminEmail:    cfg.AdminEmail,
+		AdminPassword: cfg.AdminPassword,
+		AdminName:     cfg.AdminName,
+		Demo:          cfg.SeedDemo,
+		DemoEmail:     cfg.SeedDemoEmail,
+		DemoPassword:  cfg.SeedDemoPassword,
+	}); err != nil {
+		log.Printf("warning: seed failed: %v", err)
 	}
 
 	// Storage (driver picks local or s3)

@@ -24,6 +24,11 @@ type Config struct {
 	AdminPassword string
 	AdminName     string
 
+	// Demo seed — when true, insert demo user + site + sample products/posts on startup.
+	SeedDemo         bool
+	SeedDemoEmail    string
+	SeedDemoPassword string
+
 	StorageDriver string
 
 	// S3 / MinIO
@@ -57,6 +62,10 @@ func Load() Config {
 		AdminEmail:    env("ADMIN_EMAIL", ""),
 		AdminPassword: env("ADMIN_PASSWORD", ""),
 		AdminName:     env("ADMIN_NAME", "Administrator"),
+
+		SeedDemo:         env("SEED_DEMO", "false") == "true",
+		SeedDemoEmail:    env("SEED_DEMO_EMAIL", "demo@example.com"),
+		SeedDemoPassword: env("SEED_DEMO_PASSWORD", "demo1234"),
 
 		StorageDriver: env("STORAGE_DRIVER", "local"),
 
