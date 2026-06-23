@@ -18,6 +18,13 @@ type Config struct {
 	PublicAPIHost      string
 	RendererDefaultHost string
 	CORSOrigins        []string
+
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioUseSSL    bool
+	MinioBucket    string
+	MinioPublicURL string
 }
 
 func Load() Config {
@@ -33,6 +40,13 @@ func Load() Config {
 		PublicAPIHost:       env("PUBLIC_API_HOST", "api.localhost"),
 		RendererDefaultHost: env("RENDERER_DEFAULT_HOST", "localhost"),
 		CORSOrigins:         splitCSV(env("CORS_ORIGINS", "http://localhost:3000,http://app.localhost")),
+
+		MinioEndpoint:  env("MINIO_ENDPOINT", "minio:9000"),
+		MinioAccessKey: env("MINIO_ACCESS_KEY", "minioadmin"),
+		MinioSecretKey: env("MINIO_SECRET_KEY", "minioadmin"),
+		MinioUseSSL:    env("MINIO_USE_SSL", "false") == "true",
+		MinioBucket:    env("MINIO_BUCKET", "assets"),
+		MinioPublicURL: env("MINIO_PUBLIC_URL", "http://localhost:9000/assets"),
 	}
 }
 

@@ -110,8 +110,32 @@ GET /public/sites/:id/pages/:slug   # slug "_home" = home page
 GET /internal/caddy/ask?domain=<hostname>
 ```
 
-## Yang Belum (sesuai roadmap di plan.md)
+## Status Fitur
 
-- **Phase 2**: visual editor Craft.js (saat ini JSON tree + live preview).
-- **Phase 5**: export ke HTML/CSS/JS bundle.
-- **Phase 6**: image uploads ke MinIO, sitemap, rate limiting, Sentry.
+Sudah berjalan:
+
+- ✅ Auth (register/login, JWT access+refresh dengan rotation, argon2id).
+- ✅ Sites/Pages/Domains CRUD + ownership check.
+- ✅ Multi-tenant renderer by `Host` header (custom domain & `<slug>.localhost`).
+- ✅ Caddy `on_demand_tls.ask` hook untuk SSL otomatis di custom domain.
+- ✅ 5 template (sekolah, UMKM, portofolio, guru, blog) — 3 halaman per template.
+- ✅ Editor block-by-block: tambah/hapus/urutkan block, form properti per-block, preview responsif desktop/tablet/mobile, klik block di preview untuk edit.
+- ✅ Theme editor (warna/font/radius) dengan live preview, propagate ke renderer via CSS variables.
+- ✅ Asset upload ke MinIO (PNG/JPG/WebP/GIF/SVG, 10 MB) — library + copy URL.
+- ✅ Export ke HTML/CSS/JS — zip dengan `index.html`, sub-path per halaman, `assets/css/styles.css`, `robots.txt`, `sitemap.xml`. Streamed langsung dari API, tidak butuh worker.
+
+Endpoint export tambahan:
+
+```
+POST /api/v1/sites/:id/export          # streams zip
+GET  /api/v1/sites/:id/assets
+POST /api/v1/sites/:id/assets          # multipart "file"
+```
+
+Belum:
+
+- Visual drag-and-drop Craft.js (saat ini sudah block-by-block dengan form, sudah cukup workable).
+- Versioning halaman (table sudah disiapkan).
+- Image processing (resize/optimize) di sisi server.
+- Rate limit & Sentry / observability.
+- Async export worker (saat ini sync streaming OK untuk situs ≤ ~50 halaman).

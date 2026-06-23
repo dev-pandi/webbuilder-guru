@@ -30,7 +30,9 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     { href: `/sites/${params.id}/editor`, label: "Editor" },
     { href: `/sites/${params.id}/pages`, label: "Halaman" },
     { href: `/sites/${params.id}/theme`, label: "Tema" },
+    { href: `/sites/${params.id}/assets`, label: "Aset" },
     { href: `/sites/${params.id}/domains`, label: "Domain" },
+    { href: `/sites/${params.id}/export`, label: "Export" },
   ];
 
   async function publish() {

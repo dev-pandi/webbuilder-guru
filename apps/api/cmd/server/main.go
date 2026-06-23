@@ -15,11 +15,13 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
 	"github.com/webbuilder/api/internal/domains"
+	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/sites"
@@ -61,6 +63,26 @@ func main() {
 	domainHandler := domains.NewHandler(domainRepo, siteRepo)
 
 	tplHandler := templates.NewHandler(templateRepo, siteRepo, pageRepo)
+
+	exportBuilder := &exports.Builder{Sites: siteRepo, Pages: pageRepo}
+	exportHandler := exports.NewHandler(exportBuilder)
+
+	assetRepo := assets.NewRepo(pool)
+	assetStorage, err := assets.NewStorage(ctx, assets.StorageConfig{
+		Endpoint:  cfg.MinioEndpoint,
+		AccessKey: cfg.MinioAccessKey,
+		SecretKey: cfg.MinioSecretKey,
+		UseSSL:    cfg.MinioUseSSL,
+		Bucket:    cfg.MinioBucket,
+		PublicURL: cfg.MinioPublicURL,
+	})
+	if err != nil {
+		log.Printf("warning: asset storage init failed (uploads disabled): %v", err)
+	}
+	var assetHandler *assets.Handler
+	if assetStorage != nil {
+		assetHandler = assets.NewHandler(assetRepo, assetStorage, siteRepo)
+	}
 
 	caddyHandler := caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost)
 	publicHandler := public.NewHandler(siteRepo, pageRepo, cfg.RendererDefaultHost)
@@ -126,6 +148,7 @@ func main() {
 	authed.Patch("/sites/:id", siteHandler.Update)
 	authed.Delete("/sites/:id", siteHandler.Delete)
 	authed.Post("/sites/:id/publish", siteHandler.Publish)
+	authed.Post("/sites/:id/export", exportHandler.Export)
 	authed.Post("/sites/from-template/:slug", tplHandler.CreateSiteFromTemplate)
 
 	authed.Get("/sites/:id/pages", pageHandler.ListBySite)
@@ -133,6 +156,11 @@ func main() {
 	authed.Get("/pages/:id", pageHandler.Get)
 	authed.Patch("/pages/:id", pageHandler.Update)
 	authed.Delete("/pages/:id", pageHandler.Delete)
+
+	if assetHandler != nil {
+		authed.Get("/sites/:id/assets", assetHandler.ListBySite)
+		authed.Post("/sites/:id/assets", assetHandler.Upload)
+	}
 
 	authed.Get("/sites/:id/domains", domainHandler.ListBySite)
 	authed.Post("/sites/:id/domains", domainHandler.Add)
