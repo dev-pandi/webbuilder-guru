@@ -14,11 +14,24 @@ infra/
   docker-compose.yml
 ```
 
+## Konfigurasi Environment
+
+Tiap workflow punya file `.env.example` sendiri agar tidak bingung:
+
+| File                          | Dipakai saat...                                  |
+|-------------------------------|--------------------------------------------------|
+| `infra/.env.example`          | `docker compose up` (orchestration semua service) |
+| `apps/api/.env.example`       | `go run ./cmd/server` langsung di host           |
+| `apps/web/.env.example`       | `npm run dev` di `apps/web/` (Next.js dashboard) |
+| `apps/renderer/.env.example`  | `npm run dev` di `apps/renderer/`                |
+
+Pilih SATU workflow sesuai cara Anda menjalankan, copy `.env.example` → `.env` (atau `.env.local` untuk Next.js), lalu edit nilainya. Lihat header tiap file untuk dokumentasi field.
+
 ## Cepat (Docker Compose)
 
 ```bash
-cp .env.example .env
 cd infra
+cp .env.example .env             # edit secrets dulu
 docker compose up --build
 ```
 
@@ -44,7 +57,7 @@ API (butuh Go 1.22+ dan Postgres berjalan di `localhost:5432`):
 
 ```bash
 cd apps/api
-export DATABASE_URL='postgres://webbuilder:webbuilder@localhost:5432/webbuilder?sslmode=disable'
+cp .env.example .env            # edit DATABASE_URL, dll
 go run ./cmd/server
 ```
 
@@ -52,16 +65,18 @@ Web dashboard (butuh Node 20+):
 
 ```bash
 cd apps/web
+cp .env.example .env.local      # set NEXT_PUBLIC_API_BASE
 npm install
-NEXT_PUBLIC_API_BASE=http://localhost:8080 npm run dev
+npm run dev
 ```
 
 Renderer:
 
 ```bash
 cd apps/renderer
+cp .env.example .env.local      # set API_INTERNAL_URL
 npm install
-API_INTERNAL_URL=http://localhost:8080 npm run dev -- -p 3001
+npm run dev -- -p 3001
 ```
 
 ## Migrations & Seed

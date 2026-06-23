@@ -83,6 +83,25 @@ infra/caddy/     Caddyfile
 - **Unique violation**: cek `pgErrCode(err) == "23505"` → return sentinel `Err*Taken`.
 - **JSON null handling**: pointer field untuk optional input (`*string`, `*int`), `COALESCE($n, col)` di UPDATE.
 
+## Environment Files
+
+Empat file `.env.example` terpisah agar tiap workflow jelas isinya:
+
+| File                          | Workflow                                          |
+|-------------------------------|---------------------------------------------------|
+| `infra/.env.example`          | Docker Compose orchestration (`cd infra && docker compose up`) |
+| `apps/api/.env.example`       | Go API direct dev (`go run ./cmd/server`)         |
+| `apps/web/.env.example`       | Next.js dashboard dev (`npm run dev`)             |
+| `apps/renderer/.env.example`  | Next.js renderer dev (`npm run dev`)              |
+
+Aturan saat menambah env baru:
+- API baca dari OS env → daftarkan di [config/config.go](apps/api/internal/config/config.go) + dokumentasikan di `apps/api/.env.example` + jika perlu passthrough Docker, tambahkan di `infra/docker-compose.yml` (env `${VAR:-default}`) + di `infra/.env.example`.
+- Frontend env publik (browser-visible) **wajib** prefix `NEXT_PUBLIC_` dan masuk ke `apps/web/.env.example`.
+- Renderer server-to-server env (tanpa `NEXT_PUBLIC_`) masuk ke `apps/renderer/.env.example`.
+- Jangan duplikasi env di banyak file kalau tidak perlu — user bingung mana yang authoritative.
+
+Next.js auto-load `.env.local` (jangan commit). API perlu `.env` di dir tempat `go run` dijalankan + dotenv loader/`source`.
+
 ## Migrations
 
 - **Goose v3** (`github.com/pressly/goose/v3@v3.21.1`) untuk schema migrations. Library mode, embedded via `embed.FS`, auto-applied saat startup.
