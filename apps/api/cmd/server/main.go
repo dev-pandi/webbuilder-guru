@@ -12,12 +12,14 @@ import (
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/sites"
@@ -48,6 +50,8 @@ func main() {
 	domainRepo := domains.NewRepo(pool)
 	templateRepo := templates.NewRepo(pool)
 	assetRepo := assets.NewRepo(pool)
+	productRepo := products.NewRepo(pool)
+	blogRepo := blog.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
 
 	if err := templateRepo.Seed(ctx); err != nil {
@@ -102,8 +106,10 @@ func main() {
 		Export:       exports.NewHandler(&exports.Builder{Sites: siteRepo, Pages: pageRepo}),
 		Usage:        usage.NewHandler(usageRepo, siteRepo),
 		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost),
-		Public:       public.NewHandler(siteRepo, pageRepo, cfg.RendererDefaultHost),
+		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo, cfg.RendererDefaultHost),
 		Admin:        admin.NewHandler(adminRepo),
+		Products:     products.NewHandler(productRepo, siteRepo),
+		Blog:         blog.NewHandler(blogRepo, siteRepo),
 		AssetStorage: assetStorage,
 	}
 	if assetStorage != nil {

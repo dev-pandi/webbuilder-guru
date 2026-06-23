@@ -11,11 +11,13 @@ import (
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/templates"
@@ -36,6 +38,8 @@ type Deps struct {
 	Export    *exports.Handler
 	Assets    *assets.Handler // may be nil (storage init failed)
 	Usage     *usage.Handler
+	Products  *products.Handler
+	Blog      *blog.Handler
 
 	Caddy  *caddy.Handler
 	Public *public.Handler

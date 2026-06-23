@@ -117,8 +117,12 @@ type SiteRow struct {
 	PagesCount           int       `json:"pages_count"`
 	AssetsCount          int       `json:"assets_count"`
 	StorageBytes         int64     `json:"storage_bytes"`
+	ProductsCount        int       `json:"products_count"`
+	BlogPostsCount       int       `json:"blog_posts_count"`
 	QuotaMaxPages        int       `json:"quota_max_pages"`
 	QuotaMaxStorageBytes int64     `json:"quota_max_storage_bytes"`
+	QuotaMaxProducts     int       `json:"quota_max_products"`
+	QuotaMaxBlogPosts    int       `json:"quota_max_blog_posts"`
 	CreatedAt            time.Time `json:"created_at"`
 }
 
@@ -157,12 +161,17 @@ func (r *Repo) ListSitesPage(ctx context.Context, like, sort string, limit, offs
 		       COALESCE(p.cnt, 0)   AS pages_count,
 		       COALESCE(a.cnt, 0)   AS assets_count,
 		       COALESCE(a.bytes, 0) AS storage_bytes,
+		       COALESCE(pr.cnt, 0)  AS products_count,
+		       COALESCE(bp.cnt, 0)  AS blog_posts_count,
 		       s.quota_max_pages, s.quota_max_storage_bytes,
+		       s.quota_max_products, s.quota_max_blog_posts,
 		       s.created_at
 		FROM sites s
 		JOIN users u ON u.id = s.user_id
 		LEFT JOIN (SELECT site_id, COUNT(*) AS cnt FROM pages GROUP BY site_id) p ON p.site_id = s.id
 		LEFT JOIN (SELECT site_id, COUNT(*) AS cnt, COALESCE(SUM(size), 0) AS bytes FROM assets GROUP BY site_id) a ON a.site_id = s.id
+		LEFT JOIN (SELECT site_id, COUNT(*) AS cnt FROM products GROUP BY site_id) pr ON pr.site_id = s.id
+		LEFT JOIN (SELECT site_id, COUNT(*) AS cnt FROM blog_posts GROUP BY site_id) bp ON bp.site_id = s.id
 		WHERE LOWER(s.name) LIKE $1
 		   OR LOWER(s.slug) LIKE $1
 		   OR LOWER(u.email) LIKE $1
@@ -182,7 +191,9 @@ func (r *Repo) ListSitesPage(ctx context.Context, like, sort string, limit, offs
 			&s.ID, &s.Slug, &s.Name, &s.Status,
 			&s.OwnerID, &s.OwnerEmail,
 			&s.PagesCount, &s.AssetsCount, &s.StorageBytes,
+			&s.ProductsCount, &s.BlogPostsCount,
 			&s.QuotaMaxPages, &s.QuotaMaxStorageBytes,
+			&s.QuotaMaxProducts, &s.QuotaMaxBlogPosts,
 			&s.CreatedAt,
 		); err != nil {
 			return nil, 0, err
@@ -192,14 +203,16 @@ func (r *Repo) ListSitesPage(ctx context.Context, like, sort string, limit, offs
 	return out, total, rows.Err()
 }
 
-func (r *Repo) UpdateSiteQuota(ctx context.Context, id uuid.UUID, maxPages *int, maxStorageBytes *int64) error {
+func (r *Repo) UpdateSiteQuota(ctx context.Context, id uuid.UUID, maxPages *int, maxStorageBytes *int64, maxProducts, maxBlogPosts *int) error {
 	ct, err := r.pool.Exec(ctx, `
 		UPDATE sites SET
 		    quota_max_pages         = COALESCE($2, quota_max_pages),
 		    quota_max_storage_bytes = COALESCE($3, quota_max_storage_bytes),
+		    quota_max_products      = COALESCE($4, quota_max_products),
+		    quota_max_blog_posts    = COALESCE($5, quota_max_blog_posts),
 		    updated_at              = now()
 		WHERE id = $1
-	`, id, maxPages, maxStorageBytes)
+	`, id, maxPages, maxStorageBytes, maxProducts, maxBlogPosts)
 	if err != nil {
 		return err
 	}

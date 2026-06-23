@@ -35,6 +35,7 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/sites/:id/export", deps.Export.Export)
 	authed.Get("/sites/:id/usage", deps.Usage.Current)
 	authed.Get("/sites/:id/usage/history", deps.Usage.History)
+	authed.Post("/sites/:id/apply-template", deps.Templates.ApplyToSite)
 	authed.Post("/sites/from-template/:slug", deps.Templates.CreateSiteFromTemplate)
 
 	// Pages
@@ -58,4 +59,19 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/sites/:id/domains", deps.Domains.Add)
 	authed.Post("/domains/:id/verify", deps.Domains.Verify)
 	authed.Delete("/domains/:id", deps.Domains.Delete)
+
+	// Products
+	authed.Get("/sites/:id/products", deps.Products.ListBySite)
+	authed.Post("/sites/:id/products", deps.Products.Create)
+	authed.Get("/products/:id", deps.Products.Get)
+	authed.Patch("/products/:id", deps.Products.Update)
+	authed.Delete("/products/:id", deps.Products.Delete)
+
+	// Blog posts
+	authed.Get("/sites/:id/blog-posts", deps.Blog.ListBySite)
+	authed.Post("/sites/:id/blog-posts", deps.Blog.Create)
+	authed.Get("/blog-posts/:id", deps.Blog.Get)
+	authed.Patch("/blog-posts/:id", deps.Blog.Update)
+	authed.Post("/blog-posts/:id/publish", deps.Blog.Publish)
+	authed.Delete("/blog-posts/:id", deps.Blog.Delete)
 }

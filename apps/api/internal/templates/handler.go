@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/pages"
@@ -53,6 +54,46 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 type createFromTemplateReq struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+}
+
+type applyTemplateReq struct {
+	Slug string    `json:"slug"`
+	Mode ApplyMode `json:"mode"`
+}
+
+// POST /api/v1/sites/:id/apply-template
+// body: { slug, mode: "theme" | "append" | "replace" }
+func (h *Handler) ApplyToSite(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	siteID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid site id")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+		return httpx.NotFound(c, "site not found")
+	}
+
+	var req applyTemplateReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	if req.Slug == "" {
+		return httpx.BadRequest(c, "slug required")
+	}
+	switch req.Mode {
+	case ApplyModeTheme, ApplyModeAppend, ApplyModeReplace:
+	default:
+		return httpx.BadRequest(c, "mode must be one of: theme, append, replace")
+	}
+
+	res, err := h.repo.ApplyToSite(c.Context(), siteID, req.Slug, req.Mode)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "template not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "apply failed: "+err.Error())
+	}
+	return httpx.OK(c, res)
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`)

@@ -83,6 +83,8 @@ func (h *Handler) ListSites(c *fiber.Ctx) error {
 type updateQuotaReq struct {
 	QuotaMaxPages        *int   `json:"quota_max_pages"`
 	QuotaMaxStorageBytes *int64 `json:"quota_max_storage_bytes"`
+	QuotaMaxProducts     *int   `json:"quota_max_products"`
+	QuotaMaxBlogPosts    *int   `json:"quota_max_blog_posts"`
 }
 
 func (h *Handler) UpdateSiteQuota(c *fiber.Ctx) error {
@@ -94,7 +96,8 @@ func (h *Handler) UpdateSiteQuota(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return httpx.BadRequest(c, "invalid json")
 	}
-	if req.QuotaMaxPages == nil && req.QuotaMaxStorageBytes == nil {
+	if req.QuotaMaxPages == nil && req.QuotaMaxStorageBytes == nil &&
+		req.QuotaMaxProducts == nil && req.QuotaMaxBlogPosts == nil {
 		return httpx.BadRequest(c, "at least one quota field required")
 	}
 	if req.QuotaMaxPages != nil && *req.QuotaMaxPages < 1 {
@@ -103,7 +106,16 @@ func (h *Handler) UpdateSiteQuota(c *fiber.Ctx) error {
 	if req.QuotaMaxStorageBytes != nil && *req.QuotaMaxStorageBytes < 1024 {
 		return httpx.BadRequest(c, "quota_max_storage_bytes must be >= 1024")
 	}
-	if err := h.repo.UpdateSiteQuota(c.Context(), id, req.QuotaMaxPages, req.QuotaMaxStorageBytes); err != nil {
+	if req.QuotaMaxProducts != nil && *req.QuotaMaxProducts < 0 {
+		return httpx.BadRequest(c, "quota_max_products must be >= 0")
+	}
+	if req.QuotaMaxBlogPosts != nil && *req.QuotaMaxBlogPosts < 0 {
+		return httpx.BadRequest(c, "quota_max_blog_posts must be >= 0")
+	}
+	if err := h.repo.UpdateSiteQuota(c.Context(), id,
+		req.QuotaMaxPages, req.QuotaMaxStorageBytes,
+		req.QuotaMaxProducts, req.QuotaMaxBlogPosts,
+	); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return httpx.NotFound(c, "site not found")
 		}

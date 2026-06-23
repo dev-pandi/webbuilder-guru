@@ -63,6 +63,138 @@ func (r *Repo) GetBySlug(ctx context.Context, slug string) (*Template, error) {
 	return &t, err
 }
 
+// ApplyMode controls what ApplyToSite changes.
+type ApplyMode string
+
+const (
+	// ApplyModeTheme only swaps theme tokens (colors/fonts/radius). Pages untouched.
+	ApplyModeTheme ApplyMode = "theme"
+	// ApplyModeAppend swaps theme AND inserts template pages whose slugs aren't taken.
+	ApplyModeAppend ApplyMode = "append"
+	// ApplyModeReplace swaps theme AND wipes existing pages, then inserts template pages.
+	ApplyModeReplace ApplyMode = "replace"
+)
+
+// ApplyResult reports what ApplyToSite did, for UI feedback.
+type ApplyResult struct {
+	Mode          ApplyMode `json:"mode"`
+	Template      string    `json:"template_slug"`
+	PagesInserted int       `json:"pages_inserted"`
+	PagesSkipped  int       `json:"pages_skipped"`
+	PagesRemoved  int       `json:"pages_removed"`
+}
+
+// ApplyToSite swaps the theme of an existing site to another template's, and
+// optionally seeds template pages. Runs in a transaction — partial failures
+// roll back. Caller must verify ownership before calling.
+func (r *Repo) ApplyToSite(ctx context.Context, siteID uuid.UUID, slug string, mode ApplyMode) (*ApplyResult, error) {
+	tpl, err := r.GetBySlug(ctx, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Always swap theme + link site to the new template id.
+	if _, err := tx.Exec(ctx,
+		`UPDATE sites SET theme_json = $1, template_id = $2, updated_at = now() WHERE id = $3`,
+		tpl.Theme, tpl.ID, siteID,
+	); err != nil {
+		return nil, err
+	}
+
+	res := &ApplyResult{Mode: mode, Template: tpl.Slug}
+
+	switch mode {
+	case ApplyModeTheme:
+		// nothing else
+	case ApplyModeAppend, ApplyModeReplace:
+		// parse template pages JSON
+		var tplPages []struct {
+			Slug   string          `json:"slug"`
+			Title  string          `json:"title"`
+			IsHome bool            `json:"is_home"`
+			Tree   json.RawMessage `json:"tree"`
+			SEO    json.RawMessage `json:"seo"`
+		}
+		if len(tpl.Pages) > 0 {
+			_ = json.Unmarshal(tpl.Pages, &tplPages)
+		}
+
+		if mode == ApplyModeReplace {
+			ct, err := tx.Exec(ctx, `DELETE FROM pages WHERE site_id = $1`, siteID)
+			if err != nil {
+				return nil, err
+			}
+			res.PagesRemoved = int(ct.RowsAffected())
+		}
+
+		// Existing slug set — for "append" we skip collisions.
+		existing := map[string]bool{}
+		hasHome := false
+		if mode == ApplyModeAppend {
+			rows, err := tx.Query(ctx, `SELECT slug, is_home FROM pages WHERE site_id = $1`, siteID)
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var s string
+				var h bool
+				if err := rows.Scan(&s, &h); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				existing[s] = true
+				if h {
+					hasHome = true
+				}
+			}
+			rows.Close()
+		}
+
+		for _, p := range tplPages {
+			if p.Slug == "" {
+				continue
+			}
+			if mode == ApplyModeAppend && existing[p.Slug] {
+				res.PagesSkipped++
+				continue
+			}
+			tree := p.Tree
+			if len(tree) == 0 {
+				tree = json.RawMessage(`{}`)
+			}
+			seo := p.SEO
+			if len(seo) == 0 {
+				seo = json.RawMessage(`{}`)
+			}
+			isHome := p.IsHome
+			// Don't promote two homes when appending into a site that already has one.
+			if mode == ApplyModeAppend && hasHome {
+				isHome = false
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO pages (site_id, slug, title, tree_json, seo_json, is_home)
+				VALUES ($1, $2, $3, $4, $5, $6)
+			`, siteID, p.Slug, p.Title, tree, seo, isHome); err != nil {
+				return nil, err
+			}
+			res.PagesInserted++
+		}
+	default:
+		return nil, errors.New("invalid mode")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 // Seed populates the 15 built-in templates (5 categories × 3 variants each).
 // Idempotent: re-running upserts by slug.
 func (r *Repo) Seed(ctx context.Context) error {

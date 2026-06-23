@@ -23,13 +23,16 @@ type Site struct {
 	Status               string          `json:"status"`
 	QuotaMaxPages        int             `json:"quota_max_pages"`
 	QuotaMaxStorageBytes int64           `json:"quota_max_storage_bytes"`
+	QuotaMaxProducts     int             `json:"quota_max_products"`
+	QuotaMaxBlogPosts    int             `json:"quota_max_blog_posts"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
-// siteCols is the SELECT column list, kept in sync with scanSite.
+// siteCols is the SELECT column list, kept in sync with scanArgs.
 const siteCols = `id, user_id, slug, name, template_id, theme_json, status,
-    quota_max_pages, quota_max_storage_bytes, created_at, updated_at`
+    quota_max_pages, quota_max_storage_bytes, quota_max_products, quota_max_blog_posts,
+    created_at, updated_at`
 
 type Repo struct{ pool *pgxpool.Pool }
 
@@ -75,7 +78,8 @@ func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, 
 func scanArgs(s *Site) []any {
 	return []any{
 		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status,
-		&s.QuotaMaxPages, &s.QuotaMaxStorageBytes, &s.CreatedAt, &s.UpdatedAt,
+		&s.QuotaMaxPages, &s.QuotaMaxStorageBytes, &s.QuotaMaxProducts, &s.QuotaMaxBlogPosts,
+		&s.CreatedAt, &s.UpdatedAt,
 	}
 }
 
@@ -172,7 +176,8 @@ func (r *Repo) GetBySlug(ctx context.Context, slug string) (*Site, error) {
 func sitePrefixedCols(alias string) string {
 	cols := []string{
 		"id", "user_id", "slug", "name", "template_id", "theme_json", "status",
-		"quota_max_pages", "quota_max_storage_bytes", "created_at", "updated_at",
+		"quota_max_pages", "quota_max_storage_bytes", "quota_max_products", "quota_max_blog_posts",
+		"created_at", "updated_at",
 	}
 	out := ""
 	for i, c := range cols {

@@ -30,4 +30,8 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	pub.Get("/site-by-host", deps.Public.SiteByHost)
 	pub.Get("/sites/:id/pages", deps.Public.ListPages)
 	pub.Get("/sites/:id/pages/:slug", deps.Public.PageBySlug)
+	pub.Get("/sites/:id/products", deps.Public.ListProducts)
+	pub.Get("/sites/:id/products/:slug", deps.Public.ProductBySlug)
+	pub.Get("/sites/:id/blog-posts", deps.Public.ListBlogPosts)
+	pub.Get("/sites/:id/blog-posts/:slug", deps.Public.BlogPostBySlug)
 }

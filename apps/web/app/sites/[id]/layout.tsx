@@ -34,6 +34,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   const tabs = [
     { href: `/sites/${params.id}/editor`, label: "Editor" },
     { href: `/sites/${params.id}/pages`, label: "Halaman" },
+    { href: `/sites/${params.id}/products`, label: "Produk" },
+    { href: `/sites/${params.id}/blog`, label: "Blog" },
     { href: `/sites/${params.id}/theme`, label: "Tema" },
     { href: `/sites/${params.id}/assets`, label: "Aset" },
     { href: `/sites/${params.id}/domains`, label: "Domain" },
