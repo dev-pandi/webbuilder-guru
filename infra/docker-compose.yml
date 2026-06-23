@@ -54,17 +54,26 @@ services:
       PUBLIC_API_HOST: ${PUBLIC_API_HOST:-api.localhost}
       RENDERER_DEFAULT_HOST: ${RENDERER_DEFAULT_HOST:-localhost}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://app.localhost}
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      MINIO_USE_SSL: "false"
-      MINIO_BUCKET: ${MINIO_BUCKET:-assets}
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000/assets}
+      # --- Storage --- pick one driver: local | s3
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      # s3 (works for MinIO + AWS S3)
+      STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT:-minio:9000}
+      STORAGE_S3_ACCESS_KEY: ${STORAGE_S3_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}
+      STORAGE_S3_SECRET_KEY: ${STORAGE_S3_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION:-us-east-1}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-assets}
+      STORAGE_S3_USE_SSL: ${STORAGE_S3_USE_SSL:-false}
+      STORAGE_S3_PUBLIC_URL: ${STORAGE_S3_PUBLIC_URL:-http://localhost:9000/assets}
+      # local
+      STORAGE_LOCAL_DIR: /data/uploads
+      STORAGE_LOCAL_PUBLIC_URL: ${STORAGE_LOCAL_PUBLIC_URL:-http://api.localhost/uploads}
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_started
+    volumes:
+      - uploads:/data/uploads
     ports:
       - "8080:8080"
 
@@ -115,5 +124,6 @@ volumes:
   pgdata:
   redisdata:
   miniodata:
+  uploads:
   caddydata:
   caddyconfig:

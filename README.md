@@ -121,8 +121,52 @@ Sudah berjalan:
 - ✅ 5 template (sekolah, UMKM, portofolio, guru, blog) — 3 halaman per template.
 - ✅ Editor block-by-block: tambah/hapus/urutkan block, form properti per-block, preview responsif desktop/tablet/mobile, klik block di preview untuk edit.
 - ✅ Theme editor (warna/font/radius) dengan live preview, propagate ke renderer via CSS variables.
-- ✅ Asset upload ke MinIO (PNG/JPG/WebP/GIF/SVG, 10 MB) — library + copy URL.
+- ✅ Asset upload pluggable storage (PNG/JPG/WebP/GIF/SVG, 10 MB) — library + copy URL.
 - ✅ Export ke HTML/CSS/JS — zip dengan `index.html`, sub-path per halaman, `assets/css/styles.css`, `robots.txt`, `sitemap.xml`. Streamed langsung dari API, tidak butuh worker.
+
+### Storage backend (pluggable)
+
+Pilih driver lewat `STORAGE_DRIVER`:
+
+| Driver | Cocok untuk                            | Catatan                                                 |
+|--------|----------------------------------------|---------------------------------------------------------|
+| `local`| Dev tanpa Docker / single-server prod  | File ditulis ke `STORAGE_LOCAL_DIR`, disajikan API di `/uploads/*`. |
+| `s3`   | MinIO (self-host) **dan** AWS S3       | Sama-sama pakai protokol S3. Bedanya hanya endpoint + region + SSL. |
+
+Contoh env untuk AWS S3 di Singapore:
+
+```env
+STORAGE_DRIVER=s3
+STORAGE_S3_ENDPOINT=s3.ap-southeast-1.amazonaws.com
+STORAGE_S3_ACCESS_KEY=AKIA...
+STORAGE_S3_SECRET_KEY=...
+STORAGE_S3_REGION=ap-southeast-1
+STORAGE_S3_BUCKET=my-webbuilder-assets
+STORAGE_S3_USE_SSL=true
+STORAGE_S3_PUBLIC_URL=https://my-webbuilder-assets.s3.ap-southeast-1.amazonaws.com
+```
+
+Contoh env untuk MinIO via Docker Compose (default):
+
+```env
+STORAGE_DRIVER=s3
+STORAGE_S3_ENDPOINT=minio:9000
+STORAGE_S3_ACCESS_KEY=minioadmin
+STORAGE_S3_SECRET_KEY=minioadmin
+STORAGE_S3_USE_SSL=false
+STORAGE_S3_BUCKET=assets
+STORAGE_S3_PUBLIC_URL=http://localhost:9000/assets
+```
+
+Contoh env untuk local disk:
+
+```env
+STORAGE_DRIVER=local
+STORAGE_LOCAL_DIR=/data/uploads
+STORAGE_LOCAL_PUBLIC_URL=http://api.localhost/uploads
+```
+
+> Ganti driver = restart API saja. Data lama tetap di tempat lama (tidak otomatis dimigrasi).
 
 Endpoint export tambahan:
 

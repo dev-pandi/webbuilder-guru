@@ -19,12 +19,20 @@ type Config struct {
 	RendererDefaultHost string
 	CORSOrigins        []string
 
-	MinioEndpoint  string
-	MinioAccessKey string
-	MinioSecretKey string
-	MinioUseSSL    bool
-	MinioBucket    string
-	MinioPublicURL string
+	StorageDriver string
+
+	// S3 / MinIO
+	StorageS3Endpoint  string
+	StorageS3AccessKey string
+	StorageS3SecretKey string
+	StorageS3Region    string
+	StorageS3Bucket    string
+	StorageS3UseSSL    bool
+	StorageS3PublicURL string
+
+	// Local
+	StorageLocalDir       string
+	StorageLocalPublicURL string
 }
 
 func Load() Config {
@@ -41,12 +49,18 @@ func Load() Config {
 		RendererDefaultHost: env("RENDERER_DEFAULT_HOST", "localhost"),
 		CORSOrigins:         splitCSV(env("CORS_ORIGINS", "http://localhost:3000,http://app.localhost")),
 
-		MinioEndpoint:  env("MINIO_ENDPOINT", "minio:9000"),
-		MinioAccessKey: env("MINIO_ACCESS_KEY", "minioadmin"),
-		MinioSecretKey: env("MINIO_SECRET_KEY", "minioadmin"),
-		MinioUseSSL:    env("MINIO_USE_SSL", "false") == "true",
-		MinioBucket:    env("MINIO_BUCKET", "assets"),
-		MinioPublicURL: env("MINIO_PUBLIC_URL", "http://localhost:9000/assets"),
+		StorageDriver: env("STORAGE_DRIVER", "local"),
+
+		StorageS3Endpoint:  env("STORAGE_S3_ENDPOINT", "minio:9000"),
+		StorageS3AccessKey: env("STORAGE_S3_ACCESS_KEY", "minioadmin"),
+		StorageS3SecretKey: env("STORAGE_S3_SECRET_KEY", "minioadmin"),
+		StorageS3Region:    env("STORAGE_S3_REGION", "us-east-1"),
+		StorageS3Bucket:    env("STORAGE_S3_BUCKET", "assets"),
+		StorageS3UseSSL:    env("STORAGE_S3_USE_SSL", "false") == "true",
+		StorageS3PublicURL: env("STORAGE_S3_PUBLIC_URL", "http://localhost:9000/assets"),
+
+		StorageLocalDir:       env("STORAGE_LOCAL_DIR", "./uploads"),
+		StorageLocalPublicURL: env("STORAGE_LOCAL_PUBLIC_URL", "http://api.localhost/uploads"),
 	}
 }
 

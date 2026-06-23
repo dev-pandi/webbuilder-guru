@@ -68,19 +68,24 @@ func main() {
 	exportHandler := exports.NewHandler(exportBuilder)
 
 	assetRepo := assets.NewRepo(pool)
-	assetStorage, err := assets.NewStorage(ctx, assets.StorageConfig{
-		Endpoint:  cfg.MinioEndpoint,
-		AccessKey: cfg.MinioAccessKey,
-		SecretKey: cfg.MinioSecretKey,
-		UseSSL:    cfg.MinioUseSSL,
-		Bucket:    cfg.MinioBucket,
-		PublicURL: cfg.MinioPublicURL,
+	assetStorage, err := assets.NewStorage(ctx, assets.Config{
+		Driver:         assets.Driver(cfg.StorageDriver),
+		S3Endpoint:     cfg.StorageS3Endpoint,
+		S3AccessKey:    cfg.StorageS3AccessKey,
+		S3SecretKey:    cfg.StorageS3SecretKey,
+		S3Region:       cfg.StorageS3Region,
+		S3Bucket:       cfg.StorageS3Bucket,
+		S3UseSSL:       cfg.StorageS3UseSSL,
+		S3PublicURL:    cfg.StorageS3PublicURL,
+		LocalDir:       cfg.StorageLocalDir,
+		LocalPublicURL: cfg.StorageLocalPublicURL,
 	})
 	if err != nil {
 		log.Printf("warning: asset storage init failed (uploads disabled): %v", err)
 	}
 	var assetHandler *assets.Handler
 	if assetStorage != nil {
+		log.Printf("[storage] driver=%s", assetStorage.Driver())
 		assetHandler = assets.NewHandler(assetRepo, assetStorage, siteRepo)
 	}
 
@@ -116,6 +121,12 @@ func main() {
 
 	app.Get("/healthz", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"ok": true}) })
 	app.Get("/", func(c *fiber.Ctx) error { return c.JSON(fiber.Map{"service": "web-builder-api"}) })
+
+	// If storage is local, serve uploaded files as static.
+	if ls, ok := assetStorage.(assets.LocalServable); ok {
+		app.Static(ls.LocalRoute(), ls.LocalDir())
+		log.Printf("[storage] serving %s from %s", ls.LocalRoute(), ls.LocalDir())
+	}
 
 	// Caddy internal hook (no JWT).
 	app.Get("/internal/caddy/ask", caddyHandler.Ask)

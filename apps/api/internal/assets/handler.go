@@ -25,11 +25,11 @@ var allowedMime = map[string]string{
 
 type Handler struct {
 	repo    *Repo
-	storage *Storage
+	storage Storage
 	sites   *sites.Repo
 }
 
-func NewHandler(r *Repo, s *Storage, sr *sites.Repo) *Handler {
+func NewHandler(r *Repo, s Storage, sr *sites.Repo) *Handler {
 	return &Handler{repo: r, storage: s, sites: sr}
 }
 
