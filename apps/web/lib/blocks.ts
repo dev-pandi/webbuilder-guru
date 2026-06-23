@@ -190,6 +190,24 @@ export const blockSchemas: BlockSchema[] = [
     defaults: { copyright: "© 2025" },
     fields: [{ name: "copyright", label: "Copyright", type: "string" }],
   },
+  {
+    type: "ProductGridDynamic",
+    label: "Grid Produk (dari DB)",
+    defaults: { title: "Produk Terbaru", limit: 12 },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "limit", label: "Jumlah maks", type: "number" },
+    ],
+  },
+  {
+    type: "BlogListDynamic",
+    label: "List Blog (dari DB)",
+    defaults: { title: "Artikel Terbaru", limit: 10 },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "limit", label: "Jumlah maks", type: "number" },
+    ],
+  },
 ];
 
 export function schemaFor(type: string): BlockSchema | undefined {

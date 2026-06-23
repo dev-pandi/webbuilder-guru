@@ -1,11 +1,26 @@
-import type { Block } from "@/lib/api";
+import { formatPrice, listBlogPosts, listProducts, type Block } from "@/lib/api";
 
-export function RenderBlocks({ blocks }: { blocks: Block[] }) {
+export async function RenderBlocks({
+  blocks,
+  siteId,
+}: {
+  blocks: Block[];
+  siteId: string;
+}) {
+  // Render each block; dynamic blocks resolve async server components.
   return (
     <>
-      {blocks.map((b, i) => (
-        <BlockView key={i} block={b} />
-      ))}
+      {await Promise.all(
+        blocks.map(async (b, i) => {
+          if (b.type === "ProductGridDynamic") {
+            return <ProductGridDynamic key={i} block={b} siteId={siteId} />;
+          }
+          if (b.type === "BlogListDynamic") {
+            return <BlogListDynamicAsync key={i} block={b} siteId={siteId} />;
+          }
+          return <BlockView key={i} block={b} />;
+        }),
+      )}
     </>
   );
 }
@@ -83,7 +98,12 @@ function BlockView({ block }: { block: Block }) {
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {(p.items as Array<{ name: string; price: string; image?: string }> | undefined)?.map((it, i) => (
               <div key={i} className="overflow-hidden rounded-xl border">
-                <div className="aspect-square bg-slate-100" />
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={it.image} alt={it.name} className="aspect-square w-full object-cover" />
+                ) : (
+                  <div className="aspect-square bg-slate-100" />
+                )}
                 <div className="p-4">
                   <div className="font-medium">{it.name}</div>
                   <div className="mt-1 text-sm opacity-80">{it.price}</div>
@@ -139,4 +159,89 @@ function BlockView({ block }: { block: Block }) {
     default:
       return null;
   }
+}
+
+// --- Dynamic blocks: fetch live data from API ---
+
+async function ProductGridDynamic({ block, siteId }: { block: Block; siteId: string }) {
+  const p = block.props ?? {};
+  const limit = Number(p.limit ?? 12);
+  const products = await listProducts(siteId, limit);
+  return (
+    <section className="mx-auto max-w-5xl px-6 py-10">
+      {p.title ? <h3 className="mb-6 text-2xl font-semibold">{String(p.title)}</h3> : null}
+      {products.length === 0 ? (
+        <p className="opacity-70">Belum ada produk.</p>
+      ) : (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {products.map((pr) => (
+            <a
+              key={pr.id}
+              href={`/produk/${pr.slug}`}
+              className="overflow-hidden rounded-xl border transition hover:shadow-md"
+            >
+              {pr.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pr.image_url}
+                  alt={pr.name}
+                  className="aspect-square w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="aspect-square bg-slate-100" />
+              )}
+              <div className="p-4">
+                <div className="font-medium">{pr.name}</div>
+                <div className="mt-1 text-sm opacity-80">{formatPrice(pr.price, pr.currency)}</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+async function BlogListDynamicAsync({ block, siteId }: { block: Block; siteId: string }) {
+  const p = block.props ?? {};
+  const limit = Number(p.limit ?? 10);
+  const posts = await listBlogPosts(siteId, limit);
+  return (
+    <section className="mx-auto max-w-3xl px-6 py-10">
+      {p.title ? <h3 className="mb-6 text-2xl font-semibold">{String(p.title)}</h3> : null}
+      {posts.length === 0 ? (
+        <p className="opacity-70">Belum ada artikel.</p>
+      ) : (
+        posts.map((post) => (
+          <a
+            key={post.id}
+            href={`/blog/${post.slug}`}
+            className="mb-6 block border-b pb-6 last:border-0"
+          >
+            {post.cover_image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.cover_image_url}
+                alt={post.title}
+                className="mb-3 aspect-[3/1] w-full rounded-lg object-cover"
+                loading="lazy"
+              />
+            ) : null}
+            <h3 className="text-xl font-semibold">{post.title}</h3>
+            <p className="mt-1 opacity-80">{post.excerpt}</p>
+            {post.published_at && (
+              <p className="mt-1 text-xs opacity-60">
+                {new Date(post.published_at).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </p>
+            )}
+          </a>
+        ))
+      )}
+    </section>
+  );
 }

@@ -103,7 +103,12 @@ func main() {
 		Pages:        pages.NewHandler(pageRepo, siteRepo),
 		Domains:      domains.NewHandler(domainRepo, siteRepo),
 		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo),
-		Export:       exports.NewHandler(&exports.Builder{Sites: siteRepo, Pages: pageRepo}),
+		Export: exports.NewHandler(&exports.Builder{
+			Sites:    siteRepo,
+			Pages:    pageRepo,
+			Products: productRepo,
+			Blog:     blogRepo,
+		}),
 		Usage:        usage.NewHandler(usageRepo, siteRepo),
 		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost),
 		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo, cfg.RendererDefaultHost),

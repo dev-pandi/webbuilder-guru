@@ -104,11 +104,58 @@ img { max-width: 100%%; height: auto; display: block; }
 .wb-feature-title { font-weight: 600; }
 .wb-feature-desc { margin-top: 0.25rem; font-size: 0.95rem; opacity: 0.8; }
 
-.wb-product { border: 1px solid #e5e7eb; border-radius: var(--radius); overflow: hidden; }
+.wb-product { display: block; color: inherit; border: 1px solid #e5e7eb; border-radius: var(--radius); overflow: hidden; transition: box-shadow 0.15s; }
+.wb-product:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.wb-product img { aspect-ratio: 1 / 1; width: 100%%; object-fit: cover; display: block; }
 .wb-product-img-placeholder { aspect-ratio: 1 / 1; background: #f1f5f9; }
 .wb-product-body { padding: 1rem; }
 .wb-product-name { font-weight: 500; }
 .wb-product-price { margin-top: 0.25rem; font-size: 0.95rem; opacity: 0.8; }
+
+.wb-empty { text-align: center; padding: 2rem; opacity: 0.6; }
+
+/* Detail pages (product + blog) */
+.wb-breadcrumb { margin-bottom: 1.5rem; font-size: 0.875rem; opacity: 0.7; }
+.wb-breadcrumb a { color: inherit; text-decoration: none; }
+.wb-breadcrumb a:hover { text-decoration: underline; }
+
+.wb-detail { max-width: 64rem; margin: 0 auto; padding: 3rem 1.5rem; }
+.wb-detail-grid { display: grid; gap: 2rem; }
+@media (min-width: 768px) { .wb-detail-grid { grid-template-columns: 1fr 1fr; } }
+.wb-detail-img, .wb-detail-img-placeholder { aspect-ratio: 1 / 1; border: 1px solid #e5e7eb; border-radius: var(--radius); width: 100%%; object-fit: cover; }
+.wb-detail-img-placeholder { background: #f1f5f9; }
+.wb-detail-gallery { margin-top: 0.75rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+.wb-detail-gallery img { aspect-ratio: 1 / 1; border: 1px solid #e5e7eb; border-radius: 0.375rem; object-fit: cover; width: 100%%; }
+.wb-detail-category { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+.wb-detail-title { font-size: 1.875rem; font-weight: 700; margin-top: 0.25rem; }
+.wb-detail-price { font-size: 1.875rem; font-weight: 600; color: var(--color-primary); margin-top: 1rem; }
+.wb-detail-stock { font-size: 0.875rem; opacity: 0.7; margin-top: 0.5rem; }
+.wb-detail-desc { margin-top: 1.5rem; opacity: 0.9; line-height: 1.7; }
+
+.wb-article { max-width: 48rem; margin: 0 auto; padding: 3rem 1.5rem; }
+.wb-article-cover { aspect-ratio: 2 / 1; width: 100%%; object-fit: cover; border-radius: var(--radius); margin-bottom: 1.5rem; }
+.wb-article-title { font-size: 2.25rem; font-weight: 700; line-height: 1.2; }
+.wb-article-meta { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.75rem; font-size: 0.875rem; opacity: 0.7; }
+.wb-article-tags { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 1rem; }
+.wb-tag { border: 1px solid #e5e7eb; border-radius: 9999px; padding: 0.1rem 0.625rem; font-size: 0.75rem; opacity: 0.85; }
+
+/* Markdown prose */
+.wb-prose { margin-top: 2rem; line-height: 1.75; }
+.wb-prose h1, .wb-prose h2, .wb-prose h3, .wb-prose h4 { font-family: var(--font-heading); font-weight: 700; line-height: 1.25; margin: 1.5em 0 0.5em; }
+.wb-prose h1 { font-size: 2rem; }
+.wb-prose h2 { font-size: 1.5rem; }
+.wb-prose h3 { font-size: 1.25rem; }
+.wb-prose p { margin: 1em 0; }
+.wb-prose a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.wb-prose ul, .wb-prose ol { margin: 1em 0; padding-left: 1.5em; }
+.wb-prose ul { list-style: disc; } .wb-prose ol { list-style: decimal; }
+.wb-prose li { margin: 0.25em 0; }
+.wb-prose blockquote { border-left: 4px solid var(--color-primary); padding: 0.25em 1em; margin: 1em 0; opacity: 0.9; font-style: italic; }
+.wb-prose code { background: rgba(0,0,0,0.06); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
+.wb-prose pre { background: rgba(0,0,0,0.85); color: #fff; padding: 1em; border-radius: 0.5em; overflow-x: auto; margin: 1em 0; }
+.wb-prose pre code { background: none; padding: 0; color: inherit; }
+.wb-prose img { max-width: 100%%; height: auto; border-radius: 0.5em; margin: 1em 0; }
+.wb-prose hr { border: none; border-top: 1px solid currentColor; opacity: 0.2; margin: 2em 0; }
 
 .wb-project { display: block; border: 1px solid #e5e7eb; border-radius: var(--radius); padding: 1.25rem; transition: box-shadow 0.15s; }
 .wb-project:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }

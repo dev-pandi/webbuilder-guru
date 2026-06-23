@@ -47,3 +47,60 @@ export async function listPages(siteId: string): Promise<Page[]> {
   const r = await fetchJson<Page[]>(`/public/sites/${siteId}/pages`);
   return r.ok ? r.data : [];
 }
+
+// --- Products + Blog (public read) ---
+
+export type Product = {
+  id: string;
+  site_id: string;
+  slug: string;
+  name: string;
+  description: string;
+  price: number;
+  currency: string;
+  stock: number | null;
+  image_url: string;
+  gallery: string[] | null;
+  category: string;
+  status: string;
+};
+
+export type BlogPost = {
+  id: string;
+  site_id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  content_md: string;
+  cover_image_url: string;
+  author_name: string;
+  tags: string[] | null;
+  status: string;
+  published_at: string | null;
+};
+
+export async function listProducts(siteId: string, limit = 20): Promise<Product[]> {
+  const r = await fetchJson<Product[]>(`/public/sites/${siteId}/products?limit=${limit}`);
+  return r.ok ? r.data : [];
+}
+
+export async function getProduct(siteId: string, slug: string): Promise<Product | null> {
+  const r = await fetchJson<Product>(`/public/sites/${siteId}/products/${encodeURIComponent(slug)}`);
+  return r.ok ? r.data : null;
+}
+
+export async function listBlogPosts(siteId: string, limit = 20): Promise<BlogPost[]> {
+  const r = await fetchJson<BlogPost[]>(`/public/sites/${siteId}/blog-posts?limit=${limit}`);
+  return r.ok ? r.data : [];
+}
+
+export async function getBlogPost(siteId: string, slug: string): Promise<BlogPost | null> {
+  const r = await fetchJson<BlogPost>(`/public/sites/${siteId}/blog-posts/${encodeURIComponent(slug)}`);
+  return r.ok ? r.data : null;
+}
+
+// formatPrice — IDR aware, smallest-unit input (15000 → "Rp 15.000")
+export function formatPrice(price: number, currency: string): string {
+  if (currency === "IDR") return `Rp ${price.toLocaleString("id-ID")}`;
+  return `${currency} ${price.toLocaleString("id-ID")}`;
+}

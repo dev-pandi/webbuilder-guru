@@ -563,6 +563,24 @@ function BlockView({ block }: { block: BlockData }) {
           {String(p.copyright ?? "")}
         </div>
       );
+    case "ProductGridDynamic":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-3 text-lg font-semibold">{String(p.title)}</h3> : null}
+          <div className="rounded-md border border-dashed border-brand-200 bg-brand-50 p-4 text-center text-sm text-brand-700">
+            🛍 Akan menampilkan {String(p.limit ?? 12)} produk teraktif dari tab <strong>Produk</strong> saat dipublikasikan.
+          </div>
+        </div>
+      );
+    case "BlogListDynamic":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-3 text-lg font-semibold">{String(p.title)}</h3> : null}
+          <div className="rounded-md border border-dashed border-brand-200 bg-brand-50 p-4 text-center text-sm text-brand-700">
+            📝 Akan menampilkan {String(p.limit ?? 10)} artikel published terbaru dari tab <strong>Blog</strong> saat dipublikasikan.
+          </div>
+        </div>
+      );
     default:
       return (
         <div className="px-6 py-2 text-xs text-muted-foreground">[block: {block.type}]</div>

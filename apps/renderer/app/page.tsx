@@ -18,7 +18,7 @@ export default async function HomeRender() {
     <>
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
-      <RenderBlocks blocks={blocks} />
+      <RenderBlocks blocks={blocks} siteId={site.id} />
     </>
   );
 }
