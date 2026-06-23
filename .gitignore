@@ -1,0 +1,24 @@
+node_modules/
+.next/
+dist/
+build/
+out/
+
+# env
+.env
+.env.local
+*.local
+
+# Go
+apps/api/bin/
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Caddy
+infra/caddy/data/
+infra/caddy/config/
