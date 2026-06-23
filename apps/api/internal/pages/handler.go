@@ -143,7 +143,8 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 		}
 		req.Slug = &s
 	}
-	p, err := h.pages.Update(c.Context(), id, req.Title, req.Tree, req.SEO, req.IsHome, req.Slug)
+	uidCopy := uid
+	p, err := h.pages.Update(c.Context(), id, req.Title, req.Tree, req.SEO, req.IsHome, req.Slug, &uidCopy)
 	if errors.Is(err, ErrSlugTaken) {
 		return httpx.Conflict(c, "slug already used")
 	}
@@ -153,6 +154,72 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "update failed")
 	}
+	return httpx.OK(c, p)
+}
+
+// GET /api/v1/pages/:id/versions
+func (h *Handler) ListVersions(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	out, err := h.pages.ListVersions(c.Context(), id, limit)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, out)
+}
+
+// POST /api/v1/pages/:id/restore/:versionId
+func (h *Handler) RestoreVersion(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	pageID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	versionID, err := uuid.Parse(c.Params("versionId"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid version id")
+	}
+	existing, err := h.pages.Get(c.Context(), pageID)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	// guard: version must belong to this page
+	v, err := h.pages.GetVersion(c.Context(), versionID)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "version not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if v.PageID != pageID {
+		return httpx.NotFound(c, "version not found")
+	}
+	uidCopy := uid
+	p, err := h.pages.Restore(c.Context(), versionID, &uidCopy)
+	if err != nil {
+		return httpx.Internal(c, "restore failed: "+err.Error())
+	}
+	_ = h.pages.PruneOldVersions(c.Context(), pageID, 50)
 	return httpx.OK(c, p)
 }
 

@@ -43,6 +43,8 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Get("/pages/:id", deps.Pages.Get)
 	authed.Patch("/pages/:id", deps.Pages.Update)
 	authed.Post("/pages/:id/duplicate", deps.Pages.Duplicate)
+	authed.Get("/pages/:id/versions", deps.Pages.ListVersions)
+	authed.Post("/pages/:id/restore/:versionId", deps.Pages.RestoreVersion)
 	authed.Delete("/pages/:id", deps.Pages.Delete)
 
 	// Assets (only if storage initialised)

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Rocket } from "lucide-react";
+import { toast } from "sonner";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,8 +46,9 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     try {
       const updated = await api<Site>(`/api/v1/sites/${site.id}/publish`, { method: "POST" });
       setSite(updated);
+      toast.success("Situs berhasil dipublikasikan");
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 

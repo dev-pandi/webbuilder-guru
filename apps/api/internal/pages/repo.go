@@ -12,6 +12,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Version is one historical snapshot of a page.
+type Version struct {
+	ID        uuid.UUID       `json:"id"`
+	PageID    uuid.UUID       `json:"page_id"`
+	Version   int             `json:"version"`
+	Title     string          `json:"title"`
+	Tree      json.RawMessage `json:"tree"`
+	SEO       json.RawMessage `json:"seo"`
+	CreatedBy *uuid.UUID      `json:"created_by,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
 type Page struct {
 	ID        uuid.UUID       `json:"id"`
 	SiteID    uuid.UUID       `json:"site_id"`
@@ -132,12 +144,35 @@ func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, slug, title string,
 	return &p, nil
 }
 
-func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, seo json.RawMessage, isHome *bool, slug *string) (*Page, error) {
+// Update applies optional patches to a page. When `tree` or `title` changes,
+// snapshots the previous state into page_versions so the user can restore it.
+func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, seo json.RawMessage, isHome *bool, slug *string, by *uuid.UUID) (*Page, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+
+	// Snapshot the BEFORE state — only for content-bearing changes (tree/title/seo).
+	if tree != nil || title != nil || seo != nil {
+		var prev Page
+		err := tx.QueryRow(ctx, `
+			SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+			FROM pages WHERE id = $1
+		`, id).Scan(&prev.ID, &prev.SiteID, &prev.Slug, &prev.Title, &prev.Tree, &prev.SEO, &prev.IsHome, &prev.Version, &prev.CreatedAt, &prev.UpdatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO page_versions (page_id, version, title, tree_json, seo_json, created_by)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, prev.ID, prev.Version, prev.Title, prev.Tree, prev.SEO, by); err != nil {
+			return nil, err
+		}
+	}
 
 	if isHome != nil && *isHome {
 		var siteID uuid.UUID
@@ -180,6 +215,121 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, se
 		return nil, err
 	}
 	return &p, nil
+}
+
+// ListVersions returns up to `limit` recent versions of a page.
+func (r *Repo) ListVersions(ctx context.Context, pageID uuid.UUID, limit int) ([]Version, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, page_id, version, title, tree_json, seo_json, created_by, created_at
+		FROM page_versions WHERE page_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2
+	`, pageID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Version{}
+	for rows.Next() {
+		var v Version
+		if err := rows.Scan(&v.ID, &v.PageID, &v.Version, &v.Title, &v.Tree, &v.SEO, &v.CreatedBy, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// GetVersion fetches one specific version.
+func (r *Repo) GetVersion(ctx context.Context, versionID uuid.UUID) (*Version, error) {
+	var v Version
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, page_id, version, title, tree_json, seo_json, created_by, created_at
+		FROM page_versions WHERE id = $1
+	`, versionID).Scan(&v.ID, &v.PageID, &v.Version, &v.Title, &v.Tree, &v.SEO, &v.CreatedBy, &v.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &v, err
+}
+
+// Restore copies an old version's title/tree/seo back onto the page, snapshotting
+// the current state first as a new version (so restore is itself undoable).
+func (r *Repo) Restore(ctx context.Context, versionID uuid.UUID, createdBy *uuid.UUID) (*Page, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	var v Version
+	err = tx.QueryRow(ctx, `
+		SELECT id, page_id, version, title, tree_json, seo_json, created_by, created_at
+		FROM page_versions WHERE id = $1
+	`, versionID).Scan(&v.ID, &v.PageID, &v.Version, &v.Title, &v.Tree, &v.SEO, &v.CreatedBy, &v.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// snapshot current first
+	var current Page
+	err = tx.QueryRow(ctx, `
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		FROM pages WHERE id = $1
+	`, v.PageID).Scan(&current.ID, &current.SiteID, &current.Slug, &current.Title, &current.Tree, &current.SEO, &current.IsHome, &current.Version, &current.CreatedAt, &current.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO page_versions (page_id, version, title, tree_json, seo_json, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, current.ID, current.Version, current.Title, current.Tree, current.SEO, createdBy); err != nil {
+		return nil, err
+	}
+
+	// apply old content
+	var p Page
+	err = tx.QueryRow(ctx, `
+		UPDATE pages SET
+		    title      = $2,
+		    tree_json  = $3,
+		    seo_json   = $4,
+		    version    = version + 1,
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+	`, v.PageID, v.Title, v.Tree, v.SEO).Scan(
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// PruneOldVersions keeps only the latest N versions per page.
+func (r *Repo) PruneOldVersions(ctx context.Context, pageID uuid.UUID, keep int) error {
+	if keep <= 0 {
+		keep = 50
+	}
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM page_versions
+		WHERE page_id = $1
+		  AND id NOT IN (
+		    SELECT id FROM page_versions WHERE page_id = $1
+		    ORDER BY created_at DESC LIMIT $2
+		  )
+	`, pageID, keep)
+	return err
 }
 
 func (r *Repo) Delete(ctx context.Context, id uuid.UUID) error {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { fmtBytes, pct } from "@/lib/format";
 import { Pagination, SearchBar, useDebounced, type PaginatedResult } from "@/components/Pagination";
@@ -99,7 +100,7 @@ export default function AdminSitesPage() {
       await api(`/api/v1/admin/sites/${id}`, { method: "DELETE" });
       refresh();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 

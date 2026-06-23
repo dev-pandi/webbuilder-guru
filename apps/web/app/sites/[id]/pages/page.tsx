@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Home } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,9 +84,10 @@ export default function PagesPage() {
   async function duplicate(id: string) {
     try {
       await api(`/api/v1/pages/${id}/duplicate`, { method: "POST" });
+      toast.success("Halaman diduplikat");
       refresh();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 

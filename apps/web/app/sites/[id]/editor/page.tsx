@@ -2,9 +2,42 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  History,
+  Monitor,
+  Plus,
+  RotateCcw,
+  Smartphone,
+  Tablet,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { blockSchemas, schemaFor } from "@/lib/blocks";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { PropEditor, type BlockData } from "./PropEditor";
+
+type PageVersion = {
+  id: string;
+  page_id: string;
+  version: number;
+  title: string;
+  tree: { blocks?: BlockData[] } | null;
+  seo: unknown;
+  created_at: string;
+};
 
 type Page = {
   id: string;
@@ -22,9 +55,9 @@ export default function EditorPage() {
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number>(-1);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [showAdd, setShowAdd] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     api<Page[]>(`/api/v1/sites/${params.id}/pages`)
@@ -37,7 +70,7 @@ export default function EditorPage() {
           setSelectedIdx(home.tree?.blocks?.length ? 0 : -1);
         }
       })
-      .catch((e) => setStatus((e as Error).message));
+      .catch((e) => toast.error((e as Error).message));
   }, [params.id]);
 
   const current = useMemo(() => pages.find((p) => p.id === currentId) ?? null, [pages, currentId]);
@@ -89,10 +122,9 @@ export default function EditorPage() {
         body: JSON.stringify({ tree: { blocks } }),
       });
       setPages((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
-      setStatus("Tersimpan ✓");
-      setTimeout(() => setStatus(null), 2000);
+      toast.success("Tersimpan");
     } catch (e) {
-      setStatus((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -102,21 +134,28 @@ export default function EditorPage() {
 
   return (
     <div className="grid h-[calc(100vh-140px)] gap-3 lg:grid-cols-[220px_1fr_320px]">
-      {/* Left: pages + blocks */}
-      <aside className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 p-2">
-          <h3 className="px-2 py-1 text-xs font-semibold uppercase text-slate-500">Halaman</h3>
+      {/* Sidebar kiri: pages + blocks */}
+      <Card className="flex flex-col overflow-hidden p-0">
+        <div className="border-b p-2">
+          <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Halaman
+          </div>
           <ul className="mt-1 space-y-0.5">
             {pages.map((p) => (
               <li key={p.id}>
                 <button
                   onClick={() => selectPage(p)}
-                  className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm ${
-                    currentId === p.id ? "bg-brand-50 text-brand-700" : "hover:bg-slate-50"
-                  }`}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition",
+                    currentId === p.id
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-accent/50",
+                  )}
                 >
                   <span className="truncate">{p.title || p.slug}</span>
-                  {p.is_home && <span className="ml-2 text-xs text-slate-400">home</span>}
+                  {p.is_home && (
+                    <span className="ml-2 text-[10px] uppercase text-muted-foreground">home</span>
+                  )}
                 </button>
               </li>
             ))}
@@ -124,22 +163,26 @@ export default function EditorPage() {
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           <div className="flex items-center justify-between px-2 py-1">
-            <h3 className="text-xs font-semibold uppercase text-slate-500">Block</h3>
-            <button
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Block
+            </span>
+            <Button
+              size="sm"
               onClick={() => setShowAdd((s) => !s)}
-              className="rounded bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700"
+              className="h-7 gap-1 px-2"
             >
-              + Tambah
-            </button>
+              <Plus className="size-3" />
+              Tambah
+            </Button>
           </div>
           {showAdd && (
-            <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+            <div className="my-2 rounded-md border bg-muted/30 p-2">
               <div className="grid grid-cols-2 gap-1">
                 {blockSchemas.map((s) => (
                   <button
                     key={s.type}
                     onClick={() => addBlock(s.type)}
-                    className="rounded border border-slate-200 bg-white px-2 py-1 text-left text-xs hover:border-brand-500 hover:text-brand-600"
+                    className="rounded border bg-background px-2 py-1 text-left text-xs transition hover:border-primary hover:text-primary"
                   >
                     {s.label}
                   </button>
@@ -152,106 +195,258 @@ export default function EditorPage() {
               <li
                 key={i}
                 onClick={() => setSelectedIdx(i)}
-                className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-sm ${
-                  selectedIdx === i ? "bg-brand-50 text-brand-700" : "hover:bg-slate-50"
-                }`}
+                className={cn(
+                  "flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-sm transition",
+                  selectedIdx === i ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
+                )}
               >
                 <span className="truncate">
-                  <span className="text-slate-400">#{i + 1}</span> {b.type}
+                  <span className="text-muted-foreground">#{i + 1}</span> {b.type}
                 </span>
-                <span className="flex gap-0.5 text-xs">
-                  <button
+                <span className="flex gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
                     onClick={(e) => {
                       e.stopPropagation();
                       moveBlock(i, -1);
                     }}
-                    className="rounded px-1 hover:bg-slate-200"
                   >
-                    ↑
-                  </button>
-                  <button
+                    <ChevronUp className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
                     onClick={(e) => {
                       e.stopPropagation();
                       moveBlock(i, 1);
                     }}
-                    className="rounded px-1 hover:bg-slate-200"
                   >
-                    ↓
-                  </button>
-                  <button
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 text-destructive hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (confirm("Hapus block?")) removeBlock(i);
                     }}
-                    className="rounded px-1 text-red-600 hover:bg-red-50"
                   >
-                    ✕
-                  </button>
+                    <Trash2 className="size-3.5" />
+                  </Button>
                 </span>
               </li>
             ))}
             {blocks.length === 0 && (
-              <li className="px-2 py-3 text-xs text-slate-400">Belum ada block.</li>
+              <li className="px-2 py-3 text-xs text-muted-foreground">Belum ada block.</li>
             )}
           </ul>
         </div>
-      </aside>
+      </Card>
 
       {/* Center: preview */}
-      <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-          <div className="flex gap-1">
-            {(["desktop", "tablet", "mobile"] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setDevice(d)}
-                className={`rounded px-2 py-1 text-xs ${
-                  device === d ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {d}
-              </button>
-            ))}
+      <Card className="flex flex-col overflow-hidden p-0">
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+            <DeviceBtn
+              active={device === "desktop"}
+              onClick={() => setDevice("desktop")}
+              icon={Monitor}
+              label="Desktop"
+            />
+            <DeviceBtn
+              active={device === "tablet"}
+              onClick={() => setDevice("tablet")}
+              icon={Tablet}
+              label="Tablet"
+            />
+            <DeviceBtn
+              active={device === "mobile"}
+              onClick={() => setDevice("mobile")}
+              icon={Smartphone}
+              label="Mobile"
+            />
           </div>
-          <div className="flex items-center gap-3">
-            {status && <span className="text-xs text-slate-500">{status}</span>}
-            <button
-              onClick={save}
-              disabled={saving || !current}
-              className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHistoryOpen(true)}
+              disabled={!current}
             >
+              <History />
+              Riwayat
+            </Button>
+            <Button onClick={save} disabled={saving || !current} size="sm">
               {saving ? "Menyimpan…" : "Simpan"}
-            </button>
+            </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto bg-slate-100 p-4">
+        <div className="flex-1 overflow-auto bg-muted/30 p-4">
           <div
-            className="mx-auto overflow-hidden rounded-lg bg-white shadow"
+            className="mx-auto overflow-hidden rounded-lg border bg-background shadow-sm"
             style={{ width: previewWidth, maxWidth: "100%" }}
           >
             <Preview blocks={blocks} onSelect={setSelectedIdx} selectedIdx={selectedIdx} />
           </div>
         </div>
-      </section>
+      </Card>
 
-      {/* Right: property editor */}
-      <aside className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
+      <HistoryDialog
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        pageId={current?.id ?? null}
+        onRestored={(p) => {
+          setPages((ps) => ps.map((x) => (x.id === p.id ? p : x)));
+          setBlocks(p.tree?.blocks ?? []);
+          setSelectedIdx(p.tree?.blocks?.length ? 0 : -1);
+          setHistoryOpen(false);
+          toast.success("Versi berhasil dipulihkan");
+        }}
+      />
+
+      {/* Sidebar kanan: property editor */}
+      <Card className="overflow-y-auto p-4">
         {selectedIdx >= 0 && blocks[selectedIdx] ? (
           <>
-            <h3 className="text-sm font-semibold">Edit Block: {blocks[selectedIdx].type}</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Posisi #{selectedIdx + 1}</p>
-            <div className="mt-4">
-              <PropEditor
-                block={blocks[selectedIdx]}
-                onChange={(next) => updateBlock(selectedIdx, next)}
-              />
-            </div>
+            <h3 className="text-sm font-semibold">
+              Edit Block: <span className="text-primary">{blocks[selectedIdx].type}</span>
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Posisi #{selectedIdx + 1}</p>
+            <Separator className="my-3" />
+            <PropEditor
+              block={blocks[selectedIdx]}
+              onChange={(next) => updateBlock(selectedIdx, next)}
+            />
           </>
         ) : (
-          <p className="text-sm text-slate-500">Pilih block untuk mengedit.</p>
+          <p className="text-sm text-muted-foreground">Pilih block untuk mengedit.</p>
         )}
-      </aside>
+      </Card>
     </div>
+  );
+}
+
+function HistoryDialog({
+  open,
+  onOpenChange,
+  pageId,
+  onRestored,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  pageId: string | null;
+  onRestored: (p: Page) => void;
+}) {
+  const [versions, setVersions] = useState<PageVersion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || !pageId) return;
+    setLoading(true);
+    api<PageVersion[]>(`/api/v1/pages/${pageId}/versions?limit=50`)
+      .then(setVersions)
+      .catch((e) => toast.error((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [open, pageId]);
+
+  async function restore(v: PageVersion) {
+    if (!pageId) return;
+    if (!confirm(`Pulihkan ke versi v${v.version} (${new Date(v.created_at).toLocaleString("id-ID")})?\nVersi saat ini akan tetap tersimpan sebagai snapshot.`))
+      return;
+    setRestoring(v.id);
+    try {
+      const p = await api<Page>(`/api/v1/pages/${pageId}/restore/${v.id}`, {
+        method: "POST",
+      });
+      onRestored(p);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setRestoring(null);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Riwayat Halaman</DialogTitle>
+          <DialogDescription>
+            Setiap kali Anda menyimpan, snapshot otomatis dibuat. Pilih versi untuk dipulihkan.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[60vh] overflow-y-auto">
+          {loading && (
+            <p className="py-8 text-center text-sm text-muted-foreground">Memuat riwayat…</p>
+          )}
+          {!loading && versions.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Belum ada riwayat. Snapshot dibuat saat Anda menyimpan perubahan konten.
+            </p>
+          )}
+          <ul className="divide-y">
+            {versions.map((v) => {
+              const blockCount = v.tree?.blocks?.length ?? 0;
+              return (
+                <li key={v.id} className="flex items-center justify-between py-3">
+                  <div>
+                    <div className="text-sm font-medium">
+                      v{v.version}
+                      {v.title && <span className="ml-2 text-muted-foreground">{v.title}</span>}
+                    </div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {new Date(v.created_at).toLocaleString("id-ID")} · {blockCount} block
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => restore(v)}
+                    disabled={restoring === v.id}
+                  >
+                    <RotateCcw />
+                    {restoring === v.id ? "Memulihkan…" : "Pulihkan"}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeviceBtn({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={cn(
+        "inline-flex h-7 items-center justify-center rounded px-2 text-xs transition",
+        active
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="size-3.5" />
+    </button>
   );
 }
 
@@ -266,7 +461,7 @@ function Preview({
 }) {
   if (blocks.length === 0) {
     return (
-      <div className="p-12 text-center text-sm text-slate-400">
+      <div className="p-12 text-center text-sm text-muted-foreground">
         Belum ada block. Klik <span className="font-medium">+ Tambah</span> di sidebar.
       </div>
     );
@@ -277,9 +472,12 @@ function Preview({
         <div
           key={i}
           onClick={() => onSelect(i)}
-          className={`cursor-pointer transition ${
-            selectedIdx === i ? "outline outline-2 outline-brand-500" : "hover:outline hover:outline-1 hover:outline-slate-300"
-          }`}
+          className={cn(
+            "cursor-pointer transition",
+            selectedIdx === i
+              ? "outline outline-2 outline-primary"
+              : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
+          )}
         >
           <BlockView block={b} />
         </div>
@@ -297,7 +495,9 @@ function BlockView({ block }: { block: BlockData }) {
           <strong>{String(p.brand ?? "")}</strong>
           <div className="flex gap-4 text-sm">
             {(p.links as Array<{ label: string; href: string }> | undefined)?.map((l, i) => (
-              <span key={i} className="text-slate-600">{l.label}</span>
+              <span key={i} className="text-muted-foreground">
+                {l.label}
+              </span>
             ))}
           </div>
         </div>
@@ -306,9 +506,9 @@ function BlockView({ block }: { block: BlockData }) {
       return (
         <div className="px-6 py-16 text-center">
           <h1 className="text-3xl font-bold">{String(p.title ?? "")}</h1>
-          <p className="mt-2 text-slate-600">{String(p.subtitle ?? "")}</p>
+          <p className="mt-2 text-muted-foreground">{String(p.subtitle ?? "")}</p>
           {p.ctaLabel ? (
-            <button className="mt-4 rounded-lg bg-brand-600 px-4 py-2 text-white">
+            <button className="mt-4 rounded-lg bg-primary px-4 py-2 text-primary-foreground">
               {String(p.ctaLabel)}
             </button>
           ) : null}
@@ -317,12 +517,12 @@ function BlockView({ block }: { block: BlockData }) {
     case "Heading":
       return <h2 className="px-6 py-4 text-2xl font-bold">{String(p.text ?? "")}</h2>;
     case "Text":
-      return <p className="whitespace-pre-line px-6 py-2 text-slate-700">{String(p.body ?? "")}</p>;
+      return <p className="whitespace-pre-line px-6 py-2">{String(p.body ?? "")}</p>;
     case "Section":
       return (
         <div className="px-6 py-6">
           {p.title ? <h3 className="text-lg font-semibold">{String(p.title)}</h3> : null}
-          <p className="mt-1 whitespace-pre-line text-slate-700">{String(p.body ?? "")}</p>
+          <p className="mt-1 whitespace-pre-line">{String(p.body ?? "")}</p>
         </div>
       );
     case "FeatureList":
@@ -334,9 +534,9 @@ function BlockView({ block }: { block: BlockData }) {
           {p.title ? <h3 className="mb-3 text-lg font-semibold">{String(p.title)}</h3> : null}
           <div className="grid gap-3 sm:grid-cols-3">
             {(p.items as Array<Record<string, unknown>> | undefined)?.map((it, i) => (
-              <div key={i} className="rounded-lg border border-slate-200 p-3">
+              <div key={i} className="rounded-lg border p-3">
                 <div className="font-medium">{String(it.title ?? it.name ?? "")}</div>
-                <div className="text-sm text-slate-600">
+                <div className="text-sm text-muted-foreground">
                   {String(it.desc ?? it.excerpt ?? it.price ?? "")}
                 </div>
               </div>
@@ -346,17 +546,26 @@ function BlockView({ block }: { block: BlockData }) {
       );
     case "Testimonial":
       return (
-        <div className="bg-slate-50 px-6 py-6">
+        <div className="bg-muted/40 px-6 py-6">
           {(p.items as Array<{ name: string; text: string }> | undefined)?.map((t, i) => (
-            <blockquote key={i} className="border-l-4 border-brand-500 pl-4 italic text-slate-700">
+            <blockquote
+              key={i}
+              className="border-l-4 border-primary pl-4 italic"
+            >
               “{t.text}” — <span className="not-italic font-medium">{t.name}</span>
             </blockquote>
           ))}
         </div>
       );
     case "Footer":
-      return <div className="border-t px-6 py-4 text-center text-sm text-slate-500">{String(p.copyright ?? "")}</div>;
+      return (
+        <div className="border-t px-6 py-4 text-center text-sm text-muted-foreground">
+          {String(p.copyright ?? "")}
+        </div>
+      );
     default:
-      return <div className="px-6 py-2 text-xs text-slate-400">[block: {block.type}]</div>;
+      return (
+        <div className="px-6 py-2 text-xs text-muted-foreground">[block: {block.type}]</div>
+      );
   }
 }

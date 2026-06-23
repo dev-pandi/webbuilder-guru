@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,6 @@ export default function ThemePage() {
     radius: "0.75rem",
   });
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     api<Site>(`/api/v1/sites/${params.id}`).then((s) => {
@@ -39,10 +39,9 @@ export default function ThemePage() {
         method: "PATCH",
         body: JSON.stringify({ theme }),
       });
-      setStatus("Tersimpan ✓");
-      setTimeout(() => setStatus(null), 2000);
+      toast.success("Tema tersimpan");
     } catch (e) {
-      setStatus((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -105,9 +104,8 @@ export default function ThemePage() {
             />
           </div>
 
-          <div className="flex items-center justify-between border-t pt-4">
-            {status && <span className="text-xs text-muted-foreground">{status}</span>}
-            <Button onClick={save} disabled={saving} className="ml-auto">
+          <div className="flex items-center justify-end border-t pt-4">
+            <Button onClick={save} disabled={saving}>
               {saving ? "Menyimpan…" : "Simpan"}
             </Button>
           </div>

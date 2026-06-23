@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Info } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,9 +62,10 @@ export default function DomainsPage() {
   async function verify(id: string) {
     try {
       await api(`/api/v1/domains/${id}/verify`, { method: "POST" });
+      toast.success("Domain berhasil diverifikasi");
       refresh();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 

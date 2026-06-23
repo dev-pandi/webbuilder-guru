@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Pagination, SearchBar, useDebounced, type PaginatedResult } from "@/components/Pagination";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +83,7 @@ export default function AdminUsersPage() {
       });
       refresh();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 
@@ -92,7 +93,7 @@ export default function AdminUsersPage() {
       await api(`/api/v1/admin/users/${id}`, { method: "DELETE" });
       refresh();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message);
     }
   }
 
