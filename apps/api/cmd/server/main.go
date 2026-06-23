@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
@@ -29,6 +31,12 @@ import (
 )
 
 func main() {
+	// Auto-load .env from working dir (silent if missing). Existing OS env
+	// always wins, so Docker Compose passthrough is unaffected.
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		log.Printf("[env] note: %v", err)
+	}
+
 	cfg := config.Load()
 
 	ctx, cancel := context.WithCancel(context.Background())
