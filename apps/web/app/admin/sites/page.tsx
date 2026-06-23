@@ -4,6 +4,35 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { fmtBytes, pct } from "@/lib/format";
 import { Pagination, SearchBar, useDebounced, type PaginatedResult } from "@/components/Pagination";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type AdminSite = {
   id: string;
@@ -78,98 +107,92 @@ export default function AdminSitesPage() {
 
   return (
     <div>
-      <header className="flex items-end justify-between gap-4">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Situs</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             {data ? `${data.total} situs di platform` : "Memuat…"}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <SearchBar value={q} onChange={setQ} placeholder="Cari nama/slug/email..." />
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </header>
-      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Nama / Slug</th>
-              <th className="px-4 py-3">Pemilik</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Halaman</th>
-              <th className="px-4 py-3">Storage</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className={loading ? "opacity-60" : ""}>
+      <Card className="mt-6 overflow-hidden p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nama / Slug</TableHead>
+              <TableHead>Pemilik</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Halaman</TableHead>
+              <TableHead>Storage</TableHead>
+              <TableHead className="text-right"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className={loading ? "opacity-60" : ""}>
             {sites.map((s) => (
-              <tr key={s.id} className="border-t border-slate-100">
-                <td className="px-4 py-3">
+              <TableRow key={s.id}>
+                <TableCell>
                   <div className="font-medium">{s.name}</div>
-                  <div className="font-mono text-xs text-slate-500">/{s.slug}</div>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs">{s.owner_email}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      s.status === "published"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
+                  <div className="font-mono text-xs text-muted-foreground">/{s.slug}</div>
+                </TableCell>
+                <TableCell className="font-mono text-xs">{s.owner_email}</TableCell>
+                <TableCell>
+                  <Badge variant={s.status === "published" ? "success" : "secondary"}>
                     {s.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-xs">
+                  </Badge>
+                </TableCell>
+                <TableCell>
                   <QuotaCell used={s.pages_count} max={s.quota_max_pages} fmt={(n) => `${n}`} />
-                </td>
-                <td className="px-4 py-3 text-xs">
+                </TableCell>
+                <TableCell>
                   <QuotaCell
                     used={s.storage_bytes}
                     max={s.quota_max_storage_bytes}
                     fmt={fmtBytes}
                   />
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => setEditing(s)}
-                    className="mr-3 text-xs text-brand-600 hover:underline"
-                  >
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button variant="link" size="sm" onClick={() => setEditing(s)}>
                     Edit Quota
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="text-destructive"
                     onClick={() => remove(s.id, s.name)}
-                    className="text-xs text-red-600 hover:underline"
                   >
                     Hapus
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
             {sites.length === 0 && !loading && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   {debouncedQ ? `Tidak ada hasil untuk "${debouncedQ}".` : "Belum ada situs."}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
         {data && (
-          <div className="border-t border-slate-100">
+          <div className="border-t">
             <Pagination
               page={data.page}
               totalPages={data.total_pages}
@@ -179,18 +202,16 @@ export default function AdminSitesPage() {
             />
           </div>
         )}
-      </div>
+      </Card>
 
-      {editing && (
-        <QuotaModal
-          site={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            refresh();
-          }}
-        />
-      )}
+      <QuotaDialog
+        site={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => {
+          setEditing(null);
+          refresh();
+        }}
+      />
     </div>
   );
 }
@@ -205,37 +226,43 @@ function QuotaCell({
   fmt: (n: number) => string;
 }) {
   const p = pct(used, max);
-  const color = p >= 90 ? "bg-red-500" : p >= 70 ? "bg-amber-500" : "bg-emerald-500";
+  const indicator =
+    p >= 90 ? "bg-destructive" : p >= 70 ? "bg-amber-500" : "bg-emerald-500";
   return (
-    <div>
+    <div className="text-xs">
       <div className="tabular-nums">
         {fmt(used)} / {fmt(max)}
       </div>
-      <div className="mt-0.5 h-1 w-24 overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full ${color}`} style={{ width: `${p}%` }} />
-      </div>
+      <Progress value={p} indicatorClassName={indicator} className="mt-0.5 h-1 w-24" />
     </div>
   );
 }
 
-function QuotaModal({
+function QuotaDialog({
   site,
   onClose,
   onSaved,
 }: {
-  site: AdminSite;
+  site: AdminSite | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [maxPages, setMaxPages] = useState(site.quota_max_pages);
-  const [maxStorageMB, setMaxStorageMB] = useState(
-    Math.round(site.quota_max_storage_bytes / (1024 * 1024)),
-  );
+  const [maxPages, setMaxPages] = useState(0);
+  const [maxStorageMB, setMaxStorageMB] = useState(0);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (site) {
+      setMaxPages(site.quota_max_pages);
+      setMaxStorageMB(Math.round(site.quota_max_storage_bytes / (1024 * 1024)));
+      setErr(null);
+    }
+  }, [site]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!site) return;
     setSaving(true);
     setErr(null);
     try {
@@ -255,60 +282,52 @@ function QuotaModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <form
-        onSubmit={submit}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg"
-      >
-        <h2 className="text-lg font-semibold">Edit Quota</h2>
-        <p className="mt-1 text-xs text-slate-500">{site.name}</p>
+    <Dialog open={!!site} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Quota</DialogTitle>
+          <DialogDescription>{site?.name}</DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium">Maks Halaman</label>
-            <input
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="max-pages">Maks Halaman</Label>
+            <Input
+              id="max-pages"
               type="number"
               min={1}
               value={maxPages}
               onChange={(e) => setMaxPages(Number(e.target.value))}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-slate-500">Saat ini terpakai: {site.pages_count}</p>
+            <p className="text-xs text-muted-foreground">
+              Saat ini terpakai: {site?.pages_count ?? 0}
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium">Maks Storage (MB)</label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="max-storage">Maks Storage (MB)</Label>
+            <Input
+              id="max-storage"
               type="number"
               min={1}
               value={maxStorageMB}
               onChange={(e) => setMaxStorageMB(Number(e.target.value))}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-slate-500">
-              Saat ini terpakai: {fmtBytes(site.storage_bytes)}
+            <p className="text-xs text-muted-foreground">
+              Saat ini terpakai: {fmtBytes(site?.storage_bytes ?? 0)}
             </p>
           </div>
-          {err && <p className="text-sm text-red-600">{err}</p>}
-        </div>
+          {err && <p className="text-sm text-destructive">{err}</p>}
 
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm"
-          >
-            Batal
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-          >
-            {saving ? "Menyimpan…" : "Simpan"}
-          </button>
-        </div>
-      </form>
-    </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Menyimpan…" : "Simpan"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -88,6 +88,7 @@ function Field({
     );
   }
   // items
+  if (field.type !== "items") return null;
   const items = Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
   const itemFields = field.itemFields;
   function updateItem(i: number, patch: Record<string, unknown>) {

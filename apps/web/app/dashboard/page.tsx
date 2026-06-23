@@ -2,8 +2,23 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Plus, Pencil, BarChart3, Globe2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtBytes, pct } from "@/lib/format";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type Site = {
   id: string;
@@ -49,7 +64,6 @@ export default function DashboardPage() {
     try {
       const list = await api<Site[]>("/api/v1/sites");
       setSites(list);
-      // fetch usage for each site in parallel; ignore individual failures
       const entries = await Promise.all(
         list.map(async (s) => {
           try {
@@ -79,100 +93,95 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Situs Saya</h1>
-          <p className="text-sm text-slate-600">{sites.length} dari 5 situs aktif.</p>
+          <p className="text-sm text-muted-foreground">{sites.length} dari 5 situs aktif.</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700"
-        >
-          + Buat Situs Baru
-        </button>
+        <Button onClick={() => setShowModal(true)}>
+          <Plus />
+          Buat Situs Baru
+        </Button>
       </div>
 
-      {err && <p className="mt-4 text-sm text-red-600">{err}</p>}
+      {err && <p className="mt-4 text-sm text-destructive">{err}</p>}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sites.length === 0 && (
-          <div className="col-span-full rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500">
-            Belum ada situs. Klik “Buat Situs Baru” untuk mulai.
-          </div>
+          <Card className="col-span-full border-dashed">
+            <CardContent className="py-10 text-center text-muted-foreground">
+              Belum ada situs. Klik “Buat Situs Baru” untuk mulai.
+            </CardContent>
+          </Card>
         )}
         {sites.map((s) => (
-          <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold">{s.name}</h3>
-                <p className="mt-0.5 text-xs text-slate-500">/{s.slug}</p>
+          <Card key={s.id}>
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle className="text-base">{s.name}</CardTitle>
+                  <p className="mt-0.5 text-xs text-muted-foreground">/{s.slug}</p>
+                </div>
+                <Badge variant={s.status === "published" ? "success" : "secondary"}>
+                  {s.status}
+                </Badge>
               </div>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs ${
-                  s.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
-                }`}
-              >
-                {s.status}
-              </span>
-            </div>
-
-            <SiteUsageMini usage={usageMap[s.id]} />
-
-            <div className="mt-4 flex gap-2 text-sm">
-              <Link
-                href={`/sites/${s.id}/editor`}
-                className="flex-1 rounded-lg bg-slate-900 px-3 py-1.5 text-center text-white hover:bg-slate-800"
-              >
-                Edit
-              </Link>
-              <Link
-                href={`/sites/${s.id}/usage`}
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-center hover:bg-slate-100"
-              >
-                Usage
-              </Link>
-              <Link
-                href={`/sites/${s.id}/domains`}
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-center hover:bg-slate-100"
-              >
-                Domain
-              </Link>
-            </div>
-          </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <SiteUsageMini usage={usageMap[s.id]} />
+              <div className="grid grid-cols-3 gap-2">
+                <Button variant="default" size="sm" asChild>
+                  <Link href={`/sites/${s.id}/editor`}>
+                    <Pencil />
+                    Edit
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/sites/${s.id}/usage`}>
+                    <BarChart3 />
+                    Usage
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/sites/${s.id}/domains`}>
+                    <Globe2 />
+                    Domain
+                  </Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      {showModal && (
-        <NewSiteModal
-          templates={templates}
-          meta={meta}
-          onClose={() => setShowModal(false)}
-          onCreated={() => {
-            setShowModal(false);
-            refresh();
-          }}
-        />
-      )}
+      <NewSiteDialog
+        open={showModal}
+        onOpenChange={setShowModal}
+        templates={templates}
+        meta={meta}
+        onCreated={() => {
+          setShowModal(false);
+          refresh();
+        }}
+      />
     </div>
   );
 }
 
-// ---- Inline usage display for site cards ----
+// ---- Inline usage display ----
 
 function SiteUsageMini({ usage }: { usage: SiteUsage | undefined }) {
   if (!usage) {
-    return <div className="mt-3 h-8 animate-pulse rounded bg-slate-50" />;
+    return <div className="h-12 animate-pulse rounded-md bg-muted/50" />;
   }
-  const pPct = pct(usage.pages.used, usage.pages.max);
-  const sPct = pct(usage.storage_bytes.used, usage.storage_bytes.max);
   return (
-    <div className="mt-3 space-y-1.5 text-xs">
+    <div className="space-y-2 text-xs">
       <UsageRow
         label="Halaman"
         usedText={`${usage.pages.used} / ${usage.pages.max}`}
-        percent={pPct}
+        percent={pct(usage.pages.used, usage.pages.max)}
       />
       <UsageRow
         label="Storage"
         usedText={`${fmtBytes(usage.storage_bytes.used)} / ${fmtBytes(usage.storage_bytes.max)}`}
-        percent={sPct}
+        percent={pct(usage.storage_bytes.used, usage.storage_bytes.max)}
       />
     </div>
   );
@@ -187,31 +196,32 @@ function UsageRow({
   usedText: string;
   percent: number;
 }) {
-  const color = percent >= 90 ? "bg-red-500" : percent >= 70 ? "bg-amber-500" : "bg-emerald-500";
+  const indicator =
+    percent >= 90 ? "bg-destructive" : percent >= 70 ? "bg-amber-500" : "bg-emerald-500";
   return (
     <div>
-      <div className="flex items-center justify-between text-slate-500">
+      <div className="flex items-center justify-between text-muted-foreground">
         <span>{label}</span>
         <span className="tabular-nums">{usedText}</span>
       </div>
-      <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-slate-100">
-        <div className={`h-full ${color}`} style={{ width: `${percent}%` }} />
-      </div>
+      <Progress value={percent} indicatorClassName={indicator} className="mt-1 h-1.5" />
     </div>
   );
 }
 
-// ---- Multi-step modal: category → variant → name/slug ----
+// ---- Multi-step Dialog: category → variant → name/slug ----
 
-function NewSiteModal({
+function NewSiteDialog({
+  open,
+  onOpenChange,
   templates,
   meta,
-  onClose,
   onCreated,
 }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
   templates: Template[];
   meta: Meta | null;
-  onClose: () => void;
   onCreated: () => void;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -221,6 +231,20 @@ function NewSiteModal({
   const [slug, setSlug] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Reset when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setTimeout(() => {
+        setStep(1);
+        setCategory(null);
+        setTplSlug(null);
+        setName("");
+        setSlug("");
+        setErr(null);
+      }, 200);
+    }
+  }, [open]);
 
   const variantsForCategory = useMemo(
     () => templates.filter((t) => t.category === category),
@@ -246,22 +270,17 @@ function NewSiteModal({
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-3xl rounded-xl bg-white shadow-lg">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <div>
-            <h2 className="text-lg font-semibold">Buat Situs Baru</h2>
-            <p className="text-xs text-slate-500">
-              Langkah {step} dari 3:{" "}
-              {step === 1 ? "Pilih kategori" : step === 2 ? "Pilih tema" : "Detail situs"}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
-            ✕
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Buat Situs Baru</DialogTitle>
+          <DialogDescription>
+            Langkah {step} dari 3:{" "}
+            {step === 1 ? "Pilih kategori" : step === 2 ? "Pilih tema" : "Detail situs"}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+        <div className="max-h-[60vh] overflow-y-auto">
           {step === 1 && (
             <CategoryStep
               categories={meta?.categories ?? []}
@@ -296,8 +315,8 @@ function NewSiteModal({
             />
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -314,11 +333,11 @@ function CategoryStep({
         <button
           key={c.key}
           onClick={() => onPick(c.key)}
-          className="group rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-brand-500 hover:shadow-md"
+          className="rounded-lg border bg-background p-5 text-left transition hover:border-primary hover:shadow-md"
         >
           <div className="text-3xl">{c.emoji}</div>
-          <div className="mt-3 font-semibold text-slate-900">{c.label}</div>
-          <div className="mt-1 text-xs text-slate-500">{c.description}</div>
+          <div className="mt-3 font-semibold">{c.label}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{c.description}</div>
         </button>
       ))}
     </div>
@@ -336,24 +355,21 @@ function VariantStep({
 }) {
   return (
     <div>
-      <button onClick={onBack} className="mb-4 text-sm text-slate-500 hover:underline">
+      <Button variant="ghost" size="sm" onClick={onBack} className="mb-3">
         ← Ganti kategori
-      </button>
+      </Button>
       <div className="grid gap-3 sm:grid-cols-3">
         {variants.map((t) => (
           <button
             key={t.slug}
             onClick={() => onPick(t.slug)}
-            className="group rounded-xl border border-slate-200 bg-white p-4 text-left transition hover:border-brand-500 hover:shadow-md"
+            className="rounded-lg border bg-background p-4 text-left transition hover:border-primary hover:shadow-md"
           >
             <ThemeSwatchPreview theme={t.theme} />
-            <div className="mt-3 font-semibold text-slate-900">{t.name.split("—")[1]?.trim() ?? t.name}</div>
-            <div className="mt-1 text-xs text-slate-500">{t.description}</div>
+            <div className="mt-3 font-semibold">{t.name.split("—")[1]?.trim() ?? t.name}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{t.description}</div>
           </button>
         ))}
-        {variants.length === 0 && (
-          <p className="col-span-full text-sm text-slate-500">Tidak ada tema untuk kategori ini.</p>
-        )}
       </div>
     </div>
   );
@@ -369,7 +385,7 @@ function ThemeSwatchPreview({ theme }: { theme: Template["theme"] }) {
   const radius = theme.radius ?? "0.5rem";
   return (
     <div
-      className="overflow-hidden border border-slate-200"
+      className="overflow-hidden border"
       style={{ background: bg, color: fg, borderRadius: radius }}
     >
       <div className="px-3 pt-3" style={{ fontFamily: heading }}>
@@ -410,52 +426,54 @@ function DetailsStep({
   const tpl = templates.find((t) => t.slug === tplSlug);
   return (
     <form onSubmit={onSubmit}>
-      <button type="button" onClick={onBack} className="mb-4 text-sm text-slate-500 hover:underline">
+      <Button type="button" variant="ghost" size="sm" onClick={onBack} className="mb-3">
         ← Ganti tema
-      </button>
-      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-        <span className="text-slate-500">Tema terpilih:</span>{" "}
-        <span className="font-medium text-slate-900">{tpl?.name ?? tplSlug}</span>
-      </div>
+      </Button>
+      <Card className="mb-4 bg-muted/50">
+        <CardContent className="p-3 text-sm">
+          <span className="text-muted-foreground">Tema terpilih:</span>{" "}
+          <span className="font-medium">{tpl?.name ?? tplSlug}</span>
+        </CardContent>
+      </Card>
 
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium">Nama Situs</label>
-          <input
+        <div className="space-y-1.5">
+          <Label htmlFor="name">Nama Situs</Label>
+          <Input
+            id="name"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             placeholder="Sekolah Saya"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium">
-            Slug <span className="text-xs text-slate-500">(huruf kecil, angka, tanda hubung)</span>
-          </label>
-          <input
+        <div className="space-y-1.5">
+          <Label htmlFor="slug">
+            Slug{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              (huruf kecil, angka, tanda hubung)
+            </span>
+          </Label>
+          <Input
+            id="slug"
             required
             value={slug}
             onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
             placeholder="sekolah-saya"
+            className="font-mono"
           />
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Bisa diakses di: <code>{slug || "<slug>"}.localhost</code>
           </p>
         </div>
-        {err && <p className="text-sm text-red-600">{err}</p>}
+        {err && <p className="text-sm text-destructive">{err}</p>}
       </div>
 
-      <div className="mt-6 flex justify-end gap-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-lg bg-brand-600 px-5 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-        >
+      <DialogFooter className="mt-6">
+        <Button type="submit" disabled={loading}>
           {loading ? "Membuat..." : "Buat Situs"}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </form>
   );
 }

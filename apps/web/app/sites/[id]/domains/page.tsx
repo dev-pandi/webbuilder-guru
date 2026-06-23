@@ -2,7 +2,21 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type Domain = {
   id: string;
@@ -62,83 +76,101 @@ export default function DomainsPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="space-y-4">
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-          <p className="font-medium">Cara menambahkan domain kustom</p>
-          <ol className="ml-4 mt-2 list-decimal space-y-1">
-            <li>Tambahkan hostname di sini (mis. <code>tokoanda.id</code>).</li>
-            <li>Di registrar DNS Anda, arahkan A record ke IP server platform ini.</li>
-            <li>Klik <strong>Verifikasi</strong>. SSL akan diurus otomatis oleh Caddy saat domain pertama diakses.</li>
-          </ol>
-        </div>
+        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/50">
+          <CardContent className="flex gap-3 p-4 text-sm text-blue-900 dark:text-blue-100">
+            <Info className="size-5 shrink-0" />
+            <div>
+              <p className="font-medium">Cara menambahkan domain kustom</p>
+              <ol className="ml-4 mt-2 list-decimal space-y-1">
+                <li>
+                  Tambahkan hostname di sini (mis. <code>tokoanda.id</code>).
+                </li>
+                <li>Di registrar DNS Anda, arahkan A record ke IP server platform ini.</li>
+                <li>
+                  Klik <strong>Verifikasi</strong>. SSL akan diurus otomatis oleh Caddy saat
+                  domain pertama diakses.
+                </li>
+              </ol>
+            </div>
+          </CardContent>
+        </Card>
 
-        <div className="rounded-xl border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Hostname</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">SSL</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody>
+        <Card className="overflow-hidden p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Hostname</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>SSL</TableHead>
+                <TableHead className="text-right"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {domains.map((d) => (
-                <tr key={d.id} className="border-t border-slate-100">
-                  <td className="px-4 py-3 font-mono">{d.hostname}</td>
-                  <td className="px-4 py-3">
+                <TableRow key={d.id}>
+                  <TableCell className="font-mono">{d.hostname}</TableCell>
+                  <TableCell>
                     <StatusBadge status={d.status} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{d.ssl_status}</td>
-                  <td className="px-4 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{d.ssl_status}</TableCell>
+                  <TableCell className="text-right">
                     {d.status !== "verified" && (
-                      <button onClick={() => verify(d.id)} className="mr-3 text-xs text-brand-600 hover:underline">
+                      <Button variant="link" size="sm" onClick={() => verify(d.id)}>
                         Verifikasi
-                      </button>
+                      </Button>
                     )}
-                    <button onClick={() => remove(d.id)} className="text-xs text-red-600 hover:underline">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => remove(d.id)}
+                    >
                       Hapus
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
               {domains.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     Belum ada domain.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Card>
       </div>
 
-      <form onSubmit={add} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="font-semibold">Tambah Domain</h3>
-        <div>
-          <label className="block text-sm font-medium">Hostname</label>
-          <input
-            required
-            value={hostname}
-            onChange={(e) => setHostname(e.target.value.toLowerCase())}
-            placeholder="tokoanda.id"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-          />
-        </div>
-        {err && <p className="text-xs text-red-600">{err}</p>}
-        <button className="w-full rounded-lg bg-brand-600 px-3 py-2 font-medium text-white hover:bg-brand-700">
-          Tambah
-        </button>
-      </form>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Tambah Domain</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={add} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="hostname">Hostname</Label>
+              <Input
+                id="hostname"
+                required
+                value={hostname}
+                onChange={(e) => setHostname(e.target.value.toLowerCase())}
+                placeholder="tokoanda.id"
+                className="font-mono"
+              />
+            </div>
+            {err && <p className="text-xs text-destructive">{err}</p>}
+            <Button type="submit" className="w-full">
+              Tambah
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: Domain["status"] }) {
-  const map = {
-    pending: "bg-amber-100 text-amber-700",
-    verified: "bg-emerald-100 text-emerald-700",
-    failed: "bg-red-100 text-red-700",
-  } as const;
-  return <span className={`rounded-full px-2 py-0.5 text-xs ${map[status]}`}>{status}</span>;
+  const variant = status === "verified" ? "success" : status === "failed" ? "destructive" : "warning";
+  return <Badge variant={variant}>{status}</Badge>;
 }

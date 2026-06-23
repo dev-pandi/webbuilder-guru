@@ -3,6 +3,10 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { FontPicker } from "@/components/FontPicker";
 
 type Site = { id: string; name: string; theme: ThemeJson | null };
@@ -50,59 +54,68 @@ export default function ThemePage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Warna</h2>
-        {(["primary", "secondary", "bg", "fg"] as const).map((k) => (
-          <div key={k} className="flex items-center justify-between">
-            <label className="text-sm capitalize">{k}</label>
-            <input
-              type="color"
-              value={color(k)}
-              onChange={(e) =>
-                setTheme((t) => ({ ...t, colors: { ...(t.colors ?? {}), [k]: e.target.value } }))
-              }
-              className="h-9 w-16 rounded border border-slate-200"
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Warna</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(["primary", "secondary", "bg", "fg"] as const).map((k) => (
+            <div key={k} className="flex items-center justify-between">
+              <Label className="capitalize">{k}</Label>
+              <input
+                type="color"
+                value={color(k)}
+                onChange={(e) =>
+                  setTheme((t) => ({
+                    ...t,
+                    colors: { ...(t.colors ?? {}), [k]: e.target.value },
+                  }))
+                }
+                className="h-9 w-16 rounded border border-input"
+              />
+            </div>
+          ))}
+
+          <div className="border-t pt-4">
+            <CardTitle className="mb-3 text-base">Font</CardTitle>
+            <div className="space-y-3">
+              <FontPicker
+                label="Heading"
+                value={theme.font?.heading ?? ""}
+                onChange={(name) =>
+                  setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), heading: name } }))
+                }
+              />
+              <FontPicker
+                label="Body"
+                value={theme.font?.body ?? ""}
+                onChange={(name) =>
+                  setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), body: name } }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <Label className="mb-1.5 block">Radius</Label>
+            <Input
+              value={theme.radius ?? ""}
+              onChange={(e) => setTheme((t) => ({ ...t, radius: e.target.value }))}
+              placeholder="0.5rem"
             />
           </div>
-        ))}
 
-        <h2 className="mt-6 font-semibold">Font</h2>
-        <FontPicker
-          label="Heading"
-          value={theme.font?.heading ?? ""}
-          onChange={(name) =>
-            setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), heading: name } }))
-          }
-        />
-        <FontPicker
-          label="Body"
-          value={theme.font?.body ?? ""}
-          onChange={(name) =>
-            setTheme((t) => ({ ...t, font: { ...(t.font ?? {}), body: name } }))
-          }
-        />
+          <div className="flex items-center justify-between border-t pt-4">
+            {status && <span className="text-xs text-muted-foreground">{status}</span>}
+            <Button onClick={save} disabled={saving} className="ml-auto">
+              {saving ? "Menyimpan…" : "Simpan"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-        <h2 className="mt-6 font-semibold">Radius</h2>
-        <input
-          value={theme.radius ?? ""}
-          onChange={(e) => setTheme((t) => ({ ...t, radius: e.target.value }))}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-
-        <div className="flex items-center justify-between pt-4">
-          {status && <span className="text-xs text-slate-500">{status}</span>}
-          <button
-            onClick={save}
-            disabled={saving}
-            className="rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-          >
-            {saving ? "Menyimpan…" : "Simpan"}
-          </button>
-        </div>
-      </div>
-
-      <div
-        className="rounded-xl border border-slate-200 p-6"
+      <Card
+        className="p-6"
         style={{ background: color("bg"), color: color("fg"), borderRadius: theme.radius }}
       >
         <h2 className="text-2xl font-bold" style={{ fontFamily: theme.font?.heading }}>
@@ -112,14 +125,20 @@ export default function ThemePage() {
           Ini contoh teks body. Tombol primer dan sekunder tampil di bawah.
         </p>
         <div className="mt-4 flex gap-3">
-          <span className="rounded px-3 py-1.5 text-white" style={{ background: color("primary"), borderRadius: theme.radius }}>
+          <span
+            className="rounded px-3 py-1.5 text-white"
+            style={{ background: color("primary"), borderRadius: theme.radius }}
+          >
             Primer
           </span>
-          <span className="rounded px-3 py-1.5 text-white" style={{ background: color("secondary"), borderRadius: theme.radius }}>
+          <span
+            className="rounded px-3 py-1.5 text-white"
+            style={{ background: color("secondary"), borderRadius: theme.radius }}
+          >
             Sekunder
           </span>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

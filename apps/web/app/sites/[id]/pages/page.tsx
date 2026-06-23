@@ -2,7 +2,21 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Home } from "lucide-react";
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type Page = {
   id: string;
@@ -36,7 +50,13 @@ export default function PagesPage() {
     try {
       await api(`/api/v1/sites/${params.id}/pages`, {
         method: "POST",
-        body: JSON.stringify({ slug, title, tree: { blocks: [] }, seo: {}, is_home: false }),
+        body: JSON.stringify({
+          slug,
+          title,
+          tree: { blocks: [] },
+          seo: {},
+          is_home: false,
+        }),
       });
       setSlug("");
       setTitle("");
@@ -47,7 +67,10 @@ export default function PagesPage() {
   }
 
   async function setHome(id: string) {
-    await api(`/api/v1/pages/${id}`, { method: "PATCH", body: JSON.stringify({ is_home: true }) });
+    await api(`/api/v1/pages/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_home: true }),
+    });
     refresh();
   }
 
@@ -68,80 +91,92 @@ export default function PagesPage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Judul</th>
-              <th className="px-4 py-3">Slug</th>
-              <th className="px-4 py-3">Home</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
+      <Card className="overflow-hidden p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Judul</TableHead>
+              <TableHead>Slug</TableHead>
+              <TableHead>Home</TableHead>
+              <TableHead className="text-right"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {pages.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100">
-                <td className="px-4 py-3 font-medium">{p.title || "—"}</td>
-                <td className="px-4 py-3 font-mono text-slate-600">/{p.slug}</td>
-                <td className="px-4 py-3">
+              <TableRow key={p.id}>
+                <TableCell className="font-medium">{p.title || "—"}</TableCell>
+                <TableCell className="font-mono text-muted-foreground">/{p.slug}</TableCell>
+                <TableCell>
                   {p.is_home ? (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">home</span>
+                    <Badge variant="success" className="gap-1">
+                      <Home className="size-3" />
+                      home
+                    </Badge>
                   ) : (
-                    <button onClick={() => setHome(p.id)} className="text-xs text-brand-600 hover:underline">
+                    <Button variant="link" size="sm" onClick={() => setHome(p.id)}>
                       Jadikan home
-                    </button>
+                    </Button>
                   )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => duplicate(p.id)}
-                    className="mr-3 text-xs text-slate-600 hover:underline"
-                  >
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button variant="link" size="sm" onClick={() => duplicate(p.id)}>
                     Duplikat
-                  </button>
-                  <button onClick={() => remove(p.id)} className="text-xs text-red-600 hover:underline">
+                  </Button>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => remove(p.id)}
+                  >
                     Hapus
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
             {pages.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+              <TableRow>
+                <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                   Belum ada halaman.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
 
-      <form onSubmit={create} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="font-semibold">Tambah Halaman</h3>
-        <div>
-          <label className="block text-sm font-medium">Judul</label>
-          <input
-            required
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium">Slug</label>
-          <input
-            required
-            value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-/]/g, ""))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-            placeholder="tentang"
-          />
-        </div>
-        {err && <p className="text-xs text-red-600">{err}</p>}
-        <button className="w-full rounded-lg bg-brand-600 px-3 py-2 font-medium text-white hover:bg-brand-700">
-          Tambah
-        </button>
-      </form>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Tambah Halaman</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={create} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="title">Judul</Label>
+              <Input
+                id="title"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="slug">Slug</Label>
+              <Input
+                id="slug"
+                required
+                value={slug}
+                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-/]/g, ""))}
+                placeholder="tentang"
+                className="font-mono"
+              />
+            </div>
+            {err && <p className="text-xs text-destructive">{err}</p>}
+            <Button type="submit" className="w-full">
+              Tambah
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

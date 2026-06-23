@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, setTokens } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -36,62 +40,58 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold">Daftar Akun</h1>
-        <p className="mt-1 text-sm text-slate-600">Gratis, tidak perlu kartu kredit.</p>
+    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Daftar Akun</CardTitle>
+          <CardDescription>Gratis, tidak perlu kartu kredit.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="name">Nama</Label>
+              <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">
+                Password{" "}
+                <span className="text-xs font-normal text-muted-foreground">(min 8 karakter)</span>
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Memproses..." : "Buat Akun"}
+            </Button>
+          </form>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Nama</label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">
-              Password <span className="text-xs text-slate-500">(min 8 karakter)</span>
-            </label>
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500"
-            />
-          </div>
-          {err && <p className="text-sm text-red-600">{err}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-600 px-4 py-2.5 font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-          >
-            {loading ? "Memproses..." : "Buat Akun"}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-slate-600">
-          Sudah punya akun?{" "}
-          <Link href="/login" className="font-medium text-brand-600 hover:underline">
-            Masuk
-          </Link>
-        </p>
-      </div>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Sudah punya akun?{" "}
+            <Link href="/login" className="font-medium text-primary hover:underline">
+              Masuk
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </main>
   );
 }

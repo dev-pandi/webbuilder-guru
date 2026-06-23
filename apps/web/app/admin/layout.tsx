@@ -3,9 +3,20 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { BarChart3, Users, Globe2, ArrowLeft, LogOut } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 type Me = { id: string; email: string; name: string; role: string };
+
+const nav = [
+  { href: "/admin", label: "Overview", icon: BarChart3 },
+  { href: "/admin/users", label: "User", icon: Users },
+  { href: "/admin/sites", label: "Situs", icon: Globe2 },
+];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -34,15 +45,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [router]);
 
   if (!ready) {
-    return <div className="flex min-h-screen items-center justify-center text-slate-500">Memuat…</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Memuat…
+      </div>
+    );
   }
   if (!me) return null;
-
-  const nav = [
-    { href: "/admin", label: "Overview", icon: "📊" },
-    { href: "/admin/users", label: "User", icon: "👥" },
-    { href: "/admin/sites", label: "Situs", icon: "🌐" },
-  ];
 
   function logout() {
     clearTokens();
@@ -50,48 +59,56 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-slate-900 text-slate-100 md:flex">
+    <div className="flex min-h-screen bg-muted/30">
+      <aside className="hidden w-60 shrink-0 flex-col border-r bg-slate-950 text-slate-100 md:flex">
         <div className="border-b border-slate-800 px-5 py-4">
           <Link href="/admin" className="text-lg font-bold tracking-tight">
-            Web<span className="text-brand-500">Builder</span>
+            Web<span className="text-primary">Builder</span>
           </Link>
-          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-amber-400">Admin Panel</div>
+          <Badge variant="warning" className="mt-1">
+            Admin Panel
+          </Badge>
         </div>
-        <nav className="flex-1 space-y-0.5 p-2">
+        <nav className="flex-1 space-y-1 p-2">
           {nav.map((n) => {
             const active = n.href === "/admin" ? pathname === "/admin" : pathname.startsWith(n.href);
             return (
               <Link
                 key={n.href}
                 href={n.href}
-                className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
-                  active ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition",
+                  active
+                    ? "bg-slate-800 text-white"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                )}
               >
-                <span>{n.icon}</span>
+                <n.icon className="size-4" />
                 <span>{n.label}</span>
               </Link>
             );
           })}
-          <div className="my-2 border-t border-slate-800" />
+          <Separator className="my-2 bg-slate-800" />
           <Link
             href="/dashboard"
             className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
           >
-            <span>↩</span>
-            <span>Kembali ke Dashboard</span>
+            <ArrowLeft className="size-4" />
+            Kembali ke Dashboard
           </Link>
         </nav>
         <div className="border-t border-slate-800 p-3 text-xs">
           <div className="text-slate-400">Logged in as</div>
           <div className="truncate font-medium">{me.email}</div>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={logout}
-            className="mt-2 w-full rounded border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-800"
+            className="mt-2 w-full border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
           >
+            <LogOut />
             Keluar
-          </button>
+          </Button>
         </div>
       </aside>
 

@@ -3,6 +3,24 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Pagination, SearchBar, useDebounced, type PaginatedResult } from "@/components/Pagination";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type AdminUser = {
   id: string;
@@ -30,7 +48,6 @@ export default function AdminUsersPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Reset to page 1 when search/sort changes
   useEffect(() => {
     setPage(1);
   }, [debouncedQ, sort]);
@@ -83,98 +100,97 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <header className="flex items-end justify-between gap-4">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">User</h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             {data ? `${data.total} user terdaftar` : "Memuat…"}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <SearchBar value={q} onChange={setQ} placeholder="Cari email/nama..." />
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </header>
-      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+      {err && <p className="mt-3 text-sm text-destructive">{err}</p>}
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Nama</th>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Situs</th>
-              <th className="px-4 py-3">Daftar</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className={loading ? "opacity-60" : ""}>
+      <Card className="mt-6 overflow-hidden p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email</TableHead>
+              <TableHead>Nama</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Situs</TableHead>
+              <TableHead>Daftar</TableHead>
+              <TableHead className="text-right"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className={loading ? "opacity-60" : ""}>
             {users.map((u) => (
-              <tr key={u.id} className="border-t border-slate-100">
-                <td className="px-4 py-3 font-mono text-xs">{u.email}</td>
-                <td className="px-4 py-3">{u.name || "—"}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      u.role === "admin"
-                        ? "bg-amber-100 text-amber-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {u.role}
-                  </span>
-                </td>
-                <td className="px-4 py-3 tabular-nums">{u.site_count}</td>
-                <td className="px-4 py-3 text-xs text-slate-500">
+              <TableRow key={u.id}>
+                <TableCell className="font-mono text-xs">{u.email}</TableCell>
+                <TableCell>{u.name || "—"}</TableCell>
+                <TableCell>
+                  <Badge variant={u.role === "admin" ? "warning" : "secondary"}>{u.role}</Badge>
+                </TableCell>
+                <TableCell className="tabular-nums">{u.site_count}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
                   {new Date(u.created_at).toLocaleDateString("id-ID")}
-                </td>
-                <td className="px-4 py-3 text-right">
+                </TableCell>
+                <TableCell className="text-right">
                   {u.role === "admin" ? (
-                    <button
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-muted-foreground"
                       onClick={() => setRole(u.id, "user")}
-                      className="mr-3 text-xs text-slate-600 hover:underline"
                     >
                       Demote
-                    </button>
+                    </Button>
                   ) : (
-                    <button
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-amber-600"
                       onClick={() => setRole(u.id, "admin")}
-                      className="mr-3 text-xs text-amber-600 hover:underline"
                     >
                       Jadikan Admin
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="text-destructive"
                     onClick={() => remove(u.id, u.email)}
-                    className="text-xs text-red-600 hover:underline"
                   >
                     Hapus
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
             {users.length === 0 && !loading && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   {debouncedQ ? `Tidak ada hasil untuk "${debouncedQ}".` : "Belum ada user."}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
         {data && (
-          <div className="border-t border-slate-100">
+          <div className="border-t">
             <Pagination
               page={data.page}
               totalPages={data.total_pages}
@@ -184,7 +200,7 @@ export default function AdminUsersPage() {
             />
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

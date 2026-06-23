@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Settings, LogOut } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 type Me = { id: string; email: string; name: string; role: string };
 
@@ -27,7 +30,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   if (!ready) {
-    return <div className="flex min-h-screen items-center justify-center text-slate-500">Memuat…</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Memuat…
+      </div>
+    );
   }
 
   function logout() {
@@ -36,25 +43,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-muted/30">
+      <header className="border-b bg-background">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/dashboard" className="text-lg font-bold tracking-tight">
-            Web<span className="text-brand-600">Builder</span>
+            Web<span className="text-primary">Builder</span>
           </Link>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex items-center gap-3">
             {me?.role === "admin" && (
-              <Link
-                href="/admin"
-                className="rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
-              >
-                ⚙ Admin Panel
-              </Link>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/admin">
+                  <Settings />
+                  <span className="hidden sm:inline">Admin Panel</span>
+                </Link>
+              </Button>
             )}
-            <span className="text-slate-500">{me?.email}</span>
-            <button onClick={logout} className="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100">
+            <Badge variant="secondary" className="hidden sm:inline-flex">
+              {me?.email}
+            </Badge>
+            <Button variant="ghost" size="sm" onClick={logout}>
+              <LogOut />
               Keluar
-            </button>
+            </Button>
           </div>
         </div>
       </header>

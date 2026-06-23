@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ArrowLeft, Rocket } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Site = { id: string; name: string; slug: string; status: string };
 
@@ -47,38 +51,44 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-muted/30">
+      <header className="border-b bg-background">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
-            <Link href="/dashboard" className="text-sm text-slate-500 hover:underline">← Dashboard</Link>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/dashboard">
+                <ArrowLeft />
+                Dashboard
+              </Link>
+            </Button>
             {site && (
               <>
-                <span className="text-slate-300">/</span>
+                <span className="text-muted-foreground">/</span>
                 <span className="font-semibold">{site.name}</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                <Badge variant={site.status === "published" ? "success" : "secondary"}>
                   {site.status}
-                </span>
+                </Badge>
               </>
             )}
           </div>
-          <button
-            onClick={publish}
-            className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
-          >
+          <Button onClick={publish} className="bg-emerald-600 text-white hover:bg-emerald-700">
+            <Rocket />
             Publikasikan
-          </button>
+          </Button>
         </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 px-6">
+        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-6">
           {tabs.map((t) => {
             const active = pathname.startsWith(t.href);
             return (
               <Link
                 key={t.href}
                 href={t.href}
-                className={`border-b-2 px-3 py-2 text-sm ${
-                  active ? "border-brand-600 text-brand-600" : "border-transparent text-slate-600 hover:text-slate-900"
-                }`}
+                className={cn(
+                  "whitespace-nowrap border-b-2 px-3 py-2 text-sm transition",
+                  active
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
               >
                 {t.label}
               </Link>

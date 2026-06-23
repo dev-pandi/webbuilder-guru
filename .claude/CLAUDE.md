@@ -6,7 +6,7 @@ Konteks ini dimuat di setiap sesi. Bekerjalah sebagai senior engineer dengan kea
 
 - **Go (Fiber) profesional** — REST API produksi, pgx/v5 dengan parameterized query, JWT, argon2id, migrations embedded, layered architecture (handler/repo per domain).
 - **UI/UX profesional** — modern, clean, professional, fully responsive. Mobile-first, breakpoints sm/md/lg konsisten, whitespace generous, microcopy ramah bahasa Indonesia.
-- **TailwindCSS + shadcn-style** — utility-first, accessible primitives, dark-on-light defaults. Aesthetik shadcn (rounded cards, subtle borders, slate palette) walau library shadcn belum di-install.
+- **TailwindCSS + shadcn/ui** — utility-first, accessible Radix primitives, dark-on-light defaults. Komponen shadcn di-vendor di `apps/web/components/ui/` (button, card, input, label, badge, dialog, select, table, tabs, textarea, progress, separator). Helper `cn()` di `lib/utils.ts`. Pakai lucide-react untuk ikon.
 - **Web builder** — block-based editor (skema JSON tree), multi-tenant rendering by Host, custom domain + SSL, export ke static HTML/CSS/JS, asset library, theme tokens (CSS variables).
 - **Next.js 14 (App Router)** — RSC + client components (`"use client"`), route groups `(group)`, dynamic segments `[id]`, metadata, server-only fetch dengan `force-dynamic` untuk renderer.
 - **Caddy** — reverse proxy, on-demand TLS dengan ask endpoint, multi-host routing untuk dashboard / api / renderer / custom domain user.
@@ -60,18 +60,18 @@ infra/caddy/     Caddyfile
 ## Konvensi Frontend
 
 - **Microcopy ID**: "Buat Situs Baru", "Hapus", "Simpan", "Batal", "Tersimpan ✓", "Pilih font…".
-- **Brand color**: `brand-{50,500,600,700,900}`. Semantic: emerald=success/published, amber=warning/admin, red=danger, slate=neutral.
-- **Buttons**:
-  - Primary: `rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-60`
-  - Secondary: `rounded-lg border border-slate-300 px-4 py-2 hover:bg-slate-50`
-  - Inline danger: `text-xs text-red-600 hover:underline`
-  - Inline admin action: `text-xs text-amber-600 hover:underline`
-- **Cards**: `rounded-xl border border-slate-200 bg-white p-5 shadow-sm`. Header tabel: `bg-slate-50 text-left text-xs uppercase text-slate-500`.
-- **Modal**: backdrop `fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4` dengan `onClick={onClose}`; inner card `onClick={(e) => e.stopPropagation()}`.
-- **Loading**: dim tabel dengan `className={loading ? "opacity-60" : ""}`. Skeleton boxes `animate-pulse rounded bg-slate-50`.
+- **shadcn-first**: untuk komponen umum (Button, Card, Input, Label, Badge, Dialog, Select, Table, Tabs, Progress, Separator) **wajib** pakai komponen dari `@/components/ui/*`. Jangan tulis utility class custom yang sudah ada equivalent shadcn.
+- **Ikon**: pakai lucide-react (`import { Plus, Pencil } from "lucide-react"`). Jangan pakai emoji untuk ikon yang punya equivalent lucide.
+- **Color tokens**: pakai shadcn semantic (`bg-primary`, `text-muted-foreground`, `border`, `bg-card`, `text-destructive`). `brand-*` dan slate explicit hanya untuk legacy yang belum di-port.
+  - Status semantic mapping: `published` → Badge `variant="success"`; `draft`/`pending` → `secondary`; `verified` → `success`; `failed`/danger → `destructive`; admin/warning → `warning`.
+- **Cards**: `<Card>` + `<CardHeader>` + `<CardTitle>` + `<CardContent>`. Untuk tabel full-bleed: `<Card className="overflow-hidden p-0">`.
+- **Dialog**: `<Dialog open={open} onOpenChange={setOpen}>` + `<DialogContent>` + `<DialogHeader><DialogTitle>...<DialogDescription>` + `<DialogFooter>`. Tombol close (X) sudah included.
+- **Form**: `<Label htmlFor>` + `<Input id>` + `space-y-1.5` di wrapper. Error message: `<p className="text-sm text-destructive">`.
+- **Tabs nav (header level)**: pakai `<Link>` dengan `border-b-2` pattern di `apps/web/app/sites/[id]/layout.tsx` (bukan Radix Tabs — untuk navigasi route).
+- **Loading**: dim tabel `className={loading ? "opacity-60" : ""}` di `<TableBody>`. Skeleton: `animate-pulse rounded-md bg-muted/50`.
 - **Empty states**: copy berbeda untuk "belum ada data" vs "tidak ada hasil untuk \"X\"".
-- **Live search**: pakai `useDebounced` dari `components/Pagination.tsx` (300ms default), reset `page=1` saat query atau sort berubah.
-- **Theme tokens** mengalir ke renderer via CSS variables (`--color-primary`, `--font-heading`, `--radius`). JANGAN hardcode `brand-*` di renderer atau exported CSS.
+- **Live search**: `useDebounced` dari `components/Pagination.tsx` (300ms default), reset `page=1` saat query atau sort berubah.
+- **Theme tokens** (untuk situs yang di-render, BUKAN dashboard) mengalir ke renderer via CSS variables (`--color-primary`, `--font-heading`, `--radius`). JANGAN hardcode `brand-*` di renderer atau exported CSS.
 
 ## Konvensi Go
 
