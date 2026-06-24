@@ -66,3 +66,39 @@
     @apply bg-background text-foreground antialiased;
   }
 }
+
+/* --- TipTap rich text content --- */
+.wb-prose { line-height: 1.7; }
+.wb-prose > * + * { margin-top: 0.75em; }
+.wb-prose h1, .wb-prose h2, .wb-prose h3 { font-weight: 700; line-height: 1.25; }
+.wb-prose h1 { font-size: 1.875rem; margin-top: 1.5em; }
+.wb-prose h2 { font-size: 1.5rem; margin-top: 1.25em; }
+.wb-prose h3 { font-size: 1.25rem; margin-top: 1em; }
+.wb-prose p { margin: 0; }
+.wb-prose a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+.wb-prose ul, .wb-prose ol { margin: 0.5em 0; padding-left: 1.5em; }
+.wb-prose ul { list-style: disc; }
+.wb-prose ol { list-style: decimal; }
+.wb-prose li { margin: 0.15em 0; }
+.wb-prose li > p { margin: 0; display: inline; }
+.wb-prose blockquote { border-left: 3px solid hsl(var(--primary)); padding-left: 1em; opacity: 0.85; font-style: italic; }
+.wb-prose code { background: hsl(var(--muted)); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.875em; font-family: ui-monospace, monospace; }
+.wb-prose pre { background: hsl(var(--foreground)); color: hsl(var(--background)); padding: 1em; border-radius: 0.5em; overflow-x: auto; font-size: 0.875rem; }
+.wb-prose pre code { background: none; padding: 0; color: inherit; }
+.wb-prose img { max-width: 100%; height: auto; border-radius: 0.5em; }
+.wb-prose hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 1.5em 0; }
+.wb-prose strong { font-weight: 700; }
+.wb-prose em { font-style: italic; }
+.wb-prose s { text-decoration: line-through; opacity: 0.75; }
+
+/* Placeholder behaviour for TipTap (extension-placeholder) */
+.wb-prose .is-editor-empty:first-child::before {
+  color: hsl(var(--muted-foreground));
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Tight variant — used inside the editor for compact spacing */
+.wb-prose.prose-tight > * + * { margin-top: 0.5em; }
