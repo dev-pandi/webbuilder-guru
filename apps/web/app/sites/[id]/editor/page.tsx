@@ -1031,6 +1031,395 @@ function BlockView({ block }: { block: BlockData }) {
           </div>
         </div>
       );
+
+    // -------- New blocks (compact preview) --------
+
+    case "HeroSplit": {
+      const reversed = String(p.reversed ?? "") === "yes";
+      return (
+        <div className="px-6 py-10">
+          <div className={cn("grid items-center gap-6 sm:grid-cols-2", reversed && "sm:[&>div:first-child]:order-2")}>
+            <div>
+              {p.eyebrow ? (
+                <div className="mb-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {String(p.eyebrow)}
+                </div>
+              ) : null}
+              <h1 className="text-2xl font-bold tracking-tight">{String(p.title ?? "")}</h1>
+              <p className="mt-2 text-sm text-muted-foreground">{String(p.subtitle ?? "")}</p>
+              <div className="mt-4 flex gap-2">
+                {p.ctaLabel ? (
+                  <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+                    {String(p.ctaLabel)}
+                  </span>
+                ) : null}
+                {p.ctaSecondaryLabel ? (
+                  <span className="rounded-md border px-3 py-1.5 text-xs font-medium">
+                    {String(p.ctaSecondaryLabel)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            {p.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={String(p.image)} alt="" className="w-full rounded-lg border" />
+            ) : (
+              <div className="aspect-video w-full rounded-lg bg-gradient-to-br from-primary/15 to-primary/5" />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    case "Banner":
+      return (
+        <div className="flex items-center justify-center gap-3 bg-primary px-6 py-2 text-center text-xs text-primary-foreground">
+          <span>{String(p.text ?? "")}</span>
+          {p.ctaLabel ? (
+            <span className="font-semibold underline underline-offset-2">{String(p.ctaLabel)}</span>
+          ) : null}
+        </div>
+      );
+
+    case "Divider":
+      return (
+        <div className="px-6 py-4">
+          {p.label ? (
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-foreground/15" />
+              <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                {String(p.label)}
+              </span>
+              <div className="h-px flex-1 bg-foreground/15" />
+            </div>
+          ) : (
+            <div className="h-px w-full bg-foreground/10" />
+          )}
+        </div>
+      );
+
+    case "Spacer":
+      return (
+        <div className="relative">
+          <div
+            style={{ height: Math.min(Number(p.size ?? 64), 160) + "px" }}
+            className="border-y border-dashed border-foreground/15 bg-foreground/[0.02]"
+          />
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
+            {String(p.size ?? 64)}px spacer
+          </span>
+        </div>
+      );
+
+    case "Quote":
+      return (
+        <div className="px-8 py-8">
+          <div className="text-3xl leading-none text-primary opacity-40">❝</div>
+          <blockquote className="mt-2 text-base font-medium leading-snug">{String(p.text ?? "")}</blockquote>
+          <div className="mt-3 text-xs font-semibold">
+            — {String(p.author ?? "")}{" "}
+            {p.role ? <span className="font-normal text-muted-foreground">({String(p.role)})</span> : null}
+          </div>
+        </div>
+      );
+
+    case "Alert": {
+      const variant = String(p.variant ?? "info");
+      const cls: Record<string, string> = {
+        info: "border-blue-500/30 bg-blue-500/10",
+        success: "border-emerald-500/30 bg-emerald-500/10",
+        warning: "border-amber-500/30 bg-amber-500/10",
+        danger: "border-red-500/30 bg-red-500/10",
+      };
+      const ic: Record<string, string> = {
+        info: "ℹ️",
+        success: "✅",
+        warning: "⚠️",
+        danger: "❗",
+      };
+      return (
+        <div className="px-6 py-4">
+          <div className={cn("flex gap-3 rounded-lg border p-3 text-xs", cls[variant] ?? cls.info)}>
+            <span className="text-lg leading-none">{ic[variant] ?? ic.info}</span>
+            <div>
+              <div className="font-semibold">{String(p.title ?? "")}</div>
+              <div className="mt-0.5 opacity-80">{String(p.body ?? "")}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    case "FeatureSide":
+      return (
+        <div className="space-y-6 px-6 py-6">
+          {(p.items as Array<{ title: string; desc: string; image?: string }> | undefined)
+            ?.slice(0, 2)
+            .map((it, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "grid items-center gap-4 sm:grid-cols-2",
+                  i % 2 === 1 && "sm:[&>div:first-child]:order-2",
+                )}
+              >
+                <div>
+                  <h4 className="text-base font-bold">{it.title}</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">{it.desc}</p>
+                </div>
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={it.image} alt="" className="w-full rounded-md border" />
+                ) : (
+                  <div className="aspect-video w-full rounded-md bg-gradient-to-br from-primary/15 to-primary/5" />
+                )}
+              </div>
+            ))}
+        </div>
+      );
+
+    case "Timeline":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-4 text-base font-bold">{String(p.title)}</h3> : null}
+          <ol className="relative space-y-3 border-l-2 border-primary/30 pl-5">
+            {(p.items as Array<{ date: string; title: string }> | undefined)?.slice(0, 4).map((it, i) => (
+              <li key={i} className="relative">
+                <span className="absolute -left-[27px] grid size-4 place-items-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                  {i + 1}
+                </span>
+                <div className="text-[10px] font-semibold uppercase text-primary">{it.date}</div>
+                <div className="text-xs font-medium">{it.title}</div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      );
+
+    case "ProcessSteps":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="text-center text-base font-bold">{String(p.title)}</h3> : null}
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.slice(0, 3).map((it, i) => (
+              <div key={i} className="text-center">
+                <div className="mx-auto grid size-8 place-items-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
+                  {i + 1}
+                </div>
+                <div className="mt-1.5 text-xs font-semibold">{it.title}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "TeamGrid":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="text-center text-base font-bold">{String(p.title)}</h3> : null}
+          <div className="mt-4 grid grid-cols-4 gap-3">
+            {(p.items as Array<{ name: string; role: string; image?: string }> | undefined)?.slice(0, 4).map((it, i) => (
+              <div key={i} className="text-center">
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={it.image} alt={it.name} className="mx-auto size-12 rounded-full border-2 border-background object-cover" />
+                ) : (
+                  <div className="mx-auto grid size-12 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                    {it.name?.charAt(0) ?? "?"}
+                  </div>
+                )}
+                <div className="mt-1.5 text-[10px] font-semibold">{it.name}</div>
+                <div className="text-[9px] text-primary">{it.role}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "IconList":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-2 text-sm font-bold">{String(p.title)}</h3> : null}
+          <ul className="space-y-1.5">
+            {(p.items as Array<{ icon: string; text: string }> | undefined)?.slice(0, 5).map((it, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground">
+                  {it.icon}
+                </span>
+                <span>{it.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+
+    case "StatsCard":
+      return (
+        <div className="px-6 py-6">
+          <div className="rounded-2xl border bg-muted/30 p-8 text-center">
+            <div className="text-5xl font-bold text-primary">{String(p.value ?? "")}</div>
+            <div className="mt-2 text-xs uppercase tracking-widest opacity-70">{String(p.label ?? "")}</div>
+          </div>
+        </div>
+      );
+
+    case "VideoEmbed":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-3 text-center text-base font-bold">{String(p.title)}</h3> : null}
+          <div className="grid aspect-video w-full place-items-center rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted text-3xl">
+            ▶️
+          </div>
+          <p className="mt-1.5 truncate text-center font-mono text-[10px] text-muted-foreground">
+            {String(p.src ?? "")}
+          </p>
+        </div>
+      );
+
+    case "Map":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-3 text-base font-bold">{String(p.title)}</h3> : null}
+          <div className="grid aspect-[16/9] w-full place-items-center rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted text-3xl">
+            🗺️
+          </div>
+        </div>
+      );
+
+    case "Gallery":
+      return (
+        <div className="px-6 py-6">
+          {p.title ? <h3 className="mb-3 text-base font-bold">{String(p.title)}</h3> : null}
+          <div className="grid grid-cols-4 gap-1.5">
+            {(p.items as Array<{ image?: string; caption?: string }> | undefined)?.slice(0, 8).map((it, i) =>
+              it.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={i} src={it.image} alt="" className="aspect-square w-full rounded object-cover" />
+              ) : (
+                <div key={i} className="aspect-square w-full rounded bg-muted" />
+              ),
+            )}
+          </div>
+        </div>
+      );
+
+    case "SocialLinks":
+      return (
+        <div className="px-6 py-6 text-center">
+          {p.title ? (
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              {String(p.title)}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {(p.items as Array<{ platform: string }> | undefined)?.slice(0, 8).map((it, i) => (
+              <div
+                key={i}
+                className="grid size-8 place-items-center rounded-full border bg-card text-[10px] font-bold uppercase text-primary"
+              >
+                {it.platform.charAt(0)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "Newsletter":
+      return (
+        <div className="px-6 py-6">
+          <div className="rounded-2xl border bg-muted/30 p-6 text-center">
+            <h3 className="text-base font-bold">{String(p.title ?? "")}</h3>
+            {p.subtitle ? <p className="mt-1 text-xs text-muted-foreground">{String(p.subtitle)}</p> : null}
+            <div className="mx-auto mt-4 flex max-w-xs gap-1.5">
+              <div className="flex-1 rounded-md border bg-background px-2 py-1.5 text-left text-[10px] text-muted-foreground">
+                {String(p.placeholder ?? "nama@email.com")}
+              </div>
+              <span className="rounded-md bg-primary px-2 py-1.5 text-[10px] font-medium text-primary-foreground">
+                {String(p.ctaLabel ?? "Subscribe")}
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+
+    case "ContactForm":
+      return (
+        <div className="px-6 py-6">
+          <div className="text-center">
+            <h3 className="text-base font-bold">{String(p.title ?? "")}</h3>
+            {p.subtitle ? <p className="mt-1 text-xs text-muted-foreground">{String(p.subtitle)}</p> : null}
+          </div>
+          <div className="mx-auto mt-3 max-w-xs space-y-1.5 rounded-lg border bg-card p-3">
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="rounded-md border bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground">Nama</div>
+              <div className="rounded-md border bg-muted/40 px-2 py-1 text-[10px] text-muted-foreground">Email</div>
+            </div>
+            <div className="rounded-md border bg-muted/40 px-2 py-3 text-[10px] text-muted-foreground">Pesan…</div>
+            <div className="rounded-md bg-primary py-1.5 text-center text-[10px] font-medium text-primary-foreground">
+              {String(p.ctaLabel ?? "Kirim")}
+            </div>
+          </div>
+        </div>
+      );
+
+    case "Tabs":
+      return (
+        <div className="px-6 py-6">
+          <div className="flex gap-1 border-b text-xs">
+            {(p.items as Array<{ label: string }> | undefined)?.slice(0, 4).map((it, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "border-b-2 px-3 py-1.5 text-xs font-medium",
+                  i === 0 ? "border-primary text-foreground" : "border-transparent text-muted-foreground",
+                )}
+              >
+                {it.label}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-xs opacity-80">
+            {(p.items as Array<{ body: string }> | undefined)?.[0]?.body ?? ""}
+          </p>
+        </div>
+      );
+
+    case "TestimonialCard": {
+      const rating = Number(p.rating ?? 0);
+      return (
+        <div className="px-6 py-6">
+          <div className="rounded-2xl border bg-muted/30 p-6">
+            {rating > 0 && (
+              <div className="mb-2 text-sm">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span key={i} className={i < rating ? "text-amber-400" : "text-muted-foreground/30"}>
+                    ★
+                  </span>
+                ))}
+              </div>
+            )}
+            <blockquote className="text-sm font-medium leading-snug">
+              &ldquo;{String(p.quote ?? "")}&rdquo;
+            </blockquote>
+            <div className="mt-3 flex items-center gap-2">
+              {p.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={String(p.avatar)} alt="" className="size-8 rounded-full object-cover" />
+              ) : (
+                <div className="grid size-8 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  {String(p.name ?? "?").charAt(0)}
+                </div>
+              )}
+              <div>
+                <div className="text-xs font-semibold">{String(p.name ?? "")}</div>
+                {p.role ? <div className="text-[10px] text-muted-foreground">{String(p.role)}</div> : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     default:
       return (
         <div className="px-6 py-2 text-xs text-muted-foreground">[block: {block.type}]</div>

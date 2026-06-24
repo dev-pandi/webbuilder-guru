@@ -510,9 +510,741 @@ function BlockView({ block }: { block: Block }) {
       );
     }
 
+    // -------------------- New blocks --------------------
+
+    case "HeroSplit": {
+      const reversed = String(p.reversed ?? "") === "yes";
+      return (
+        <section className="mx-auto max-w-6xl px-6 py-20">
+          <div
+            className={`grid items-center gap-12 lg:grid-cols-2 ${reversed ? "lg:[&>div:first-child]:order-2" : ""}`}
+          >
+            <div>
+              {p.eyebrow ? (
+                <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wider opacity-80">
+                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                  {String(p.eyebrow)}
+                </div>
+              ) : null}
+              <h1 className="text-balance text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
+                {String(p.title ?? "")}
+              </h1>
+              {p.subtitle ? (
+                <p className="mt-5 text-lg opacity-80">{String(p.subtitle)}</p>
+              ) : null}
+              <div className="mt-8 flex flex-wrap gap-3">
+                {p.ctaLabel ? (
+                  <a
+                    href={String(p.ctaHref ?? "#")}
+                    className="btn-primary inline-flex items-center gap-2 px-6 py-3 font-medium shadow-lg transition-all hover:scale-105"
+                  >
+                    {String(p.ctaLabel)} →
+                  </a>
+                ) : null}
+                {p.ctaSecondaryLabel ? (
+                  <a
+                    href={String(p.ctaSecondaryHref ?? "#")}
+                    className="inline-flex items-center gap-2 rounded-[var(--radius)] border px-6 py-3 font-medium transition-colors hover:bg-foreground/5"
+                  >
+                    {String(p.ctaSecondaryLabel)}
+                  </a>
+                ) : null}
+              </div>
+            </div>
+            <div className="relative">
+              {p.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={String(p.image)}
+                  alt=""
+                  className="w-full rounded-2xl border shadow-xl"
+                />
+              ) : (
+                <div
+                  className="aspect-video w-full rounded-2xl border bg-gradient-to-br from-primary/10 to-primary/5"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 15%, transparent), color-mix(in srgb, var(--color-secondary) 8%, transparent))",
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    case "Banner":
+      return (
+        <div
+          className="flex items-center justify-center gap-3 px-6 py-2.5 text-center text-sm text-white"
+          style={{ background: "var(--color-primary)" }}
+        >
+          <span>{String(p.text ?? "")}</span>
+          {p.ctaLabel ? (
+            <a
+              href={String(p.ctaHref ?? "#")}
+              className="font-semibold underline underline-offset-2 hover:opacity-90"
+            >
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </div>
+      );
+
+    case "Divider":
+      return (
+        <div className="mx-auto max-w-5xl px-6 py-8">
+          {p.label ? (
+            <div className="flex items-center gap-4">
+              <div className="h-px flex-1 bg-foreground/15" />
+              <span className="text-xs font-medium uppercase tracking-widest opacity-60">
+                {String(p.label)}
+              </span>
+              <div className="h-px flex-1 bg-foreground/15" />
+            </div>
+          ) : (
+            <div className="h-px w-full bg-foreground/10" />
+          )}
+        </div>
+      );
+
+    case "Spacer":
+      return <div style={{ height: `${Number(p.size ?? 64)}px` }} aria-hidden />;
+
+    case "Quote":
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          <div
+            className="text-5xl leading-none opacity-30"
+            style={{ color: "var(--color-primary)" }}
+          >
+            ❝
+          </div>
+          <blockquote className="mt-4 text-balance text-2xl font-medium leading-snug sm:text-3xl">
+            {String(p.text ?? "")}
+          </blockquote>
+          <footer className="mt-6 flex items-center gap-3 text-sm">
+            <div
+              className="h-0.5 w-10"
+              style={{ background: "var(--color-primary)" }}
+            />
+            <div>
+              <div className="font-semibold">{String(p.author ?? "")}</div>
+              {p.role ? (
+                <div className="opacity-60">{String(p.role)}</div>
+              ) : null}
+            </div>
+          </footer>
+        </section>
+      );
+
+    case "Alert": {
+      const variant = String(p.variant ?? "info");
+      const styles: Record<string, { bg: string; border: string; icon: string }> =
+        {
+          info: { bg: "bg-blue-500/10", border: "border-blue-500/30", icon: "ℹ️" },
+          success: {
+            bg: "bg-emerald-500/10",
+            border: "border-emerald-500/30",
+            icon: "✅",
+          },
+          warning: {
+            bg: "bg-amber-500/10",
+            border: "border-amber-500/30",
+            icon: "⚠️",
+          },
+          danger: { bg: "bg-red-500/10", border: "border-red-500/30", icon: "❗" },
+        };
+      const s = styles[variant] ?? styles.info;
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-6">
+          <div className={`flex gap-3 rounded-xl border ${s.bg} ${s.border} p-4`}>
+            <span className="text-xl leading-none">{s.icon}</span>
+            <div className="flex-1">
+              {p.title ? (
+                <p className="font-semibold">{String(p.title)}</p>
+              ) : null}
+              {p.body ? (
+                <p className="mt-1 text-sm opacity-80">{String(p.body)}</p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    case "FeatureSide": {
+      const items =
+        (p.items as Array<{ title: string; desc: string; image?: string }> | undefined) ??
+        [];
+      return (
+        <section className="mx-auto max-w-5xl space-y-20 px-6 py-20">
+          {items.map((it, i) => {
+            const reversed = i % 2 === 1;
+            return (
+              <div
+                key={i}
+                className={`grid items-center gap-10 lg:grid-cols-2 ${reversed ? "lg:[&>div:first-child]:order-2" : ""}`}
+              >
+                <div>
+                  <h3 className="text-balance text-3xl font-bold tracking-tight">
+                    {it.title}
+                  </h3>
+                  <p className="mt-3 text-lg opacity-80">{it.desc}</p>
+                </div>
+                <div className="relative">
+                  {it.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={it.image}
+                      alt=""
+                      className="w-full rounded-2xl border shadow-lg"
+                    />
+                  ) : (
+                    <div
+                      className="aspect-video w-full rounded-2xl border"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 15%, transparent), color-mix(in srgb, var(--color-secondary) 8%, transparent))",
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      );
+    }
+
+    case "Timeline": {
+      const items =
+        (p.items as Array<{ date: string; title: string; desc: string }> | undefined) ?? [];
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          {p.title ? (
+            <h3 className="mb-12 text-center text-3xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          <ol className="relative space-y-8 border-l-2 border-foreground/10 pl-8">
+            {items.map((it, i) => (
+              <li key={i} className="relative">
+                <span
+                  className="absolute -left-[42px] grid size-6 place-items-center rounded-full text-xs font-bold text-white shadow-md"
+                  style={{ background: "var(--color-primary)" }}
+                >
+                  {i + 1}
+                </span>
+                <div
+                  className="text-xs font-semibold uppercase tracking-widest opacity-70"
+                  style={{ color: "var(--color-primary)" }}
+                >
+                  {it.date}
+                </div>
+                <h4 className="mt-1 text-xl font-semibold">{it.title}</h4>
+                <p className="mt-1 opacity-80">{it.desc}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      );
+    }
+
+    case "ProcessSteps": {
+      const items =
+        (p.items as Array<{ title: string; desc: string }> | undefined) ?? [];
+      return (
+        <section className="mx-auto max-w-5xl px-6 py-16">
+          {p.title ? (
+            <h3 className="text-center text-3xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          {p.subtitle ? (
+            <p className="mx-auto mt-3 max-w-2xl text-center opacity-70">
+              {String(p.subtitle)}
+            </p>
+          ) : null}
+          <div className="mt-12 grid gap-6 sm:grid-cols-3">
+            {items.map((it, i) => (
+              <div key={i} className="relative">
+                {i < items.length - 1 && (
+                  <div
+                    className="absolute left-1/2 top-7 hidden h-0.5 w-full sm:block"
+                    style={{
+                      background:
+                        "linear-gradient(to right, var(--color-primary), transparent)",
+                    }}
+                  />
+                )}
+                <div
+                  className="relative mx-auto grid size-14 place-items-center rounded-2xl text-xl font-bold text-white shadow-lg"
+                  style={{ background: "var(--color-primary)" }}
+                >
+                  {i + 1}
+                </div>
+                <h4 className="mt-4 text-center text-lg font-semibold">{it.title}</h4>
+                <p className="mt-1 text-center text-sm opacity-80">{it.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "TeamGrid": {
+      const items =
+        (p.items as Array<{ name: string; role: string; image?: string }> | undefined) ?? [];
+      return (
+        <section className="mx-auto max-w-5xl px-6 py-16">
+          {p.title ? (
+            <h3 className="text-center text-3xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          {p.subtitle ? (
+            <p className="mx-auto mt-3 max-w-2xl text-center opacity-70">
+              {String(p.subtitle)}
+            </p>
+          ) : null}
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {items.map((it, i) => (
+              <div key={i} className="text-center">
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={it.image}
+                    alt={it.name}
+                    className="mx-auto size-32 rounded-full border-4 border-background object-cover shadow-lg"
+                  />
+                ) : (
+                  <div
+                    className="mx-auto grid size-32 place-items-center rounded-full text-3xl font-bold text-white shadow-lg"
+                    style={{ background: "var(--color-primary)" }}
+                  >
+                    {it.name?.charAt(0) ?? "?"}
+                  </div>
+                )}
+                <h4 className="mt-4 font-semibold">{it.name}</h4>
+                <p
+                  className="text-sm opacity-70"
+                  style={{ color: "var(--color-primary)" }}
+                >
+                  {it.role}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "IconList": {
+      const items =
+        (p.items as Array<{ icon: string; text: string }> | undefined) ?? [];
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-12">
+          {p.title ? (
+            <h3 className="mb-6 text-2xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          <ul className="space-y-3">
+            {items.map((it, i) => (
+              <li key={i} className="flex items-start gap-3">
+                <span
+                  className="grid size-7 shrink-0 place-items-center rounded-full text-sm font-bold text-white"
+                  style={{ background: "var(--color-primary)" }}
+                >
+                  {it.icon}
+                </span>
+                <span className="pt-0.5">{it.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    }
+
+    case "StatsCard":
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          <div className="rounded-3xl border bg-gradient-to-br from-foreground/[0.02] to-transparent p-12 text-center">
+            <div
+              className="text-7xl font-bold tracking-tight sm:text-8xl"
+              style={{ color: "var(--color-primary)" }}
+            >
+              {String(p.value ?? "")}
+            </div>
+            <div className="mt-4 text-lg font-semibold uppercase tracking-widest opacity-80">
+              {String(p.label ?? "")}
+            </div>
+            {p.desc ? (
+              <p className="mx-auto mt-4 max-w-xl text-sm opacity-70">
+                {String(p.desc)}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      );
+
+    case "VideoEmbed":
+      return (
+        <section className="mx-auto max-w-4xl px-6 py-12">
+          {p.title ? (
+            <h3 className="mb-6 text-center text-3xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          <div className="aspect-video overflow-hidden rounded-2xl border shadow-xl">
+            <iframe
+              src={String(p.src ?? "")}
+              className="size-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              loading="lazy"
+            />
+          </div>
+        </section>
+      );
+
+    case "Map":
+      return (
+        <section className="mx-auto max-w-5xl px-6 py-12">
+          {p.title ? (
+            <h3 className="mb-6 text-2xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          <div className="aspect-[16/9] overflow-hidden rounded-2xl border shadow-md">
+            <iframe
+              src={String(p.src ?? "")}
+              className="size-full"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          </div>
+        </section>
+      );
+
+    case "Gallery": {
+      const items =
+        (p.items as Array<{ image?: string; caption?: string }> | undefined) ?? [];
+      return (
+        <section className="mx-auto max-w-6xl px-6 py-12">
+          {p.title ? (
+            <h3 className="mb-8 text-3xl font-bold tracking-tight">
+              {String(p.title)}
+            </h3>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {items.map((it, i) => (
+              <figure
+                key={i}
+                className="group relative overflow-hidden rounded-lg border bg-muted/30"
+              >
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={it.image}
+                    alt={it.caption ?? ""}
+                    className="aspect-square w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="aspect-square bg-foreground/5" />
+                )}
+                {it.caption ? (
+                  <figcaption className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/70 to-transparent p-3 text-xs text-white transition-transform group-hover:translate-y-0">
+                    {it.caption}
+                  </figcaption>
+                ) : null}
+              </figure>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "SocialLinks": {
+      const items =
+        (p.items as Array<{ platform: string; href: string }> | undefined) ?? [];
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-10 text-center">
+          {p.title ? (
+            <p className="mb-4 text-sm font-medium uppercase tracking-widest opacity-70">
+              {String(p.title)}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {items.map((it, i) => (
+              <a
+                key={i}
+                href={it.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={it.platform}
+                className="grid size-11 place-items-center rounded-full border bg-card transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+                style={{ color: "var(--color-primary)" }}
+              >
+                <span dangerouslySetInnerHTML={{ __html: socialIcon(it.platform) }} />
+              </a>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "Newsletter":
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          <div className="rounded-3xl border bg-gradient-to-br from-foreground/[0.02] to-transparent p-10 text-center">
+            <h3 className="text-balance text-3xl font-bold tracking-tight">
+              {String(p.title ?? "")}
+            </h3>
+            {p.subtitle ? (
+              <p className="mx-auto mt-3 max-w-xl opacity-80">{String(p.subtitle)}</p>
+            ) : null}
+            <form
+              action={String(p.action ?? "")}
+              method="post"
+              className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 sm:flex-row"
+            >
+              <input
+                type="email"
+                name="email"
+                required
+                placeholder={String(p.placeholder ?? "nama@email.com")}
+                className="flex-1 rounded-[var(--radius)] border bg-background px-4 py-3 text-sm outline-none ring-offset-background transition-colors focus:ring-2"
+                style={{ outlineColor: "var(--color-primary)" }}
+              />
+              <button
+                type="submit"
+                className="btn-primary px-6 py-3 font-medium shadow-sm transition-transform hover:scale-105"
+              >
+                {String(p.ctaLabel ?? "Subscribe")}
+              </button>
+            </form>
+            {p.note ? (
+              <p className="mt-3 text-xs opacity-60">{String(p.note)}</p>
+            ) : null}
+          </div>
+        </section>
+      );
+
+    case "ContactForm":
+      return (
+        <section className="mx-auto max-w-2xl px-6 py-16">
+          <div className="text-center">
+            <h3 className="text-3xl font-bold tracking-tight">
+              {String(p.title ?? "")}
+            </h3>
+            {p.subtitle ? (
+              <p className="mt-3 opacity-80">{String(p.subtitle)}</p>
+            ) : null}
+          </div>
+          <form
+            action={String(p.action ?? "")}
+            method="post"
+            className="mt-10 space-y-4 rounded-2xl border bg-card p-6 shadow-sm"
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium">Nama</span>
+                <input
+                  name="name"
+                  type="text"
+                  required
+                  className="mt-1.5 w-full rounded-[var(--radius)] border bg-background px-3 py-2.5 text-sm outline-none ring-offset-background focus:ring-2"
+                  style={{ outlineColor: "var(--color-primary)" }}
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium">Email</span>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  className="mt-1.5 w-full rounded-[var(--radius)] border bg-background px-3 py-2.5 text-sm outline-none ring-offset-background focus:ring-2"
+                  style={{ outlineColor: "var(--color-primary)" }}
+                />
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-sm font-medium">Pesan</span>
+              <textarea
+                name="message"
+                required
+                rows={5}
+                className="mt-1.5 w-full rounded-[var(--radius)] border bg-background px-3 py-2.5 text-sm outline-none ring-offset-background focus:ring-2"
+                style={{ outlineColor: "var(--color-primary)" }}
+              />
+            </label>
+            <button
+              type="submit"
+              className="btn-primary w-full px-6 py-3 font-medium shadow-sm transition-transform hover:scale-[1.02]"
+            >
+              {String(p.ctaLabel ?? "Kirim")}
+            </button>
+          </form>
+        </section>
+      );
+
+    case "Tabs": {
+      const items =
+        (p.items as Array<{ label: string; body: string }> | undefined) ?? [];
+      const tabId = `wb-tabs-${Math.abs(
+        hashString(JSON.stringify(items)),
+      ).toString(36)}`;
+      return (
+        <section className="wb-tabs mx-auto max-w-3xl px-6 py-12">
+          {items.slice(0, 4).map((_, i) => (
+            <input
+              key={i}
+              type="radio"
+              name={tabId}
+              id={`${tabId}-${i}`}
+              defaultChecked={i === 0}
+              className="wb-tab-input"
+            />
+          ))}
+          <div role="tablist" className="flex gap-1 border-b">
+            {items.slice(0, 4).map((it, i) => (
+              <label
+                key={i}
+                htmlFor={`${tabId}-${i}`}
+                className="wb-tab-label cursor-pointer border-b-2 border-transparent px-4 py-2.5 text-sm font-medium opacity-60 transition-all hover:opacity-100"
+              >
+                {it.label}
+              </label>
+            ))}
+          </div>
+          <div className="wb-tab-panels mt-6">
+            {items.slice(0, 4).map((it, i) => (
+              <div
+                key={i}
+                role="tabpanel"
+                className="wb-tab-panel whitespace-pre-line text-base leading-relaxed opacity-90"
+              >
+                {it.body}
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "TestimonialCard": {
+      const rating = Number(p.rating ?? 0);
+      return (
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          <div className="rounded-3xl border bg-gradient-to-br from-foreground/[0.03] to-transparent p-10">
+            {rating > 0 && (
+              <div className="mb-4 flex gap-0.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={`text-xl ${i < rating ? "" : "opacity-20"}`}
+                    style={{ color: i < rating ? "#fbbf24" : "currentColor" }}
+                  >
+                    ★
+                  </span>
+                ))}
+              </div>
+            )}
+            <blockquote className="text-balance text-2xl font-medium leading-snug">
+              &ldquo;{String(p.quote ?? "")}&rdquo;
+            </blockquote>
+            <div className="mt-6 flex items-center gap-4">
+              {p.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={String(p.avatar)}
+                  alt=""
+                  className="size-14 rounded-full border-2 border-background object-cover shadow-md"
+                />
+              ) : (
+                <div
+                  className="grid size-14 place-items-center rounded-full text-lg font-bold text-white shadow-md"
+                  style={{ background: "var(--color-primary)" }}
+                >
+                  {String(p.name ?? "?").charAt(0)}
+                </div>
+              )}
+              <div>
+                <div className="font-semibold">{String(p.name ?? "")}</div>
+                {p.role ? (
+                  <div className="text-sm opacity-70">{String(p.role)}</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     default:
       return null;
   }
+}
+
+// ---------- Helpers ----------
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) & 0xffffffff;
+  }
+  return h;
+}
+
+// Inline SVG icons for SocialLinks (kept small/static so we don't pull lucide into renderer).
+function socialIcon(platform: string): string {
+  const norm = platform.toLowerCase();
+  const wrap = (path: string) =>
+    `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">${path}</svg>`;
+  if (norm.includes("instagram"))
+    return wrap(
+      `<path d="M7 2C4.243 2 2 4.243 2 7v10c0 2.757 2.243 5 5 5h10c2.757 0 5-2.243 5-5V7c0-2.757-2.243-5-5-5H7zm0 2h10c1.654 0 3 1.346 3 3v10c0 1.654-1.346 3-3 3H7c-1.654 0-3-1.346-3-3V7c0-1.654 1.346-3 3-3zm10 1a1 1 0 100 2 1 1 0 000-2zm-5 2a5 5 0 100 10 5 5 0 000-10zm0 2a3 3 0 110 6 3 3 0 010-6z"/>`,
+    );
+  if (norm.includes("twitter") || norm.includes("x.com") || norm === "x")
+    return wrap(
+      `<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77z"/>`,
+    );
+  if (norm.includes("facebook"))
+    return wrap(
+      `<path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 4.99 3.66 9.13 8.44 9.88v-6.99H7.9v-2.89h2.54v-2.2c0-2.51 1.49-3.89 3.77-3.89 1.09 0 2.24.19 2.24.19v2.47h-1.26c-1.24 0-1.63.77-1.63 1.56v1.87h2.78l-.45 2.89h-2.33V22c4.78-.75 8.44-4.89 8.44-9.94z"/>`,
+    );
+  if (norm.includes("linkedin"))
+    return wrap(
+      `<path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.95v5.66H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.59 0 4.26 2.36 4.26 5.43v6.31zM5.34 7.43a2.06 2.06 0 11-.01-4.13 2.06 2.06 0 010 4.13zM7.12 20.45H3.55V9h3.57v11.45z"/>`,
+    );
+  if (norm.includes("youtube"))
+    return wrap(
+      `<path d="M23.5 6.51a3 3 0 00-2.12-2.12C19.66 4 12 4 12 4s-7.66 0-9.38.4A3 3 0 00.5 6.5C.1 8.22.1 12 .1 12s0 3.78.4 5.5a3 3 0 002.12 2.12C4.34 20 12 20 12 20s7.66 0 9.38-.4a3 3 0 002.12-2.12c.4-1.72.4-5.5.4-5.5s0-3.78-.4-5.5zM9.6 15.5v-7l6.4 3.5-6.4 3.5z"/>`,
+    );
+  if (norm.includes("tiktok"))
+    return wrap(
+      `<path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005.9 20.84a6.32 6.32 0 0010.86-4.43V7.94a8.16 8.16 0 004.77 1.52V6a4.82 4.82 0 01-1.94-.31z"/>`,
+    );
+  if (norm.includes("github"))
+    return wrap(
+      `<path d="M12 .3a12 12 0 00-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.6 11.6 0 016 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.7-5.5 6 .4.4.8 1 .8 2.1v3.2c0 .3.2.7.8.6A12 12 0 0012 .3"/>`,
+    );
+  if (norm.includes("email") || norm.includes("mail"))
+    return wrap(
+      `<path d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/>`,
+    );
+  if (norm.includes("whatsapp") || norm.includes("wa"))
+    return wrap(
+      `<path d="M.06 24l1.68-6.13A11.86 11.86 0 010 12.01C0 5.4 5.4 0 12.01 0 18.62 0 24 5.4 24 12.01 24 18.62 18.6 24 12.01 24c-2 0-3.95-.5-5.66-1.45L.06 24zm6.6-3.81c1.66.99 3.27 1.58 5.34 1.58 5.5 0 9.97-4.47 9.97-9.97S17.5 1.84 12 1.84 2.03 6.31 2.03 11.81c0 2.17.64 3.78 1.71 5.49l-1 3.66 3.92-1.03z"/>`,
+    );
+  // generic fallback
+  return wrap(
+    `<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  );
 }
 
 // --- Dynamic blocks: fetch live data from API ---
