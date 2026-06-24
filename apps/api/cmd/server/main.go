@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,7 +18,10 @@ import (
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
 	"github.com/webbuilder/api/internal/domains"
+	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
+	"github.com/webbuilder/api/internal/logging"
+	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
@@ -33,13 +35,27 @@ import (
 func main() {
 	// Auto-load .env from working dir (silent if missing). Existing OS env
 	// always wins, so Docker Compose passthrough is unaffected.
-	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		log.Printf("[env] note: %v", err)
-	}
+	envErr := godotenv.Load()
 
 	cfg := config.Load()
+	logging.Setup(cfg.AppEnv, cfg.LogLevel)
+
+	tracker, err := errortrack.Init(cfg.SentryDSN, cfg.AppEnv, "")
+	if err != nil {
+		slog.Warn("error tracker init failed (disabled)", "error", err)
+	}
+	if tracker.Enabled() {
+		slog.Info("error tracker enabled")
+	}
+
+	if envErr != nil && !os.IsNotExist(envErr) {
+		slog.Warn("dotenv load issue", "error", envErr)
+	}
+
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("[config] %v\n\nset APP_ENV=development to bypass these checks during dev.", err)
+		slog.Error("config validation failed", "error", err,
+			"hint", "set APP_ENV=development to bypass these checks during dev")
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -47,12 +63,14 @@ func main() {
 
 	pool, err := db.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("db connect: %v", err)
+		slog.Error("db connect failed", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
 	if err := db.Migrate(ctx, pool, cfg.DatabaseURL); err != nil {
-		log.Fatalf("migrate: %v", err)
+		slog.Error("db migrate failed", "error", err)
+		os.Exit(1)
 	}
 
 	// Repositories
@@ -82,7 +100,7 @@ func main() {
 		DemoEmail:     cfg.SeedDemoEmail,
 		DemoPassword:  cfg.SeedDemoPassword,
 	}); err != nil {
-		log.Printf("warning: seed failed: %v", err)
+		slog.Warn("seed failed", "error", err)
 	}
 
 	// Storage (driver picks local or s3)
@@ -99,11 +117,27 @@ func main() {
 		LocalPublicURL: cfg.StorageLocalPublicURL,
 	})
 	if err != nil {
-		log.Printf("warning: asset storage init failed (uploads disabled): %v", err)
+		slog.Warn("asset storage init failed (uploads disabled)", "error", err)
 	}
 	if assetStorage != nil {
-		log.Printf("[storage] driver=%s", assetStorage.Driver())
+		slog.Info("storage ready", "driver", assetStorage.Driver())
 	}
+
+	// Mail sender — driver "log" in dev, "smtp" in prod.
+	mailer, err := mail.New(mail.Config{
+		Driver:   cfg.MailDriver,
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+		StartTLS: cfg.SMTPStartTLS,
+	})
+	if err != nil {
+		slog.Error("mail init failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("mail ready", "driver", mailer.Driver())
 
 	// Handlers
 	issuer := auth.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
@@ -113,7 +147,10 @@ func main() {
 		Cfg:          cfg,
 		Pool:         pool,
 		Issuer:       issuer,
-		Auth:         auth.NewHandler(authRepo, issuer),
+		Auth: auth.NewHandler(authRepo, issuer, auth.HandlerOptions{
+			Mailer:     mailer,
+			AppBaseURL: cfg.AppBaseURL,
+		}),
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo),
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
@@ -131,6 +168,7 @@ func main() {
 		Products:     products.NewHandler(productRepo, siteRepo),
 		Blog:         blog.NewHandler(blogRepo, siteRepo),
 		AssetStorage: assetStorage,
+		ErrorTracker: tracker,
 	}
 	if assetStorage != nil {
 		deps.Assets = assets.NewHandler(assetRepo, assetStorage, siteRepo)
@@ -139,15 +177,17 @@ func main() {
 	app := router.New(deps)
 
 	go func() {
+		slog.Info("http listening", "addr", cfg.HTTPAddr, "env", cfg.AppEnv)
 		if err := app.Listen(cfg.HTTPAddr); err != nil {
-			log.Fatalf("listen: %v", err)
+			slog.Error("listen failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	fmt.Println("\n[shutdown] gracefully stopping...")
+	slog.Info("shutdown: gracefully stopping")
 	shutdownCtx, c2 := context.WithTimeout(context.Background(), 10*time.Second)
 	defer c2()
 	_ = app.ShutdownWithContext(shutdownCtx)

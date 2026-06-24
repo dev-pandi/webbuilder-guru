@@ -25,6 +25,16 @@ const (
 	refreshPerWindow  = 60               // tokens rotate quickly when active
 	refreshWindow    = 60 * time.Minute
 
+	// Password recovery — keep tight; mail abuse + brute force on token reuse.
+	passwordForgotPerWindow = 5
+	passwordForgotWindow    = 60 * time.Minute
+	passwordResetPerWindow  = 20
+	passwordResetWindow     = 60 * time.Minute
+	emailVerifyPerWindow    = 20
+	emailVerifyWindow       = 60 * time.Minute
+	emailResendPerWindow    = 5
+	emailResendWindow       = 60 * time.Minute
+
 	// Authenticated mutations — per-user.
 	uploadPerWindow   = 60               // 60 uploads
 	uploadWindow      = 60 * time.Minute // per hour per user

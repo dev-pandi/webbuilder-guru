@@ -34,7 +34,9 @@ var ErrTaken = errors.New("hostname taken")
 var ErrLimit = errors.New("domain limit reached")
 
 func NormalizeHost(s string) string {
-	return strings.ToLower(strings.TrimSpace(strings.TrimSuffix(s, ".")))
+	s = strings.TrimSpace(s)
+	s = strings.TrimSuffix(s, ".")
+	return strings.ToLower(s)
 }
 
 func ValidHost(s string) bool {

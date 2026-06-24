@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -79,7 +79,7 @@ func Templates(ctx context.Context, r *templates.Repo) error {
 	if err := r.Seed(ctx); err != nil {
 		return err
 	}
-	log.Println("[seed] templates upserted (15 built-in)")
+	slog.Info("seed: templates upserted", "count", 15)
 	return nil
 }
 
@@ -93,7 +93,7 @@ func Admin(ctx context.Context, r *auth.Repo, email, password, name string) erro
 	if _, err := r.EnsureAdmin(ctx, email, hash, name); err != nil {
 		return err
 	}
-	log.Printf("[seed] admin user ensured: %s", email)
+	slog.Info("seed: admin user ensured", "email", email)
 	return nil
 }
 
@@ -101,7 +101,7 @@ func Admin(ctx context.Context, r *auth.Repo, email, password, name string) erro
 // Skips entirely if the user already exists.
 func Demo(ctx context.Context, d Deps, email, password string) error {
 	if u, err := d.Auth.GetByEmail(ctx, email); err == nil {
-		log.Printf("[seed] demo user already exists: %s (id=%s) — skipping", email, u.ID)
+		slog.Info("seed: demo user already exists — skipping", "email", email, "id", u.ID)
 		return nil
 	} else if !errors.Is(err, auth.ErrNotFound) {
 		return err
@@ -148,8 +148,9 @@ func Demo(ctx context.Context, d Deps, email, password string) error {
 		}
 	}
 
-	log.Printf("[seed] demo user '%s' + site '%s' + %d products + %d posts created",
-		email, site.Slug, len(demoProducts), len(demoBlogPosts))
+	slog.Info("seed: demo provisioned",
+		"email", email, "site_slug", site.Slug,
+		"products", len(demoProducts), "blog_posts", len(demoBlogPosts))
 	return nil
 }
 

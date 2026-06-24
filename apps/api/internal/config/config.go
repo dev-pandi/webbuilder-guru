@@ -3,12 +3,14 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
 	AppEnv             string
+	LogLevel           string
 	HTTPAddr           string
 	DatabaseURL        string
 	JWTSecret          string
@@ -49,11 +51,29 @@ type Config struct {
 	// Local
 	StorageLocalDir       string
 	StorageLocalPublicURL string
+
+	// Mail driver: "log" (dev — prints to stdout) or "smtp" (production).
+	// Used by password reset + email verification flows.
+	MailDriver   string
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string // e.g. "Web Builder <no-reply@example.com>"
+	SMTPStartTLS bool
+
+	// AppBaseURL is the public URL of the dashboard (apps/web), used to build
+	// password-reset and email-verify links sent to users.
+	AppBaseURL string
+
+	// SentryDSN enables error tracking when set; empty = disabled.
+	SentryDSN string
 }
 
 func Load() Config {
 	return Config{
 		AppEnv:              env("APP_ENV", "development"),
+		LogLevel:            env("LOG_LEVEL", "info"),
 		HTTPAddr:            env("HTTP_ADDR", ":8080"),
 		DatabaseURL:         env("DATABASE_URL", "postgres://webbuilder:webbuilder@localhost:5432/webbuilder?sslmode=disable"),
 		JWTSecret:           env("JWT_SECRET", "dev-secret-change-me"),
@@ -86,6 +106,18 @@ func Load() Config {
 
 		StorageLocalDir:       env("STORAGE_LOCAL_DIR", "./uploads"),
 		StorageLocalPublicURL: env("STORAGE_LOCAL_PUBLIC_URL", "http://api.localhost/uploads"),
+
+		MailDriver:   env("MAIL_DRIVER", "log"),
+		SMTPHost:     env("SMTP_HOST", ""),
+		SMTPPort:     envInt("SMTP_PORT", 587),
+		SMTPUsername: env("SMTP_USERNAME", ""),
+		SMTPPassword: env("SMTP_PASSWORD", ""),
+		SMTPFrom:     env("SMTP_FROM", ""),
+		SMTPStartTLS: env("SMTP_STARTTLS", "true") == "true",
+
+		AppBaseURL: env("APP_BASE_URL", "http://app.localhost"),
+
+		SentryDSN: env("SENTRY_DSN", ""),
 	}
 }
 
@@ -131,6 +163,42 @@ func (c Config) Validate() error {
 		errs = append(errs, "ADMIN_PASSWORD still uses default ('changeme1234')")
 	}
 
+	// Database: refuse plaintext connections in production. sslmode=disable is
+	// the most common footgun — a Postgres running over public network without
+	// TLS is a data-exfil risk.
+	if strings.Contains(c.DatabaseURL, "sslmode=disable") {
+		errs = append(errs, "DATABASE_URL uses sslmode=disable (TLS required in production)")
+	}
+
+	// CORS: must be explicit, no localhost.
+	if len(c.CORSOrigins) == 0 {
+		errs = append(errs, "CORS_ORIGINS empty (would block browsers in production)")
+	}
+	for _, o := range c.CORSOrigins {
+		if strings.Contains(o, "localhost") || strings.Contains(o, "127.0.0.1") {
+			errs = append(errs,
+				fmt.Sprintf("CORS_ORIGINS contains dev value %q (production should list public origins only)", o))
+		}
+	}
+
+	// Public hosts: catch operator forgetting to update PUBLIC_*_HOST from
+	// the dev defaults.
+	if strings.HasSuffix(c.PublicAppHost, ".localhost") || c.PublicAppHost == "localhost" {
+		errs = append(errs,
+			fmt.Sprintf("PUBLIC_APP_HOST still dev value %q", c.PublicAppHost))
+	}
+	if strings.HasSuffix(c.PublicAPIHost, ".localhost") || c.PublicAPIHost == "localhost" {
+		errs = append(errs,
+			fmt.Sprintf("PUBLIC_API_HOST still dev value %q", c.PublicAPIHost))
+	}
+
+	// SMTP: if mail driver is "smtp", host+from required.
+	if c.MailDriver == "smtp" {
+		if c.SMTPHost == "" || c.SMTPFrom == "" {
+			errs = append(errs, "MAIL_DRIVER=smtp requires SMTP_HOST and SMTP_FROM")
+		}
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("config validation failed:\n  - %s", strings.Join(errs, "\n  - "))
 	}
@@ -140,6 +208,15 @@ func (c Config) Validate() error {
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
+	}
+	return def
+}
+
+func envInt(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }

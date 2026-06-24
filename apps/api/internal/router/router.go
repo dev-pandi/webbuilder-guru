@@ -5,7 +5,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
 	"github.com/webbuilder/api/internal/admin"
@@ -15,6 +14,7 @@ import (
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/domains"
+	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
@@ -53,6 +53,10 @@ type Deps struct {
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil
+
+	// ErrorTracker captures panics and 5xx errors. May be a disabled client
+	// (nil DSN) — Capture is a noop in that case.
+	ErrorTracker *errortrack.Client
 }
 
 // New builds a fiber.App with global middleware and all route groups mounted.
@@ -65,6 +69,13 @@ func New(deps Deps) *fiber.App {
 			if e, ok := err.(*fiber.Error); ok {
 				code = e.Code
 			}
+			// Ship 5xx to error tracker — 4xx are user errors, not actionable.
+			if code >= 500 && deps.ErrorTracker != nil {
+				deps.ErrorTracker.Capture(c.Context(), err, map[string]string{
+					"method": c.Method(),
+					"path":   c.Path(),
+				})
+			}
 			return c.Status(code).JSON(fiber.Map{"error": fiber.Map{
 				"code":    "error",
 				"message": err.Error(),
@@ -72,8 +83,24 @@ func New(deps Deps) *fiber.App {
 		},
 	})
 
-	app.Use(recover.New())
-	app.Use(logger.New())
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+		StackTraceHandler: func(c *fiber.Ctx, e interface{}) {
+			err, ok := e.(error)
+			if !ok {
+				err = fiberPanic{Cause: e}
+			}
+			if deps.ErrorTracker != nil {
+				deps.ErrorTracker.Capture(c.Context(), err, map[string]string{
+					"method": c.Method(),
+					"path":   c.Path(),
+					"kind":   "panic",
+				})
+			}
+		},
+	}))
+	app.Use(RequestID())
+	app.Use(SlogLogger())
 	app.Use(SecurityHeaders(deps.Cfg.AppEnv == "production"))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(deps.Cfg.CORSOrigins, ","),
@@ -87,4 +114,23 @@ func New(deps Deps) *fiber.App {
 	MountAdmin(app, deps)
 
 	return app
+}
+
+// fiberPanic wraps a non-error panic value so the error tracker sees an `error`.
+type fiberPanic struct{ Cause any }
+
+func (p fiberPanic) Error() string {
+	return strings.TrimSpace(fmtAny(p.Cause))
+}
+
+// fmtAny is %v without importing fmt for one call; keeps this file's deps tight.
+func fmtAny(v any) string {
+	switch s := v.(type) {
+	case string:
+		return s
+	case error:
+		return s.Error()
+	default:
+		return "panic: non-error value"
+	}
 }

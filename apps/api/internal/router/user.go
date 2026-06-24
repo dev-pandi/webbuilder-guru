@@ -22,6 +22,15 @@ func MountUser(app *fiber.App, deps Deps) {
 	v1.Post("/auth/refresh", RateLimitIP(refreshPerWindow, refreshWindow), deps.Auth.Refresh)
 	v1.Post("/auth/logout", deps.Auth.Logout)
 
+	// Password reset + email verification. Both are anonymous endpoints (token
+	// in body). IP-limited to throttle bulk-account abuse.
+	v1.Post("/auth/password/forgot",
+		RateLimitIP(passwordForgotPerWindow, passwordForgotWindow), deps.Auth.ForgotPassword)
+	v1.Post("/auth/password/reset",
+		RateLimitIP(passwordResetPerWindow, passwordResetWindow), deps.Auth.ResetPassword)
+	v1.Post("/auth/email/verify",
+		RateLimitIP(emailVerifyPerWindow, emailVerifyWindow), deps.Auth.ConfirmEmailVerification)
+
 	v1.Get("/templates", deps.Templates.List)
 	v1.Get("/template-meta", deps.Templates.Meta)
 	v1.Get("/templates/:slug", deps.Templates.Get)
@@ -30,6 +39,8 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed := v1.Group("/", auth.Required(deps.Issuer))
 
 	authed.Get("/auth/me", deps.Auth.Me)
+	authed.Post("/auth/email/resend",
+		RateLimitUser(emailResendPerWindow, emailResendWindow), deps.Auth.RequestEmailVerification)
 
 	// Generic mutation budget — applied to all write endpoints below via a
 	// sub-group so we don't re-declare per-route. Reads (GET) skip this.

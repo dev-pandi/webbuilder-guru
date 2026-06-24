@@ -1,0 +1,109 @@
+package config
+
+import (
+	"strings"
+	"testing"
+)
+
+// good production config — should pass validation.
+func validProdConfig() Config {
+	return Config{
+		AppEnv:        "production",
+		JWTSecret:     strings.Repeat("a", 32),
+		CaddyAskSecret: "real-non-default-secret-1234",
+		PlatformIPs:   []string{"203.0.113.10"},
+		DatabaseURL:   "postgres://u:p@db:5432/x?sslmode=require",
+		CORSOrigins:   []string{"https://app.example.com"},
+		PublicAppHost: "app.example.com",
+		PublicAPIHost: "api.example.com",
+		StorageDriver: "local",
+		AdminPassword: "supersecret-1234567",
+		MailDriver:    "log",
+	}
+}
+
+func TestValidate_DevAlwaysPasses(t *testing.T) {
+	c := Config{AppEnv: "development"} // everything else empty/default
+	if err := c.Validate(); err != nil {
+		t.Fatalf("dev should bypass: %v", err)
+	}
+}
+
+func TestValidate_ProdAccepts(t *testing.T) {
+	if err := validProdConfig().Validate(); err != nil {
+		t.Fatalf("valid prod config rejected: %v", err)
+	}
+}
+
+func TestValidate_RejectsDefaultJWT(t *testing.T) {
+	c := validProdConfig()
+	c.JWTSecret = "change-me-in-production-please"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("expected JWT_SECRET error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsShortJWT(t *testing.T) {
+	c := validProdConfig()
+	c.JWTSecret = "shorty"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "too short") {
+		t.Fatalf("expected too-short error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsSslmodeDisable(t *testing.T) {
+	c := validProdConfig()
+	c.DatabaseURL = "postgres://u:p@db:5432/x?sslmode=disable"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "sslmode=disable") {
+		t.Fatalf("expected sslmode=disable error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsLocalhostCORS(t *testing.T) {
+	c := validProdConfig()
+	c.CORSOrigins = []string{"http://localhost:3000"}
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "CORS_ORIGINS") {
+		t.Fatalf("expected CORS_ORIGINS error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsLocalhostPublicHost(t *testing.T) {
+	c := validProdConfig()
+	c.PublicAppHost = "app.localhost"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "PUBLIC_APP_HOST") {
+		t.Fatalf("expected PUBLIC_APP_HOST error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsMissingPlatformIPs(t *testing.T) {
+	c := validProdConfig()
+	c.PlatformIPs = nil
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "PLATFORM_IPS") {
+		t.Fatalf("expected PLATFORM_IPS error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsDefaultMinioInS3Mode(t *testing.T) {
+	c := validProdConfig()
+	c.StorageDriver = "s3"
+	c.StorageS3SecretKey = "minioadmin"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "STORAGE_S3_SECRET_KEY") {
+		t.Fatalf("expected S3 secret error, got %v", err)
+	}
+}
+
+func TestValidate_RejectsSmtpWithoutHost(t *testing.T) {
+	c := validProdConfig()
+	c.MailDriver = "smtp"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "SMTP_HOST") {
+		t.Fatalf("expected SMTP_HOST error, got %v", err)
+	}
+}
