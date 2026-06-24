@@ -2,12 +2,19 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Palette, ShieldAlert, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Eye,
+  Loader2,
+  Palette,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -125,61 +132,123 @@ export default function ThemePage() {
 
   return (
     <div className="space-y-6">
-      {/* Template section */}
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between space-y-0">
-          <div>
-            <CardTitle className="text-base">Template Saat Ini</CardTitle>
-            <CardDescription className="mt-1">
-              {currentTemplate ? (
-                <span>
-                  {currentTemplate.name}{" "}
-                  <Badge variant="secondary" className="ml-1">
-                    {currentTemplate.variant}
-                  </Badge>
-                </span>
-              ) : (
-                "Situs ini belum terhubung ke template tertentu."
-              )}
-            </CardDescription>
+      {/* Header */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/10">
+            <Palette className="h-4 w-4 text-violet-500" />
           </div>
-          <Button variant="outline" size="sm" onClick={() => setSwitchOpen(true)}>
-            <Sparkles />
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Tema
+          </span>
+        </div>
+        <h1 className="text-xl font-bold">Pengaturan Tema</h1>
+        <p className="text-sm text-muted-foreground">
+          Sesuaikan tampilan visual dan template situs Anda.
+        </p>
+      </div>
+
+      {/* Current Template */}
+      <div className="rounded-xl border bg-card shadow-sm">
+        <div className="flex items-center justify-between gap-4 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
+              <Sparkles className="h-4 w-4 text-violet-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Template Saat Ini</p>
+              {currentTemplate ? (
+                <p className="text-sm text-muted-foreground">
+                  {currentTemplate.name}
+                  <span className="ml-2 inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    {currentTemplate.variant}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Belum terhubung ke template tertentu.
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setSwitchOpen(true)}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
             Ganti Template
           </Button>
-        </CardHeader>
-      </Card>
+        </div>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Palette className="size-4" />
-              Edit Tema
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(["primary", "secondary", "bg", "fg"] as const).map((k) => (
-              <div key={k} className="flex items-center justify-between">
-                <Label className="capitalize">{k}</Label>
-                <input
-                  type="color"
-                  value={color(k)}
-                  onChange={(e) =>
-                    setTheme((t) => ({
-                      ...t,
-                      colors: { ...(t.colors ?? {}), [k]: e.target.value },
-                    }))
-                  }
-                  className="h-9 w-16 rounded border border-input"
-                />
+        {/* Edit Theme */}
+        <div className="rounded-xl border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-3">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-500/10">
+              <Palette className="h-3.5 w-3.5 text-violet-500" />
+            </div>
+            <span className="text-sm font-semibold">Edit Tema</span>
+          </div>
+          <div className="space-y-5 p-4">
+            {/* Colors */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Warna
+              </p>
+              <div className="grid gap-2">
+                {(
+                  [
+                    { key: "primary", label: "Primary", desc: "Warna utama & aksen" },
+                    { key: "secondary", label: "Secondary", desc: "Aksen sekunder" },
+                    { key: "bg", label: "Background", desc: "Latar halaman" },
+                    { key: "fg", label: "Foreground", desc: "Teks utama" },
+                  ] as const
+                ).map(({ key, label, desc }) => (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-2.5"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="h-6 w-6 shrink-0 rounded-md border shadow-sm"
+                        style={{ background: color(key) }}
+                      />
+                      <div>
+                        <p className="text-sm font-medium">{label}</p>
+                        <p className="text-xs text-muted-foreground">{desc}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {color(key).toUpperCase()}
+                      </span>
+                      <input
+                        type="color"
+                        value={color(key)}
+                        onChange={(e) =>
+                          setTheme((t) => ({
+                            ...t,
+                            colors: { ...(t.colors ?? {}), [key]: e.target.value },
+                          }))
+                        }
+                        className="h-8 w-10 cursor-pointer rounded border border-input bg-transparent p-0.5"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
 
             <Separator />
 
+            {/* Fonts */}
             <div className="space-y-3">
-              <Label>Font</Label>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Font
+              </p>
               <FontPicker
                 label="Heading"
                 value={theme.font?.heading ?? ""}
@@ -198,49 +267,96 @@ export default function ThemePage() {
 
             <Separator />
 
+            {/* Radius */}
             <div className="space-y-1.5">
-              <Label htmlFor="radius">Radius</Label>
+              <Label
+                htmlFor="radius"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Border Radius
+              </Label>
               <Input
                 id="radius"
                 value={theme.radius ?? ""}
                 onChange={(e) => setTheme((t) => ({ ...t, radius: e.target.value }))}
                 placeholder="0.5rem"
+                className="font-mono"
               />
+              <p className="text-xs text-muted-foreground">
+                Contoh:{" "}
+                <code className="rounded bg-muted px-1">0rem</code>,{" "}
+                <code className="rounded bg-muted px-1">0.5rem</code>,{" "}
+                <code className="rounded bg-muted px-1">1rem</code>
+              </p>
             </div>
 
-            <div className="flex justify-end pt-2">
-              <Button onClick={save} disabled={saving}>
-                {saving ? "Menyimpan…" : "Simpan"}
+            <div className="flex justify-end border-t pt-4">
+              <Button onClick={save} disabled={saving} className="gap-2">
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
+                {saving ? "Menyimpan…" : "Simpan Tema"}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="p-6"
-          style={{ background: color("bg"), color: color("fg"), borderRadius: theme.radius }}
-        >
-          <h2 className="text-2xl font-bold" style={{ fontFamily: theme.font?.heading }}>
-            Preview Tema
-          </h2>
-          <p className="mt-2" style={{ fontFamily: theme.font?.body }}>
-            Ini contoh teks body. Tombol primer dan sekunder tampil di bawah.
-          </p>
-          <div className="mt-4 flex gap-3">
-            <span
-              className="rounded px-3 py-1.5 text-white"
-              style={{ background: color("primary"), borderRadius: theme.radius }}
-            >
-              Primer
-            </span>
-            <span
-              className="rounded px-3 py-1.5 text-white"
-              style={{ background: color("secondary"), borderRadius: theme.radius }}
-            >
-              Sekunder
-            </span>
           </div>
-        </Card>
+        </div>
+
+        {/* Live Preview */}
+        <div className="rounded-xl border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-3">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/10">
+              <Eye className="h-3.5 w-3.5 text-sky-500" />
+            </div>
+            <span className="text-sm font-semibold">Preview Langsung</span>
+          </div>
+          <div className="p-4">
+            <div
+              className="overflow-hidden rounded-lg border p-5 shadow-inner"
+              style={{
+                background: color("bg"),
+                color: color("fg"),
+                borderRadius: theme.radius,
+              }}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-widest opacity-50">
+                Preview
+              </p>
+              <h2
+                className="mt-1 text-2xl font-bold leading-tight"
+                style={{ fontFamily: theme.font?.heading }}
+              >
+                Judul Halaman
+              </h2>
+              <p
+                className="mt-2 text-sm leading-relaxed opacity-80"
+                style={{ fontFamily: theme.font?.body }}
+              >
+                Ini contoh teks body. Gunakan untuk melihat kombinasi font dan warna.
+              </p>
+              <div className="mt-4 flex gap-3">
+                <span
+                  className="rounded px-4 py-1.5 text-sm font-medium text-white shadow-sm"
+                  style={{ background: color("primary"), borderRadius: theme.radius }}
+                >
+                  Tombol Primer
+                </span>
+                <span
+                  className="rounded px-4 py-1.5 text-sm font-medium text-white shadow-sm"
+                  style={{ background: color("secondary"), borderRadius: theme.radius }}
+                >
+                  Sekunder
+                </span>
+              </div>
+              <div className="mt-4 space-y-2 border-t pt-3 opacity-40">
+                <div className="h-2 w-1/2 rounded" style={{ background: color("fg") }} />
+                <div className="h-2 w-2/3 rounded opacity-60" style={{ background: color("fg") }} />
+                <div className="h-2 w-1/3 rounded opacity-40" style={{ background: color("fg") }} />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <SwitchTemplateDialog
@@ -328,16 +444,54 @@ function SwitchTemplateDialog({
         <DialogHeader>
           <DialogTitle>Ganti Template</DialogTitle>
           <DialogDescription>
-            Langkah {step} dari 3:{" "}
-            {step === 1
-              ? "Pilih kategori baru"
-              : step === 2
-                ? "Pilih tema"
-                : "Pilih cara penerapan"}
+            Pilih template dan cara penerapannya untuk situs ini.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[60vh] overflow-y-auto">
+        {/* Visual Stepper */}
+        <div className="flex items-start justify-center gap-0 border-b pb-4">
+          {(["Kategori", "Tema", "Penerapan"] as const).map((label, i) => {
+            const n = (i + 1) as 1 | 2 | 3;
+            const done = step > n;
+            const active = step === n;
+            return (
+              <div key={label} className="flex items-center">
+                {i > 0 && (
+                  <div
+                    className={cn(
+                      "mb-5 h-px w-10",
+                      done ? "bg-primary" : "bg-muted",
+                    )}
+                  />
+                )}
+                <div className="flex flex-col items-center gap-1">
+                  <div
+                    className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold transition-all",
+                      done
+                        ? "bg-primary text-primary-foreground"
+                        : active
+                          ? "border-2 border-primary bg-primary/10 text-primary"
+                          : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : n}
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[10px]",
+                      active ? "font-semibold text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {label}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="max-h-[55vh] overflow-y-auto">
           {step === 1 && (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {(meta?.categories ?? []).map((c) => (
@@ -347,10 +501,15 @@ function SwitchTemplateDialog({
                     setCategory(c.key);
                     setStep(2);
                   }}
-                  className="rounded-lg border bg-background p-5 text-left transition hover:border-primary hover:shadow-md"
+                  className="group rounded-xl border bg-background p-5 text-left transition hover:border-primary hover:shadow-md"
                 >
                   <div className="text-3xl">{c.emoji}</div>
-                  <div className="mt-3 font-semibold">{c.label}</div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="font-semibold">{c.label}</span>
+                    <span className="text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                      Pilih →
+                    </span>
+                  </div>
                   <div className="mt-1 text-xs text-muted-foreground">{c.description}</div>
                 </button>
               ))}
@@ -359,8 +518,13 @@ function SwitchTemplateDialog({
 
           {step === 2 && (
             <div>
-              <Button variant="ghost" size="sm" onClick={() => setStep(1)} className="mb-3">
-                <ArrowLeft />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep(1)}
+                className="mb-3 gap-1.5 text-xs"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
                 Ganti kategori
               </Button>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -374,19 +538,19 @@ function SwitchTemplateDialog({
                         setStep(3);
                       }}
                       className={cn(
-                        "rounded-lg border bg-background p-4 text-left transition hover:border-primary hover:shadow-md",
-                        isCurrent && "border-primary ring-2 ring-primary/30",
+                        "rounded-xl border bg-background p-4 text-left transition hover:border-primary hover:shadow-md",
+                        isCurrent && "border-primary ring-2 ring-primary/20",
                       )}
                     >
                       <ThemeSwatchPreview theme={t.theme} />
-                      <div className="mt-3 flex items-center justify-between">
+                      <div className="mt-3 flex items-center justify-between gap-2">
                         <span className="font-semibold">
                           {t.name.split("—")[1]?.trim() ?? t.name}
                         </span>
                         {isCurrent && (
-                          <Badge variant="secondary" className="text-[10px]">
+                          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                             saat ini
-                          </Badge>
+                          </span>
                         )}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">{t.description}</div>
@@ -399,19 +563,28 @@ function SwitchTemplateDialog({
 
           {step === 3 && picked && (
             <div>
-              <Button variant="ghost" size="sm" onClick={() => setStep(2)} className="mb-3">
-                <ArrowLeft />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep(2)}
+                className="mb-3 gap-1.5 text-xs"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
                 Ganti tema
               </Button>
 
-              <Card className="mb-4 bg-muted/50">
-                <CardContent className="p-3 text-sm">
-                  <span className="text-muted-foreground">Tema terpilih:</span>{" "}
-                  <span className="font-medium">{picked.name}</span>
-                </CardContent>
-              </Card>
+              <div className="mb-4 flex items-center gap-3 rounded-xl border bg-muted/40 p-3">
+                <div className="w-24 shrink-0">
+                  <ThemeSwatchPreview theme={picked.theme} />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Tema terpilih</p>
+                  <p className="font-semibold">{picked.name}</p>
+                  <p className="text-xs text-muted-foreground">{picked.description}</p>
+                </div>
+              </div>
 
-              <p className="mb-2 text-sm font-medium">Bagaimana cara menerapkan?</p>
+              <p className="mb-3 text-sm font-semibold">Bagaimana cara menerapkan?</p>
               <div className="space-y-2">
                 <ModeOption
                   value="theme"
@@ -439,8 +612,8 @@ function SwitchTemplateDialog({
               </div>
 
               {mode === "replace" && (
-                <div className="mt-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                  <ShieldAlert className="size-4 shrink-0" />
+                <div className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
                   <p>
                     Tindakan ini menghapus halaman yang sudah Anda edit. Pertimbangkan export ZIP
                     dulu sebelum melanjutkan.
@@ -452,11 +625,21 @@ function SwitchTemplateDialog({
         </div>
 
         {step === 3 && (
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={applying}>
+          <DialogFooter className="border-t pt-4">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={applying}
+            >
               Batal
             </Button>
-            <Button onClick={apply} disabled={applying} variant={mode === "replace" ? "destructive" : "default"}>
+            <Button
+              onClick={apply}
+              disabled={applying}
+              variant={mode === "replace" ? "destructive" : "default"}
+              className="gap-2"
+            >
+              {applying && <Loader2 className="h-4 w-4 animate-spin" />}
               {applying ? "Menerapkan…" : "Terapkan"}
             </Button>
           </DialogFooter>
@@ -510,14 +693,14 @@ function ModeOption({
         <div className="flex items-center gap-2 font-medium">
           {title}
           {recommended && (
-            <Badge variant="success" className="text-[10px]">
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
               direkomendasikan
-            </Badge>
+            </span>
           )}
           {danger && (
-            <Badge variant="destructive" className="text-[10px]">
+            <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
               destruktif
-            </Badge>
+            </span>
           )}
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
