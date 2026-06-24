@@ -648,26 +648,37 @@ function BlockPaletteDialog({
   onPick: (type: string) => void;
 }) {
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState<"all" | "pro" | "standard">("all");
   useEffect(() => {
-    if (!open) setQ("");
+    if (!open) {
+      setQ("");
+      setTab("all");
+    }
   }, [open]);
 
   const grouped = useMemo(() => blockSchemasByCategory(), []);
+  const proCount = useMemo(
+    () => grouped.find((g) => g.key === "pro")?.blocks.length ?? 0,
+    [grouped],
+  );
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return grouped;
-    return grouped
-      .map((g) => ({
-        ...g,
-        blocks: g.blocks.filter(
+    let g = grouped;
+    if (tab === "pro") g = g.filter((x) => x.key === "pro");
+    if (tab === "standard") g = g.filter((x) => x.key !== "pro");
+    if (!needle) return g;
+    return g
+      .map((cat) => ({
+        ...cat,
+        blocks: cat.blocks.filter(
           (b) =>
             b.label.toLowerCase().includes(needle) ||
             b.type.toLowerCase().includes(needle) ||
             (b.description ?? "").toLowerCase().includes(needle),
         ),
       }))
-      .filter((g) => g.blocks.length > 0);
-  }, [grouped, q]);
+      .filter((cat) => cat.blocks.length > 0);
+  }, [grouped, q, tab]);
 
   const totalShown = filtered.reduce((sum, g) => sum + g.blocks.length, 0);
 
@@ -689,6 +700,34 @@ function BlockPaletteDialog({
         </DialogHeader>
 
         <div className="border-b px-6 py-3">
+          {/* Tab filter — All / Pro / Standard */}
+          <div className="mb-3 inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 shadow-inner">
+            <PaletteTab
+              active={tab === "all"}
+              onClick={() => setTab("all")}
+              label={`Semua · ${blockSchemas.length}`}
+            />
+            <PaletteTab
+              active={tab === "pro"}
+              onClick={() => setTab("pro")}
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <span
+                    className="inline-block bg-gradient-to-r from-violet-500 via-pink-500 to-amber-500 bg-clip-text font-semibold text-transparent"
+                  >
+                    Pro ✨
+                  </span>
+                  <span className="text-muted-foreground">· {proCount}</span>
+                </span>
+              }
+            />
+            <PaletteTab
+              active={tab === "standard"}
+              onClick={() => setTab("standard")}
+              label={`Standar · ${blockSchemas.length - proCount}`}
+            />
+          </div>
+
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -716,25 +755,46 @@ function BlockPaletteDialog({
               Tidak ada block yang cocok dengan &quot;{q}&quot;.
             </p>
           ) : (
-            filtered.map((cat) => (
+            filtered.map((cat) => {
+              const isPro = cat.key === "pro";
+              return (
               <div key={cat.key}>
                 <div className="mb-3 flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  <span
+                    className={cn(
+                      "text-[10px] font-semibold uppercase tracking-widest",
+                      isPro
+                        ? "bg-gradient-to-r from-violet-500 via-pink-500 to-amber-500 bg-clip-text text-transparent"
+                        : "text-muted-foreground",
+                    )}
+                  >
                     {cat.label}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     · {cat.blocks.length}
                   </span>
-                  <div className="ml-auto h-px flex-1 bg-border" />
+                  <div className={cn("ml-auto h-px flex-1", isPro ? "bg-gradient-to-r from-violet-500/40 via-pink-500/40 to-amber-500/40" : "bg-border")} />
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {cat.blocks.map((b) => (
                     <button
                       key={b.type}
                       onClick={() => onPick(b.type)}
-                      className="group/card flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                      className={cn(
+                        "group/card flex items-start gap-3 rounded-lg border p-3 text-left transition-all hover:-translate-y-0.5 hover:shadow-md",
+                        isPro
+                          ? "border-violet-500/20 bg-gradient-to-br from-violet-500/[0.04] via-card to-amber-500/[0.03] hover:border-violet-500/50"
+                          : "bg-card hover:border-primary/40",
+                      )}
                     >
-                      <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-lg transition-colors group-hover/card:bg-primary/10">
+                      <span
+                        className={cn(
+                          "grid size-9 shrink-0 place-items-center rounded-md text-lg transition-colors",
+                          isPro
+                            ? "bg-gradient-to-br from-violet-500/20 via-pink-500/15 to-amber-500/20"
+                            : "bg-muted group-hover/card:bg-primary/10",
+                        )}
+                      >
                         {b.emoji ?? "🧩"}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -749,7 +809,8 @@ function BlockPaletteDialog({
                   ))}
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -864,6 +925,31 @@ function HistoryDialog({
 }
 
 // ---------- Tiny helpers ----------
+
+function PaletteTab({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded px-2.5 py-1 text-xs transition-all",
+        active
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -1623,6 +1709,299 @@ function BlockView({ block }: { block: BlockData }) {
                 <div className="text-xs font-semibold">{String(p.name ?? "")}</div>
                 {p.role ? <div className="text-[10px] text-muted-foreground">{String(p.role)}</div> : null}
               </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // PRO blocks — markup matches renderer 1:1 so editor preview is
+    // an honest WYSIWYG. Animations come from globals.css (.wb-pro-*).
+    // ============================================================
+
+    case "AuroraHero":
+      return (
+        <div className="wb-pro-aurora">
+          {p.eyebrow ? <div className="wb-pro-eyebrow">{String(p.eyebrow)}</div> : null}
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+        </div>
+      );
+
+    case "SpotlightHero":
+      return (
+        <div className="wb-pro-spotlight">
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+        </div>
+      );
+
+    case "HighlightHero":
+      return (
+        <div className="wb-pro-highlight">
+          <h1>
+            {String(p.title ?? "")} <span className="wb-pro-mark">{String(p.highlight ?? "")}</span> {String(p.titleAfter ?? "")}
+          </h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+        </div>
+      );
+
+    case "LampHero":
+      return (
+        <div className="wb-pro-lamp">
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+        </div>
+      );
+
+    case "TypewriterHero":
+      return (
+        <div className="wb-pro-typewriter">
+          <h1>
+            {String(p.prefix ?? "")} <span className="wb-pro-typed">{String(p.typed ?? "")}</span>
+          </h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+        </div>
+      );
+
+    case "GradientTextHero":
+      return (
+        <div className="wb-pro-gtext">
+          {p.eyebrow ? <div className="wb-pro-eyebrow">{String(p.eyebrow)}</div> : null}
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+        </div>
+      );
+
+    case "BeamsSection":
+      return (
+        <div className="wb-pro-beams">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </div>
+      );
+
+    case "MeteorsSection":
+      return (
+        <div className="wb-pro-meteors">
+          <span className="wb-pro-meteor" />
+          <span className="wb-pro-meteor" />
+          <span className="wb-pro-meteor" />
+          <span className="wb-pro-meteor" />
+          <span className="wb-pro-meteor" />
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </div>
+      );
+
+    case "GradientMeshSection":
+      return (
+        <div className="wb-pro-mesh">
+          <span className="wb-pro-mesh-blob" />
+          <span className="wb-pro-mesh-blob" />
+          <span className="wb-pro-mesh-blob" />
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </div>
+      );
+
+    case "WavyDivider":
+      return (
+        <div className="wb-pro-wave">
+          <div className="wb-pro-wave-track">
+            <svg viewBox="0 0 1200 60" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M0 30 Q 150 0 300 30 T 600 30 T 900 30 T 1200 30 V60 H0 Z"
+                fill="currentColor"
+                opacity="0.15"
+              />
+            </svg>
+          </div>
+          {p.label ? <div className="wb-pro-wave-label">{String(p.label)}</div> : null}
+        </div>
+      );
+
+    case "DotPatternSection":
+      return (
+        <div className="wb-pro-dots">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </div>
+      );
+
+    case "GlowCardGrid":
+      return (
+        <div className="wb-pro-glow-grid">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-glow-card">
+                <div className="wb-pro-glow-inner">
+                  <h3>{it.title}</h3>
+                  <p>{it.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "TiltCardGrid":
+      return (
+        <div className="wb-pro-tilt-grid">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-tilt-card">
+                <h3>{it.title}</h3>
+                <p>{it.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "BorderBeamCard":
+      return (
+        <div className="wb-pro-beam-card">
+          <div className="wb-pro-beam-wrap">
+            <div className="wb-pro-beam-inner">
+              <div className="text-xs uppercase tracking-widest opacity-60">{String(p.subtitle ?? "")}</div>
+              <h3 className="mt-1 text-lg font-bold">{String(p.title ?? "")}</h3>
+              <div className="wb-pro-beam-price">
+                {String(p.price ?? "")}
+                <span className="wb-pro-beam-period">{String(p.period ?? "")}</span>
+              </div>
+              <ul>
+                {(p.bullets as Array<{ text: string }> | undefined)?.map((b, i) => (
+                  <li key={i}>{b.text}</li>
+                ))}
+              </ul>
+              {p.ctaLabel ? (
+                <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+                  {String(p.ctaLabel)}
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      );
+
+    case "CardStackShowcase":
+      return (
+        <div className="wb-pro-stack">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-stack-wrap">
+            {(p.items as Array<{ quote: string; name: string; role: string }> | undefined)
+              ?.slice(0, 3)
+              .map((it, i) => (
+                <div key={i} className="wb-pro-stack-card">
+                  <blockquote>&ldquo;{it.quote}&rdquo;</blockquote>
+                  <div className="wb-pro-stack-meta">
+                    <div className="wb-pro-stack-name">{it.name}</div>
+                    <div className="wb-pro-stack-role">{it.role}</div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      );
+
+    case "HoverGlowGrid":
+      return (
+        <div className="wb-pro-hover-grid">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-hover-card">
+                <h3>{it.title}</h3>
+                <p>{it.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "AnimatedCounterStats":
+      return (
+        <div className="wb-pro-counters">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ value: string; label: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-counter-cell">
+                <div className="wb-pro-counter-value" style={{ animationDelay: `${i * 0.15}s` }}>
+                  {it.value}
+                </div>
+                <div className="wb-pro-counter-label">{it.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
+    case "MovingBorderCTA":
+      return (
+        <div className="wb-pro-mb-cta">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-mb-btn">
+              <span className="wb-pro-mb-inner">{String(p.ctaLabel)}</span>
+            </a>
+          ) : null}
+        </div>
+      );
+
+    case "InfiniteMarqueeLogos": {
+      // Duplicate items so the marquee loop is seamless.
+      const top = (p.itemsTop as Array<{ name: string }> | undefined) ?? [];
+      const bottom = (p.itemsBottom as Array<{ name: string }> | undefined) ?? [];
+      return (
+        <div className="wb-pro-marquee">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-marquee-row">
+            {[...top, ...top].map((it, i) => (
+              <span key={"t" + i}>{it.name}</span>
+            ))}
+          </div>
+          <div className="wb-pro-marquee-row">
+            {[...bottom, ...bottom].map((it, i) => (
+              <span key={"b" + i}>{it.name}</span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    case "OrbitFeatures": {
+      const items = (p.items as Array<{ icon: string; label: string }> | undefined) ?? [];
+      // Position items around the ring using a per-item rotate.
+      return (
+        <div className="wb-pro-orbit">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          <div className="wb-pro-orbit-stage">
+            <div className="wb-pro-orbit-center">{String(p.brand ?? "B")}</div>
+            <div className="wb-pro-orbit-ring">
+              {items.map((it, i) => {
+                const angle = (360 / Math.max(items.length, 1)) * i;
+                return (
+                  <div
+                    key={i}
+                    className="wb-pro-orbit-item"
+                    style={{ transform: `rotate(${angle}deg) translateY(-160px) rotate(${-angle}deg)` }}
+                  >
+                    <span>{it.icon}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

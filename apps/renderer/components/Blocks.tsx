@@ -1185,6 +1185,328 @@ function BlockView({ block }: { block: Block }) {
       );
     }
 
+    // ============================================================
+    // PRO blocks — markup mirrors editor preview 1:1 so styling
+    // (defined in globals.css under .wb-pro-*) renders identically.
+    // ============================================================
+
+    case "AuroraHero":
+      return (
+        <section className="wb-pro-aurora">
+          {p.eyebrow ? <div className="wb-pro-eyebrow">{String(p.eyebrow)}</div> : null}
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "SpotlightHero":
+      return (
+        <section className="wb-pro-spotlight">
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "HighlightHero":
+      return (
+        <section className="wb-pro-highlight">
+          <h1>
+            {String(p.title ?? "")}{" "}
+            <span className="wb-pro-mark">{String(p.highlight ?? "")}</span>{" "}
+            {String(p.titleAfter ?? "")}
+          </h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "LampHero":
+      return (
+        <section className="wb-pro-lamp">
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "TypewriterHero":
+      return (
+        <section className="wb-pro-typewriter">
+          <h1>
+            {String(p.prefix ?? "")}{" "}
+            <span className="wb-pro-typed">{String(p.typed ?? "")}</span>
+          </h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "GradientTextHero":
+      return (
+        <section className="wb-pro-gtext">
+          {p.eyebrow ? <div className="wb-pro-eyebrow">{String(p.eyebrow)}</div> : null}
+          <h1>{String(p.title ?? "")}</h1>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              {String(p.ctaLabel)}
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "BeamsSection":
+      return (
+        <section className="wb-pro-beams">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </section>
+      );
+
+    case "MeteorsSection":
+      return (
+        <section className="wb-pro-meteors">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <span key={i} className="wb-pro-meteor" />
+          ))}
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </section>
+      );
+
+    case "GradientMeshSection":
+      return (
+        <section className="wb-pro-mesh">
+          <span className="wb-pro-mesh-blob" />
+          <span className="wb-pro-mesh-blob" />
+          <span className="wb-pro-mesh-blob" />
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </section>
+      );
+
+    case "WavyDivider":
+      return (
+        <section className="wb-pro-wave">
+          <div className="wb-pro-wave-track">
+            <svg viewBox="0 0 1200 60" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M0 30 Q 150 0 300 30 T 600 30 T 900 30 T 1200 30 V60 H0 Z"
+                fill="currentColor"
+                opacity="0.15"
+              />
+            </svg>
+          </div>
+          {p.label ? <div className="wb-pro-wave-label">{String(p.label)}</div> : null}
+        </section>
+      );
+
+    case "DotPatternSection":
+      return (
+        <section className="wb-pro-dots">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+        </section>
+      );
+
+    case "GlowCardGrid":
+      return (
+        <section className="wb-pro-glow-grid">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-glow-card">
+                <div className="wb-pro-glow-inner">
+                  <h3>{it.title}</h3>
+                  <p>{it.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+
+    case "TiltCardGrid":
+      return (
+        <section className="wb-pro-tilt-grid">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-tilt-card">
+                <h3>{it.title}</h3>
+                <p>{it.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+
+    case "BorderBeamCard":
+      return (
+        <section className="wb-pro-beam-card">
+          <div className="wb-pro-beam-wrap">
+            <div className="wb-pro-beam-inner">
+              <div style={{ fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase", opacity: 0.6 }}>
+                {String(p.subtitle ?? "")}
+              </div>
+              <h3 style={{ marginTop: "0.25rem", fontSize: "1.125rem", fontWeight: 700 }}>
+                {String(p.title ?? "")}
+              </h3>
+              <div className="wb-pro-beam-price">
+                {String(p.price ?? "")}
+                <span className="wb-pro-beam-period">{String(p.period ?? "")}</span>
+              </div>
+              <ul>
+                {(p.bullets as Array<{ text: string }> | undefined)?.map((b, i) => (
+                  <li key={i}>{b.text}</li>
+                ))}
+              </ul>
+              {p.ctaLabel ? (
+                <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+                  {String(p.ctaLabel)}
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      );
+
+    case "CardStackShowcase":
+      return (
+        <section className="wb-pro-stack">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-stack-wrap">
+            {(p.items as Array<{ quote: string; name: string; role: string }> | undefined)
+              ?.slice(0, 3)
+              .map((it, i) => (
+                <div key={i} className="wb-pro-stack-card">
+                  <blockquote>&ldquo;{it.quote}&rdquo;</blockquote>
+                  <div className="wb-pro-stack-meta">
+                    <div className="wb-pro-stack-name">{it.name}</div>
+                    <div className="wb-pro-stack-role">{it.role}</div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </section>
+      );
+
+    case "HoverGlowGrid":
+      return (
+        <section className="wb-pro-hover-grid">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-hover-card">
+                <h3>{it.title}</h3>
+                <p>{it.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+
+    case "AnimatedCounterStats":
+      return (
+        <section className="wb-pro-counters">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-grid">
+            {(p.items as Array<{ value: string; label: string }> | undefined)?.map((it, i) => (
+              <div key={i} className="wb-pro-counter-cell">
+                <div className="wb-pro-counter-value" style={{ animationDelay: `${i * 0.15}s` }}>
+                  {it.value}
+                </div>
+                <div className="wb-pro-counter-label">{it.label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+
+    case "MovingBorderCTA":
+      return (
+        <section className="wb-pro-mb-cta">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          {p.ctaLabel ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-mb-btn">
+              <span className="wb-pro-mb-inner">{String(p.ctaLabel)}</span>
+            </a>
+          ) : null}
+        </section>
+      );
+
+    case "InfiniteMarqueeLogos": {
+      const top = (p.itemsTop as Array<{ name: string }> | undefined) ?? [];
+      const bottom = (p.itemsBottom as Array<{ name: string }> | undefined) ?? [];
+      return (
+        <section className="wb-pro-marquee">
+          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <div className="wb-pro-marquee-row">
+            {[...top, ...top].map((it, i) => (
+              <span key={"t" + i}>{it.name}</span>
+            ))}
+          </div>
+          <div className="wb-pro-marquee-row">
+            {[...bottom, ...bottom].map((it, i) => (
+              <span key={"b" + i}>{it.name}</span>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "OrbitFeatures": {
+      const items = (p.items as Array<{ icon: string; label: string }> | undefined) ?? [];
+      return (
+        <section className="wb-pro-orbit">
+          <h2>{String(p.title ?? "")}</h2>
+          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          <div className="wb-pro-orbit-stage">
+            <div className="wb-pro-orbit-center">{String(p.brand ?? "B")}</div>
+            <div className="wb-pro-orbit-ring">
+              {items.map((it, i) => {
+                const angle = (360 / Math.max(items.length, 1)) * i;
+                return (
+                  <div
+                    key={i}
+                    className="wb-pro-orbit-item"
+                    style={{
+                      transform: `rotate(${angle}deg) translateY(-160px) rotate(${-angle}deg)`,
+                    }}
+                  >
+                    <span>{it.icon}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     default:
       return null;
   }

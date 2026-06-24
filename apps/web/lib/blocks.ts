@@ -13,6 +13,7 @@ export type FieldDef =
   | { name: string; label: string; type: "items"; itemFields: ItemField[] };
 
 export type BlockCategory =
+  | "pro"
   | "layout"
   | "hero"
   | "konten"
@@ -24,6 +25,7 @@ export type BlockCategory =
   | "dynamic";
 
 export const CATEGORY_LABELS: Record<BlockCategory, string> = {
+  pro: "Pro ✨",
   layout: "Layout",
   hero: "Hero",
   konten: "Konten",
@@ -1059,6 +1061,486 @@ export const blockSchemas: BlockSchema[] = [
       { name: "rating", label: "Rating (0-5)", type: "number" },
     ],
   },
+
+  // ===========================================================================
+  // PRO — motion-rich blocks (CSS-only animations, server-renderable).
+  // Inspiration: aceternity.com/components. Built with pure CSS so they work in
+  // RSC, Go static export, and have zero JS runtime cost.
+  // ===========================================================================
+
+  {
+    type: "AuroraHero",
+    label: "Aurora Hero ✨",
+    category: "pro",
+    emoji: "🌌",
+    description: "Hero dengan animasi gradien aurora yang mengalir di latar",
+    defaults: {
+      eyebrow: "Baru saja diluncurkan",
+      title: "Bangun pengalaman magis",
+      subtitle: "Aurora gradient bergerak halus memberikan kesan premium tanpa biaya runtime JavaScript.",
+      ctaLabel: "Mulai Sekarang",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "SpotlightHero",
+    label: "Spotlight Hero ✨",
+    category: "pro",
+    emoji: "🔦",
+    description: "Hero gelap dengan sorotan radial dramatis di belakang teks",
+    defaults: {
+      title: "Konversi lebih tinggi dengan halaman yang fokus",
+      subtitle: "Sorotan radial menarik mata pengunjung langsung ke pesan utama Anda.",
+      ctaLabel: "Coba Gratis",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "HighlightHero",
+    label: "Highlight Hero ✨",
+    category: "pro",
+    emoji: "🖍",
+    description: "Hero dengan satu kata di-highlight stabilo bergerak",
+    defaults: {
+      title: "Buat website yang",
+      highlight: "luar biasa",
+      titleAfter: "dalam hitungan menit.",
+      subtitle: "Pakai blok pro untuk visual yang tampak custom-coded.",
+      ctaLabel: "Mulai",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "title", label: "Judul (sebelum highlight)", type: "string" },
+      { name: "highlight", label: "Kata yang di-highlight", type: "string" },
+      { name: "titleAfter", label: "Judul (setelah highlight)", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "LampHero",
+    label: "Lamp Hero ✨",
+    category: "pro",
+    emoji: "💡",
+    description: "Cahaya kerucut turun dari atas, klasik Aceternity",
+    defaults: {
+      title: "Cahaya yang menarik perhatian",
+      subtitle: "Cone gradient di atas memberikan focal point yang tegas.",
+      ctaLabel: "Eksplor",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "TypewriterHero",
+    label: "Typewriter Hero ✨",
+    category: "pro",
+    emoji: "⌨️",
+    description: "Heading dengan efek mesin ketik CSS murni",
+    defaults: {
+      prefix: "Saya bantu Anda",
+      typed: "membangun website pro",
+      subtitle: "Tanpa coding, tanpa repot — drag, atur, terbitkan.",
+      ctaLabel: "Coba Demo",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "prefix", label: "Awalan judul", type: "string" },
+      { name: "typed", label: "Teks diketik", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "GradientTextHero",
+    label: "Gradient Text Hero ✨",
+    category: "pro",
+    emoji: "🌈",
+    description: "Judul raksasa dengan gradient bergerak halus",
+    defaults: {
+      eyebrow: "v2.0 baru rilis",
+      title: "Pengalaman digital yang berkesan",
+      subtitle: "Gradient bergerak otomatis dengan animasi CSS.",
+      ctaLabel: "Lihat Demo",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "BeamsSection",
+    label: "Beams Section ✨",
+    category: "pro",
+    emoji: "✨",
+    description: "Section dengan beam diagonal animasi melintasi latar",
+    defaults: {
+      title: "Performa tingkat dewa",
+      subtitle: "Beam animasi pure-CSS, ringan, dan support semua browser modern.",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+    ],
+  },
+  {
+    type: "MeteorsSection",
+    label: "Meteors Section ✨",
+    category: "pro",
+    emoji: "☄️",
+    description: "Hujan meteor diagonal sebagai latar belakang",
+    defaults: {
+      title: "Pengalaman yang tak terlupakan",
+      subtitle: "Animasi meteor menciptakan suasana sci-fi yang memorable.",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+    ],
+  },
+  {
+    type: "GradientMeshSection",
+    label: "Mesh Gradient Section ✨",
+    category: "pro",
+    emoji: "🎨",
+    description: "Section dengan mesh gradient bergerak (multi blob)",
+    defaults: {
+      title: "Visual yang menjual",
+      subtitle: "Tiga blob gradient saling tumpang tindih untuk efek mesh.",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+    ],
+  },
+  {
+    type: "WavyDivider",
+    label: "Wavy Divider ✨",
+    category: "pro",
+    emoji: "🌊",
+    description: "Pembatas SVG wave yang ber-animasi halus",
+    defaults: { label: "" },
+    fields: [{ name: "label", label: "Label tengah (opsional)", type: "string" }],
+  },
+  {
+    type: "DotPatternSection",
+    label: "Dot Pattern Section ✨",
+    category: "pro",
+    emoji: "⚪",
+    description: "Pola titik dengan overlay gradient radial fading",
+    defaults: {
+      title: "Detail yang dirancang dengan cermat",
+      subtitle: "Pola titik halus + gradient radial = section premium tanpa noise.",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+    ],
+  },
+  {
+    type: "GlowCardGrid",
+    label: "Glow Card Grid ✨",
+    category: "pro",
+    emoji: "💫",
+    description: "Grid card dengan border conic-gradient yang berputar",
+    defaults: {
+      title: "Fitur unggulan",
+      items: [
+        { title: "Edit visual", desc: "Drag, atur, dan terbitkan tanpa coding." },
+        { title: "Multi-domain", desc: "Hubungkan domain sendiri dengan SSL otomatis." },
+        { title: "Export ZIP", desc: "Unduh HTML/CSS statis kapan pun Anda butuh." },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Card",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul", type: "string" },
+          { name: "desc", label: "Deskripsi", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "TiltCardGrid",
+    label: "3D Tilt Grid ✨",
+    category: "pro",
+    emoji: "🎴",
+    description: "Card dengan perspektif 3D yang miring saat hover",
+    defaults: {
+      title: "Pengalaman premium",
+      items: [
+        { title: "Cepat", desc: "Dimuat <1 detik di mobile." },
+        { title: "Aman", desc: "SSL otomatis, header keamanan terkonfigurasi." },
+        { title: "SEO", desc: "Meta tags, sitemap, dan robots otomatis." },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Card",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul", type: "string" },
+          { name: "desc", label: "Deskripsi", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "BorderBeamCard",
+    label: "Border Beam Card ✨",
+    category: "pro",
+    emoji: "💎",
+    description: "Card highlight dengan beam cahaya berputar di sekeliling border",
+    defaults: {
+      title: "Paket Pro",
+      subtitle: "Untuk bisnis serius yang butuh fitur lanjutan",
+      price: "Rp 199.000",
+      period: "/bulan",
+      ctaLabel: "Mulai Pro",
+      ctaHref: "#",
+      bullets: [
+        { text: "Domain tak terbatas" },
+        { text: "Analytics lanjutan" },
+        { text: "Prioritas support 24/7" },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "string" },
+      { name: "price", label: "Harga", type: "string" },
+      { name: "period", label: "Periode", type: "string" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      {
+        name: "bullets",
+        label: "Bullet",
+        type: "items",
+        itemFields: [{ name: "text", label: "Teks", type: "string" }],
+      },
+    ],
+  },
+  {
+    type: "CardStackShowcase",
+    label: "Card Stack Showcase ✨",
+    category: "pro",
+    emoji: "🃏",
+    description: "Tiga kartu bertumpuk dengan efek kedalaman 3D",
+    defaults: {
+      title: "Suara klien kami",
+      items: [
+        {
+          quote: "Produk ini mengubah cara kami bekerja.",
+          name: "Ari Pratama",
+          role: "CEO, Studio Kreatif",
+        },
+        {
+          quote: "Interface paling intuitif yang pernah saya pakai.",
+          name: "Mira Sari",
+          role: "Founder, Mira Studio",
+        },
+        {
+          quote: "ROI tercepat dari semua tools yang kami coba.",
+          name: "Doni Hartono",
+          role: "CMO, Hartono Co.",
+        },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Testimoni",
+        type: "items",
+        itemFields: [
+          { name: "quote", label: "Quote", type: "textarea" },
+          { name: "name", label: "Nama", type: "string" },
+          { name: "role", label: "Peran", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "HoverGlowGrid",
+    label: "Hover Glow Grid ✨",
+    category: "pro",
+    emoji: "✨",
+    description: "Card grid dengan glow yang muncul mengikuti hover",
+    defaults: {
+      title: "Modul lengkap untuk bisnis Anda",
+      items: [
+        { title: "E-commerce", desc: "Etalase produk + keranjang." },
+        { title: "Blog & SEO", desc: "Editor markdown + meta otomatis." },
+        { title: "CRM", desc: "Kumpulkan lead dari form ke database." },
+        { title: "Analytics", desc: "Real-time visitor + funnel." },
+        { title: "Email", desc: "Kirim newsletter ke subscriber." },
+        { title: "Booking", desc: "Reservasi online dengan kalender." },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Modul",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul", type: "string" },
+          { name: "desc", label: "Deskripsi", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "AnimatedCounterStats",
+    label: "Animated Counter Stats ✨",
+    category: "pro",
+    emoji: "📊",
+    description: "Big stats yang animasi count-up dari 0 saat dimuat",
+    defaults: {
+      title: "Dipercaya oleh ribuan pelanggan",
+      items: [
+        { value: "12000", label: "Situs aktif" },
+        { value: "98", label: "Uptime (%)" },
+        { value: "150", label: "Negara" },
+        { value: "4.9", label: "Rating App Store" },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Statistik",
+        type: "items",
+        itemFields: [
+          { name: "value", label: "Nilai", type: "string" },
+          { name: "label", label: "Label", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "MovingBorderCTA",
+    label: "Moving Border CTA ✨",
+    category: "pro",
+    emoji: "🔄",
+    description: "Section CTA dengan tombol border-gradient berputar",
+    defaults: {
+      title: "Siap dimulai?",
+      subtitle: "Gabung sekarang dan nikmati 14 hari trial gratis tanpa kartu kredit.",
+      ctaLabel: "Mulai Trial Gratis",
+      ctaHref: "#",
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "ctaLabel", label: "Label CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+    ],
+  },
+  {
+    type: "InfiniteMarqueeLogos",
+    label: "Marquee Logos ✨",
+    category: "pro",
+    emoji: "🏷",
+    description: "Dua baris logo bergulir berlawanan arah",
+    defaults: {
+      title: "Dipakai oleh tim terbaik",
+      itemsTop: [
+        { name: "Acme" },
+        { name: "Globex" },
+        { name: "Initech" },
+        { name: "Soylent" },
+        { name: "Hooli" },
+        { name: "Pied Piper" },
+      ],
+      itemsBottom: [
+        { name: "Vandelay" },
+        { name: "Stark" },
+        { name: "Wayne Ent." },
+        { name: "Wonka" },
+        { name: "Cyberdyne" },
+        { name: "Tyrell" },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "itemsTop",
+        label: "Logo baris atas",
+        type: "items",
+        itemFields: [{ name: "name", label: "Nama brand", type: "string" }],
+      },
+      {
+        name: "itemsBottom",
+        label: "Logo baris bawah",
+        type: "items",
+        itemFields: [{ name: "name", label: "Nama brand", type: "string" }],
+      },
+    ],
+  },
+  {
+    type: "OrbitFeatures",
+    label: "Orbit Features ✨",
+    category: "pro",
+    emoji: "🛰",
+    description: "Brand di tengah dengan ikon fitur mengorbit di sekitarnya",
+    defaults: {
+      brand: "WB",
+      title: "Semua dalam satu ekosistem",
+      subtitle: "Integrasi end-to-end untuk bisnis online Anda.",
+      items: [
+        { icon: "🛒", label: "E-com" },
+        { icon: "✉️", label: "Email" },
+        { icon: "📊", label: "Analytics" },
+        { icon: "🔐", label: "Auth" },
+        { icon: "💳", label: "Payment" },
+        { icon: "📦", label: "Shipping" },
+      ],
+    },
+    fields: [
+      { name: "brand", label: "Inisial brand", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      {
+        name: "items",
+        label: "Fitur orbit",
+        type: "items",
+        itemFields: [
+          { name: "icon", label: "Ikon (emoji)", type: "string" },
+          { name: "label", label: "Label", type: "string" },
+        ],
+      },
+    ],
+  },
 ];
 
 export function schemaFor(type: string): BlockSchema | undefined {
@@ -1072,6 +1554,7 @@ export function blockSchemasByCategory(): Array<{
   blocks: BlockSchema[];
 }> {
   const order: BlockCategory[] = [
+    "pro",
     "hero",
     "layout",
     "konten",

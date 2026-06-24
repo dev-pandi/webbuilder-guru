@@ -158,6 +158,285 @@ func renderBlock(b *strings.Builder, blk Block) {
 	case "Footer":
 		fmt.Fprintf(b, `<footer class="wb-footer"><div class="wb-container">%s</div></footer>`, esc(str(p, "copyright")))
 
+	// ==========================================================================
+	// PRO blocks — markup matches renderer/editor 1:1. All animation lives in
+	// the exported CSS bundle (see styles.go appending PRO_CSS), so static HTML
+	// stays clean and content-only.
+	// ==========================================================================
+
+	case "AuroraHero":
+		b.WriteString(`<section class="wb-pro-aurora">`)
+		if v := str(p, "eyebrow"); v != "" {
+			fmt.Fprintf(b, `<div class="wb-pro-eyebrow">%s</div>`, esc(v))
+		}
+		fmt.Fprintf(b, `<h1>%s</h1>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "SpotlightHero":
+		b.WriteString(`<section class="wb-pro-spotlight">`)
+		fmt.Fprintf(b, `<h1>%s</h1>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "HighlightHero":
+		b.WriteString(`<section class="wb-pro-highlight"><h1>`)
+		fmt.Fprintf(b, `%s <span class="wb-pro-mark">%s</span> %s`,
+			esc(str(p, "title")), esc(str(p, "highlight")), esc(str(p, "titleAfter")))
+		b.WriteString(`</h1>`)
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "LampHero":
+		b.WriteString(`<section class="wb-pro-lamp">`)
+		fmt.Fprintf(b, `<h1>%s</h1>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "TypewriterHero":
+		b.WriteString(`<section class="wb-pro-typewriter"><h1>`)
+		fmt.Fprintf(b, `%s <span class="wb-pro-typed">%s</span>`,
+			esc(str(p, "prefix")), esc(str(p, "typed")))
+		b.WriteString(`</h1>`)
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "GradientTextHero":
+		b.WriteString(`<section class="wb-pro-gtext">`)
+		if v := str(p, "eyebrow"); v != "" {
+			fmt.Fprintf(b, `<div class="wb-pro-eyebrow">%s</div>`, esc(v))
+		}
+		fmt.Fprintf(b, `<h1>%s</h1>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "BeamsSection":
+		b.WriteString(`<section class="wb-pro-beams">`)
+		fmt.Fprintf(b, `<h2>%s</h2>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "MeteorsSection":
+		b.WriteString(`<section class="wb-pro-meteors">`)
+		// 5 meteor spans match the nth-child CSS rules.
+		b.WriteString(`<span class="wb-pro-meteor"></span><span class="wb-pro-meteor"></span><span class="wb-pro-meteor"></span><span class="wb-pro-meteor"></span><span class="wb-pro-meteor"></span>`)
+		fmt.Fprintf(b, `<h2>%s</h2>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "GradientMeshSection":
+		b.WriteString(`<section class="wb-pro-mesh"><span class="wb-pro-mesh-blob"></span><span class="wb-pro-mesh-blob"></span><span class="wb-pro-mesh-blob"></span>`)
+		fmt.Fprintf(b, `<h2>%s</h2>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "WavyDivider":
+		b.WriteString(`<section class="wb-pro-wave"><div class="wb-pro-wave-track"><svg viewBox="0 0 1200 60" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 30 Q 150 0 300 30 T 600 30 T 900 30 T 1200 30 V60 H0 Z" fill="currentColor" opacity="0.15"/></svg></div>`)
+		if v := str(p, "label"); v != "" {
+			fmt.Fprintf(b, `<div class="wb-pro-wave-label">%s</div>`, esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "DotPatternSection":
+		b.WriteString(`<section class="wb-pro-dots">`)
+		fmt.Fprintf(b, `<h2>%s</h2>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "GlowCardGrid":
+		b.WriteString(`<section class="wb-pro-glow-grid">`)
+		if v := str(p, "title"); v != "" {
+			fmt.Fprintf(b, `<h2>%s</h2>`, esc(v))
+		}
+		b.WriteString(`<div class="wb-pro-grid">`)
+		for _, it := range arr(p, "items") {
+			if m, ok := it.(map[string]any); ok {
+				fmt.Fprintf(b, `<div class="wb-pro-glow-card"><div class="wb-pro-glow-inner"><h3>%s</h3><p>%s</p></div></div>`,
+					esc(str(m, "title")), esc(str(m, "desc")))
+			}
+		}
+		b.WriteString(`</div></section>`)
+
+	case "TiltCardGrid":
+		b.WriteString(`<section class="wb-pro-tilt-grid">`)
+		if v := str(p, "title"); v != "" {
+			fmt.Fprintf(b, `<h2>%s</h2>`, esc(v))
+		}
+		b.WriteString(`<div class="wb-pro-grid">`)
+		for _, it := range arr(p, "items") {
+			if m, ok := it.(map[string]any); ok {
+				fmt.Fprintf(b, `<div class="wb-pro-tilt-card"><h3>%s</h3><p>%s</p></div>`,
+					esc(str(m, "title")), esc(str(m, "desc")))
+			}
+		}
+		b.WriteString(`</div></section>`)
+
+	case "BorderBeamCard":
+		b.WriteString(`<section class="wb-pro-beam-card"><div class="wb-pro-beam-wrap"><div class="wb-pro-beam-inner">`)
+		fmt.Fprintf(b, `<div style="font-size:0.7rem;letter-spacing:0.15em;text-transform:uppercase;opacity:0.6">%s</div>`, esc(str(p, "subtitle")))
+		fmt.Fprintf(b, `<h3 style="margin-top:0.25rem;font-size:1.125rem;font-weight:700">%s</h3>`, esc(str(p, "title")))
+		fmt.Fprintf(b, `<div class="wb-pro-beam-price">%s<span class="wb-pro-beam-period">%s</span></div>`,
+			esc(str(p, "price")), esc(str(p, "period")))
+		b.WriteString(`<ul>`)
+		for _, it := range arr(p, "bullets") {
+			if m, ok := it.(map[string]any); ok {
+				fmt.Fprintf(b, `<li>%s</li>`, esc(str(m, "text")))
+			}
+		}
+		b.WriteString(`</ul>`)
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-cta">%s</a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</div></div></section>`)
+
+	case "CardStackShowcase":
+		b.WriteString(`<section class="wb-pro-stack">`)
+		if v := str(p, "title"); v != "" {
+			fmt.Fprintf(b, `<h2>%s</h2>`, esc(v))
+		}
+		b.WriteString(`<div class="wb-pro-stack-wrap">`)
+		count := 0
+		for _, it := range arr(p, "items") {
+			if count >= 3 {
+				break
+			}
+			if m, ok := it.(map[string]any); ok {
+				fmt.Fprintf(b, `<div class="wb-pro-stack-card"><blockquote>&ldquo;%s&rdquo;</blockquote><div class="wb-pro-stack-meta"><div class="wb-pro-stack-name">%s</div><div class="wb-pro-stack-role">%s</div></div></div>`,
+					esc(str(m, "quote")), esc(str(m, "name")), esc(str(m, "role")))
+				count++
+			}
+		}
+		b.WriteString(`</div></section>`)
+
+	case "HoverGlowGrid":
+		b.WriteString(`<section class="wb-pro-hover-grid">`)
+		if v := str(p, "title"); v != "" {
+			fmt.Fprintf(b, `<h2>%s</h2>`, esc(v))
+		}
+		b.WriteString(`<div class="wb-pro-grid">`)
+		for _, it := range arr(p, "items") {
+			if m, ok := it.(map[string]any); ok {
+				fmt.Fprintf(b, `<div class="wb-pro-hover-card"><h3>%s</h3><p>%s</p></div>`,
+					esc(str(m, "title")), esc(str(m, "desc")))
+			}
+		}
+		b.WriteString(`</div></section>`)
+
+	case "AnimatedCounterStats":
+		b.WriteString(`<section class="wb-pro-counters">`)
+		if v := str(p, "title"); v != "" {
+			fmt.Fprintf(b, `<h2>%s</h2>`, esc(v))
+		}
+		b.WriteString(`<div class="wb-pro-grid">`)
+		for i, it := range arr(p, "items") {
+			if m, ok := it.(map[string]any); ok {
+				fmt.Fprintf(b, `<div class="wb-pro-counter-cell"><div class="wb-pro-counter-value" style="animation-delay:%.2fs">%s</div><div class="wb-pro-counter-label">%s</div></div>`,
+					float64(i)*0.15, esc(str(m, "value")), esc(str(m, "label")))
+			}
+		}
+		b.WriteString(`</div></section>`)
+
+	case "MovingBorderCTA":
+		b.WriteString(`<section class="wb-pro-mb-cta">`)
+		fmt.Fprintf(b, `<h2>%s</h2>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		if v := str(p, "ctaLabel"); v != "" {
+			fmt.Fprintf(b, `<a href="%s" class="wb-pro-mb-btn"><span class="wb-pro-mb-inner">%s</span></a>`,
+				escAttr(strOr(p, "ctaHref", "#")), esc(v))
+		}
+		b.WriteString(`</section>`)
+
+	case "InfiniteMarqueeLogos":
+		b.WriteString(`<section class="wb-pro-marquee">`)
+		if v := str(p, "title"); v != "" {
+			fmt.Fprintf(b, `<h2>%s</h2>`, esc(v))
+		}
+		// Each row is duplicated inline so the keyframe loop is seamless.
+		for _, key := range []string{"itemsTop", "itemsBottom"} {
+			b.WriteString(`<div class="wb-pro-marquee-row">`)
+			items := arr(p, key)
+			for n := 0; n < 2; n++ {
+				for _, it := range items {
+					if m, ok := it.(map[string]any); ok {
+						fmt.Fprintf(b, `<span>%s</span>`, esc(str(m, "name")))
+					}
+				}
+			}
+			b.WriteString(`</div>`)
+		}
+		b.WriteString(`</section>`)
+
+	case "OrbitFeatures":
+		b.WriteString(`<section class="wb-pro-orbit">`)
+		fmt.Fprintf(b, `<h2>%s</h2>`, esc(str(p, "title")))
+		if v := str(p, "subtitle"); v != "" {
+			fmt.Fprintf(b, `<p class="wb-pro-sub">%s</p>`, esc(v))
+		}
+		b.WriteString(`<div class="wb-pro-orbit-stage">`)
+		fmt.Fprintf(b, `<div class="wb-pro-orbit-center">%s</div>`, esc(str(p, "brand")))
+		b.WriteString(`<div class="wb-pro-orbit-ring">`)
+		items := arr(p, "items")
+		n := len(items)
+		if n == 0 {
+			n = 1
+		}
+		for i, it := range items {
+			if m, ok := it.(map[string]any); ok {
+				angle := 360.0 / float64(n) * float64(i)
+				fmt.Fprintf(b,
+					`<div class="wb-pro-orbit-item" style="transform:rotate(%.2fdeg) translateY(-160px) rotate(%.2fdeg)"><span>%s</span></div>`,
+					angle, -angle, esc(str(m, "icon")))
+			}
+		}
+		b.WriteString(`</div></div></section>`)
+
 	default:
 		// Unknown block: render comment marker, don't fail.
 		fmt.Fprintf(b, `<!-- block:%s -->`, esc(blk.Type))

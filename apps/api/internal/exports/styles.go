@@ -176,6 +176,10 @@ img { max-width: 100%%; height: auto; display: block; }
 .wb-footer .wb-container { padding: 1.5rem; text-align: center; font-size: 0.875rem; opacity: 0.7; }
 `, primary, secondary, bg, fg, radius, heading, body)
 
+	// Append the Pro block stylesheet — same rules used in renderer + editor
+	// so exported HTML matches the live preview.
+	b.WriteString(proCSS)
+
 	return b.String()
 }
 
