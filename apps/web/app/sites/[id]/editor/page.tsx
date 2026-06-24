@@ -5,9 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
+  Eye,
   History,
   Layers,
   Monitor,
+  Palette,
   Plus,
   RotateCcw,
   Save,
@@ -32,7 +34,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { hexToHslComponents, readableForeground } from "@/lib/color";
+import { buildCatalogFontsUrl } from "@/lib/fonts";
 import { PropEditor, type BlockData } from "./PropEditor";
+import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
 
 type PageVersion = {
   id: string;
@@ -53,16 +58,52 @@ type Page = {
   is_home: boolean;
 };
 
+type Site = {
+  id: string;
+  name: string;
+  theme: ThemeJson | null;
+};
+
+const DEFAULT_THEME: ThemeJson = {
+  colors: { primary: "#2563eb", secondary: "#0ea5e9", bg: "#ffffff", fg: "#0f172a" },
+  font: { heading: "Inter", body: "Inter" },
+  radius: "0.75rem",
+};
+
+// Inserts a single <link> loading the whole font catalog so any font the user
+// picks is available in the canvas without per-pick network juggling.
+function ensureFontCatalogLoaded() {
+  if (typeof document === "undefined") return;
+  const id = "wb-editor-font-catalog";
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = buildCatalogFontsUrl();
+  document.head.appendChild(link);
+}
+
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
   const [pages, setPages] = useState<Page[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<BlockData[]>([]);
+  const [originalBlocks, setOriginalBlocks] = useState<BlockData[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number>(-1);
   const [saving, setSaving] = useState(false);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Theme state — loaded from the site, applied as CSS vars on canvas.
+  const [theme, setTheme] = useState<ThemeJson>(DEFAULT_THEME);
+  const [originalTheme, setOriginalTheme] = useState<ThemeJson>(DEFAULT_THEME);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [savingTheme, setSavingTheme] = useState(false);
+
+  useEffect(() => {
+    ensureFontCatalogLoaded();
+  }, []);
 
   useEffect(() => {
     api<Page[]>(`/api/v1/sites/${params.id}/pages`)
@@ -71,11 +112,25 @@ export default function EditorPage() {
         const home = list.find((p) => p.is_home) ?? list[0] ?? null;
         if (home) {
           setCurrentId(home.id);
-          setBlocks(home.tree?.blocks ?? []);
-          setSelectedIdx(home.tree?.blocks?.length ? 0 : -1);
+          const bs = home.tree?.blocks ?? [];
+          setBlocks(bs);
+          setOriginalBlocks(bs);
+          setSelectedIdx(bs.length ? 0 : -1);
         }
       })
       .catch((e) => toast.error((e as Error).message));
+
+    // Site fetch parallel — feeds theme into the canvas.
+    api<Site>(`/api/v1/sites/${params.id}`)
+      .then((s) => {
+        if (s.theme && Object.keys(s.theme).length > 0) {
+          setTheme(s.theme);
+          setOriginalTheme(s.theme);
+        }
+      })
+      .catch(() => {
+        /* non-fatal — canvas falls back to defaults */
+      });
   }, [params.id]);
 
   const current = useMemo(
@@ -84,11 +139,75 @@ export default function EditorPage() {
   );
 
   function selectPage(p: Page) {
+    // Warn before discarding unsaved changes on the current page.
+    if (blocksDirty && !confirm("Ada perubahan belum disimpan. Pindah halaman?")) return;
     setCurrentId(p.id);
     const bs = p.tree?.blocks ?? [];
     setBlocks(bs);
+    setOriginalBlocks(bs);
     setSelectedIdx(bs.length ? 0 : -1);
   }
+
+  // Dirty checks — JSON.stringify is fine for the typical block-tree size and
+  // gives a precise (false-negative-free) reading.
+  const blocksDirty = useMemo(
+    () => JSON.stringify(blocks) !== JSON.stringify(originalBlocks),
+    [blocks, originalBlocks],
+  );
+  const themeDirty = useMemo(
+    () => JSON.stringify(theme) !== JSON.stringify(originalTheme),
+    [theme, originalTheme],
+  );
+
+  // CSS variables applied to the preview canvas wrapper. By overriding the
+  // same shadcn HSL tokens the dashboard uses internally (primary, background,
+  // foreground, secondary, radius), every `bg-primary` / `text-foreground`
+  // class inside the canvas renders in the SITE'S colour — true WYSIWYG with
+  // zero block-by-block rewrite. The renderer-style `--color-*` and
+  // `--font-*` vars are also set so the same blocks that go to production
+  // (which use `style={{background: "var(--color-primary)"}}`) match too.
+  const canvasStyle = useMemo<React.CSSProperties>(() => {
+    const c = theme.colors ?? {};
+    const primary = c.primary ?? "#2563eb";
+    const secondary = c.secondary ?? "#0ea5e9";
+    const bg = c.bg ?? "#ffffff";
+    const fg = c.fg ?? "#0f172a";
+    const style: Record<string, string> = {
+      // shadcn-style HSL tokens — override locally so tailwind classes pick
+      // them up inside .wb-canvas only.
+      "--background": hexToHslComponents(bg) ?? "0 0% 100%",
+      "--foreground": hexToHslComponents(fg) ?? "222 47% 11%",
+      "--card": hexToHslComponents(bg) ?? "0 0% 100%",
+      "--card-foreground": hexToHslComponents(fg) ?? "222 47% 11%",
+      "--primary": hexToHslComponents(primary) ?? "221 83% 53%",
+      "--primary-foreground": readableForeground(primary),
+      "--secondary": hexToHslComponents(secondary) ?? "199 89% 48%",
+      "--secondary-foreground": readableForeground(secondary),
+      "--muted": hexToHslComponents(fg) ?? "215 16% 47%",
+      "--muted-foreground": hexToHslComponents(fg) ?? "215 16% 47%",
+      "--border": hexToHslComponents(fg) ?? "214 32% 91%",
+      "--input": hexToHslComponents(fg) ?? "214 32% 91%",
+      "--ring": hexToHslComponents(primary) ?? "221 83% 53%",
+      "--radius": theme.radius ?? "0.75rem",
+      // Renderer-style raw colour vars (used by future inline-style blocks).
+      "--color-primary": primary,
+      "--color-secondary": secondary,
+      "--color-bg": bg,
+      "--color-fg": fg,
+      // Font vars — read by .wb-canvas typography rules in globals.css.
+      "--wb-font-heading": theme.font?.heading
+        ? `"${theme.font.heading}", system-ui, sans-serif`
+        : `"Inter", system-ui, sans-serif`,
+      "--wb-font-body": theme.font?.body
+        ? `"${theme.font.body}", system-ui, sans-serif`
+        : `"Inter", system-ui, sans-serif`,
+      // Apply background+foreground directly so even an empty canvas matches
+      // the site (otherwise the dashboard's neutral grey shows through).
+      backgroundColor: bg,
+      color: fg,
+    };
+    return style as React.CSSProperties;
+  }, [theme]);
 
   function addBlock(type: string, atIdx?: number) {
     const schema = schemaFor(type);
@@ -132,11 +251,28 @@ export default function EditorPage() {
         body: JSON.stringify({ tree: { blocks } }),
       });
       setPages((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
+      setOriginalBlocks(blocks);
       toast.success("Halaman tersimpan");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveTheme() {
+    setSavingTheme(true);
+    try {
+      await api(`/api/v1/sites/${params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ theme }),
+      });
+      setOriginalTheme(theme);
+      toast.success("Tema tersimpan");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSavingTheme(false);
     }
   }
 
@@ -303,32 +439,50 @@ export default function EditorPage() {
       {/* ---------- Center: Preview ---------- */}
       <section className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
         {/* Toolbar */}
-        <div className="flex items-center justify-between gap-3 border-b bg-card px-3 py-2">
-          <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 shadow-inner">
-            <DeviceBtn
-              active={device === "desktop"}
-              onClick={() => setDevice("desktop")}
-              icon={Monitor}
-              label="Desktop"
-            />
-            <DeviceBtn
-              active={device === "tablet"}
-              onClick={() => setDevice("tablet")}
-              icon={Tablet}
-              label="Tablet"
-            />
-            <DeviceBtn
-              active={device === "mobile"}
-              onClick={() => setDevice("mobile")}
-              icon={Smartphone}
-              label="Mobile"
-            />
+        <div className="flex items-center justify-between gap-3 border-b bg-card/95 px-3 py-2 backdrop-blur">
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 shadow-inner">
+              <DeviceBtn
+                active={device === "desktop"}
+                onClick={() => setDevice("desktop")}
+                icon={Monitor}
+                label="Desktop"
+              />
+              <DeviceBtn
+                active={device === "tablet"}
+                onClick={() => setDevice("tablet")}
+                icon={Tablet}
+                label="Tablet"
+              />
+              <DeviceBtn
+                active={device === "mobile"}
+                onClick={() => setDevice("mobile")}
+                icon={Smartphone}
+                label="Mobile"
+              />
+            </div>
+            <span className="hidden items-center gap-1 text-[11px] text-muted-foreground md:inline-flex">
+              <Eye className="size-3" />
+              {device === "desktop" ? "Auto" : device === "tablet" ? "768px" : "375px"}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden text-xs text-muted-foreground sm:inline">
+            <span className="hidden truncate text-xs text-muted-foreground sm:inline">
               {current?.slug ? `/${current.slug}` : "—"}
             </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setThemeOpen(true)}
+              className="relative gap-1.5"
+            >
+              <Palette className="size-3.5" />
+              <span className="hidden sm:inline">Tema</span>
+              {themeDirty && (
+                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-500 ring-2 ring-card" />
+              )}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -341,23 +495,28 @@ export default function EditorPage() {
             </Button>
             <Button
               onClick={save}
-              disabled={saving || !current}
+              disabled={saving || !current || !blocksDirty}
               size="sm"
-              className="gap-1.5 shadow-sm"
+              className="relative gap-1.5 shadow-sm"
             >
               <Save className="size-3.5" />
               {saving ? "Menyimpan…" : "Simpan"}
+              {blocksDirty && !saving && (
+                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-primary" />
+              )}
             </Button>
           </div>
         </div>
 
-        {/* Canvas — browser-like frame */}
+        {/* Canvas — browser-like frame. Outer wrapper paints dashboard chrome
+            (browser top bar uses dashboard tokens); INNER .wb-canvas applies
+            the site theme so blocks inside render in the user's palette/fonts. */}
         <div className="flex-1 overflow-auto bg-muted/30 p-4">
           <div
-            className="mx-auto overflow-hidden rounded-xl border border-foreground/10 bg-background shadow-lg transition-all duration-300 ease-out"
+            className="mx-auto overflow-hidden rounded-xl border border-foreground/10 shadow-lg transition-all duration-300 ease-out"
             style={{ width: previewWidth, maxWidth: "100%" }}
           >
-            {/* Fake browser chrome */}
+            {/* Fake browser chrome (dashboard-tokened, not themed) */}
             <div className="flex items-center gap-1.5 border-b bg-muted/40 px-3 py-2">
               <span className="size-2.5 rounded-full bg-red-400" />
               <span className="size-2.5 rounded-full bg-amber-400" />
@@ -366,12 +525,44 @@ export default function EditorPage() {
                 {current ? `${current.slug === "home" ? "" : "/" + current.slug}` : "/"}
               </div>
             </div>
-            <Preview
-              blocks={blocks}
-              onSelect={setSelectedIdx}
-              selectedIdx={selectedIdx}
-              onAdd={() => setPaletteOpen(true)}
-            />
+            <div className="wb-canvas" style={canvasStyle}>
+              <Preview
+                blocks={blocks}
+                onSelect={setSelectedIdx}
+                selectedIdx={selectedIdx}
+                onAdd={() => setPaletteOpen(true)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Status bar: dirty state + keyboard hints */}
+        <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5">
+              {blocksDirty ? (
+                <>
+                  <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                  Belum disimpan
+                </>
+              ) : (
+                <>
+                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                  Tersimpan
+                </>
+              )}
+            </span>
+            <Separator orientation="vertical" className="h-3" />
+            <span className="hidden sm:inline">
+              {blocks.length} block · halaman {pages.length}
+            </span>
+          </div>
+          <div className="hidden items-center gap-3 md:flex">
+            <Kbd>⌘ S</Kbd>
+            <span>Simpan</span>
+            <Separator orientation="vertical" className="h-3" />
+            <Kbd>Esc</Kbd>
+            <span>Tutup dialog</span>
           </div>
         </div>
       </section>
@@ -412,6 +603,16 @@ export default function EditorPage() {
           </div>
         )}
       </aside>
+
+      <ThemeDrawer
+        open={themeOpen}
+        onClose={() => setThemeOpen(false)}
+        theme={theme}
+        onChange={setTheme}
+        onSave={saveTheme}
+        saving={savingTheme}
+        dirty={themeDirty}
+      />
 
       <BlockPaletteDialog
         open={paletteOpen}
@@ -663,6 +864,14 @@ function HistoryDialog({
 }
 
 // ---------- Tiny helpers ----------
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded border bg-background px-1.5 py-px font-mono text-[10px] font-medium text-foreground/70 shadow-sm">
+      {children}
+    </kbd>
+  );
+}
 
 function DeviceBtn({
   active,

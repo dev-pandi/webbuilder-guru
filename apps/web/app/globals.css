@@ -115,3 +115,22 @@
   -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
           mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
 }
+
+/* ---- WYSIWYG editor canvas: site theme typography ----
+   The .wb-canvas wrapper has CSS variables overridden inline (primary,
+   background, foreground, secondary, radius) so tailwind classes inside
+   automatically render in the site's palette. Typography is applied via
+   these rules so blocks that use raw <h1>/<p>/<a> match the renderer. */
+
+.wb-canvas {
+  font-family: var(--wb-font-body, var(--font-body, 'Inter', system-ui, sans-serif));
+}
+.wb-canvas h1,
+.wb-canvas h2,
+.wb-canvas h3,
+.wb-canvas h4,
+.wb-canvas h5,
+.wb-canvas h6 {
+  font-family: var(--wb-font-heading, var(--font-heading, 'Inter', system-ui, sans-serif));
+}
+
