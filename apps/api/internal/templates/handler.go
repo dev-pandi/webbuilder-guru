@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -9,19 +10,23 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/sites"
 )
 
 type Handler struct {
-	repo  *Repo
-	sites *sites.Repo
-	pages *pages.Repo
+	repo     *Repo
+	sites    *sites.Repo
+	pages    *pages.Repo
+	products *products.Repo // optional — for seeding sample products on UMKM templates
+	blog     *blog.Repo     // optional — for seeding sample blog posts on Blog templates
 }
 
-func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo) *Handler {
-	return &Handler{repo: repo, sites: s, pages: p}
+func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo) *Handler {
+	return &Handler{repo: repo, sites: s, pages: p, products: pr, blog: b}
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
@@ -99,6 +104,14 @@ func (h *Handler) ApplyToSite(c *fiber.Ctx) error {
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`)
 
 // POST /sites/from-template/:slug   { slug, name }
+//
+// Seeds:
+//   1. Pages from template (always)
+//   2. Sample products if template category = "umkm" (so /produk page isn't empty)
+//   3. Sample blog posts if template category = "blog" (so /artikel page isn't empty)
+//
+// Sample seeding is best-effort — errors logged via fiber's logger but don't fail the
+// whole request, since the user already has the site and pages.
 func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	tplSlug := c.Params("slug")
@@ -134,7 +147,7 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		return httpx.Internal(c, "create failed")
 	}
 
-	// Provision template pages.
+	// 1. Provision template pages.
 	var tplPages []struct {
 		Slug   string          `json:"slug"`
 		Title  string          `json:"title"`
@@ -152,5 +165,235 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		_, _ = h.pages.Create(c.Context(), site.ID, strings.ToLower(p.Slug), p.Title, p.Tree, p.SEO, p.IsHome)
 	}
 
+	// 2. Category-aware sample data so the new site feels alive immediately.
+	switch tpl.Category {
+	case "umkm":
+		if h.products != nil {
+			h.seedSampleProducts(c.Context(), site.ID)
+		}
+	case "blog":
+		if h.blog != nil {
+			h.seedSampleBlogPosts(c.Context(), site.ID)
+		}
+	}
+
 	return httpx.Created(c, site)
+}
+
+// seedSampleProducts inserts 5 demo products. Failures are silent.
+func (h *Handler) seedSampleProducts(ctx context.Context, siteID uuid.UUID) {
+	for _, p := range sampleProducts() {
+		_, _ = h.products.Create(ctx, siteID, p)
+	}
+}
+
+// seedSampleBlogPosts inserts 3 demo posts (all published). Failures are silent.
+func (h *Handler) seedSampleBlogPosts(ctx context.Context, siteID uuid.UUID) {
+	for _, p := range sampleBlogPosts() {
+		_, _ = h.blog.Create(ctx, siteID, p)
+	}
+}
+
+func sampleProducts() []products.CreateInput {
+	return []products.CreateInput{
+		{
+			Slug:        "keripik-singkong-original",
+			Name:        "Keripik Singkong Original",
+			Description: "Keripik singkong renyah dari bahan singkong pilihan petani lokal. Tanpa pengawet, hanya digoreng dengan minyak segar dan dibumbui garam laut. Cocok untuk camilan keluarga atau oleh-oleh.",
+			Price:       15000,
+			Currency:    "IDR",
+			Category:    "Snack",
+			Status:      "active",
+		},
+		{
+			Slug:        "kopi-robusta-bubuk-250g",
+			Name:        "Kopi Robusta Bubuk 250g",
+			Description: "Single origin Lampung — kopi robusta dengan body kuat, aroma kacang, dan after-taste cokelat. Sudah di-grind medium, siap diseduh manual brew maupun espresso machine.",
+			Price:       45000,
+			Currency:    "IDR",
+			Category:    "Minuman",
+			Status:      "active",
+		},
+		{
+			Slug:        "sambal-botol-pedas-manis",
+			Name:        "Sambal Botol Pedas Manis",
+			Description: "Sambal rumahan dengan cabai rawit segar, bawang putih, dan gula merah. Tanpa MSG, tanpa pengawet. Tahan 2 minggu di kulkas. Pas untuk lauk apa saja.",
+			Price:       25000,
+			Currency:    "IDR",
+			Category:    "Bumbu",
+			Status:      "active",
+		},
+		{
+			Slug:        "teh-celup-premium-25-sachet",
+			Name:        "Teh Celup Premium 25 Sachet",
+			Description: "Teh hitam pilihan dari kebun Wonosobo, dipetik tangan dan dikeringkan secara tradisional. Setiap sachet menghasilkan teh dengan aroma kuat dan rasa lembut.",
+			Price:       18000,
+			Currency:    "IDR",
+			Category:    "Minuman",
+			Status:      "active",
+		},
+		{
+			Slug:        "madu-hutan-murni-500ml",
+			Name:        "Madu Hutan Murni 500ml",
+			Description: "Madu liar dari hutan Kalimantan. Diambil langsung dari sarang lebah Apis dorsata di pepohonan tinggi. Tanpa campuran, tanpa pemanis tambahan. Tekstur kental, warna gelap.",
+			Price:       95000,
+			Currency:    "IDR",
+			Category:    "Kesehatan",
+			Status:      "active",
+		},
+	}
+}
+
+func sampleBlogPosts() []blog.CreateInput {
+	return []blog.CreateInput{
+		{
+			Slug:       "selamat-datang-di-blog-saya",
+			Title:      "Selamat Datang di Blog Saya",
+			Excerpt:    "Tulisan pertama — sedikit cerita kenapa saya membuat blog ini dan apa yang bisa Anda harapkan ke depan.",
+			AuthorName: "Admin",
+			Status:     "published",
+			ContentMD: `# Halo! 👋
+
+Selamat datang di blog saya. Tulisan ini adalah post pertama, jadi mungkin agak personal — mau cerita sedikit kenapa saya membuat blog ini.
+
+## Kenapa Blog?
+
+Sudah lama saya pengen punya tempat sendiri untuk **mendokumentasikan apa yang saya pelajari**. Bukan untuk pamer, lebih ke arah arsip pribadi yang kebetulan publik. Saya percaya:
+
+> *"You don't really understand something until you can explain it to someone else."*
+
+Menulis memaksa saya berpikir lebih jelas. Ide yang terasa jelas di kepala sering kali ternyata belum solid begitu dituangkan ke kalimat.
+
+## Apa yang Akan Saya Tulis?
+
+Beberapa topik yang sering jadi minat saya:
+
+- **Teknologi & coding** — tutorial, review tools, atau cerita debugging yang seru
+- **Produktivitas** — workflow, habit, dan eksperimen-eksperimen kecil
+- **Belajar & karir** — refleksi dari journey saya sebagai developer
+- **Random thoughts** — kadang sekadar journal harian
+
+## Sering Posting?
+
+Target saya **1 artikel per minggu**, dipost setiap Senin pagi. Tapi kualitas selalu di atas kuantitas — kalau belum siap, ya nggak dipaksain.
+
+## Tetap Terhubung
+
+- **Email**: subscribe ke newsletter di halaman utama untuk dapat post baru langsung di inbox
+- **Twitter/X**: follow untuk diskusi cepat & komentar
+
+Terima kasih sudah mampir. Sampai jumpa di tulisan berikutnya!`,
+		},
+		{
+			Slug:       "5-tools-favorit-untuk-produktivitas",
+			Title:      "5 Tools Favorit untuk Produktivitas Harian",
+			Excerpt:    "Tools yang saya pakai setiap hari dan benar-benar membuat perbedaan. Disclaimer: bukan affiliate.",
+			AuthorName: "Admin",
+			Status:     "published",
+			ContentMD: `# 5 Tools Favorit untuk Produktivitas Harian
+
+Saya percaya tools yang tepat bisa **jadi pembeda nyata**, bukan sekadar gimmick. Berikut 5 yang sering saya pakai. Tidak ada link affiliate — murni rekomendasi.
+
+## 1. Obsidian
+
+Aplikasi note-taking berbasis Markdown dengan **graph view** yang memvisualisasikan keterkaitan antar catatan. Cocok untuk membangun "second brain".
+
+**Kenapa saya suka:**
+- File-nya Markdown plain — tidak terkunci di satu aplikasi
+- Plugin community yang sangat aktif
+- Sync via iCloud / Git tanpa biaya tambahan
+
+## 2. Raycast
+
+Spotlight pada steroid untuk Mac. Quick launcher, clipboard history, snippets, extension marketplace — semuanya dalam satu app.
+
+**Use case favorit:**
+- Hitung kalkulasi dengan natural language ("100 USD in IDR")
+- Akses bookmark, tab browser, dan dokumen instan
+- Trigger workflow via shortcuts
+
+## 3. Linear
+
+Project management yang **opinionated**. Mereka fokus pada speed dan keyboard shortcut.
+
+**Yang membuatnya beda:**
+- Animasi yang super smooth
+- Cycle planning yang masuk akal (1-2 minggu)
+- Integrasi GitHub yang work seamlessly
+
+## 4. Cron / Notion Calendar
+
+Calendar app modern dengan integrasi multi-account. Cepat, clean, dan punya "scheduling links" untuk meeting.
+
+## 5. Keychron K3
+
+Bukan software, tapi worth mentioning. Keyboard mekanikal low-profile yang nyaman buat kerja seharian.
+
+> *"Your tools should compound your effort, not consume it."*
+
+Tools apa yang paling jadi game-changer untuk Anda? Reach out via halaman Kontak!`,
+		},
+		{
+			Slug:       "belajar-bahasa-pemrograman-baru-dalam-30-hari",
+			Title:      "Belajar Bahasa Pemrograman Baru dalam 30 Hari",
+			Excerpt:    "Strategi yang saya pakai untuk belajar Go dari nol — bisa diadaptasi untuk bahasa lain.",
+			AuthorName: "Admin",
+			Status:     "published",
+			ContentMD: `# Belajar Bahasa Pemrograman Baru dalam 30 Hari
+
+Tahun lalu saya tantang diri belajar **Go** dari nol dalam 30 hari. Bukan untuk jadi expert, tapi cukup untuk membangun project nyata. Berikut metode yang work — bisa diadaptasi ke bahasa apa pun.
+
+## Minggu 1: Fondasi
+
+Hari 1-7 dihabiskan untuk **basic syntax**. Saya gunakan kombinasi:
+
+1. **Buku resmi** — "The Go Programming Language" (Donovan & Kernighan)
+2. **Interactive tutorial** — [Go by Example](https://gobyexample.com) untuk practice
+3. **Video** — A Tour of Go di youtube (1-2 jam)
+
+Target: bisa baca code Go orang lain dan paham yang terjadi.
+
+## Minggu 2: Tools & Ekosistem
+
+Setelah syntax solid, fokus ke:
+
+- ` + "`" + `go mod` + "`" + ` untuk dependency management
+- ` + "`" + `go test` + "`" + ` untuk testing — Go punya testing terintegrasi sejak day 1
+- Standard library tour: ` + "`" + `net/http` + "`" + `, ` + "`" + `encoding/json` + "`" + `, ` + "`" + `database/sql` + "`" + `
+
+## Minggu 3: Build Something
+
+Tidak ada yang lebih efektif dari **membangun project nyata**. Saya pilih: REST API untuk URL shortener.
+
+Stack:
+- ` + "`" + `net/http` + "`" + ` saja (tanpa framework dulu)
+- PostgreSQL via ` + "`" + `database/sql` + "`" + ` + ` + "`" + `pgx` + "`" + `
+- Test dengan ` + "`" + `httptest` + "`" + `
+
+Setiap masalah yang muncul saat coding = peluang belajar.
+
+## Minggu 4: Refactor & Patterns
+
+Setelah project jalan, **refactor** dengan idiom Go:
+
+- Interface untuk abstraksi (dependency injection)
+- Error handling yang explicit (no exceptions)
+- Goroutine + channel untuk concurrency
+
+## Hasil
+
+Setelah 30 hari, saya bisa:
+- Menulis Go code yang **idiomatic** (bukan terjemahan dari bahasa lama)
+- **Membaca code Go open source** dengan nyaman
+- Build dan deploy aplikasi backend nyata
+
+## Kunci Suksesnya
+
+1. **Konsisten** — 1-2 jam per hari LEBIH PENTING dari 12 jam di akhir pekan
+2. **Build, jangan cuma baca** — tutorial saja tidak cukup
+3. **Embrace the discomfort** — bahasa baru pasti terasa aneh awalnya, itu normal
+
+Selamat mencoba! 🚀`,
+		},
+	}
 }

@@ -113,7 +113,7 @@ func main() {
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo),
 		Domains:      domains.NewHandler(domainRepo, siteRepo),
-		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo),
+		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo),
 		Export: exports.NewHandler(&exports.Builder{
 			Sites:    siteRepo,
 			Pages:    pageRepo,
