@@ -22,6 +22,7 @@ import (
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/logging"
 	"github.com/webbuilder/api/internal/mail"
+	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
@@ -61,12 +62,37 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	pool, err := db.ConnectWith(ctx, cfg.DatabaseURL, db.PoolOptions{
+		MaxConns:           int32(cfg.DBMaxConns),
+		MinConns:           int32(cfg.DBMinConns),
+		MaxConnLifetime:    cfg.DBMaxConnLifetime,
+		MaxConnIdleTime:    cfg.DBMaxConnIdleTime,
+		SlowQueryThreshold: cfg.DBSlowQueryThreshold,
+	})
 	if err != nil {
 		slog.Error("db connect failed", "error", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	// Periodic pool snapshot so /metrics exposes acquire/idle counts. 5s tick
+	// keeps cardinality low and matches typical Prometheus scrape intervals.
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s := db.Snapshot(pool)
+				metrics.Default.GaugeSet("db_pool_acquired", "Currently checked-out conns", nil, int64(s.Acquired))
+				metrics.Default.GaugeSet("db_pool_idle", "Idle conns in pool", nil, int64(s.Idle))
+				metrics.Default.GaugeSet("db_pool_total", "Total conns in pool", nil, int64(s.Total))
+				metrics.Default.GaugeSet("db_pool_max", "Pool max conns", nil, int64(s.MaxConns))
+			}
+		}
+	}()
 
 	if err := db.Migrate(ctx, pool, cfg.DatabaseURL); err != nil {
 		slog.Error("db migrate failed", "error", err)
@@ -187,8 +213,16 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	slog.Info("shutdown: gracefully stopping")
-	shutdownCtx, c2 := context.WithTimeout(context.Background(), 10*time.Second)
+	slog.Info("shutdown: stop signal received — draining")
+
+	// Drain in-flight requests within a bounded window so a runaway handler
+	// can't hold up the process indefinitely.
+	shutdownCtx, c2 := context.WithTimeout(context.Background(), 25*time.Second)
 	defer c2()
-	_ = app.ShutdownWithContext(shutdownCtx)
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+		slog.Error("shutdown: http server", "error", err)
+	}
+	// Cancel background goroutines (verify email, password reset dispatchers).
+	cancel()
+	slog.Info("shutdown: complete")
 }

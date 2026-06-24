@@ -52,6 +52,16 @@ type Config struct {
 	StorageLocalDir       string
 	StorageLocalPublicURL string
 
+	// DB pool tuning.
+	DBMaxConns           int
+	DBMinConns           int
+	DBMaxConnLifetime    time.Duration
+	DBMaxConnIdleTime    time.Duration
+	DBSlowQueryThreshold time.Duration
+
+	// PprofEnabled mounts /debug/pprof when true. Always behind admin role.
+	PprofEnabled bool
+
 	// Mail driver: "log" (dev — prints to stdout) or "smtp" (production).
 	// Used by password reset + email verification flows.
 	MailDriver   string
@@ -118,6 +128,14 @@ func Load() Config {
 		AppBaseURL: env("APP_BASE_URL", "http://app.localhost"),
 
 		SentryDSN: env("SENTRY_DSN", ""),
+
+		DBMaxConns:           envInt("DB_MAX_CONNS", 10),
+		DBMinConns:           envInt("DB_MIN_CONNS", 2),
+		DBMaxConnLifetime:    envDuration("DB_MAX_CONN_LIFETIME", time.Hour),
+		DBMaxConnIdleTime:    envDuration("DB_MAX_CONN_IDLE_TIME", 15*time.Minute),
+		DBSlowQueryThreshold: envDuration("DB_SLOW_QUERY_THRESHOLD", 500*time.Millisecond),
+
+		PprofEnabled: env("PPROF_ENABLED", "false") == "true",
 	}
 }
 

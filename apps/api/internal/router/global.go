@@ -2,11 +2,14 @@ package router
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cache"
+
 	"github.com/webbuilder/api/internal/assets"
+	"github.com/webbuilder/api/internal/metrics"
 )
 
 // MountGlobal registers public + infra routes (no auth required):
@@ -19,23 +22,49 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		return c.JSON(fiber.Map{"service": "web-builder-api"})
 	})
 
-	// Liveness/readiness with dependency probes.
-	// Returns 200 + per-component status, or 503 if any critical dep is down.
+	// Health endpoints split for k8s-style probes:
+	//   - /livez : is the process running? (no deps — cheap; fail = restart pod)
+	//   - /readyz: are deps ready? (db ping + storage; fail = pull out of LB)
+	//   - /healthz: legacy / human-friendly aggregate (kept for back-compat)
+	app.Get("/livez", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+	app.Get("/readyz", func(c *fiber.Ctx) error {
+		return readiness(c, deps)
+	})
 	app.Get("/healthz", func(c *fiber.Ctx) error {
-		return health(c, deps)
+		return readiness(c, deps)
 	})
 
-	// Local-disk storage serves uploaded files itself.
+	// Prometheus scrape endpoint. Reachable without auth: in a typical k8s/Caddy
+	// deploy this is only exposed on the internal network. Keep it cheap — no
+	// DB hits, just registry render.
+	app.Get("/metrics", func(c *fiber.Ctx) error {
+		c.Set("Content-Type", "text/plain; version=0.0.4")
+		return c.Send(metrics.Default.Render())
+	})
+
+	// Local-disk storage serves uploaded files itself. Long cache headers since
+	// asset URLs are immutable (content-hashed by the storage driver).
 	if ls, ok := deps.AssetStorage.(assets.LocalServable); ok {
-		app.Static(ls.LocalRoute(), ls.LocalDir())
-		log.Printf("[storage] serving %s from %s", ls.LocalRoute(), ls.LocalDir())
+		app.Static(ls.LocalRoute(), ls.LocalDir(), fiber.Static{
+			MaxAge: 60 * 60 * 24 * 365, // 1 year
+		})
+		slog.Info("storage: static mount", "route", ls.LocalRoute(), "dir", ls.LocalDir())
 	}
 
 	// Caddy on_demand_tls.ask
 	app.Get("/internal/caddy/ask", deps.Caddy.Ask)
 
-	// Public read endpoints (renderer).
-	pub := app.Group("/public")
+	// Public read endpoints (renderer). 30s TTL matches renderer's ISR
+	// revalidate window — anything published is visible within 30s without
+	// requiring the dashboard to issue a cache purge.
+	pub := app.Group("/public", cache.New(cache.Config{
+		Expiration:   30 * time.Second,
+		CacheControl: true,
+		// Default key is METHOD+URL; URL includes the query string, so the
+		// host=... param on site-by-host already keys per-tenant.
+	}))
 	pub.Get("/site-by-host", deps.Public.SiteByHost)
 	pub.Get("/sites/:id/pages", deps.Public.ListPages)
 	pub.Get("/sites/:id/pages/:slug", deps.Public.PageBySlug)
@@ -45,9 +74,10 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	pub.Get("/sites/:id/blog-posts/:slug", deps.Public.BlogPostBySlug)
 }
 
-// health returns per-component liveness so k8s/uptime monitors can distinguish
-// "API process up but DB down" from "everything fine."
-func health(c *fiber.Ctx, deps Deps) error {
+// readiness returns per-dependency status so a load-balancer can pull the pod
+// out of rotation when DB or storage is sick. Process-level liveness is the
+// cheaper /livez endpoint — this one actually touches the world.
+func readiness(c *fiber.Ctx, deps Deps) error {
 	ctx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
 	defer cancel()
 

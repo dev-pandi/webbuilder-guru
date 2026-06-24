@@ -2,10 +2,13 @@ package router
 
 import (
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
+
+	"github.com/webbuilder/api/internal/metrics"
 )
 
 // RequestID mounts the Fiber request-id middleware, generating one if the
@@ -18,11 +21,10 @@ func RequestID() fiber.Handler {
 	})
 }
 
-// SlogLogger emits one structured log line per request.
+// SlogLogger emits one structured log line per request and feeds the metrics
+// registry (request count + latency histogram per method/route/status family).
 //
-// We don't try to replicate Fiber's coloured access log — production wants
-// machine-readable JSON, dev wants something grep-friendly. Fields kept narrow
-// so log volume stays manageable.
+// Fields kept narrow so log volume stays manageable.
 func SlogLogger() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
@@ -31,9 +33,30 @@ func SlogLogger() fiber.Handler {
 
 		rid, _ := c.Locals("requestid").(string)
 		status := c.Response().StatusCode()
+		method := c.Method()
+		// Use the route template ("/sites/:id") rather than the materialised path
+		// ("/sites/abc-123") so cardinality stays bounded.
+		route := c.Route().Path
+		if route == "" {
+			route = c.Path()
+		}
+
+		metrics.Default.CounterInc("http_requests_total",
+			"HTTP requests received",
+			map[string]string{
+				"method": method,
+				"route":  route,
+				"status": strconv.Itoa(status),
+			})
+		metrics.Default.HistogramObserve("http_request_duration_seconds",
+			"HTTP request latency in seconds",
+			map[string]string{
+				"method": method,
+				"route":  route,
+			}, latency.Seconds())
 
 		attrs := []any{
-			slog.String("method", c.Method()),
+			slog.String("method", method),
 			slog.String("path", c.Path()),
 			slog.Int("status", status),
 			slog.Duration("latency", latency),

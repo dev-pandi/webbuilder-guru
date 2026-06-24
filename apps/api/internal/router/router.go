@@ -2,8 +2,10 @@ package router
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
@@ -64,6 +66,14 @@ func New(deps Deps) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:               "web-builder-api",
 		DisableStartupMessage: false,
+		// Generous read timeout for large multipart uploads; tight write timeout
+		// keeps a stuck client from holding a worker forever.
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+		// Body limit covers multipart uploads (assets); single JSON requests are
+		// well below this.
+		BodyLimit: 25 * 1024 * 1024,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 			if e, ok := err.(*fiber.Error); ok {
@@ -102,6 +112,9 @@ func New(deps Deps) *fiber.App {
 	app.Use(RequestID())
 	app.Use(SlogLogger())
 	app.Use(SecurityHeaders(deps.Cfg.AppEnv == "production"))
+	// Compress JSON+HTML responses. Level=2 chosen for CPU/size balance — gzip
+	// level 6 (default) is ~3x slower on large pages for marginal gains.
+	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed}))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(deps.Cfg.CORSOrigins, ","),
 		AllowCredentials: true,
