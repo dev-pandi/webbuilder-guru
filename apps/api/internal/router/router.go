@@ -22,11 +22,16 @@ import (
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Deps bundles every handler the router needs. Built in main, passed once.
 type Deps struct {
 	Cfg config.Config
+
+	// Pool is used by /healthz to ping the database for liveness checks.
+	Pool *pgxpool.Pool
 
 	Issuer *auth.TokenIssuer
 
@@ -69,6 +74,7 @@ func New(deps Deps) *fiber.App {
 
 	app.Use(recover.New())
 	app.Use(logger.New())
+	app.Use(SecurityHeaders(deps.Cfg.AppEnv == "production"))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(deps.Cfg.CORSOrigins, ","),
 		AllowCredentials: true,

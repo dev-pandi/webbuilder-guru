@@ -167,7 +167,8 @@ function PreviewCard({
 
 // ---------- Library Dialog ----------
 
-const ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/svg+xml";
+// SVG ditolak server-side karena risiko XSS. PNG/JPG/WebP/GIF only.
+const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
 function LibraryDialog({
   open,

@@ -10,8 +10,19 @@ function host() {
   return (headers().get("host") ?? "").toLowerCase().split(":")[0];
 }
 
-// Configure marked once — GFM, autolinks, no auto-typography surprises.
+// XSS hardening:
+// - GFM enabled for markdown features (tables, strikethrough, autolinks).
+// - Raw HTML in source is DROPPED via renderer override (return ""). This is
+//   the cheapest sanitisation that works for our threat model — user markdown
+//   never gets to inject <script>, <iframe>, or event handlers. If we later
+//   want to allow a safe subset (e.g. <img> with width/height), pipe through
+//   sanitize-html or DOMPurify instead.
 marked.setOptions({ gfm: true, breaks: false });
+marked.use({
+  renderer: {
+    html: () => "",
+  },
+});
 
 export default async function BlogPostDetail({ params }: { params: { slug: string } }) {
   const site = await getSiteByHost(host());

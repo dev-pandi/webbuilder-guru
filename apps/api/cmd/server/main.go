@@ -38,6 +38,9 @@ func main() {
 	}
 
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("[config] %v\n\nset APP_ENV=development to bypass these checks during dev.", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -108,11 +111,12 @@ func main() {
 
 	deps := router.Deps{
 		Cfg:          cfg,
+		Pool:         pool,
 		Issuer:       issuer,
 		Auth:         auth.NewHandler(authRepo, issuer),
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo),
-		Domains:      domains.NewHandler(domainRepo, siteRepo),
+		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
 		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo),
 		Export: exports.NewHandler(&exports.Builder{
 			Sites:    siteRepo,
@@ -121,7 +125,7 @@ func main() {
 			Blog:     blogRepo,
 		}),
 		Usage:        usage.NewHandler(usageRepo, siteRepo),
-		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost),
+		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
 		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo, cfg.RendererDefaultHost),
 		Admin:        admin.NewHandler(adminRepo),
 		Products:     products.NewHandler(productRepo, siteRepo),

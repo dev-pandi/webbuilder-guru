@@ -15,12 +15,16 @@ import (
 
 const MaxUploadBytes = 10 * 1024 * 1024 // 10 MB
 
+// allowedMime is intentionally raster-only.
+// SVG is rejected because it can contain inline <script>, event handlers, or
+// XLink references that execute in the host page's origin — full XSS vector.
+// If SVG support is needed later, pipe uploads through a sanitiser (e.g.
+// DOMPurify with profile:svg, or rsvg-convert to flatten to PNG).
 var allowedMime = map[string]string{
 	"image/png":  ".png",
 	"image/jpeg": ".jpg",
 	"image/webp": ".webp",
 	"image/gif":  ".gif",
-	"image/svg+xml": ".svg",
 }
 
 type Handler struct {
@@ -83,10 +87,8 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 			ext, mime = ".webp", "image/webp"
 		case ".gif":
 			ext, mime = ".gif", "image/gif"
-		case ".svg":
-			ext, mime = ".svg", "image/svg+xml"
 		default:
-			return httpx.BadRequest(c, "unsupported file type")
+			return httpx.BadRequest(c, "unsupported file type (PNG, JPG, WebP, GIF only)")
 		}
 	}
 

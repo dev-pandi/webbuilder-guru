@@ -219,10 +219,14 @@ func escMultiline(s string) string {
 
 // renderMarkdown converts markdown body to HTML using gomarkdown.
 // We re-create parser/renderer per call because they're stateful; cheap to allocate.
+//
+// XSS hardening: SkipHTML drops raw HTML in markdown source. This mirrors the
+// renderer's marked configuration. User markdown can never inject <script>,
+// <iframe>, or event handlers into the static export.
 func renderMarkdown(md string) string {
 	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock)
 	r := mdhtml.NewRenderer(mdhtml.RendererOptions{
-		Flags: mdhtml.CommonFlags | mdhtml.HrefTargetBlank,
+		Flags: mdhtml.CommonFlags | mdhtml.HrefTargetBlank | mdhtml.SkipHTML,
 	})
 	out := markdown.Render(p.Parse([]byte(md)), r)
 	return string(out)

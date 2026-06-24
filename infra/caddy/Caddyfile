@@ -1,7 +1,9 @@
 {
 	# On-demand TLS: ask the API before issuing a cert for an unknown host.
+	# Secret is passed as query to prove the request came from Caddy, not from
+	# a random caller who reached the API.
 	on_demand_tls {
-		ask http://api:8080/internal/caddy/ask
+		ask http://api:8080/internal/caddy/ask?secret={$CADDY_ASK_SECRET}
 		interval 2m
 		burst 5
 	}

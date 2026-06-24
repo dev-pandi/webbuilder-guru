@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -18,6 +19,11 @@ type Config struct {
 	PublicAPIHost      string
 	RendererDefaultHost string
 	CORSOrigins        []string
+
+	// PlatformIPs is the IPv4 allowlist used by domain verification. A custom
+	// domain is considered "verified" only when its DNS A record resolves to
+	// one of these IPs. Empty = dev mode (any resolution counts; INSECURE).
+	PlatformIPs []string
 
 	// Admin bootstrap — if set, server upserts this user with role=admin on startup.
 	AdminEmail    string
@@ -58,6 +64,7 @@ func Load() Config {
 		PublicAPIHost:       env("PUBLIC_API_HOST", "api.localhost"),
 		RendererDefaultHost: env("RENDERER_DEFAULT_HOST", "localhost"),
 		CORSOrigins:         splitCSV(env("CORS_ORIGINS", "http://localhost:3000,http://app.localhost")),
+		PlatformIPs:         splitCSV(env("PLATFORM_IPS", "")),
 
 		AdminEmail:    env("ADMIN_EMAIL", ""),
 		AdminPassword: env("ADMIN_PASSWORD", ""),
@@ -80,6 +87,54 @@ func Load() Config {
 		StorageLocalDir:       env("STORAGE_LOCAL_DIR", "./uploads"),
 		StorageLocalPublicURL: env("STORAGE_LOCAL_PUBLIC_URL", "http://api.localhost/uploads"),
 	}
+}
+
+// Validate enforces production safety rules.
+// In production (APP_ENV=production) we refuse to boot with default secrets,
+// weak secrets, or missing critical env that would otherwise silently fall back
+// to insecure dev defaults.
+func (c Config) Validate() error {
+	if c.AppEnv != "production" {
+		return nil
+	}
+	var errs []string
+
+	// JWT secret: refuse to boot with default or short secret.
+	if c.JWTSecret == "" || c.JWTSecret == "dev-secret-change-me" ||
+		c.JWTSecret == "change-me-in-production-please" {
+		errs = append(errs, "JWT_SECRET still uses default value (unsafe in production)")
+	}
+	if len(c.JWTSecret) < 32 {
+		errs = append(errs, fmt.Sprintf("JWT_SECRET too short (%d bytes); use ≥32 random bytes", len(c.JWTSecret)))
+	}
+
+	// Caddy ask secret: required for on-demand TLS abuse prevention.
+	if c.CaddyAskSecret == "" || c.CaddyAskSecret == "dev-caddy-secret" {
+		errs = append(errs, "CADDY_ASK_SECRET still uses default value")
+	}
+
+	// Platform IPs: required so domain verification can compare DNS A records.
+	if len(c.PlatformIPs) == 0 {
+		errs = append(errs, "PLATFORM_IPS not set — domain verification would accept any DNS resolution (insecure)")
+	}
+
+	// Storage S3 secret keys must not be default in production.
+	if c.StorageDriver == "s3" {
+		if c.StorageS3SecretKey == "" || c.StorageS3SecretKey == "minioadmin" {
+			errs = append(errs, "STORAGE_S3_SECRET_KEY still uses default ('minioadmin')")
+		}
+	}
+
+	// Admin bootstrap warning (not fatal): if admin password is the default,
+	// flag it loudly so operator notices.
+	if c.AdminPassword == "changeme1234" {
+		errs = append(errs, "ADMIN_PASSWORD still uses default ('changeme1234')")
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("config validation failed:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
 }
 
 func env(k, def string) string {

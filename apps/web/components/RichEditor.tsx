@@ -36,8 +36,10 @@ const td = new TurndownService({
 
 // Make GFM-friendly: turndown handles strikethrough/strike out of the box w/ gfm plugin,
 // but for v7 we keep the defaults which are already solid enough for our purposes.
-
+// Drop raw HTML in source — mirrors renderer's policy so what you see in the
+// editor matches what gets published (no surprise XSS via inline <script>).
 marked.setOptions({ gfm: true, breaks: false });
+marked.use({ renderer: { html: () => "" } });
 
 function mdToHtml(md: string): string {
   if (!md) return "";

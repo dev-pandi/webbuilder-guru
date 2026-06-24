@@ -1,6 +1,7 @@
 package caddy
 
 import (
+	"crypto/subtle"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -12,20 +13,34 @@ type Handler struct {
 	rendererDefaultHost string
 	appHost             string
 	apiHost             string
+	askSecret           string // required when non-empty
 }
 
-func NewHandler(repo *domains.Repo, rendererDefault, appHost, apiHost string) *Handler {
+func NewHandler(repo *domains.Repo, rendererDefault, appHost, apiHost, askSecret string) *Handler {
 	return &Handler{
 		repo:                repo,
 		rendererDefaultHost: rendererDefault,
 		appHost:             appHost,
 		apiHost:             apiHost,
+		askSecret:           askSecret,
 	}
 }
 
 // Ask implements Caddy on_demand_tls.ask.
-// Caddy will call this before issuing a cert for a host. Return 200 to allow.
+// Caddy must include the shared secret in the URL query (?secret=...).
+// Returns 200 to allow cert issuance, 403 to deny.
+//
+// Security: without secret check, anyone reaching this endpoint could induce
+// Caddy to issue/renew certs for arbitrary hostnames they don't control.
 func (h *Handler) Ask(c *fiber.Ctx) error {
+	// Validate shared secret first — fail closed.
+	if h.askSecret != "" {
+		got := c.Query("secret")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(h.askSecret)) != 1 {
+			return c.SendStatus(fiber.StatusForbidden)
+		}
+	}
+
 	host := strings.ToLower(strings.TrimSpace(c.Query("domain")))
 	if host == "" {
 		return c.SendStatus(fiber.StatusBadRequest)

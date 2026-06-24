@@ -29,7 +29,8 @@ type Asset = {
   created_at: string;
 };
 
-const ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/svg+xml";
+// SVG ditolak server-side karena bisa berisi <script> (XSS). PNG/JPG/WebP/GIF only.
+const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
 export default function AssetsPage() {
   const params = useParams<{ id: string }>();
@@ -126,7 +127,7 @@ export default function AssetsPage() {
         <div className="border-b bg-muted/30 px-5 py-3 flex items-center gap-2">
           <Upload className="size-4 text-muted-foreground" />
           <p className="text-sm font-semibold">Upload Gambar</p>
-          <span className="ml-auto text-xs text-muted-foreground">PNG, JPG, WebP, GIF, SVG · Maks 10 MB</span>
+          <span className="ml-auto text-xs text-muted-foreground">PNG, JPG, WebP, GIF · Maks 10 MB</span>
         </div>
 
         <div className="p-5">
@@ -171,7 +172,7 @@ export default function AssetsPage() {
                   <p className="text-sm font-medium">
                     {dragging ? "Lepaskan file di sini" : "Klik atau drag & drop file"}
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">PNG, JPG, WebP, GIF, SVG hingga 10 MB</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">PNG, JPG, WebP, GIF hingga 10 MB</p>
                 </div>
                 <Button variant="outline" size="sm" className="gap-2 pointer-events-none">
                   <Upload className="size-3.5" />
