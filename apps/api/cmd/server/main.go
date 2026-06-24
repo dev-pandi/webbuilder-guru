@@ -197,7 +197,11 @@ func main() {
 		ErrorTracker: tracker,
 	}
 	if assetStorage != nil {
-		deps.Assets = assets.NewHandler(assetRepo, assetStorage, siteRepo)
+		deps.Assets = assets.NewHandler(assetRepo, assetStorage, siteRepo, assets.HandlerOptions{
+			Compress:     cfg.ImageCompressEnabled,
+			MaxDimension: cfg.ImageMaxDimension,
+			JPEGQuality:  cfg.ImageJPEGQuality,
+		})
 	}
 
 	app := router.New(deps)

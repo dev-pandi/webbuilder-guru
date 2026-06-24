@@ -62,6 +62,12 @@ type Config struct {
 	// PprofEnabled mounts /debug/pprof when true. Always behind admin role.
 	PprofEnabled bool
 
+	// Image upload compression. Defaults: enabled, 2000px longest edge,
+	// JPEG quality 82.
+	ImageCompressEnabled bool
+	ImageMaxDimension    int
+	ImageJPEGQuality     int
+
 	// Mail driver: "log" (dev — prints to stdout) or "smtp" (production).
 	// Used by password reset + email verification flows.
 	MailDriver   string
@@ -136,6 +142,10 @@ func Load() Config {
 		DBSlowQueryThreshold: envDuration("DB_SLOW_QUERY_THRESHOLD", 500*time.Millisecond),
 
 		PprofEnabled: env("PPROF_ENABLED", "false") == "true",
+
+		ImageCompressEnabled: env("IMAGE_COMPRESS_ENABLED", "true") == "true",
+		ImageMaxDimension:    envInt("IMAGE_MAX_DIMENSION", 2000),
+		ImageJPEGQuality:     envInt("IMAGE_JPEG_QUALITY", 82),
 	}
 }
 

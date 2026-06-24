@@ -1,7 +1,9 @@
 package assets
 
 import (
+	"bytes"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -31,10 +33,30 @@ type Handler struct {
 	repo    *Repo
 	storage Storage
 	sites   *sites.Repo
+
+	compress    bool
+	compressOpt CompressOptions
 }
 
-func NewHandler(r *Repo, s Storage, sr *sites.Repo) *Handler {
-	return &Handler{repo: r, storage: s, sites: sr}
+// HandlerOptions tunes the upload-time image compression pipeline. Callers
+// pass values from app config so operators can disable / adjust without code.
+type HandlerOptions struct {
+	Compress     bool
+	MaxDimension int
+	JPEGQuality  int
+}
+
+func NewHandler(r *Repo, s Storage, sr *sites.Repo, opt HandlerOptions) *Handler {
+	return &Handler{
+		repo:     r,
+		storage:  s,
+		sites:    sr,
+		compress: opt.Compress,
+		compressOpt: CompressOptions{
+			MaxDimension: opt.MaxDimension,
+			JPEGQuality:  opt.JPEGQuality,
+		},
+	}
 }
 
 // POST /api/v1/sites/:id/assets   multipart with field "file"
@@ -98,13 +120,59 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 	}
 	defer f.Close()
 
+	// Compress raster images. Compress() falls back to original bytes on any
+	// failure, so this never breaks an upload — at worst it's a no-op.
+	var bodyBytes []byte
+	finalMIME := mime
+	finalSize := fh.Size
+	resized := false
+	if h.compress {
+		res, cerr := Compress(f, mime, h.compressOpt)
+		if cerr != nil {
+			return httpx.Internal(c, "read failed")
+		}
+		bodyBytes = res.Data
+		finalMIME = res.MIME
+		finalSize = int64(res.NewSize)
+		resized = res.Resized
+		if res.NewSize < res.OriginalSize {
+			slog.Info("asset compressed",
+				"site_id", siteID,
+				"mime", mime,
+				"original_bytes", res.OriginalSize,
+				"new_bytes", res.NewSize,
+				"savings_pct", int(100*(1-float64(res.NewSize)/float64(res.OriginalSize))),
+				"resized", resized,
+			)
+		}
+	}
+
 	key := fmt.Sprintf("%s/%d-%s%s", siteID.String(), time.Now().UnixNano(), uuid.NewString(), ext)
-	url, err := h.storage.Put(c.Context(), key, f, fh.Size, mime)
+
+	// Quota re-check against the (potentially smaller) final size. We checked
+	// against fh.Size above as a fast reject; this guards against the rare
+	// case where compression made the file bigger (we keep original, but the
+	// quota math must still account for it).
+	if site.QuotaMaxStorageBytes > 0 {
+		_, used, err := h.repo.CountAndSize(c.Context(), siteID)
+		if err == nil && used+finalSize > site.QuotaMaxStorageBytes {
+			return httpx.Forbidden(c,
+				"storage quota exceeded after compress: terpakai "+fmtBytes(used)+
+					" / kuota "+fmtBytes(site.QuotaMaxStorageBytes))
+		}
+	}
+
+	var url string
+	if bodyBytes != nil {
+		url, err = h.storage.Put(c.Context(), key, bytes.NewReader(bodyBytes), finalSize, finalMIME)
+	} else {
+		url, err = h.storage.Put(c.Context(), key, f, fh.Size, mime)
+	}
 	if err != nil {
 		return httpx.Internal(c, "upload failed: "+err.Error())
 	}
 
-	asset, err := h.repo.Create(c.Context(), siteID, "image", url, mime, fh.Size)
+	asset, err := h.repo.Create(c.Context(), siteID, "image", url, finalMIME, finalSize)
 	if err != nil {
 		return httpx.Internal(c, "save failed")
 	}

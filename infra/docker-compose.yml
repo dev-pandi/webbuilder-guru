@@ -73,6 +73,10 @@ services:
       # local
       STORAGE_LOCAL_DIR: /data/uploads
       STORAGE_LOCAL_PUBLIC_URL: ${STORAGE_LOCAL_PUBLIC_URL:-http://api.localhost/uploads}
+      # Image compression on upload
+      IMAGE_COMPRESS_ENABLED: ${IMAGE_COMPRESS_ENABLED:-true}
+      IMAGE_MAX_DIMENSION: ${IMAGE_MAX_DIMENSION:-2000}
+      IMAGE_JPEG_QUALITY: ${IMAGE_JPEG_QUALITY:-82}
     depends_on:
       postgres:
         condition: service_healthy

@@ -13,6 +13,7 @@ import {
   CloudUpload,
   File,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api, getAccessToken } from "@/lib/api";
 import { Pagination, useDebounced, type PaginatedResult } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,20 @@ export default function AssetsPage() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body.error)
         throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+
+      // Surface compression savings — server may have downscaled/re-encoded
+      // the file. body.data.size is the stored (post-compress) size.
+      const newSize = body?.data?.size as number | undefined;
+      if (typeof newSize === "number" && newSize < file.size) {
+        const saved = file.size - newSize;
+        const pct = Math.round((saved / file.size) * 100);
+        if (pct >= 5) {
+          toast.success(
+            `Gambar dikompres: ${fmtBytes(file.size)} → ${fmtBytes(newSize)} (-${pct}%)`,
+          );
+        }
+      }
+
       await refresh();
     } catch (e) {
       setUploadErr((e as Error).message);

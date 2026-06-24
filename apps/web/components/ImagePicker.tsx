@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken } from "@/lib/api";
+import { fmtBytes } from "@/lib/format";
 import type { PaginatedResult } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import {
@@ -229,7 +230,16 @@ function LibraryDialog({
         throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
       }
       const newAsset = body.data as Asset;
-      toast.success("Gambar berhasil diunggah");
+      // Show compression savings if the server reduced the file by ≥5%.
+      const saved = file.size - newAsset.size;
+      const pct = file.size > 0 ? Math.round((saved / file.size) * 100) : 0;
+      if (pct >= 5) {
+        toast.success(
+          `Gambar diunggah & dikompres: ${fmtBytes(file.size)} → ${fmtBytes(newAsset.size)} (-${pct}%)`,
+        );
+      } else {
+        toast.success("Gambar berhasil diunggah");
+      }
       await refresh();
       onPick(newAsset.url); // auto-select & close
     } catch (e) {
