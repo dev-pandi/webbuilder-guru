@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { User, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ArrowRight, Globe2, CheckCircle2 } from "lucide-react";
 import { api, setTokens } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -14,8 +14,13 @@ export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const pwStrength = password.length === 0 ? 0 : password.length < 8 ? 1 : password.length < 12 ? 2 : 3;
+  const pwColors = ["", "bg-red-500", "bg-amber-500", "bg-emerald-500"];
+  const pwLabels = ["", "Terlalu pendek", "Cukup", "Kuat"];
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,11 +29,7 @@ export default function RegisterPage() {
     try {
       const data = await api<{ access_token: string; refresh_token: string }>(
         "/api/v1/auth/register",
-        {
-          method: "POST",
-          body: JSON.stringify({ name, email, password }),
-          auth: false,
-        },
+        { method: "POST", body: JSON.stringify({ name, email, password }), auth: false },
       );
       setTokens(data.access_token, data.refresh_token);
       router.push("/dashboard");
@@ -40,58 +41,173 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Daftar Akun</CardTitle>
-          <CardDescription>Gratis, tidak perlu kartu kredit.</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
+      {/* Background decoration */}
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -top-40 -right-40 h-[600px] w-[600px] rounded-full bg-primary/5 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 h-[600px] w-[600px] rounded-full bg-primary/5 blur-3xl" />
+      </div>
+
+      <div className="w-full max-w-sm">
+        {/* Brand */}
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/20">
+            <Globe2 className="size-6 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">
+              Web<span className="text-primary">Builder</span>
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Buat akun gratis, tidak perlu kartu kredit
+            </p>
+          </div>
+        </div>
+
+        {/* Card */}
+        <div className="rounded-2xl border bg-card shadow-xl shadow-black/5 p-7">
           <form onSubmit={onSubmit} className="space-y-4">
+            {/* Name */}
             <div className="space-y-1.5">
-              <Label htmlFor="name">Nama</Label>
-              <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">
-                Password{" "}
-                <span className="text-xs font-normal text-muted-foreground">(min 8 karakter)</span>
+              <Label htmlFor="name" className="text-sm font-medium">
+                Nama
               </Label>
-              <Input
-                id="password"
-                type="password"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-              />
+              <div className="relative">
+                <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Nama lengkap"
+                  className="pl-9 h-10"
+                />
+              </div>
             </div>
-            {err && <p className="text-sm text-destructive">{err}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Memproses..." : "Buat Akun"}
+
+            {/* Email */}
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-sm font-medium">
+                Email
+              </Label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  placeholder="nama@email.com"
+                  className="pl-9 h-10"
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-sm font-medium">
+                Password
+              </Label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type={showPw ? "text" : "password"}
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="Min. 8 karakter"
+                  className="pl-9 pr-10 h-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+
+              {/* Password strength */}
+              {password.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex gap-1">
+                    {[1, 2, 3].map((level) => (
+                      <div
+                        key={level}
+                        className={`h-1 flex-1 rounded-full transition-colors ${
+                          pwStrength >= level ? pwColors[pwStrength] : "bg-muted"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <p className={`text-xs ${pwStrength === 1 ? "text-red-500" : pwStrength === 2 ? "text-amber-500" : "text-emerald-600"}`}>
+                    {pwLabels[pwStrength]}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Error */}
+            {err && (
+              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+                <AlertCircle className="size-4 shrink-0" />
+                <span>{err}</span>
+              </div>
+            )}
+
+            {/* Submit */}
+            <Button
+              type="submit"
+              className="mt-1 w-full h-10 gap-2 font-medium shadow-sm"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Memproses…
+                </>
+              ) : (
+                <>
+                  Buat Akun
+                  <ArrowRight className="size-4" />
+                </>
+              )}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
+          {/* Benefits */}
+          <div className="mt-5 space-y-1.5">
+            {["Gratis selamanya untuk 1 situs", "Tidak perlu kartu kredit", "Setup dalam 2 menit"].map((item) => (
+              <div key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
+                <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
+                {item}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">atau</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <p className="mt-5 text-center text-sm text-muted-foreground">
             Sudah punya akun?{" "}
-            <Link href="/login" className="font-medium text-primary hover:underline">
+            <Link
+              href="/login"
+              className="font-medium text-foreground underline underline-offset-4 hover:text-primary transition-colors"
+            >
               Masuk
             </Link>
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </main>
   );
 }

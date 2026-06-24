@@ -3,20 +3,24 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Users, Globe2, ArrowLeft, LogOut } from "lucide-react";
+import { BarChart3, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2 } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 type Me = { id: string; email: string; name: string; role: string };
 
 const nav = [
   { href: "/admin", label: "Overview", icon: BarChart3 },
-  { href: "/admin/users", label: "User", icon: Users },
+  { href: "/admin/users", label: "Pengguna", icon: Users },
   { href: "/admin/sites", label: "Situs", icon: Globe2 },
 ];
+
+function getInitials(name: string, email: string) {
+  if (name) return name.slice(0, 2).toUpperCase();
+  return email.slice(0, 2).toUpperCase();
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -46,8 +50,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        Memuat…
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="size-6 animate-spin" />
+          <span className="text-sm">Memeriksa sesi…</span>
+        </div>
       </div>
     );
   }
@@ -59,60 +66,125 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
-      <aside className="hidden w-60 shrink-0 flex-col border-r bg-slate-950 text-slate-100 md:flex">
-        <div className="border-b border-slate-800 px-5 py-4">
-          <Link href="/admin" className="text-lg font-bold tracking-tight">
-            Web<span className="text-primary">Builder</span>
+    <div className="flex min-h-screen bg-muted/20">
+      {/* Sidebar */}
+      <aside className="hidden w-64 shrink-0 flex-col bg-[#0f1117] text-slate-100 md:flex">
+        {/* Brand */}
+        <div className="px-5 py-5">
+          <Link href="/admin" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-md">
+              <ShieldCheck className="size-4 text-primary-foreground" />
+            </div>
+            <span className="text-base font-bold tracking-tight">
+              Web<span className="text-primary">Builder</span>
+            </span>
           </Link>
-          <Badge variant="warning" className="mt-1">
-            Admin Panel
-          </Badge>
+          <div className="mt-3 flex items-center gap-1.5">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
+              Admin Console
+            </span>
+          </div>
         </div>
-        <nav className="flex-1 space-y-1 p-2">
+
+        <Separator className="bg-white/5" />
+
+        {/* Navigation */}
+        <nav className="flex-1 space-y-0.5 p-3 pt-4">
+          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            Menu
+          </p>
           {nav.map((n) => {
-            const active = n.href === "/admin" ? pathname === "/admin" : pathname.startsWith(n.href);
+            const active =
+              n.href === "/admin"
+                ? pathname === "/admin"
+                : pathname.startsWith(n.href);
             return (
               <Link
                 key={n.href}
                 href={n.href}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition",
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
                   active
-                    ? "bg-slate-800 text-white"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                    ? "bg-primary/15 text-primary shadow-sm"
+                    : "text-slate-400 hover:bg-white/5 hover:text-slate-100",
                 )}
               >
-                <n.icon className="size-4" />
+                <n.icon
+                  className={cn(
+                    "size-4 shrink-0 transition-colors",
+                    active ? "text-primary" : "text-slate-500 group-hover:text-slate-300",
+                  )}
+                />
                 <span>{n.label}</span>
+                {active && (
+                  <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
+                )}
               </Link>
             );
           })}
-          <Separator className="my-2 bg-slate-800" />
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
-          >
-            <ArrowLeft className="size-4" />
-            Kembali ke Dashboard
-          </Link>
+
+          <div className="pt-2">
+            <Separator className="mb-2 bg-white/5" />
+            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              Navigasi
+            </p>
+            <Link
+              href="/dashboard"
+              className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition-all hover:bg-white/5 hover:text-slate-100"
+            >
+              <ArrowLeft className="size-4 shrink-0 text-slate-500 transition-colors group-hover:text-slate-300" />
+              Kembali ke Dashboard
+            </Link>
+          </div>
         </nav>
-        <div className="border-t border-slate-800 p-3 text-xs">
-          <div className="text-slate-400">Logged in as</div>
-          <div className="truncate font-medium">{me.email}</div>
+
+        {/* User footer */}
+        <Separator className="bg-white/5" />
+        <div className="p-3">
+          <div className="flex items-center gap-3 rounded-lg px-2 py-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
+              {getInitials(me.name, me.email)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-slate-200">
+                {me.name || "Admin"}
+              </p>
+              <p className="truncate text-xs text-slate-500">{me.email}</p>
+            </div>
+          </div>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={logout}
-            className="mt-2 w-full border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
+            className="mt-1 w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-100"
           >
-            <LogOut />
+            <LogOut className="size-4" />
             Keluar
           </Button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-x-auto px-8 py-8">{children}</main>
+      {/* Main content */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top bar */}
+        <div className="flex h-14 shrink-0 items-center border-b bg-background/80 px-6 backdrop-blur-sm">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Link href="/admin" className="hover:text-foreground transition-colors">Admin</Link>
+            {pathname !== "/admin" && (
+              <>
+                <span>/</span>
+                <span className="font-medium text-foreground capitalize">
+                  {pathname.split("/").pop()}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Page content */}
+        <main className="flex-1 overflow-x-auto p-6 lg:p-8">{children}</main>
+      </div>
     </div>
   );
 }
