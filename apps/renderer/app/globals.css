@@ -39,3 +39,32 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 .wb-prose table { width: 100%; border-collapse: collapse; margin: 1em 0; }
 .wb-prose th, .wb-prose td { padding: 0.5em 0.75em; border: 1px solid currentColor; border-color: rgba(0,0,0,0.15); }
 .wb-prose th { background: rgba(0,0,0,0.04); font-weight: 600; }
+
+/* ---- Animations for pro-grade blocks ---- */
+
+/* HeroSpotlight: subtle pulse + drift on the primary spotlight glow */
+@keyframes wb-spotlight {
+  0%, 100% { transform: translate(-50%, 0) scale(1); opacity: 0.35; }
+  50%      { transform: translate(-50%, -20px) scale(1.08); opacity: 0.5; }
+}
+.wb-spotlight-anim { animation: wb-spotlight 8s ease-in-out infinite; }
+
+/* Subtle dot-grid background pattern used in Hero + CTA banner */
+.wb-grid-pattern {
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* TestimonialMarquee: continuous horizontal scroll (paused on hover) */
+@keyframes wb-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.wb-marquee { animation: wb-marquee 32s linear infinite; }
+.wb-marquee:hover { animation-play-state: paused; }
+
+/* Fade edges (left + right) to soften the scroll boundaries */
+.wb-marquee-mask {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+          mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
