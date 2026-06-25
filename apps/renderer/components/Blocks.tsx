@@ -27,8 +27,16 @@ function layoutWrapperStyle(b: Block): React.CSSProperties | undefined {
   if (O) {
     if (O.primary) out["--color-primary"] = O.primary;
     if (O.secondary) out["--color-secondary"] = O.secondary;
-    if (O.bg) out["--color-bg"] = O.bg;
-    if (O.fg) out["--color-fg"] = O.fg;
+    if (O.bg) {
+      out["--color-bg"] = O.bg;
+      // Paint the actual wrapper bg so blocks without `bg-background`
+      // (most of them) visibly take on the override.
+      if (!out.backgroundColor) out.backgroundColor = O.bg;
+    }
+    if (O.fg) {
+      out["--color-fg"] = O.fg;
+      out.color = O.fg;
+    }
   }
   return Object.keys(out).length ? (out as React.CSSProperties) : undefined;
 }

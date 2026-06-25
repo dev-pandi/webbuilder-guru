@@ -7,6 +7,8 @@
 //   - apps/renderer/components/Blocks.tsx     (live render)
 //   - apps/api/internal/exports/render.go     (static export)
 
+import { hexToHslComponents, readableForeground } from "./color";
+
 export type BlockLayout = {
   // Padding (rem). 0 disables (no inline style). Top/right/bottom/left.
   pt?: number;
@@ -70,10 +72,55 @@ export function buildLayoutStyle(meta?: LayoutMeta): React.CSSProperties {
   }
   const O = meta?.themeOverride;
   if (O) {
+    // 1) Renderer-style raw vars — used by Pro blocks + any inline-style block
+    //    that reads `var(--color-primary)` directly.
     if (O.primary) out["--color-primary"] = O.primary;
     if (O.secondary) out["--color-secondary"] = O.secondary;
     if (O.bg) out["--color-bg"] = O.bg;
     if (O.fg) out["--color-fg"] = O.fg;
+
+    // 2) shadcn-style HSL tokens — necessary so STANDARD blocks (the ones
+    //    using tailwind `bg-primary` / `text-foreground` etc.) also pick up
+    //    the per-block override. Without this branch only Pro blocks would
+    //    re-colour and the user reports "preview tidak berubah".
+    if (O.primary) {
+      const h = hexToHslComponents(O.primary);
+      if (h) out["--primary"] = h;
+      out["--primary-foreground"] = readableForeground(O.primary);
+      out["--ring"] = h ?? out["--ring"];
+    }
+    if (O.secondary) {
+      const h = hexToHslComponents(O.secondary);
+      if (h) out["--secondary"] = h;
+      out["--secondary-foreground"] = readableForeground(O.secondary);
+    }
+    if (O.bg) {
+      const h = hexToHslComponents(O.bg);
+      if (h) {
+        out["--background"] = h;
+        out["--card"] = h;
+        out["--popover"] = h;
+      }
+      // 3) Paint the wrapper background directly. CSS vars alone aren't
+      //    enough — most block markup doesn't use `bg-background`, so without
+      //    a concrete background-color the user's "Latar" override stays
+      //    invisible. layout.bg can still override (handled above) and wins
+      //    when both are set because it's applied later in source order.
+      if (!out.backgroundColor) out.backgroundColor = O.bg;
+    }
+    if (O.fg) {
+      const h = hexToHslComponents(O.fg);
+      if (h) {
+        out["--foreground"] = h;
+        out["--card-foreground"] = h;
+        out["--popover-foreground"] = h;
+        out["--muted-foreground"] = h;
+      }
+      // Cascade `color` so paragraphs/headings without explicit text class
+      // pick up the override. Tailwind's `text-muted-foreground` etc. still
+      // win via specificity if the block uses them.
+      out.color = O.fg;
+    }
   }
   return out as React.CSSProperties;
 }

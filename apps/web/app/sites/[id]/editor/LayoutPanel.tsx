@@ -5,6 +5,7 @@ import { ChevronDown, Layout, Maximize2, Paintbrush, RotateCcw } from "lucide-re
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { ColorPopover } from "@/components/ColorPopover";
 import type { BlockData } from "./PropEditor";
 import type { BlockLayout, ThemeOverride } from "@/lib/blockLayout";
 import { cn } from "@/lib/utils";
@@ -169,29 +170,20 @@ export function LayoutPanel({
           {COLOR_FIELDS.map(({ key, label, desc }) => {
             const v = themeOverride[key] ?? "";
             return (
-              <div key={key} className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
+              <div
+                key={key}
+                className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium">{label}</p>
                   <p className="truncate text-[10px] text-muted-foreground">{desc}</p>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="color"
-                    value={v || "#888888"}
-                    onChange={(e) => setTheme({ [key]: e.target.value })}
-                    className="size-7 cursor-pointer rounded border border-input bg-transparent p-0.5"
-                  />
-                  {v && (
-                    <button
-                      type="button"
-                      onClick={() => setTheme({ [key]: undefined })}
-                      title="Reset"
-                      className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
+                <ColorPopover
+                  value={v}
+                  align="end"
+                  onChange={(hex) => setTheme({ [key]: hex })}
+                  onClear={() => setTheme({ [key]: undefined })}
+                />
               </div>
             );
           })}

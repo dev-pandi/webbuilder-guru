@@ -1185,11 +1185,16 @@ function Preview({
           themeOverride: b.themeOverride,
         });
         const innerStyle = buildMaxWidthStyle({ layout: b.layout });
+        // CRITICAL: the colour override must apply to BLOCK CONTENT only.
+        // Keeping the toolbar inside the themed wrapper made it inherit the
+        // user's --background / --primary overrides — turning the chrome
+        // unreadable. So we render two siblings: the themed content div
+        // (where wrapper styles live) and the toolbar (which stays in
+        // dashboard chrome).
         return (
           <div
             key={keys[i] ?? i}
             onClick={() => onSelect(i)}
-            style={wrapperStyle}
             className={cn(
               "group/blk relative cursor-pointer transition-all duration-150",
               selectedIdx === i
@@ -1197,6 +1202,26 @@ function Preview({
                 : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
             )}
           >
+            {/* Themed content — block markup inherits the override */}
+            <div style={wrapperStyle}>
+              {innerStyle ? (
+                <div style={innerStyle}>
+                  <BlockView
+                    block={b}
+                    onUpdate={(next) => onUpdate(i, next)}
+                    editable={selectedIdx === i}
+                  />
+                </div>
+              ) : (
+                <BlockView
+                  block={b}
+                  onUpdate={(next) => onUpdate(i, next)}
+                  editable={selectedIdx === i}
+                />
+              )}
+            </div>
+            {/* Toolbar — sibling, OUTSIDE the themed div, so its bg/border
+                stay on dashboard chrome regardless of block colour override. */}
             {selectedIdx === i && (
               <CanvasBlockToolbar
                 block={b}
@@ -1205,21 +1230,6 @@ function Preview({
                 onMove={(dir) => onMove(i, dir)}
                 onDuplicate={() => onDuplicate(i)}
                 onDelete={() => onDelete(i)}
-              />
-            )}
-            {innerStyle ? (
-              <div style={innerStyle}>
-                <BlockView
-                  block={b}
-                  onUpdate={(next) => onUpdate(i, next)}
-                  editable={selectedIdx === i}
-                />
-              </div>
-            ) : (
-              <BlockView
-                block={b}
-                onUpdate={(next) => onUpdate(i, next)}
-                editable={selectedIdx === i}
               />
             )}
           </div>

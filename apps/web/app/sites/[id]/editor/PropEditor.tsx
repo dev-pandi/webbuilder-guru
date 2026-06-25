@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ImagePicker } from "@/components/ImagePicker";
+import { ColorPopover } from "@/components/ColorPopover";
 import { schemaFor, type FieldDef, type ItemField, type SelectOption } from "@/lib/blocks";
 import { cn } from "@/lib/utils";
 import type { BlockLayout, ThemeOverride } from "@/lib/blockLayout";
@@ -206,30 +207,15 @@ function Field({
   }
 
   if (field.type === "color") {
-    const v = typeof value === "string" ? value : "#000000";
+    const v = typeof value === "string" ? value : "";
     return (
       <div className="space-y-1.5">
         {labelEl}
         <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
-          <input
-            type="color"
-            value={v}
-            onChange={(e) => onChange(e.target.value)}
-            className="size-7 cursor-pointer rounded border border-input bg-transparent p-0.5"
-          />
-          <Input
-            value={v}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-7 flex-1 border-0 bg-transparent font-mono text-xs uppercase shadow-none focus-visible:ring-0"
-          />
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            title="Reset"
-            className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
-          >
-            <X className="size-3" />
-          </button>
+          <ColorPopover value={v} onChange={onChange} onClear={() => onChange("")} />
+          <span className="flex-1 font-mono text-xs uppercase text-muted-foreground">
+            {v || "—"}
+          </span>
         </div>
         {field.help && <Help text={field.help} />}
       </div>
@@ -433,22 +419,20 @@ function ItemFieldInput({
     );
   }
   if (sf.type === "color") {
-    const v = typeof value === "string" ? value : "#000000";
+    const v = typeof value === "string" ? value : "";
     return (
       <div className="space-y-1">
         {label}
         <div className="flex items-center gap-1.5">
-          <input
-            type="color"
+          <ColorPopover
+            size="sm"
             value={v}
-            onChange={(e) => onChange(e.target.value)}
-            className="size-6 cursor-pointer rounded border border-input bg-transparent p-0.5"
+            onChange={onChange}
+            onClear={() => onChange("")}
           />
-          <Input
-            value={v}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-6 flex-1 font-mono text-[10px] uppercase"
-          />
+          <span className="flex-1 font-mono text-[10px] uppercase text-muted-foreground">
+            {v || "—"}
+          </span>
         </div>
       </div>
     );

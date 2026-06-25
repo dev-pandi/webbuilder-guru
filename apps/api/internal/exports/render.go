@@ -140,9 +140,14 @@ func layoutWrapStyle(blk Block) string {
 		}
 		if o.BG != "" {
 			parts = append(parts, "--color-bg:"+o.BG)
+			// Paint the wrapper background so blocks without bg-background
+			// still visibly take the override. layout.bg, if set, was
+			// appended earlier and wins per CSS source order.
+			parts = append(parts, "background-color:"+o.BG)
 		}
 		if o.FG != "" {
 			parts = append(parts, "--color-fg:"+o.FG)
+			parts = append(parts, "color:"+o.FG)
 		}
 	}
 	return strings.Join(parts, ";")

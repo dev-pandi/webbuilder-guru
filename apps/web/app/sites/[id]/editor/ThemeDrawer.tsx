@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { FontPicker } from "@/components/FontPicker";
+import { ColorPopover } from "@/components/ColorPopover";
 import { cn } from "@/lib/utils";
 
 export type ThemeJson = {
@@ -96,31 +97,23 @@ export function ThemeDrawer({
                   key={key}
                   className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="size-7 shrink-0 rounded-md border shadow-sm transition-transform hover:scale-110"
-                      style={{ background: color(key) }}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium leading-tight">{label}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">{desc}</p>
-                    </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium leading-tight">{label}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{desc}</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex shrink-0 items-center gap-2">
                     <span className="hidden font-mono text-[10px] text-muted-foreground sm:inline">
                       {color(key).toUpperCase()}
                     </span>
-                    <input
-                      type="color"
+                    <ColorPopover
                       value={color(key)}
-                      onChange={(e) =>
+                      align="end"
+                      onChange={(hex) =>
                         onChange({
                           ...theme,
-                          colors: { ...(theme.colors ?? {}), [key]: e.target.value },
+                          colors: { ...(theme.colors ?? {}), [key]: hex },
                         })
                       }
-                      className="size-8 cursor-pointer rounded border border-input bg-transparent p-0.5"
-                      title={`Ubah ${label.toLowerCase()}`}
                     />
                   </div>
                 </div>
