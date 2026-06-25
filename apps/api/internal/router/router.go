@@ -22,6 +22,7 @@ import (
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/sites"
+	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
 
@@ -47,6 +48,7 @@ type Deps struct {
 	Usage     *usage.Handler
 	Products  *products.Handler
 	Blog      *blog.Handler
+	Snippets  *snippets.Handler
 
 	Caddy  *caddy.Handler
 	Public *public.Handler

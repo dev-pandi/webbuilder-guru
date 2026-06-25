@@ -29,6 +29,7 @@ import (
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/seed"
 	"github.com/webbuilder/api/internal/sites"
+	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
 )
@@ -108,6 +109,7 @@ func main() {
 	assetRepo := assets.NewRepo(pool)
 	productRepo := products.NewRepo(pool)
 	blogRepo := blog.NewRepo(pool)
+	snippetRepo := snippets.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
 
 	if err := seed.Run(ctx, seed.Deps{
@@ -193,6 +195,7 @@ func main() {
 		Admin:        admin.NewHandler(adminRepo),
 		Products:     products.NewHandler(productRepo, siteRepo),
 		Blog:         blog.NewHandler(blogRepo, siteRepo),
+		Snippets:     snippets.NewHandler(snippetRepo),
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,
 	}

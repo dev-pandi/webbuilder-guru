@@ -92,6 +92,12 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Patch("/products/:id", mutateLimit, deps.Products.Update)
 	authed.Delete("/products/:id", mutateLimit, deps.Products.Delete)
 
+	// Block snippets — per-user reusable block library
+	authed.Get("/snippets", deps.Snippets.List)
+	authed.Post("/snippets", mutateLimit, deps.Snippets.Create)
+	authed.Patch("/snippets/:id", mutateLimit, deps.Snippets.Rename)
+	authed.Delete("/snippets/:id", mutateLimit, deps.Snippets.Delete)
+
 	// Blog posts
 	authed.Get("/sites/:id/blog-posts", deps.Blog.ListBySite)
 	authed.Post("/sites/:id/blog-posts", mutateLimit, deps.Blog.Create)

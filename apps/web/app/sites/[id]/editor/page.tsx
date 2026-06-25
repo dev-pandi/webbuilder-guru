@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Bookmark,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -10,6 +11,7 @@ import {
   History,
   Layers,
   Loader2,
+  Map as MapIcon,
   Monitor,
   Palette,
   PanelLeftClose,
@@ -56,6 +58,7 @@ import { SortableBlockList, makeKeys, reorderWithKeys } from "./SortableBlockLis
 import { CanvasBlockToolbar } from "./CanvasOverlay";
 import { EditableText } from "./EditableText";
 import { PageSettingsDialog } from "./PageSettingsDialog";
+import { MiniMap } from "./MiniMap";
 
 type PageVersion = {
   id: string;
@@ -134,13 +137,23 @@ export default function EditorPage() {
   // Defaults open; persisted to localStorage so the choice survives reloads.
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  // Mini-map shown by default; hidden via toolbar toggle (less noise for users
+  // who don't want it). Persisted alongside sidebar state.
+  const [miniMapVisible, setMiniMapVisible] = useState(true);
+  const canvasScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const l = window.localStorage.getItem("wb_editor_left_collapsed");
     const r = window.localStorage.getItem("wb_editor_right_collapsed");
+    const m = window.localStorage.getItem("wb_editor_minimap_visible");
     if (l === "1") setLeftCollapsed(true);
     if (r === "1") setRightCollapsed(true);
+    if (m === "0") setMiniMapVisible(false);
   }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("wb_editor_minimap_visible", miniMapVisible ? "1" : "0");
+  }, [miniMapVisible]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("wb_editor_left_collapsed", leftCollapsed ? "1" : "0");
@@ -325,8 +338,19 @@ export default function EditorPage() {
     const schema = schemaFor(type);
     if (!schema) return;
     const newBlock: BlockData = { type, props: structuredClone(schema.defaults) };
+    insertNewBlock(newBlock, atIdx);
+  }
+
+  // Insert a pre-built BlockData (e.g. from a saved snippet). Deep-clones so
+  // the saved snippet's reference isn't shared if the user inserts multiple
+  // copies on the same page.
+  function addBlockFromData(b: BlockData, atIdx?: number) {
+    insertNewBlock(structuredClone(b), atIdx);
+  }
+
+  function insertNewBlock(block: BlockData, atIdx?: number) {
     const insertIdx = atIdx ?? blocks.length;
-    const next = [...blocks.slice(0, insertIdx), newBlock, ...blocks.slice(insertIdx)];
+    const next = [...blocks.slice(0, insertIdx), block, ...blocks.slice(insertIdx)];
     const keys = [...blockKeys.slice(0, insertIdx), newKey(), ...blockKeys.slice(insertIdx)];
     setBlocks(next);
     setBlockKeys(keys);
@@ -413,6 +437,32 @@ export default function EditorPage() {
 
   function copyBlock(i: number) {
     copyBlocks(new Set([i]));
+  }
+
+  // Save a single block as a reusable snippet. Prompts for a name so the user
+  // can find it later — defaults to "<BlockLabel> #<n>" but they almost always
+  // override.
+  async function saveSnippet(i: number) {
+    if (i < 0 || i >= blocks.length) return;
+    const b = blocks[i];
+    const schema = schemaFor(b.type);
+    const defaultName = `${schema?.label ?? b.type}`;
+    const name = window.prompt("Beri nama snippet:", defaultName);
+    if (!name || !name.trim()) return;
+    try {
+      await api(`/api/v1/snippets`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          block_type: b.type,
+          // structuredClone keeps the JSONb stable + drops React-managed refs.
+          block: structuredClone(b),
+        }),
+      });
+      toast.success(`Snippet "${name.trim()}" tersimpan`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   }
 
   function copyBlocks(indices: Set<number>) {
@@ -831,6 +881,15 @@ export default function EditorPage() {
               <Eye className="size-3" />
               {device === "desktop" ? "Auto" : device === "tablet" ? "768px" : "375px"}
             </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("size-7", miniMapVisible && "bg-muted text-foreground")}
+              onClick={() => setMiniMapVisible((v) => !v)}
+              title={miniMapVisible ? "Sembunyikan mini-map" : "Tampilkan mini-map"}
+            >
+              <MapIcon className="size-3.5" />
+            </Button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -948,8 +1007,19 @@ export default function EditorPage() {
 
         {/* Canvas — browser-like frame. Outer wrapper paints dashboard chrome
             (browser top bar uses dashboard tokens); INNER .wb-canvas applies
-            the site theme so blocks inside render in the user's palette/fonts. */}
-        <div className="flex-1 overflow-auto bg-muted/30 p-4">
+            the site theme so blocks inside render in the user's palette/fonts.
+            Position relative so the mini-map can pin to its edge. */}
+        <div ref={canvasScrollRef} className="relative flex-1 overflow-auto bg-muted/30 p-4">
+          {miniMapVisible && (
+            <MiniMap
+              blocks={blocks}
+              keys={blockKeys}
+              selectedIdx={selectedIdx}
+              selectedIndices={selectedIndices}
+              onJump={setSelectedIdx}
+              scrollContainerRef={canvasScrollRef}
+            />
+          )}
           <div
             className="mx-auto overflow-hidden rounded-xl border border-foreground/10 shadow-lg transition-all duration-300 ease-out"
             style={{ width: previewWidth, maxWidth: "100%" }}
@@ -973,6 +1043,7 @@ export default function EditorPage() {
                 onUpdate={updateBlock}
                 onMove={moveBlock}
                 onDuplicate={duplicateBlock}
+                onSaveSnippet={saveSnippet}
                 onDelete={removeBlock}
                 device={device}
               />
@@ -1114,6 +1185,7 @@ export default function EditorPage() {
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         onPick={addBlock}
+        onPickSnippet={(block) => addBlockFromData(block)}
       />
 
       <HistoryDialog
@@ -1158,23 +1230,67 @@ export default function EditorPage() {
 
 // ---------- Block palette (categorized + searchable) ----------
 
+type Snippet = {
+  id: string;
+  name: string;
+  block_type: string;
+  block: BlockData;
+  created_at: string;
+};
+
 function BlockPaletteDialog({
   open,
   onOpenChange,
   onPick,
+  onPickSnippet,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onPick: (type: string) => void;
+  onPickSnippet: (block: BlockData) => void;
 }) {
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<"all" | "pro" | "standard">("all");
+  const [tab, setTab] = useState<"all" | "pro" | "standard" | "snippets">("all");
+  const [snippets, setSnippets] = useState<Snippet[] | null>(null);
+  const [snippetsLoading, setSnippetsLoading] = useState(false);
   useEffect(() => {
     if (!open) {
       setQ("");
       setTab("all");
     }
   }, [open]);
+  // Lazy-load snippets only when tab is opened — avoids fetching for users
+  // who never use this feature.
+  useEffect(() => {
+    if (!open || tab !== "snippets" || snippets !== null) return;
+    setSnippetsLoading(true);
+    api<Snippet[]>("/api/v1/snippets")
+      .then(setSnippets)
+      .catch((e) => toast.error((e as Error).message))
+      .finally(() => setSnippetsLoading(false));
+  }, [open, tab, snippets]);
+
+  // Filtered snippets based on search query.
+  const filteredSnippets = useMemo(() => {
+    if (!snippets) return [];
+    const needle = q.trim().toLowerCase();
+    if (!needle) return snippets;
+    return snippets.filter(
+      (s) =>
+        s.name.toLowerCase().includes(needle) ||
+        s.block_type.toLowerCase().includes(needle),
+    );
+  }, [snippets, q]);
+
+  async function deleteSnippet(id: string) {
+    if (!confirm("Hapus snippet ini?")) return;
+    try {
+      await api(`/api/v1/snippets/${id}`, { method: "DELETE" });
+      setSnippets((s) => s?.filter((x) => x.id !== id) ?? null);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
 
   const grouped = useMemo(() => blockSchemasByCategory(), []);
   const proCount = useMemo(
@@ -1246,6 +1362,19 @@ function BlockPaletteDialog({
               onClick={() => setTab("standard")}
               label={`Standar · ${blockSchemas.length - proCount}`}
             />
+            <PaletteTab
+              active={tab === "snippets"}
+              onClick={() => setTab("snippets")}
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Bookmark className="size-3" />
+                  Snippets
+                  {snippets && (
+                    <span className="text-muted-foreground">· {snippets.length}</span>
+                  )}
+                </span>
+              }
+            />
           </div>
 
           <div className="relative">
@@ -1270,7 +1399,58 @@ function BlockPaletteDialog({
         </div>
 
         <div className="max-h-[60vh] space-y-6 overflow-y-auto p-6">
-          {filtered.length === 0 ? (
+          {tab === "snippets" ? (
+            // ----- Snippets tab -----
+            snippetsLoading ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                Memuat snippets…
+              </p>
+            ) : filteredSnippets.length === 0 ? (
+              <div className="py-12 text-center">
+                <Bookmark className="mx-auto size-8 text-muted-foreground/40" />
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {snippets && snippets.length === 0
+                    ? "Belum ada snippet. Klik 🔖 di toolbar block untuk simpan."
+                    : `Tidak ada snippet cocok "${q}".`}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredSnippets.map((s) => {
+                  const schema = schemaFor(s.block_type);
+                  return (
+                    <div
+                      key={s.id}
+                      className="group/sn relative flex items-start gap-3 rounded-lg border bg-card p-3 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+                    >
+                      <button
+                        onClick={() => onPickSnippet(s.block)}
+                        className="flex flex-1 items-start gap-3 text-left"
+                      >
+                        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted text-lg group-hover/sn:bg-primary/10">
+                          {schema?.emoji ?? "🧩"}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{s.name}</div>
+                          <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
+                            {schema?.label ?? s.block_type} ·{" "}
+                            {new Date(s.created_at).toLocaleDateString("id-ID")}
+                          </p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => deleteSnippet(s.id)}
+                        className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover/sn:opacity-100"
+                        title="Hapus snippet"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : filtered.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">
               Tidak ada block yang cocok dengan &quot;{q}&quot;.
             </p>
@@ -1334,7 +1514,7 @@ function BlockPaletteDialog({
           )}
         </div>
 
-        {q && totalShown > 0 && (
+        {q && tab !== "snippets" && totalShown > 0 && (
           <div className="border-t bg-muted/30 px-6 py-2 text-center text-[11px] text-muted-foreground">
             {totalShown} block ditemukan untuk &quot;{q}&quot;
           </div>
@@ -1544,6 +1724,7 @@ function Preview({
   onUpdate,
   onMove,
   onDuplicate,
+  onSaveSnippet,
   onDelete,
   device,
 }: {
@@ -1555,6 +1736,7 @@ function Preview({
   onUpdate: (i: number, next: BlockData) => void;
   onMove: (i: number, dir: -1 | 1) => void;
   onDuplicate: (i: number) => void;
+  onSaveSnippet: (i: number) => void;
   onDelete: (i: number) => void;
   device: "desktop" | "tablet" | "mobile";
 }) {
@@ -1589,6 +1771,7 @@ function Preview({
           return (
             <div
               key={keys[i] ?? i}
+              data-block-key={keys[i] ?? String(i)}
               onClick={() => onSelect(i)}
               className={cn(
                 "flex cursor-pointer items-center gap-2 border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-2 text-xs text-muted-foreground",
@@ -1614,6 +1797,7 @@ function Preview({
         return (
           <div
             key={keys[i] ?? i}
+            data-block-key={keys[i] ?? String(i)}
             onClick={() => onSelect(i)}
             className={cn(
               "group/blk relative cursor-pointer transition-all duration-150",
@@ -1649,6 +1833,7 @@ function Preview({
                 total={blocks.length}
                 onMove={(dir) => onMove(i, dir)}
                 onDuplicate={() => onDuplicate(i)}
+                onSaveSnippet={() => onSaveSnippet(i)}
                 onDelete={() => onDelete(i)}
               />
             )}

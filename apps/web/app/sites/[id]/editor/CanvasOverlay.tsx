@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Copy, Trash2 } from "lucide-react";
+import { Bookmark, ChevronDown, ChevronUp, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { schemaFor } from "@/lib/blocks";
@@ -18,6 +18,7 @@ export function CanvasBlockToolbar({
   total,
   onMove,
   onDuplicate,
+  onSaveSnippet,
   onDelete,
 }: {
   block: BlockData;
@@ -25,6 +26,7 @@ export function CanvasBlockToolbar({
   total: number;
   onMove: (dir: -1 | 1) => void;
   onDuplicate: () => void;
+  onSaveSnippet: () => void;
   onDelete: () => void;
 }) {
   const schema = schemaFor(block.type);
@@ -55,6 +57,9 @@ export function CanvasBlockToolbar({
       </ToolbarBtn>
       <ToolbarBtn title="Duplikat (⌘D)" onClick={onDuplicate}>
         <Copy className="size-3.5" />
+      </ToolbarBtn>
+      <ToolbarBtn title="Simpan sebagai snippet" onClick={onSaveSnippet}>
+        <Bookmark className="size-3.5" />
       </ToolbarBtn>
       <ToolbarBtn
         title="Hapus (Del)"
