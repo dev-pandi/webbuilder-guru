@@ -12,6 +12,10 @@ import {
   Loader2,
   Monitor,
   Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Redo2,
   Rocket,
@@ -114,12 +118,48 @@ export default function EditorPage() {
   const [blockKeys, setBlockKeys] = useState<string[]>([]);
   const [originalBlocks, setOriginalBlocks] = useState<BlockData[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number>(-1);
-  const [clipboard, setClipboard] = useState<BlockData | null>(null);
+  // selectedIndices is the FULL multi-select set. selectedIdx is the "anchor"
+  // (last clicked, also the block whose props show in the right panel).
+  // Single-selection codepath: selectedIndices stays in sync as a 1-item set.
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  // Clipboard is an array — copy/paste works on the multi-selection.
+  const [clipboard, setClipboard] = useState<BlockData[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Sidebar collapse — fullscreen canvas for users who need a wider preview.
+  // Defaults open; persisted to localStorage so the choice survives reloads.
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const l = window.localStorage.getItem("wb_editor_left_collapsed");
+    const r = window.localStorage.getItem("wb_editor_right_collapsed");
+    if (l === "1") setLeftCollapsed(true);
+    if (r === "1") setRightCollapsed(true);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("wb_editor_left_collapsed", leftCollapsed ? "1" : "0");
+  }, [leftCollapsed]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("wb_editor_right_collapsed", rightCollapsed ? "1" : "0");
+  }, [rightCollapsed]);
+
+  // Compute the grid-template-columns based on what's collapsed. The expanded
+  // size matches the original 240/1fr/320 layout. SPACES (not underscores) —
+  // this string is passed to a real CSS property via inline style, so it must
+  // be valid CSS. Underscores would only be correct as Tailwind class
+  // shorthand, which gets transformed at build time.
+  const gridCols = useMemo(() => {
+    const L = leftCollapsed ? "0" : "240px";
+    const R = rightCollapsed ? "0" : "320px";
+    return `${L} 1fr ${R}`;
+  }, [leftCollapsed, rightCollapsed]);
 
   // Theme state — loaded from the site, applied as CSS vars on canvas.
   const [theme, setTheme] = useState<ThemeJson>(DEFAULT_THEME);
@@ -174,6 +214,40 @@ export default function EditorPage() {
     setBlockKeys(makeKeys(bs.length));
     setOriginalBlocks(bs);
     setSelectedIdx(bs.length ? 0 : -1);
+    setSelectedIndices(bs.length ? new Set([0]) : new Set());
+  }
+
+  /**
+   * Unified selection handler. Supports:
+   *   - shift-click: extend range from anchor to clicked
+   *   - meta/ctrl-click: toggle the clicked index in the set
+   *   - plain click: single-select (clears the set)
+   * The PropEditor + Layout panels always read the LAST clicked block
+   * (`selectedIdx`) so bulk operations work without ambiguity over which
+   * block is the "current" one.
+   */
+  function selectAt(i: number, mods?: { shift?: boolean; meta?: boolean }) {
+    if (mods?.shift && selectedIdx >= 0 && selectedIdx !== i) {
+      const lo = Math.min(selectedIdx, i);
+      const hi = Math.max(selectedIdx, i);
+      const range = new Set<number>();
+      for (let k = lo; k <= hi; k++) range.add(k);
+      setSelectedIndices(range);
+      setSelectedIdx(i);
+      return;
+    }
+    if (mods?.meta) {
+      setSelectedIndices((prev) => {
+        const next = new Set(prev);
+        if (next.has(i)) next.delete(i);
+        else next.add(i);
+        return next;
+      });
+      setSelectedIdx(i);
+      return;
+    }
+    setSelectedIndices(new Set([i]));
+    setSelectedIdx(i);
   }
 
   // Dirty checks — JSON.stringify is fine for the typical block-tree size and
@@ -267,11 +341,27 @@ export default function EditorPage() {
   }
 
   function removeBlock(i: number) {
-    const arr = blocks.filter((_, idx) => idx !== i);
-    const keys = blockKeys.filter((_, idx) => idx !== i);
+    removeBlocks(new Set([i]));
+  }
+
+  // Bulk delete — removes every index in `indices` in a single state update so
+  // history records ONE undo step (not N).
+  function removeBlocks(indices: Set<number>) {
+    if (indices.size === 0) return;
+    const arr = blocks.filter((_, idx) => !indices.has(idx));
+    const keys = blockKeys.filter((_, idx) => !indices.has(idx));
     setBlocks(arr);
     setBlockKeys(keys);
-    if (selectedIdx >= arr.length) setSelectedIdx(arr.length - 1);
+    // Re-anchor selection to the next surviving block (or last).
+    const remaining = arr.length;
+    if (remaining === 0) {
+      setSelectedIdx(-1);
+      setSelectedIndices(new Set());
+      return;
+    }
+    const next = Math.min(selectedIdx, remaining - 1);
+    setSelectedIdx(Math.max(0, next));
+    setSelectedIndices(new Set([Math.max(0, next)]));
   }
 
   function moveBlock(i: number, dir: -1 | 1) {
@@ -299,36 +389,56 @@ export default function EditorPage() {
   }
 
   function duplicateBlock(i: number) {
-    if (i < 0 || i >= blocks.length) return;
-    const clone: BlockData = structuredClone(blocks[i]);
-    const next = [...blocks.slice(0, i + 1), clone, ...blocks.slice(i + 1)];
-    const keys = [...blockKeys.slice(0, i + 1), newKey(), ...blockKeys.slice(i + 1)];
+    duplicateBlocks(new Set([i]));
+  }
+
+  // Bulk duplicate — clones every selected block in order; inserts the clones
+  // contiguously right after the last selected index.
+  function duplicateBlocks(indices: Set<number>) {
+    if (indices.size === 0) return;
+    const sorted = [...indices].sort((a, b) => a - b);
+    const clones = sorted.map((i) => structuredClone(blocks[i]));
+    const newKeys = sorted.map(() => newKey());
+    const insertAt = sorted[sorted.length - 1] + 1;
+    const next = [...blocks.slice(0, insertAt), ...clones, ...blocks.slice(insertAt)];
+    const keys = [...blockKeys.slice(0, insertAt), ...newKeys, ...blockKeys.slice(insertAt)];
     setBlocks(next);
     setBlockKeys(keys);
-    setSelectedIdx(i + 1);
+    // Move selection to the newly inserted clones.
+    const newSet = new Set<number>();
+    for (let k = 0; k < clones.length; k++) newSet.add(insertAt + k);
+    setSelectedIndices(newSet);
+    setSelectedIdx(insertAt);
   }
 
   function copyBlock(i: number) {
-    if (i < 0 || i >= blocks.length) return;
-    setClipboard(structuredClone(blocks[i]));
-    toast.success(`Disalin: ${schemaFor(blocks[i].type)?.label ?? blocks[i].type}`);
+    copyBlocks(new Set([i]));
+  }
+
+  function copyBlocks(indices: Set<number>) {
+    if (indices.size === 0) return;
+    const sorted = [...indices].sort((a, b) => a - b);
+    const out = sorted.map((i) => structuredClone(blocks[i]));
+    setClipboard(out);
+    if (out.length === 1) {
+      toast.success(`Disalin: ${schemaFor(out[0].type)?.label ?? out[0].type}`);
+    } else {
+      toast.success(`Disalin: ${out.length} block`);
+    }
   }
 
   function pasteBlock() {
-    if (!clipboard) return;
+    if (!clipboard || clipboard.length === 0) return;
     const insertIdx = selectedIdx >= 0 ? selectedIdx + 1 : blocks.length;
-    const next = [
-      ...blocks.slice(0, insertIdx),
-      structuredClone(clipboard),
-      ...blocks.slice(insertIdx),
-    ];
-    const keys = [
-      ...blockKeys.slice(0, insertIdx),
-      newKey(),
-      ...blockKeys.slice(insertIdx),
-    ];
+    const clones = clipboard.map((b) => structuredClone(b));
+    const newKeys = clones.map(() => newKey());
+    const next = [...blocks.slice(0, insertIdx), ...clones, ...blocks.slice(insertIdx)];
+    const keys = [...blockKeys.slice(0, insertIdx), ...newKeys, ...blockKeys.slice(insertIdx)];
     setBlocks(next);
     setBlockKeys(keys);
+    const newSet = new Set<number>();
+    for (let k = 0; k < clones.length; k++) newSet.add(insertIdx + k);
+    setSelectedIndices(newSet);
     setSelectedIdx(insertIdx);
   }
 
@@ -499,18 +609,22 @@ export default function EditorPage() {
         return;
       }
 
-      // ⌘D — duplicate selected
+      // ⌘D — duplicate (bulk when multi-selected)
       if (mod && e.key.toLowerCase() === "d") {
         if (editing) return;
         e.preventDefault();
-        if (selectedIdx >= 0) duplicateBlock(selectedIdx);
+        if (selectedIndices.size > 1) duplicateBlocks(selectedIndices);
+        else if (selectedIdx >= 0) duplicateBlock(selectedIdx);
         return;
       }
 
-      // ⌘C / ⌘V — copy/paste selected block
+      // ⌘C / ⌘V — copy/paste (bulk-aware)
       if (mod && e.key.toLowerCase() === "c") {
         if (editing) return;
-        if (selectedIdx >= 0) {
+        if (selectedIndices.size > 0) {
+          e.preventDefault();
+          copyBlocks(selectedIndices);
+        } else if (selectedIdx >= 0) {
           e.preventDefault();
           copyBlock(selectedIdx);
         }
@@ -525,8 +639,24 @@ export default function EditorPage() {
         return;
       }
 
-      // Delete / Backspace — remove selected block
+      // ⌘A — select all blocks
+      if (mod && e.key.toLowerCase() === "a") {
+        if (editing) return;
+        if (blocks.length === 0) return;
+        e.preventDefault();
+        setSelectedIndices(new Set(blocks.map((_, i) => i)));
+        return;
+      }
+
+      // Delete / Backspace — bulk delete when multi-selected
       if ((e.key === "Delete" || e.key === "Backspace") && !editing) {
+        if (selectedIndices.size > 1) {
+          e.preventDefault();
+          if (confirm(`Hapus ${selectedIndices.size} block?`)) {
+            removeBlocks(selectedIndices);
+          }
+          return;
+        }
         if (selectedIdx >= 0) {
           e.preventDefault();
           const schema = schemaFor(blocks[selectedIdx]?.type ?? "");
@@ -562,9 +692,17 @@ export default function EditorPage() {
   const previewWidth = device === "mobile" ? 375 : device === "tablet" ? 768 : "100%";
 
   return (
-    <div className="grid h-[calc(100vh-140px)] gap-3 lg:grid-cols-[240px_1fr_320px]">
+    <div
+      className="grid h-[calc(100vh-140px)] gap-3 transition-[grid-template-columns] duration-200 ease-out"
+      style={{ gridTemplateColumns: gridCols }}
+    >
       {/* ---------- Sidebar kiri: Pages + Block tree ---------- */}
-      <aside className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+      <aside
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-all",
+          leftCollapsed && "pointer-events-none border-transparent bg-transparent opacity-0",
+        )}
+      >
         {/* Pages list */}
         <div className="border-b p-3">
           <div className="mb-2 flex items-center gap-1.5">
@@ -640,7 +778,8 @@ export default function EditorPage() {
               blocks={blocks}
               keys={blockKeys}
               selectedIdx={selectedIdx}
-              onSelect={setSelectedIdx}
+              selectedIndices={selectedIndices}
+              onSelect={selectAt}
               onReorder={reorderBlocks}
               onMove={moveBlock}
               onDuplicate={duplicateBlock}
@@ -655,6 +794,19 @@ export default function EditorPage() {
         {/* Toolbar */}
         <div className="flex items-center justify-between gap-3 border-b bg-card/95 px-3 py-2 backdrop-blur">
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => setLeftCollapsed((v) => !v)}
+              title={leftCollapsed ? "Tampilkan sidebar kiri" : "Sembunyikan sidebar kiri"}
+            >
+              {leftCollapsed ? (
+                <PanelLeftOpen className="size-3.5" />
+              ) : (
+                <PanelLeftClose className="size-3.5" />
+              )}
+            </Button>
             <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 shadow-inner">
               <DeviceBtn
                 active={device === "desktop"}
@@ -778,6 +930,19 @@ export default function EditorPage() {
                 <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-primary" />
               )}
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => setRightCollapsed((v) => !v)}
+              title={rightCollapsed ? "Tampilkan panel kanan" : "Sembunyikan panel kanan"}
+            >
+              {rightCollapsed ? (
+                <PanelRightOpen className="size-3.5" />
+              ) : (
+                <PanelRightClose className="size-3.5" />
+              )}
+            </Button>
           </div>
         </div>
 
@@ -839,6 +1004,14 @@ export default function EditorPage() {
             <Separator orientation="vertical" className="h-3" />
             <span className="hidden sm:inline">
               {blocks.length} block · halaman {pages.length}
+              {selectedIndices.size > 1 && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-primary">
+                    {selectedIndices.size} dipilih
+                  </span>
+                </>
+              )}
             </span>
             <Separator orientation="vertical" className="hidden h-3 sm:block" />
             <span className="hidden items-center gap-1.5 sm:inline-flex">
@@ -879,7 +1052,12 @@ export default function EditorPage() {
       </section>
 
       {/* ---------- Sidebar kanan: Property editor ---------- */}
-      <aside className="overflow-y-auto rounded-xl border bg-card p-4 shadow-sm">
+      <aside
+        className={cn(
+          "overflow-y-auto rounded-xl border bg-card p-4 shadow-sm transition-all",
+          rightCollapsed && "pointer-events-none border-transparent bg-transparent p-0 opacity-0",
+        )}
+      >
         {selectedIdx >= 0 && blocks[selectedIdx] ? (
           <>
             <div className="mb-3 flex items-start gap-2">
@@ -1500,6 +1678,18 @@ function BlockView({
     if (!onUpdate) return;
     onUpdate({ ...block, props: { ...p, [name]: value } });
   }
+  // setItemProp updates one field of one item inside an `items`-shaped array
+  // prop. Used by blocks with item-shaped data (FeatureList, PricingTable,
+  // testimonials, etc.) so the inline canvas edit can target a deep field.
+  function setItemProp(arrName: string, idx: number, key: string, value: unknown) {
+    if (!onUpdate) return;
+    const arr = Array.isArray(p[arrName])
+      ? (p[arrName] as Array<Record<string, unknown>>)
+      : [];
+    const next = [...arr];
+    next[idx] = { ...next[idx], [key]: value };
+    onUpdate({ ...block, props: { ...p, [arrName]: next } });
+  }
   switch (block.type) {
     case "Navbar":
       return (
@@ -1660,12 +1850,44 @@ function BlockView({
     case "FeatureList":
       return (
         <div className="px-6 py-6">
-          {p.title ? <h3 className="mb-3 text-lg font-semibold">{String(p.title)}</h3> : null}
+          {editable ? (
+            <EditableText
+              as="h3"
+              className="mb-3 text-lg font-semibold"
+              value={String(p.title ?? "")}
+              onChange={(v) => setProp("title", v)}
+              placeholder="Judul…"
+            />
+          ) : p.title ? (
+            <h3 className="mb-3 text-lg font-semibold">{String(p.title)}</h3>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-3">
             {(p.items as Array<Record<string, unknown>> | undefined)?.map((it, i) => (
               <div key={i} className="rounded-lg border p-3">
-                <div className="font-medium">{String(it.title ?? "")}</div>
-                <div className="text-sm text-muted-foreground">{String(it.desc ?? "")}</div>
+                {editable ? (
+                  <>
+                    <EditableText
+                      as="div"
+                      className="font-medium"
+                      value={String(it.title ?? "")}
+                      onChange={(v) => setItemProp("items", i, "title", v)}
+                      placeholder="Judul fitur…"
+                    />
+                    <EditableText
+                      as="div"
+                      className="text-sm text-muted-foreground"
+                      value={String(it.desc ?? "")}
+                      onChange={(v) => setItemProp("items", i, "desc", v)}
+                      placeholder="Deskripsi…"
+                      multiline
+                    />
+                  </>
+                ) : (
+                  <>
+                    <div className="font-medium">{String(it.title ?? "")}</div>
+                    <div className="text-sm text-muted-foreground">{String(it.desc ?? "")}</div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -1749,7 +1971,15 @@ function BlockView({
     case "PricingTable":
       return (
         <div className="px-6 py-6">
-          {p.title ? (
+          {editable ? (
+            <EditableText
+              as="h3"
+              className="text-center text-xl font-bold"
+              value={String(p.title ?? "")}
+              onChange={(v) => setProp("title", v)}
+              placeholder="Judul pricing…"
+            />
+          ) : p.title ? (
             <h3 className="text-center text-xl font-bold">{String(p.title)}</h3>
           ) : null}
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -1763,8 +1993,29 @@ function BlockView({
                     featured && "border-2 border-primary",
                   )}
                 >
-                  <div className="text-xs font-semibold">{String(it.title ?? "")}</div>
-                  <div className="mt-1 text-lg font-bold">{String(it.price ?? "")}</div>
+                  {editable ? (
+                    <>
+                      <EditableText
+                        as="div"
+                        className="text-xs font-semibold"
+                        value={String(it.title ?? "")}
+                        onChange={(v) => setItemProp("items", i, "title", v)}
+                        placeholder="Nama paket"
+                      />
+                      <EditableText
+                        as="div"
+                        className="mt-1 text-lg font-bold"
+                        value={String(it.price ?? "")}
+                        onChange={(v) => setItemProp("items", i, "price", v)}
+                        placeholder="Harga"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs font-semibold">{String(it.title ?? "")}</div>
+                      <div className="mt-1 text-lg font-bold">{String(it.price ?? "")}</div>
+                    </>
+                  )}
                   <div className="mt-1 text-[10px] text-muted-foreground">
                     {String(it.period ?? "")}
                   </div>
@@ -1959,10 +2210,46 @@ function BlockView({
       return (
         <div className="px-8 py-8">
           <div className="text-3xl leading-none text-primary opacity-40">❝</div>
-          <blockquote className="mt-2 text-base font-medium leading-snug">{String(p.text ?? "")}</blockquote>
+          {editable ? (
+            <EditableText
+              as="blockquote"
+              className="mt-2 text-base font-medium leading-snug"
+              value={String(p.text ?? "")}
+              onChange={(v) => setProp("text", v)}
+              placeholder="Tulis quote di sini…"
+              multiline
+            />
+          ) : (
+            <blockquote className="mt-2 text-base font-medium leading-snug">
+              {String(p.text ?? "")}
+            </blockquote>
+          )}
           <div className="mt-3 text-xs font-semibold">
-            — {String(p.author ?? "")}{" "}
-            {p.role ? <span className="font-normal text-muted-foreground">({String(p.role)})</span> : null}
+            —{" "}
+            {editable ? (
+              <EditableText
+                as="span"
+                value={String(p.author ?? "")}
+                onChange={(v) => setProp("author", v)}
+                placeholder="Nama"
+              />
+            ) : (
+              <>{String(p.author ?? "")}</>
+            )}{" "}
+            {(p.role || editable) && (
+              <span className="font-normal text-muted-foreground">
+                ({editable ? (
+                  <EditableText
+                    as="span"
+                    value={String(p.role ?? "")}
+                    onChange={(v) => setProp("role", v)}
+                    placeholder="Jabatan"
+                  />
+                ) : (
+                  String(p.role)
+                )})
+              </span>
+            )}
           </div>
         </div>
       );

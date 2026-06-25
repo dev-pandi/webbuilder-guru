@@ -36,6 +36,7 @@ export function SortableBlockList({
   blocks,
   keys,
   selectedIdx,
+  selectedIndices,
   onSelect,
   onReorder,
   onMove,
@@ -45,7 +46,11 @@ export function SortableBlockList({
   blocks: BlockData[];
   keys: string[];
   selectedIdx: number;
-  onSelect: (i: number) => void;
+  // Optional — when provided, the row uses the set membership for the active
+  // highlight (enables multi-select visual). Falls back to selectedIdx.
+  selectedIndices?: Set<number>;
+  // Receives modifier keys so the parent can implement shift-range / ⌘-toggle.
+  onSelect: (i: number, mods?: { shift?: boolean; meta?: boolean }) => void;
   onReorder: (from: number, to: number) => void;
   onMove: (i: number, dir: -1 | 1) => void;
   onDuplicate: (i: number) => void;
@@ -78,8 +83,9 @@ export function SortableBlockList({
               block={b}
               index={i}
               total={blocks.length}
-              active={selectedIdx === i}
-              onSelect={() => onSelect(i)}
+              active={selectedIndices ? selectedIndices.has(i) : selectedIdx === i}
+              isAnchor={selectedIdx === i}
+              onSelect={(mods) => onSelect(i, mods)}
               onMove={(dir) => onMove(i, dir)}
               onDuplicate={() => onDuplicate(i)}
               onDelete={() => onDelete(i)}
@@ -97,6 +103,7 @@ function SortableRow({
   index,
   total,
   active,
+  isAnchor,
   onSelect,
   onMove,
   onDuplicate,
@@ -107,7 +114,10 @@ function SortableRow({
   index: number;
   total: number;
   active: boolean;
-  onSelect: () => void;
+  // True when this row is THE anchor (selectedIdx) — multi-selected rows are
+  // `active` but only one is the anchor (the row whose props show in panel).
+  isAnchor?: boolean;
+  onSelect: (mods?: { shift?: boolean; meta?: boolean }) => void;
   onMove: (dir: -1 | 1) => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -126,11 +136,18 @@ function SortableRow({
   return (
     <li ref={setNodeRef} style={style}>
       <div
-        onClick={onSelect}
+        onClick={(e) =>
+          onSelect({
+            shift: e.shiftKey,
+            meta: e.metaKey || e.ctrlKey,
+          })
+        }
         className={cn(
           "group flex cursor-pointer items-center gap-1.5 rounded-md border px-1.5 py-2 text-sm transition-all",
           active
-            ? "border-primary/40 bg-primary/5 shadow-sm"
+            ? isAnchor
+              ? "border-primary/60 bg-primary/10 shadow-sm"
+              : "border-primary/30 bg-primary/5"
             : "border-transparent hover:border-input hover:bg-muted/50",
           isDragging && "border-primary shadow-lg",
         )}
