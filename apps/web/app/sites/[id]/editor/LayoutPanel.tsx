@@ -1,13 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Layout, Maximize2, Paintbrush, RotateCcw } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Layout,
+  Maximize2,
+  Monitor,
+  Paintbrush,
+  RotateCcw,
+  Smartphone,
+  Tablet,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { ColorPopover } from "@/components/ColorPopover";
 import type { BlockData } from "./PropEditor";
-import type { BlockLayout, ThemeOverride } from "@/lib/blockLayout";
+import type {
+  BlockLayout,
+  Breakpoint,
+  ResponsiveLayoutPatch,
+  ThemeOverride,
+} from "@/lib/blockLayout";
 import { cn } from "@/lib/utils";
 
 const MAX_WIDTH_PRESETS: Array<{ value: NonNullable<BlockLayout["maxWidth"]>; label: string }> = [
@@ -21,6 +37,16 @@ const ALIGN_PRESETS: Array<{ value: NonNullable<BlockLayout["align"]>; label: st
   { value: "left", label: "Kiri", icon: "⇤" },
   { value: "center", label: "Tengah", icon: "⇿" },
   { value: "right", label: "Kanan", icon: "⇥" },
+];
+
+const DEVICE_TABS: Array<{
+  value: Breakpoint;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { value: "mobile", label: "Mobile", icon: Smartphone },
+  { value: "tablet", label: "Tablet", icon: Tablet },
+  { value: "desktop", label: "Desktop", icon: Monitor },
 ];
 
 const COLOR_FIELDS: Array<{ key: keyof ThemeOverride; label: string; desc: string }> = [
@@ -38,9 +64,16 @@ const COLOR_FIELDS: Array<{ key: keyof ThemeOverride; label: string; desc: strin
 export function LayoutPanel({
   block,
   onChange,
+  device,
+  onDeviceChange,
 }: {
   block: BlockData;
   onChange: (next: BlockData) => void;
+  // The currently previewed device. Layout edits write to that breakpoint's
+  // patch (or the base, for mobile). Driven by the editor toolbar so the
+  // user doesn't have to toggle in two places.
+  device: Breakpoint;
+  onDeviceChange: (bp: Breakpoint) => void;
 }) {
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
@@ -48,12 +81,88 @@ export function LayoutPanel({
   const layout = block.layout ?? {};
   const themeOverride = block.themeOverride ?? {};
 
+  // For mobile we edit the BASE layout (mobile-first convention). For
+  // tablet/desktop we edit the responsive patch — so removing a value from
+  // tablet falls back to the mobile/base value via cascading @media rules.
+  const editingBase = device === "mobile";
+  const activePatch: ResponsiveLayoutPatch =
+    (device !== "mobile" ? layout.responsive?.[device] : undefined) ?? {};
+
+  // Effective layout fields the panel inputs read. For base, the layout's
+  // own fields; for breakpoint, the patch's fields.
+  const eff: ResponsiveLayoutPatch = editingBase
+    ? {
+        pt: layout.pt,
+        pr: layout.pr,
+        pb: layout.pb,
+        pl: layout.pl,
+        mt: layout.mt,
+        mb: layout.mb,
+        maxWidth: layout.maxWidth,
+        align: layout.align,
+        bg: layout.bg,
+      }
+    : activePatch;
+
   function setLayout(patch: Partial<BlockLayout>) {
-    const next = { ...layout, ...patch };
-    // Clean up undefineds so the persisted object stays tidy.
-    Object.keys(next).forEach((k) => next[k as keyof BlockLayout] === undefined && delete next[k as keyof BlockLayout]);
-    onChange({ ...block, layout: Object.keys(next).length ? next : undefined });
+    // Mobile = write base fields directly. Tablet/desktop = write into the
+    // responsive patch keyed by device.
+    if (editingBase) {
+      const next = { ...layout, ...patch };
+      // Strip undefineds so we don't persist noise.
+      (Object.keys(next) as Array<keyof BlockLayout>).forEach(
+        (k) => next[k] === undefined && delete next[k],
+      );
+      onChange({ ...block, layout: Object.keys(next).length ? next : undefined });
+      return;
+    }
+    // Map BlockLayout keys → ResponsiveLayoutPatch (same field names, subset).
+    const nextPatch: ResponsiveLayoutPatch = { ...(activePatch ?? {}) };
+    const allowed: Array<keyof ResponsiveLayoutPatch> = [
+      "pt", "pr", "pb", "pl", "mt", "mb", "maxWidth", "align", "bg",
+    ];
+    for (const k of allowed) {
+      if (k in patch) {
+        const v = (patch as Record<string, unknown>)[k];
+        if (v === undefined) {
+          delete nextPatch[k];
+        } else {
+          (nextPatch as Record<string, unknown>)[k] = v;
+        }
+      }
+    }
+    const responsive = { ...(layout.responsive ?? {}) };
+    if (Object.keys(nextPatch).length) {
+      responsive[device as "tablet" | "desktop"] = nextPatch;
+    } else {
+      delete responsive[device as "tablet" | "desktop"];
+    }
+    const nextLayout: BlockLayout = {
+      ...layout,
+      responsive: Object.keys(responsive).length ? responsive : undefined,
+    };
+    if (!nextLayout.responsive) delete nextLayout.responsive;
+    onChange({
+      ...block,
+      layout: Object.keys(nextLayout).length ? nextLayout : undefined,
+    });
   }
+
+  function toggleHidden(bp: Breakpoint, hide: boolean) {
+    const hidden = { ...(layout.hidden ?? {}) };
+    if (hide) hidden[bp] = true;
+    else delete hidden[bp];
+    const nextLayout: BlockLayout = {
+      ...layout,
+      hidden: Object.keys(hidden).length ? hidden : undefined,
+    };
+    if (!nextLayout.hidden) delete nextLayout.hidden;
+    onChange({
+      ...block,
+      layout: Object.keys(nextLayout).length ? nextLayout : undefined,
+    });
+  }
+  const hiddenOnDevice = Boolean(layout.hidden?.[device]);
 
   function setTheme(patch: Partial<ThemeOverride>) {
     const next = { ...themeOverride, ...patch };
@@ -85,6 +194,55 @@ export function LayoutPanel({
         dirty={hasLayout}
         onReset={hasLayout ? resetLayout : undefined}
       >
+        {/* Device toggle — picks which breakpoint we're editing */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Edit untuk perangkat</Label>
+            <button
+              type="button"
+              onClick={() => toggleHidden(device, !hiddenOnDevice)}
+              title={
+                hiddenOnDevice
+                  ? `Tampilkan block di ${device}`
+                  : `Sembunyikan block di ${device}`
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                hiddenOnDevice
+                  ? "bg-destructive/10 text-destructive"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {hiddenOnDevice ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+              {hiddenOnDevice ? "Tersembunyi" : "Terlihat"}
+            </button>
+          </div>
+          <div className="inline-flex w-full items-center gap-0.5 rounded-md bg-muted p-0.5">
+            {DEVICE_TABS.map((d) => (
+              <button
+                key={d.value}
+                type="button"
+                onClick={() => onDeviceChange(d.value)}
+                className={cn(
+                  "inline-flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs transition-all",
+                  device === d.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title={d.label}
+              >
+                <d.icon className="size-3" />
+                <span className="hidden xs:inline">{d.label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            {editingBase
+              ? "Nilai dasar — diterapkan ke semua ukuran kalau tidak ada override."
+              : `Override untuk ${device}. Field kosong = ikut nilai dasar (mobile).`}
+          </p>
+        </div>
+
         {/* Max width preset */}
         <div className="space-y-1.5">
           <Label className="text-xs">Lebar Maksimal</Label>
@@ -92,8 +250,10 @@ export function LayoutPanel({
             {MAX_WIDTH_PRESETS.map((p) => (
               <ToggleChip
                 key={p.value}
-                active={(layout.maxWidth ?? "full") === p.value}
-                onClick={() => setLayout({ maxWidth: p.value === "full" ? undefined : p.value })}
+                active={(eff.maxWidth ?? (editingBase ? "full" : undefined)) === p.value}
+                onClick={() =>
+                  setLayout({ maxWidth: p.value === "full" ? undefined : p.value })
+                }
               >
                 {p.label}
               </ToggleChip>
@@ -108,8 +268,8 @@ export function LayoutPanel({
             {ALIGN_PRESETS.map((p) => (
               <ToggleChip
                 key={p.value}
-                active={layout.align === p.value}
-                onClick={() => setLayout({ align: layout.align === p.value ? undefined : p.value })}
+                active={eff.align === p.value}
+                onClick={() => setLayout({ align: eff.align === p.value ? undefined : p.value })}
               >
                 <span className="mr-1">{p.icon}</span>
                 {p.label}
@@ -122,10 +282,10 @@ export function LayoutPanel({
         <div className="space-y-1.5">
           <Label className="text-xs">Padding (rem)</Label>
           <BoxInput
-            top={layout.pt}
-            right={layout.pr}
-            bottom={layout.pb}
-            left={layout.pl}
+            top={eff.pt}
+            right={eff.pr}
+            bottom={eff.pb}
+            left={eff.pl}
             onChange={(side, v) =>
               setLayout({
                 [`p${side}` as "pt" | "pr" | "pb" | "pl"]: v,
@@ -140,13 +300,13 @@ export function LayoutPanel({
           <div className="flex gap-1.5">
             <SmallNumber
               label="↑"
-              value={layout.mt}
+              value={eff.mt}
               onChange={(v) => setLayout({ mt: v })}
               title="Margin atas"
             />
             <SmallNumber
               label="↓"
-              value={layout.mb}
+              value={eff.mb}
               onChange={(v) => setLayout({ mb: v })}
               title="Margin bawah"
             />

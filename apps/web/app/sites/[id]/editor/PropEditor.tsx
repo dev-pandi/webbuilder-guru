@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ImagePicker } from "@/components/ImagePicker";
 import { ColorPopover } from "@/components/ColorPopover";
+import { RichEditor } from "@/components/RichEditor";
 import { schemaFor, type FieldDef, type ItemField, type SelectOption } from "@/lib/blocks";
 import { cn } from "@/lib/utils";
 import type { BlockLayout, ThemeOverride } from "@/lib/blockLayout";
@@ -260,6 +261,23 @@ function Field({
             className="h-7 flex-1 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0"
           />
         </div>
+        {field.help && <Help text={field.help} />}
+      </div>
+    );
+  }
+
+  if (field.type === "richtext") {
+    // Markdown round-trip via TipTap. Stored as a plain markdown string so
+    // the Go static-export pipeline (gomarkdown) and the renderer (marked)
+    // both consume it without extra deserialisation.
+    return (
+      <div className="space-y-1.5">
+        {labelEl}
+        <RichEditor
+          value={typeof value === "string" ? value : ""}
+          onChange={(md) => onChange(md)}
+          placeholder={field.placeholder ?? "Tulis konten…"}
+        />
         {field.help && <Help text={field.help} />}
       </div>
     );

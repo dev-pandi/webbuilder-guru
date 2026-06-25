@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
+  EyeOff,
   History,
   Layers,
   Loader2,
@@ -26,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { marked } from "marked";
 import { api } from "@/lib/api";
 import { blockSchemas, blockSchemasByCategory, schemaFor } from "@/lib/blocks";
 import { Button } from "@/components/ui/button";
@@ -44,7 +46,7 @@ import { buildCatalogFontsUrl } from "@/lib/fonts";
 import { PropEditor, type BlockData } from "./PropEditor";
 import { LayoutPanel } from "./LayoutPanel";
 import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
-import { buildLayoutStyle, buildMaxWidthStyle } from "@/lib/blockLayout";
+import { buildLayoutStyle, buildMaxWidthStyle, layoutForBreakpoint } from "@/lib/blockLayout";
 import { useBlocksHistory } from "./useBlocksHistory";
 import { SortableBlockList, makeKeys, reorderWithKeys } from "./SortableBlockList";
 import { CanvasBlockToolbar } from "./CanvasOverlay";
@@ -807,6 +809,7 @@ export default function EditorPage() {
                 onMove={moveBlock}
                 onDuplicate={duplicateBlock}
                 onDelete={removeBlock}
+                device={device}
               />
             </div>
           </div>
@@ -902,6 +905,8 @@ export default function EditorPage() {
             <LayoutPanel
               block={blocks[selectedIdx]}
               onChange={(next) => updateBlock(selectedIdx, next)}
+              device={device}
+              onDeviceChange={setDevice}
             />
           </>
         ) : (
@@ -1307,6 +1312,16 @@ function SavedAgo({ at }: { at: number | null }) {
   return <>Tersimpan {Math.floor(mins / 60)} jam lalu</>;
 }
 
+// marked configured once — drop raw HTML so a malicious markdown like
+// `<script>` can't leak through (same hardening blog editor uses).
+marked.setOptions({ gfm: true, breaks: false });
+marked.use({ renderer: { html: () => "" } });
+
+function renderMarkdownInline(md: string): string {
+  if (!md) return "";
+  return marked.parse(md, { async: false }) as string;
+}
+
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
     <kbd className="rounded border bg-background px-1.5 py-px font-mono text-[10px] font-medium text-foreground/70 shadow-sm">
@@ -1352,6 +1367,7 @@ function Preview({
   onMove,
   onDuplicate,
   onDelete,
+  device,
 }: {
   blocks: BlockData[];
   keys: string[];
@@ -1362,6 +1378,7 @@ function Preview({
   onMove: (i: number, dir: -1 | 1) => void;
   onDuplicate: (i: number) => void;
   onDelete: (i: number) => void;
+  device: "desktop" | "tablet" | "mobile";
 }) {
   if (blocks.length === 0) {
     return (
@@ -1383,14 +1400,33 @@ function Preview({
   return (
     <div className="animate-in fade-in duration-200">
       {blocks.map((b, i) => {
-        // Layout wrapper applies user-set padding/margin/max-width/align +
-        // per-block colour override (as CSS vars). Inner div is the centred
-        // container when maxWidth is constrained.
+        // Resolve the layout for the device the user is previewing. mobile =
+        // base; tablet/desktop = base + that breakpoint's patch (merged).
+        // This way the canvas preview matches what the renderer will paint
+        // via @media rules in production.
+        const effectiveLayout = layoutForBreakpoint(b.layout, device);
+        // Block hidden on this device → don't render at all (but keep selection
+        // available via sidebar so user can un-hide).
+        if (b.layout?.hidden?.[device]) {
+          return (
+            <div
+              key={keys[i] ?? i}
+              onClick={() => onSelect(i)}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-2 text-xs text-muted-foreground",
+                selectedIdx === i && "border-primary/60 bg-primary/5",
+              )}
+            >
+              <EyeOff className="size-3" />
+              Block disembunyikan di {device} · klik untuk pilih
+            </div>
+          );
+        }
         const wrapperStyle = buildLayoutStyle({
-          layout: b.layout,
+          layout: effectiveLayout,
           themeOverride: b.themeOverride,
         });
-        const innerStyle = buildMaxWidthStyle({ layout: b.layout });
+        const innerStyle = buildMaxWidthStyle({ layout: effectiveLayout });
         // CRITICAL: the colour override must apply to BLOCK CONTENT only.
         // Keeping the toolbar inside the themed wrapper made it inherit the
         // user's --background / --primary overrides — turning the chrome
@@ -1585,6 +1621,14 @@ function BlockView({
       ) : (
         <p className="whitespace-pre-line px-6 py-2">{String(p.body ?? "")}</p>
       );
+    case "RichText": {
+      // Markdown → HTML inline. We use the same `marked` lib + `wb-prose` class
+      // as the blog renderer so the preview matches production styling.
+      const html = renderMarkdownInline(String(p.body ?? ""));
+      return (
+        <div className="wb-prose px-6 py-4" dangerouslySetInnerHTML={{ __html: html }} />
+      );
+    }
     case "Section":
       return (
         <div className="px-6 py-6">

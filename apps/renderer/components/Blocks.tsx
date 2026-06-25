@@ -1,4 +1,16 @@
+import { marked } from "marked";
 import { formatPrice, listBlogPosts, listProducts, type Block } from "@/lib/api";
+
+// marked configured once at module scope — strips raw HTML so a malicious
+// markdown payload (`<script>`) can't leak through. Matches the blog renderer
+// hardening at apps/renderer/app/blog/[slug]/page.tsx.
+marked.setOptions({ gfm: true, breaks: false });
+marked.use({ renderer: { html: () => "" } });
+
+function renderMarkdownSafe(md: string): string {
+  if (!md) return "";
+  return marked.parse(md, { async: false }) as string;
+}
 
 // Tailwind-equivalent max-width presets — must match editor's blockLayout.ts.
 const MAX_WIDTH_PX: Record<string, string> = {
@@ -7,6 +19,71 @@ const MAX_WIDTH_PX: Record<string, string> = {
   narrow: "640px",
   prose: "720px",
 };
+
+// Generate a unique class name for a block's wrapper. Used to scope responsive
+// @media rules without colliding across blocks. `i` is the block index in the
+// tree — stable within a single render pass.
+function blockClass(i: number): string {
+  return `wb-blk-${i}`;
+}
+
+// Render the per-block @media CSS for a single block. Mobile/base is applied
+// inline (via wrapper style); this only emits the tablet/desktop overrides
+// and visibility-hidden rules.
+function blockMediaCSS(klass: string, layout: Block["layout"]): string {
+  if (!layout) return "";
+  const parts: string[] = [];
+  const t = layout.responsive?.tablet;
+  if (t) {
+    const css = patchToCSS(t);
+    const inner = patchInnerCSS(klass, t);
+    if (css || inner) {
+      parts.push(`@media (min-width:768px){.${klass}{${css}}${inner}}`);
+    }
+  }
+  const d = layout.responsive?.desktop;
+  if (d) {
+    const css = patchToCSS(d);
+    const inner = patchInnerCSS(klass, d);
+    if (css || inner) {
+      parts.push(`@media (min-width:1024px){.${klass}{${css}}${inner}}`);
+    }
+  }
+  if (layout.hidden?.mobile) {
+    parts.push(`@media (max-width:767px){.${klass}{display:none!important}}`);
+  }
+  if (layout.hidden?.tablet) {
+    parts.push(`@media (min-width:768px) and (max-width:1023px){.${klass}{display:none!important}}`);
+  }
+  if (layout.hidden?.desktop) {
+    parts.push(`@media (min-width:1024px){.${klass}{display:none!important}}`);
+  }
+  return parts.join("");
+}
+
+function patchToCSS(p: NonNullable<NonNullable<Block["layout"]>["responsive"]>["tablet"]): string {
+  if (!p) return "";
+  const out: string[] = [];
+  if (p.pt != null) out.push(`padding-top:${p.pt}rem`);
+  if (p.pr != null) out.push(`padding-right:${p.pr}rem`);
+  if (p.pb != null) out.push(`padding-bottom:${p.pb}rem`);
+  if (p.pl != null) out.push(`padding-left:${p.pl}rem`);
+  if (p.mt != null) out.push(`margin-top:${p.mt}rem`);
+  if (p.mb != null) out.push(`margin-bottom:${p.mb}rem`);
+  if (p.align) out.push(`text-align:${p.align}`);
+  if (p.bg) out.push(`background-color:${p.bg}`);
+  return out.join(";");
+}
+
+function patchInnerCSS(
+  klass: string,
+  p: NonNullable<NonNullable<Block["layout"]>["responsive"]>["tablet"],
+): string {
+  if (!p?.maxWidth) return "";
+  const w = MAX_WIDTH_PX[p.maxWidth];
+  if (!w) return "";
+  return `.${klass} .wb-blk-inner{max-width:${w}}`;
+}
 
 // Build wrapper + inner styles from a block's layout/themeOverride meta. The
 // editor's lib/blockLayout.ts is the source of truth — keep this in sync.
@@ -54,15 +131,17 @@ function maxWidthInnerStyle(b: Block): React.CSSProperties | undefined {
 
 /**
  * Wrap a block in its layout container. Returns the bare block unchanged when
- * no metadata is set, so the output for the typical case stays clean.
+ * no metadata is set, so the output for the typical case stays clean. Always
+ * applies the unique class name so the @media stylesheet can target it.
  */
 function withLayout(b: Block, key: number, content: React.ReactNode): React.ReactNode {
   const wrap = layoutWrapperStyle(b);
   const inner = maxWidthInnerStyle(b);
-  if (!wrap && !inner) return <div key={key}>{content}</div>;
+  const klass = blockClass(key);
+  if (!wrap && !inner) return <div key={key} className={klass}>{content}</div>;
   return (
-    <div key={key} style={wrap}>
-      {inner ? <div style={inner}>{content}</div> : content}
+    <div key={key} className={klass} style={wrap}>
+      {inner ? <div className="wb-blk-inner" style={inner}>{content}</div> : content}
     </div>
   );
 }
@@ -74,20 +153,32 @@ export async function RenderBlocks({
   blocks: Block[];
   siteId: string;
 }) {
+  // Build the per-page responsive stylesheet once — one `<style>` with rules
+  // for every block that has tablet/desktop overrides or hidden flags.
+  const responsiveCSS = blocks
+    .map((b, i) => blockMediaCSS(blockClass(i), b.layout))
+    .filter(Boolean)
+    .join("");
+
   // Render each block; dynamic blocks resolve async server components.
+  const nodes = await Promise.all(
+    blocks.map(async (b, i) => {
+      if (b.type === "ProductGridDynamic") {
+        return withLayout(b, i, <ProductGridDynamic block={b} siteId={siteId} />);
+      }
+      if (b.type === "BlogListDynamic") {
+        return withLayout(b, i, <BlogListDynamicAsync block={b} siteId={siteId} />);
+      }
+      return withLayout(b, i, <BlockView block={b} />);
+    }),
+  );
+
   return (
     <>
-      {await Promise.all(
-        blocks.map(async (b, i) => {
-          if (b.type === "ProductGridDynamic") {
-            return withLayout(b, i, <ProductGridDynamic block={b} siteId={siteId} />);
-          }
-          if (b.type === "BlogListDynamic") {
-            return withLayout(b, i, <BlogListDynamicAsync block={b} siteId={siteId} />);
-          }
-          return withLayout(b, i, <BlockView block={b} />);
-        }),
+      {responsiveCSS && (
+        <style dangerouslySetInnerHTML={{ __html: responsiveCSS }} />
       )}
+      {nodes}
     </>
   );
 }
@@ -137,6 +228,15 @@ function BlockView({ block }: { block: Block }) {
           {String(p.body ?? "")}
         </p>
       );
+    case "RichText": {
+      const html = renderMarkdownSafe(String(p.body ?? ""));
+      return (
+        <div
+          className="wb-prose mx-auto max-w-3xl px-6 py-4"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      );
+    }
     case "Section":
       return (
         <section className="mx-auto max-w-5xl px-6 py-10">

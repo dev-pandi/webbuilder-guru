@@ -35,6 +35,32 @@ type BlockLayout struct {
 	MaxWidth string   `json:"maxWidth,omitempty"` // full|narrow|prose|wide
 	Align    string   `json:"align,omitempty"`    // left|center|right
 	BG       string   `json:"bg,omitempty"`
+
+	Hidden     *HiddenAt        `json:"hidden,omitempty"`
+	Responsive *ResponsiveBlock `json:"responsive,omitempty"`
+}
+
+type HiddenAt struct {
+	Mobile  bool `json:"mobile,omitempty"`
+	Tablet  bool `json:"tablet,omitempty"`
+	Desktop bool `json:"desktop,omitempty"`
+}
+
+type ResponsiveBlock struct {
+	Tablet  *ResponsivePatch `json:"tablet,omitempty"`
+	Desktop *ResponsivePatch `json:"desktop,omitempty"`
+}
+
+type ResponsivePatch struct {
+	PT       *float64 `json:"pt,omitempty"`
+	PR       *float64 `json:"pr,omitempty"`
+	PB       *float64 `json:"pb,omitempty"`
+	PL       *float64 `json:"pl,omitempty"`
+	MT       *float64 `json:"mt,omitempty"`
+	MB       *float64 `json:"mb,omitempty"`
+	MaxWidth string   `json:"maxWidth,omitempty"`
+	Align    string   `json:"align,omitempty"`
+	BG       string   `json:"bg,omitempty"`
 }
 
 type BlockThemeOverride struct {
@@ -60,11 +86,106 @@ func parseTree(raw json.RawMessage) Tree {
 // renderTree writes block HTML mirroring apps/renderer/components/Blocks.tsx output,
 // but using class names from styles.css instead of Tailwind utilities.
 func renderTree(b *strings.Builder, t Tree) {
-	for _, blk := range t.Blocks {
-		openLayoutWrap(b, blk)
+	// Emit the per-block responsive @media CSS as a single <style> tag at the
+	// top so static HTML stays self-contained.
+	if css := buildResponsiveCSS(t.Blocks); css != "" {
+		fmt.Fprintf(b, `<style>%s</style>`, css)
+	}
+	for i, blk := range t.Blocks {
+		openLayoutWrap(b, blk, i)
 		renderBlock(b, blk)
 		closeLayoutWrap(b, blk)
 	}
+}
+
+// buildResponsiveCSS concatenates @media rules + hidden visibility for every
+// block in the tree. Empty string when nothing needs it.
+func buildResponsiveCSS(blocks []Block) string {
+	var sb strings.Builder
+	for i, blk := range blocks {
+		if blk.Layout == nil {
+			continue
+		}
+		klass := fmt.Sprintf("wb-blk-%d", i)
+		writeBreakpoint(&sb, klass, "(min-width:768px)", blk.Layout.Responsive.tabletPatch())
+		writeBreakpoint(&sb, klass, "(min-width:1024px)", blk.Layout.Responsive.desktopPatch())
+		if h := blk.Layout.Hidden; h != nil {
+			if h.Mobile {
+				fmt.Fprintf(&sb, "@media (max-width:767px){.%s{display:none!important}}", klass)
+			}
+			if h.Tablet {
+				fmt.Fprintf(&sb, "@media (min-width:768px) and (max-width:1023px){.%s{display:none!important}}", klass)
+			}
+			if h.Desktop {
+				fmt.Fprintf(&sb, "@media (min-width:1024px){.%s{display:none!important}}", klass)
+			}
+		}
+	}
+	return sb.String()
+}
+
+// patchHelpers — nil-safe accessors. Keep ResponsiveBlock optional + per-bp
+// patches optional so users can opt in to just one breakpoint.
+func (r *ResponsiveBlock) tabletPatch() *ResponsivePatch {
+	if r == nil {
+		return nil
+	}
+	return r.Tablet
+}
+func (r *ResponsiveBlock) desktopPatch() *ResponsivePatch {
+	if r == nil {
+		return nil
+	}
+	return r.Desktop
+}
+
+func writeBreakpoint(sb *strings.Builder, klass, mq string, p *ResponsivePatch) {
+	if p == nil {
+		return
+	}
+	body := patchToCSSString(p)
+	innerW := maxWidthRule(klass, p.MaxWidth)
+	if body == "" && innerW == "" {
+		return
+	}
+	fmt.Fprintf(sb, "@media %s{.%s{%s}%s}", mq, klass, body, innerW)
+}
+
+func patchToCSSString(p *ResponsivePatch) string {
+	var parts []string
+	if p.PT != nil {
+		parts = append(parts, fmt.Sprintf("padding-top:%grem", *p.PT))
+	}
+	if p.PR != nil {
+		parts = append(parts, fmt.Sprintf("padding-right:%grem", *p.PR))
+	}
+	if p.PB != nil {
+		parts = append(parts, fmt.Sprintf("padding-bottom:%grem", *p.PB))
+	}
+	if p.PL != nil {
+		parts = append(parts, fmt.Sprintf("padding-left:%grem", *p.PL))
+	}
+	if p.MT != nil {
+		parts = append(parts, fmt.Sprintf("margin-top:%grem", *p.MT))
+	}
+	if p.MB != nil {
+		parts = append(parts, fmt.Sprintf("margin-bottom:%grem", *p.MB))
+	}
+	if p.Align != "" {
+		parts = append(parts, "text-align:"+p.Align)
+	}
+	if p.BG != "" {
+		parts = append(parts, "background-color:"+p.BG)
+	}
+	return strings.Join(parts, ";")
+}
+
+func maxWidthRule(klass, mw string) string {
+	w, ok := maxWidthPx[mw]
+	if !ok || mw == "full" {
+		return ""
+	}
+	return fmt.Sprintf(".%s .wb-blk-inner{max-width:%s}", klass, w)
 }
 
 // Tailwind-equivalent max-width presets — must match apps/web/lib/blockLayout.ts.
@@ -78,20 +199,23 @@ var maxWidthPx = map[string]string{
 // openLayoutWrap emits the per-block wrapper div(s) that apply user-set padding /
 // margin / alignment / colour override. Mirrors the renderer wrapper exactly so
 // exported static HTML matches live render byte-for-byte (modulo formatting).
-func openLayoutWrap(b *strings.Builder, blk Block) {
+// The `idx` becomes the wrapper's unique class — `<style>` rules emitted by
+// buildResponsiveCSS scope themselves to this class.
+func openLayoutWrap(b *strings.Builder, blk Block, idx int) {
+	klass := fmt.Sprintf("wb-blk-%d", idx)
 	wrap := layoutWrapStyle(blk)
 	inner := maxWidthInnerStyle(blk)
 	if wrap == "" && inner == "" {
-		b.WriteString(`<div>`)
+		fmt.Fprintf(b, `<div class="%s">`, klass)
 		return
 	}
 	if wrap != "" {
-		fmt.Fprintf(b, `<div style="%s">`, escAttr(wrap))
+		fmt.Fprintf(b, `<div class="%s" style="%s">`, klass, escAttr(wrap))
 	} else {
-		b.WriteString(`<div>`)
+		fmt.Fprintf(b, `<div class="%s">`, klass)
 	}
 	if inner != "" {
-		fmt.Fprintf(b, `<div style="%s">`, escAttr(inner))
+		fmt.Fprintf(b, `<div class="wb-blk-inner" style="%s">`, escAttr(inner))
 	}
 }
 
@@ -199,6 +323,11 @@ func renderBlock(b *strings.Builder, blk Block) {
 
 	case "Text":
 		fmt.Fprintf(b, `<p class="wb-text">%s</p>`, escMultiline(str(p, "body")))
+
+	case "RichText":
+		// renderMarkdown uses gomarkdown with SkipHTML — same XSS hardening as
+		// blog post export. Wraps in .wb-prose for typographic CSS.
+		fmt.Fprintf(b, `<div class="wb-prose">%s</div>`, renderMarkdown(str(p, "body")))
 
 	case "Section":
 		b.WriteString(`<section class="wb-section">`)
@@ -670,8 +799,11 @@ func thousands(n int64) string {
 // dynamic blocks (ProductGridDynamic, BlogListDynamic). Calls the base renderTree
 // for non-dynamic blocks.
 func renderTreeWithData(b *strings.Builder, t Tree, prods []products.Product, posts []blog.Post) {
-	for _, blk := range t.Blocks {
-		openLayoutWrap(b, blk)
+	if css := buildResponsiveCSS(t.Blocks); css != "" {
+		fmt.Fprintf(b, `<style>%s</style>`, css)
+	}
+	for i, blk := range t.Blocks {
+		openLayoutWrap(b, blk, i)
 		switch blk.Type {
 		case "ProductGridDynamic":
 			renderProductGridDynamic(b, blk, prods)

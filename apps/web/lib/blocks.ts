@@ -15,7 +15,8 @@ export type FieldType =
   | "url"
   | "color"
   | "select"
-  | "icon";
+  | "icon"
+  | "richtext"; // markdown — rendered via TipTap, persisted as MD string
 
 export type ItemField =
   | { name: string; label: string; type: "string" | "textarea" | "image" | "url" | "color" }
@@ -35,7 +36,10 @@ type FieldBase = {
 };
 
 export type FieldDef =
-  | (FieldBase & { type: "string" | "textarea" | "number" | "image" | "url" | "color" | "icon"; placeholder?: string })
+  | (FieldBase & {
+      type: "string" | "textarea" | "number" | "image" | "url" | "color" | "icon" | "richtext";
+      placeholder?: string;
+    })
   | (FieldBase & { type: "items"; itemFields: ItemField[] })
   | (FieldBase & { type: "select"; options: SelectOption[] });
 
@@ -180,6 +184,24 @@ export const blockSchemas: BlockSchema[] = [
     description: "Paragraf teks panjang",
     defaults: { body: "Tulis isi paragraf di sini." },
     fields: [{ name: "body", label: "Isi", type: "textarea" }],
+  },
+  {
+    type: "RichText",
+    label: "Rich Text",
+    category: "konten",
+    emoji: "✍️",
+    description: "Editor markdown — heading, list, link, bold/italic, code, blockquote",
+    defaults: {
+      body: "## Judul Bagian\n\nKonten **markdown** lengkap dengan _italic_, [link](https://example.com), dan list:\n\n- Poin pertama\n- Poin kedua\n- Poin ketiga\n",
+    },
+    fields: [
+      {
+        name: "body",
+        label: "Konten",
+        type: "richtext",
+        help: "Mendukung markdown penuh: #, *, _, >, `, [link](url), ![image](url), tabel, kode.",
+      },
+    ],
   },
 
   // ---------- Showcase ----------

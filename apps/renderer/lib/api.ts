@@ -41,8 +41,21 @@ export type Block = {
     maxWidth?: "full" | "narrow" | "prose" | "wide";
     align?: "left" | "center" | "right";
     bg?: string;
+    hidden?: { mobile?: boolean; tablet?: boolean; desktop?: boolean };
+    responsive?: {
+      tablet?: ResponsivePatch;
+      desktop?: ResponsivePatch;
+    };
   };
   themeOverride?: { primary?: string; secondary?: string; bg?: string; fg?: string };
+};
+
+type ResponsivePatch = {
+  pt?: number; pr?: number; pb?: number; pl?: number;
+  mt?: number; mb?: number;
+  maxWidth?: "full" | "narrow" | "prose" | "wide";
+  align?: "left" | "center" | "right";
+  bg?: string;
 };
 
 async function fetchJson<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number }> {
