@@ -178,7 +178,7 @@ func main() {
 			AppBaseURL: cfg.AppBaseURL,
 		}),
 		Sites:        sites.NewHandler(siteRepo),
-		Pages:        pages.NewHandler(pageRepo, siteRepo),
+		Pages:        pages.NewHandler(pageRepo, siteRepo, issuer),
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
 		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo),
 		Export: exports.NewHandler(&exports.Builder{

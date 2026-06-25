@@ -115,6 +115,21 @@ func (r *Repo) GetOwned(ctx context.Context, id, userID uuid.UUID) (*Site, error
 	return &s, err
 }
 
+// GetByID fetches a site without owner scoping. ONLY call this from contexts
+// that already validated capability via another mechanism (e.g. preview HMAC
+// token). Avoid using it in user-facing endpoints — prefer GetOwned.
+func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Site, error) {
+	var s Site
+	err := r.pool.QueryRow(ctx, `
+		SELECT `+siteCols+`
+		FROM sites WHERE id = $1
+	`, id).Scan(scanArgs(&s)...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &s, err
+}
+
 func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, name *string, theme json.RawMessage, status *string) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `

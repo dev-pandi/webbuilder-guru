@@ -20,7 +20,13 @@ export type Page = {
   slug: string;
   title: string;
   tree: { blocks?: Block[] } | null;
-  seo: { title?: string; description?: string } | null;
+  seo: {
+    title?: string;
+    description?: string;
+    ogImage?: string;
+    canonical?: string;
+    noindex?: boolean;
+  } | null;
   is_home: boolean;
 };
 
@@ -59,6 +65,20 @@ export async function getPage(siteId: string, slug: string): Promise<Page | null
 export async function listPages(siteId: string): Promise<Page[]> {
   const r = await fetchJson<Page[]>(`/public/sites/${siteId}/pages`);
   return r.ok ? r.data : [];
+}
+
+// getPagePreview fetches the DRAFT tree of a page via a signed HMAC token,
+// bundled with its owning site (for theme + font). Cache disabled so the
+// reviewer always sees the freshest draft.
+export async function getPagePreview(
+  token: string,
+): Promise<{ page: Page; site: Site } | null> {
+  const res = await fetch(`${API}/public/preview/${encodeURIComponent(token)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body.data as { page: Page; site: Site };
 }
 
 // --- Products + Blog (public read) ---

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -15,12 +16,13 @@ import (
 )
 
 type Handler struct {
-	pages *Repo
-	sites *sites.Repo
+	pages  *Repo
+	sites  *sites.Repo
+	issuer *auth.TokenIssuer // optional — only needed for preview tokens
 }
 
-func NewHandler(pages *Repo, sitesRepo *sites.Repo) *Handler {
-	return &Handler{pages: pages, sites: sitesRepo}
+func NewHandler(pages *Repo, sitesRepo *sites.Repo, issuer *auth.TokenIssuer) *Handler {
+	return &Handler{pages: pages, sites: sitesRepo, issuer: issuer}
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9\-/]{0,60}[a-z0-9])?$`)
@@ -244,6 +246,80 @@ func (h *Handler) Duplicate(c *fiber.Ctx) error {
 		return httpx.Internal(c, "duplicate failed: "+err.Error())
 	}
 	return httpx.Created(c, p)
+}
+
+// PreviewToken issues a short-lived HMAC token granting anonymous read access
+// to a SINGLE page's DRAFT tree. Used by the editor's "Pratinjau" button so
+// the author can share an unpublished page with reviewers via a temporary URL.
+// Token TTL is 1 hour — long enough for normal review sessions, short enough
+// to mitigate accidental leaks.
+func (h *Handler) PreviewToken(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	if h.issuer == nil {
+		return httpx.Internal(c, "preview disabled")
+	}
+	tok, exp, err := h.issuer.IssuePreview(id, time.Hour)
+	if err != nil {
+		return httpx.Internal(c, "token gen failed")
+	}
+	return httpx.OK(c, fiber.Map{
+		"token":      tok,
+		"expires_at": exp.UTC(),
+		// Path-only — caller composes the full URL with their renderer host.
+		"path": "/_preview/" + tok,
+	})
+}
+
+// PreviewByToken serves the DRAFT page tree to anyone holding a valid signed
+// token. Anonymous endpoint — auth is the token itself. Token + audience
+// validated via HMAC; no DB lookup of the token (stateless). Bundles the
+// owning site (id/name/theme) so the renderer can apply theme + font in one
+// roundtrip.
+func (h *Handler) PreviewByToken(c *fiber.Ctx) error {
+	if h.issuer == nil {
+		return httpx.NotFound(c, "preview disabled")
+	}
+	tok := c.Params("token")
+	if tok == "" {
+		return httpx.BadRequest(c, "token required")
+	}
+	claims, err := h.issuer.ParsePreview(tok)
+	if err != nil {
+		return httpx.Unauthorized(c, "token tidak valid atau kadaluarsa")
+	}
+	p, err := h.pages.Get(c.Context(), claims.PageID)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	site, err := h.sites.GetByID(c.Context(), p.SiteID)
+	if err != nil {
+		return httpx.Internal(c, "site load failed")
+	}
+	return httpx.OK(c, fiber.Map{
+		"page": p,
+		"site": fiber.Map{
+			"id":    site.ID,
+			"name":  site.Name,
+			"theme": site.Theme,
+		},
+	})
 }
 
 // Publish promotes the current draft to live. Caller must own the page's site.

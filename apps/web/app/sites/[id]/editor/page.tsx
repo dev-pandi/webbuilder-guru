@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  Settings2,
   Smartphone,
   Sparkles,
   Tablet,
@@ -48,6 +49,7 @@ import { useBlocksHistory } from "./useBlocksHistory";
 import { SortableBlockList, makeKeys, reorderWithKeys } from "./SortableBlockList";
 import { CanvasBlockToolbar } from "./CanvasOverlay";
 import { EditableText } from "./EditableText";
+import { PageSettingsDialog } from "./PageSettingsDialog";
 
 type PageVersion = {
   id: string;
@@ -115,6 +117,7 @@ export default function EditorPage() {
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Theme state — loaded from the site, applied as CSS vars on canvas.
   const [theme, setTheme] = useState<ThemeJson>(DEFAULT_THEME);
@@ -389,6 +392,36 @@ export default function EditorPage() {
     // the indicator flickers while the user types.
     return JSON.stringify(originalBlocks) !== JSON.stringify(liveBlocks);
   }, [current, blocks, originalBlocks]);
+
+  // -------- Preview link --------
+  // Generate a signed HMAC token + open the renderer's /_preview/<token> route
+  // in a new tab. Token TTL 1h — server-side enforced. If the draft has dirty
+  // changes we save first so the preview reflects what the user just edited.
+  async function openPreview() {
+    if (!current) return;
+    if (blocksDirty) {
+      try {
+        await save({ silent: true });
+      } catch {
+        return;
+      }
+    }
+    try {
+      const res = await api<{ token: string; path: string }>(
+        `/api/v1/pages/${current.id}/preview-token`,
+        { method: "POST" },
+      );
+      const rendererBase =
+        process.env.NEXT_PUBLIC_RENDERER_BASE ?? window.location.origin;
+      // path returned is "/_preview/<token>" but the API API base is dashboard;
+      // we want the renderer host. Strip API prefix if any and prepend
+      // configured renderer base.
+      const previewPath = `/_preview/${res.token}`;
+      window.open(`${rendererBase}${previewPath}`, "_blank", "noopener");
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
 
   async function saveTheme() {
     setSavingTheme(true);
@@ -688,6 +721,28 @@ export default function EditorPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={openPreview}
+              disabled={!current}
+              className="gap-1.5"
+              title="Pratinjau draft di tab baru — link berlaku 1 jam"
+            >
+              <Eye className="size-3.5" />
+              <span className="hidden sm:inline">Pratinjau</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+              disabled={!current}
+              className="gap-1.5"
+              title="Pengaturan halaman: judul, SEO, status"
+            >
+              <Settings2 className="size-3.5" />
+              <span className="hidden sm:inline">Pengaturan</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setHistoryOpen(true)}
               disabled={!current}
               className="gap-1.5"
@@ -888,6 +943,30 @@ export default function EditorPage() {
           setSelectedIdx(p.tree?.blocks?.length ? 0 : -1);
           setHistoryOpen(false);
           toast.success("Versi berhasil dipulihkan");
+        }}
+      />
+
+      <PageSettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        page={current}
+        onUpdated={(next) => {
+          setPages((ps) =>
+            ps.map((p) =>
+              p.id === next.id
+                ? {
+                    ...p,
+                    slug: next.slug,
+                    title: next.title,
+                    is_home: next.is_home ?? p.is_home,
+                    published_at: next.published_at ?? null,
+                    // seo is a free-form record; cast keeps the strict Page type
+                    // happy without inventing nullable fields.
+                    ...(next as unknown as Partial<Page>),
+                  }
+                : p,
+            ),
+          );
         }}
       />
     </div>

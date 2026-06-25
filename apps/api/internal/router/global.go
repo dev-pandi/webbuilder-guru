@@ -72,6 +72,11 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	pub.Get("/sites/:id/products/:slug", deps.Public.ProductBySlug)
 	pub.Get("/sites/:id/blog-posts", deps.Public.ListBlogPosts)
 	pub.Get("/sites/:id/blog-posts/:slug", deps.Public.BlogPostBySlug)
+
+	// Preview-by-token — anonymous draft access for sharing unpublished pages
+	// with reviewers. Token validates owner intent; no DB row needed. Sits
+	// inside the cached `pub` group so the same 30s revalidation applies.
+	pub.Get("/preview/:token", deps.Pages.PreviewByToken)
 }
 
 // readiness returns per-dependency status so a load-balancer can pull the pod

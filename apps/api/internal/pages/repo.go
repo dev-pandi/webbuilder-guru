@@ -58,7 +58,7 @@ func (r *Repo) CountBySite(ctx context.Context, siteID uuid.UUID) (int, error) {
 
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 		FROM pages WHERE site_id = $1
 		ORDER BY is_home DESC, slug ASC
 	`, siteID)
@@ -80,7 +80,7 @@ func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error)
 func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 		FROM pages WHERE id = $1
 	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -92,7 +92,7 @@ func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Page, error) {
 func (r *Repo) GetBySiteAndSlug(ctx context.Context, siteID uuid.UUID, slug string) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 		FROM pages WHERE site_id = $1 AND slug = $2
 	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -104,7 +104,7 @@ func (r *Repo) GetBySiteAndSlug(ctx context.Context, siteID uuid.UUID, slug stri
 func (r *Repo) GetHomeOfSite(ctx context.Context, siteID uuid.UUID) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 		FROM pages WHERE site_id = $1 AND is_home = true LIMIT 1
 	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -286,9 +286,9 @@ func (r *Repo) Restore(ctx context.Context, versionID uuid.UUID, createdBy *uuid
 	// snapshot current first
 	var current Page
 	err = tx.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 		FROM pages WHERE id = $1
-	`, v.PageID).Scan(&current.ID, &current.SiteID, &current.Slug, &current.Title, &current.Tree, &current.SEO, &current.IsHome, &current.Version, &current.CreatedAt, &current.UpdatedAt)
+	`, v.PageID).Scan(&current.ID, &current.SiteID, &current.Slug, &current.Title, &current.Tree, &current.SEO, &current.IsHome, &current.Version, &current.CreatedAt, &current.UpdatedAt, &current.PublishedTree, &current.PublishedAt)
 	if err != nil {
 		return nil, err
 	}
