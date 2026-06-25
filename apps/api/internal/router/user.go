@@ -67,6 +67,8 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/pages/:id/duplicate", mutateLimit, deps.Pages.Duplicate)
 	authed.Get("/pages/:id/versions", deps.Pages.ListVersions)
 	authed.Post("/pages/:id/restore/:versionId", mutateLimit, deps.Pages.RestoreVersion)
+	authed.Post("/pages/:id/publish", mutateLimit, deps.Pages.Publish)
+	authed.Post("/pages/:id/unpublish", mutateLimit, deps.Pages.Unpublish)
 	authed.Delete("/pages/:id", mutateLimit, deps.Pages.Delete)
 
 	// Assets — separate, tighter limit (uploads are expensive).

@@ -35,6 +35,12 @@ type Page struct {
 	Version   int             `json:"version"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
+
+	// Published snapshot — separate from `tree` so the editor can iterate on a
+	// draft without affecting the live site. Public endpoints serve
+	// `PublishedTree` (with fallback to draft for pages never published).
+	PublishedTree json.RawMessage `json:"published_tree,omitempty"`
+	PublishedAt   *time.Time      `json:"published_at,omitempty"`
 }
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -63,7 +69,7 @@ func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error)
 	out := []Page{}
 	for rows.Next() {
 		var p Page
-		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -76,7 +82,7 @@ func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Page, error) {
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
 		FROM pages WHERE id = $1
-	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -88,7 +94,7 @@ func (r *Repo) GetBySiteAndSlug(ctx context.Context, siteID uuid.UUID, slug stri
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
 		FROM pages WHERE site_id = $1 AND slug = $2
-	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -100,7 +106,7 @@ func (r *Repo) GetHomeOfSite(ctx context.Context, siteID uuid.UUID) (*Page, erro
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
 		FROM pages WHERE site_id = $1 AND is_home = true LIMIT 1
-	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -128,9 +134,9 @@ func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, slug, title string,
 	err = tx.QueryRow(ctx, `
 		INSERT INTO pages (site_id, slug, title, tree_json, seo_json, is_home)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 	`, siteID, slug, title, tree, seo, isHome).Scan(
-		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
 	)
 	if pgErrCode(err) == "23505" {
 		return nil, ErrSlugTaken
@@ -157,9 +163,9 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, se
 	if tree != nil || title != nil || seo != nil {
 		var prev Page
 		err := tx.QueryRow(ctx, `
-			SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+			SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 			FROM pages WHERE id = $1
-		`, id).Scan(&prev.ID, &prev.SiteID, &prev.Slug, &prev.Title, &prev.Tree, &prev.SEO, &prev.IsHome, &prev.Version, &prev.CreatedAt, &prev.UpdatedAt)
+		`, id).Scan(&prev.ID, &prev.SiteID, &prev.Slug, &prev.Title, &prev.Tree, &prev.SEO, &prev.IsHome, &prev.Version, &prev.CreatedAt, &prev.UpdatedAt, &prev.PublishedTree, &prev.PublishedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -198,9 +204,9 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, se
 			version    = version + 1,
 			updated_at = now()
 		WHERE id = $1
-		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 	`, id, title, tree, seo, isHome, slug).Scan(
-		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -303,9 +309,9 @@ func (r *Repo) Restore(ctx context.Context, versionID uuid.UUID, createdBy *uuid
 		    version    = version + 1,
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
 	`, v.PageID, v.Title, v.Tree, v.SEO).Scan(
-		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -367,6 +373,85 @@ func (r *Repo) Duplicate(ctx context.Context, id uuid.UUID) (*Page, error) {
 		newTitle = newTitle + " (Salinan)"
 	}
 	return r.Create(ctx, src.SiteID, candidate, newTitle, src.Tree, src.SEO, false)
+}
+
+// Publish copies the current draft (tree_json) into published_tree_json and
+// sets published_at = now(). Returns the refreshed Page so the editor can
+// surface the new live timestamp immediately.
+func (r *Repo) Publish(ctx context.Context, id uuid.UUID) (*Page, error) {
+	var p Page
+	err := r.pool.QueryRow(ctx, `
+		UPDATE pages
+		   SET published_tree_json = tree_json,
+		       published_at = now()
+		 WHERE id = $1
+		 RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+	`, id).Scan(
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
+}
+
+// Unpublish clears the published snapshot so the page disappears from the
+// public renderer. Draft (tree_json) is untouched — the editor still has it.
+func (r *Repo) Unpublish(ctx context.Context, id uuid.UUID) error {
+	ct, err := r.pool.Exec(ctx, `
+		UPDATE pages SET published_tree_json = NULL, published_at = NULL WHERE id = $1
+	`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListBySitePublic returns the LIVE tree (published_tree_json) for renderer
+// consumption. Pages without a published snapshot are skipped entirely —
+// they exist only in the editor's draft view.
+func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		FROM pages
+		WHERE site_id = $1 AND published_tree_json IS NOT NULL
+		ORDER BY is_home DESC, slug ASC
+	`, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Page{}
+	for rows.Next() {
+		var p Page
+		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
+			&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetBySiteAndSlugPublic returns the LIVE page (with published_tree_json
+// presented AS `tree` so the renderer code path stays unchanged). 404 when
+// the page exists but hasn't been published.
+func (r *Repo) GetBySiteAndSlugPublic(ctx context.Context, siteID uuid.UUID, slug string) (*Page, error) {
+	var p Page
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		FROM pages
+		WHERE site_id = $1 AND slug = $2 AND published_tree_json IS NOT NULL
+	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
 }
 
 func pgErrCode(err error) string {

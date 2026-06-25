@@ -246,6 +246,54 @@ func (h *Handler) Duplicate(c *fiber.Ctx) error {
 	return httpx.Created(c, p)
 }
 
+// Publish promotes the current draft to live. Caller must own the page's site.
+// Idempotent — calling twice without intervening edits is a no-op replay.
+func (h *Handler) Publish(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	p, err := h.pages.Publish(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "publish failed")
+	}
+	return httpx.OK(c, p)
+}
+
+// Unpublish removes the live snapshot. Page survives as draft.
+func (h *Handler) Unpublish(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err := h.pages.Unpublish(c.Context(), id); err != nil {
+		return httpx.Internal(c, "unpublish failed")
+	}
+	return httpx.OK(c, fiber.Map{"ok": true})
+}
+
 func (h *Handler) Delete(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	id, err := uuid.Parse(c.Params("id"))

@@ -63,16 +63,20 @@ func (h *Handler) PageBySlug(c *fiber.Ctx) error {
 	}
 	slug := c.Params("slug")
 	if slug == "_home" {
-		p, err := h.pages.GetHomeOfSite(c.Context(), id)
-		if errors.Is(err, pages.ErrNotFound) {
-			return httpx.NotFound(c, "home page not found")
-		}
+		// Find the home page among published ones. Unpublished home pages
+		// don't show on the public site at all — author must publish them.
+		all, err := h.pages.ListBySitePublic(c.Context(), id)
 		if err != nil {
 			return httpx.Internal(c, "load failed")
 		}
-		return httpx.OK(c, p)
+		for i := range all {
+			if all[i].IsHome {
+				return httpx.OK(c, &all[i])
+			}
+		}
+		return httpx.NotFound(c, "home page not found")
 	}
-	p, err := h.pages.GetBySiteAndSlug(c.Context(), id, slug)
+	p, err := h.pages.GetBySiteAndSlugPublic(c.Context(), id, slug)
 	if errors.Is(err, pages.ErrNotFound) {
 		return httpx.NotFound(c, "page not found")
 	}
@@ -88,7 +92,7 @@ func (h *Handler) ListPages(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	out, err := h.pages.ListBySite(c.Context(), id)
+	out, err := h.pages.ListBySitePublic(c.Context(), id)
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}

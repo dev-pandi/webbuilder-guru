@@ -1,17 +1,19 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
   Eye,
   History,
   Layers,
+  Loader2,
   Monitor,
   Palette,
   Plus,
   Redo2,
+  Rocket,
   RotateCcw,
   Save,
   Search,
@@ -64,6 +66,11 @@ type Page = {
   title: string;
   tree: { blocks?: BlockData[] } | null;
   is_home: boolean;
+  // Live snapshot — what the public renderer is serving. `null` means never
+  // published. Used to compute the unpublishedChanges indicator + Publish
+  // button enabled state.
+  published_tree?: { blocks?: BlockData[] } | null;
+  published_at?: string | null;
 };
 
 type Site = {
@@ -320,7 +327,13 @@ export default function EditorPage() {
     setSelectedIdx(insertIdx);
   }
 
-  async function save() {
+  // savedAt — wall clock for "Tersimpan otomatis 12 dtk lalu" display.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  // Marks whether the upcoming save was triggered by autosave (silent) vs
+  // an explicit user action (toast).
+  const autosaveRef = useRef(false);
+
+  async function save(opts?: { silent?: boolean }) {
     if (!current) return;
     setSaving(true);
     try {
@@ -330,13 +343,52 @@ export default function EditorPage() {
       });
       setPages((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
       setOriginalBlocks(blocks);
-      toast.success("Halaman tersimpan");
+      setSavedAt(Date.now());
+      if (!opts?.silent) toast.success("Halaman tersimpan");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setSaving(false);
     }
   }
+
+  // -------- Publish (draft → live) --------
+  const [publishing, setPublishing] = useState(false);
+
+  async function publish() {
+    if (!current) return;
+    // Always save draft first so the live copy reflects the latest edits.
+    if (blocksDirty) {
+      try {
+        await save({ silent: true });
+      } catch {
+        return; // save() already toasted the error
+      }
+    }
+    setPublishing(true);
+    try {
+      const updated = await api<Page>(`/api/v1/pages/${current.id}/publish`, {
+        method: "POST",
+      });
+      setPages((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
+      toast.success("Halaman live ✓");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  // True when the draft has unpublished edits (or page has never been published).
+  const hasUnpublishedChanges = useMemo(() => {
+    if (!current) return false;
+    if (!current.published_at) return blocks.length > 0; // never published
+    const liveBlocks = current.published_tree?.blocks ?? [];
+    // Compare against the LAST SAVED draft (originalBlocks), not the current
+    // unsaved one — autosave will commit the dirty draft shortly. Without this
+    // the indicator flickers while the user types.
+    return JSON.stringify(originalBlocks) !== JSON.stringify(liveBlocks);
+  }, [current, blocks, originalBlocks]);
 
   async function saveTheme() {
     setSavingTheme(true);
@@ -353,6 +405,22 @@ export default function EditorPage() {
       setSavingTheme(false);
     }
   }
+
+  // -------- Autosave --------
+  // Debounce 3s. Fires when blocks change AND there are dirty changes AND we
+  // aren't already saving. Manual save (⌘S / Simpan button) clears the
+  // pending timer so we don't double-fire. Page switch also clears it.
+  useEffect(() => {
+    if (!current || !blocksDirty || saving) return;
+    const handle = window.setTimeout(() => {
+      autosaveRef.current = true;
+      save({ silent: true }).finally(() => {
+        autosaveRef.current = false;
+      });
+    }, 3000);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocks, current, blocksDirty, saving]);
 
   // Keyboard shortcuts — global. We ignore shortcuts while the user is typing
   // in an input/textarea/contentEditable so inline edit isn't hijacked.
@@ -628,15 +696,29 @@ export default function EditorPage() {
               <span className="hidden sm:inline">Riwayat</span>
             </Button>
             <Button
-              onClick={save}
+              variant="outline"
+              onClick={() => save()}
               disabled={saving || !current || !blocksDirty}
               size="sm"
-              className="relative gap-1.5 shadow-sm"
+              className="relative gap-1.5"
             >
               <Save className="size-3.5" />
-              {saving ? "Menyimpan…" : "Simpan"}
+              {saving ? "Menyimpan…" : "Simpan Draft"}
               {blocksDirty && !saving && (
-                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-primary" />
+                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-card" />
+              )}
+            </Button>
+            <Button
+              onClick={publish}
+              disabled={publishing || !current || (!hasUnpublishedChanges && !blocksDirty)}
+              size="sm"
+              className="relative gap-1.5 shadow-sm"
+              title="Salin draft ke versi live yang ditampilkan ke pengunjung"
+            >
+              <Rocket className="size-3.5" />
+              {publishing ? "Menerbitkan…" : "Terbitkan"}
+              {hasUnpublishedChanges && !publishing && (
+                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-primary" />
               )}
             </Button>
           </div>
@@ -679,21 +761,47 @@ export default function EditorPage() {
         <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
           <div className="flex items-center gap-3">
             <span className="inline-flex items-center gap-1.5">
-              {blocksDirty ? (
+              {saving ? (
+                <>
+                  <Loader2 className="size-3 animate-spin" />
+                  Menyimpan…
+                </>
+              ) : blocksDirty ? (
                 <>
                   <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-                  Belum disimpan
+                  Belum disimpan · autosave 3 dtk
                 </>
               ) : (
                 <>
                   <span className="size-1.5 rounded-full bg-emerald-500" />
-                  Tersimpan
+                  <SavedAgo at={savedAt} />
                 </>
               )}
             </span>
             <Separator orientation="vertical" className="h-3" />
             <span className="hidden sm:inline">
               {blocks.length} block · halaman {pages.length}
+            </span>
+            <Separator orientation="vertical" className="hidden h-3 sm:block" />
+            <span className="hidden items-center gap-1.5 sm:inline-flex">
+              {current?.published_at ? (
+                hasUnpublishedChanges ? (
+                  <>
+                    <span className="size-1.5 rounded-full bg-amber-500" />
+                    Live · ada draft baru
+                  </>
+                ) : (
+                  <>
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    Live
+                  </>
+                )
+              ) : (
+                <>
+                  <span className="size-1.5 rounded-full bg-muted-foreground/50" />
+                  Belum dipublikasikan
+                </>
+              )}
             </span>
           </div>
           <div className="hidden items-center gap-2 md:flex">
@@ -1099,6 +1207,25 @@ function PaletteTab({
       {label}
     </button>
   );
+}
+
+// SavedAgo renders a live-updating "diperbarui Nm lalu" string. The clock
+// ticks every 15s — granular enough for fresh saves (< 1m) but cheap enough
+// that we don't risk render storms on a busy editor.
+function SavedAgo({ at }: { at: number | null }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!at) return;
+    const t = window.setInterval(() => force((n) => n + 1), 15_000);
+    return () => window.clearInterval(t);
+  }, [at]);
+  if (!at) return <>Tersimpan</>;
+  const secs = Math.floor((Date.now() - at) / 1000);
+  if (secs < 5) return <>Baru saja tersimpan</>;
+  if (secs < 60) return <>Tersimpan {secs} dtk lalu</>;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return <>Tersimpan {mins} mnt lalu</>;
+  return <>Tersimpan {Math.floor(mins / 60)} jam lalu</>;
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
