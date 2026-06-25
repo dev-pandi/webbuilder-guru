@@ -1,5 +1,64 @@
 import { formatPrice, listBlogPosts, listProducts, type Block } from "@/lib/api";
 
+// Tailwind-equivalent max-width presets — must match editor's blockLayout.ts.
+const MAX_WIDTH_PX: Record<string, string> = {
+  full: "100%",
+  wide: "1280px",
+  narrow: "640px",
+  prose: "720px",
+};
+
+// Build wrapper + inner styles from a block's layout/themeOverride meta. The
+// editor's lib/blockLayout.ts is the source of truth — keep this in sync.
+function layoutWrapperStyle(b: Block): React.CSSProperties | undefined {
+  const out: Record<string, string> = {};
+  const L = b.layout;
+  if (L) {
+    if (L.pt != null) out.paddingTop = `${L.pt}rem`;
+    if (L.pr != null) out.paddingRight = `${L.pr}rem`;
+    if (L.pb != null) out.paddingBottom = `${L.pb}rem`;
+    if (L.pl != null) out.paddingLeft = `${L.pl}rem`;
+    if (L.mt != null) out.marginTop = `${L.mt}rem`;
+    if (L.mb != null) out.marginBottom = `${L.mb}rem`;
+    if (L.bg) out.backgroundColor = L.bg;
+    if (L.align) out.textAlign = L.align;
+  }
+  const O = b.themeOverride;
+  if (O) {
+    if (O.primary) out["--color-primary"] = O.primary;
+    if (O.secondary) out["--color-secondary"] = O.secondary;
+    if (O.bg) out["--color-bg"] = O.bg;
+    if (O.fg) out["--color-fg"] = O.fg;
+  }
+  return Object.keys(out).length ? (out as React.CSSProperties) : undefined;
+}
+
+function maxWidthInnerStyle(b: Block): React.CSSProperties | undefined {
+  const mw = b.layout?.maxWidth;
+  if (!mw || mw === "full") return undefined;
+  return {
+    maxWidth: MAX_WIDTH_PX[mw] ?? "100%",
+    marginLeft: "auto",
+    marginRight: "auto",
+    width: "100%",
+  };
+}
+
+/**
+ * Wrap a block in its layout container. Returns the bare block unchanged when
+ * no metadata is set, so the output for the typical case stays clean.
+ */
+function withLayout(b: Block, key: number, content: React.ReactNode): React.ReactNode {
+  const wrap = layoutWrapperStyle(b);
+  const inner = maxWidthInnerStyle(b);
+  if (!wrap && !inner) return <div key={key}>{content}</div>;
+  return (
+    <div key={key} style={wrap}>
+      {inner ? <div style={inner}>{content}</div> : content}
+    </div>
+  );
+}
+
 export async function RenderBlocks({
   blocks,
   siteId,
@@ -13,12 +72,12 @@ export async function RenderBlocks({
       {await Promise.all(
         blocks.map(async (b, i) => {
           if (b.type === "ProductGridDynamic") {
-            return <ProductGridDynamic key={i} block={b} siteId={siteId} />;
+            return withLayout(b, i, <ProductGridDynamic block={b} siteId={siteId} />);
           }
           if (b.type === "BlogListDynamic") {
-            return <BlogListDynamicAsync key={i} block={b} siteId={siteId} />;
+            return withLayout(b, i, <BlogListDynamicAsync block={b} siteId={siteId} />);
           }
-          return <BlockView key={i} block={b} />;
+          return withLayout(b, i, <BlockView block={b} />);
         }),
       )}
     </>

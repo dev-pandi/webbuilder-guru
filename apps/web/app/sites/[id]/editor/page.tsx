@@ -39,7 +39,9 @@ import { cn } from "@/lib/utils";
 import { hexToHslComponents, readableForeground } from "@/lib/color";
 import { buildCatalogFontsUrl } from "@/lib/fonts";
 import { PropEditor, type BlockData } from "./PropEditor";
+import { LayoutPanel } from "./LayoutPanel";
 import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
+import { buildLayoutStyle, buildMaxWidthStyle } from "@/lib/blockLayout";
 import { useBlocksHistory } from "./useBlocksHistory";
 import { SortableBlockList, makeKeys, reorderWithKeys } from "./SortableBlockList";
 import { CanvasBlockToolbar } from "./CanvasOverlay";
@@ -733,6 +735,11 @@ export default function EditorPage() {
               block={blocks[selectedIdx]}
               onChange={(next) => updateBlock(selectedIdx, next)}
             />
+            <Separator className="my-4" />
+            <LayoutPanel
+              block={blocks[selectedIdx]}
+              onChange={(next) => updateBlock(selectedIdx, next)}
+            />
           </>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -1169,34 +1176,55 @@ function Preview({
   }
   return (
     <div className="animate-in fade-in duration-200">
-      {blocks.map((b, i) => (
-        <div
-          key={keys[i] ?? i}
-          onClick={() => onSelect(i)}
-          className={cn(
-            "group/blk relative cursor-pointer transition-all duration-150",
-            selectedIdx === i
-              ? "outline outline-2 outline-primary"
-              : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
-          )}
-        >
-          {selectedIdx === i && (
-            <CanvasBlockToolbar
-              block={b}
-              index={i}
-              total={blocks.length}
-              onMove={(dir) => onMove(i, dir)}
-              onDuplicate={() => onDuplicate(i)}
-              onDelete={() => onDelete(i)}
-            />
-          )}
-          <BlockView
-            block={b}
-            onUpdate={(next) => onUpdate(i, next)}
-            editable={selectedIdx === i}
-          />
-        </div>
-      ))}
+      {blocks.map((b, i) => {
+        // Layout wrapper applies user-set padding/margin/max-width/align +
+        // per-block colour override (as CSS vars). Inner div is the centred
+        // container when maxWidth is constrained.
+        const wrapperStyle = buildLayoutStyle({
+          layout: b.layout,
+          themeOverride: b.themeOverride,
+        });
+        const innerStyle = buildMaxWidthStyle({ layout: b.layout });
+        return (
+          <div
+            key={keys[i] ?? i}
+            onClick={() => onSelect(i)}
+            style={wrapperStyle}
+            className={cn(
+              "group/blk relative cursor-pointer transition-all duration-150",
+              selectedIdx === i
+                ? "outline outline-2 outline-primary"
+                : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
+            )}
+          >
+            {selectedIdx === i && (
+              <CanvasBlockToolbar
+                block={b}
+                index={i}
+                total={blocks.length}
+                onMove={(dir) => onMove(i, dir)}
+                onDuplicate={() => onDuplicate(i)}
+                onDelete={() => onDelete(i)}
+              />
+            )}
+            {innerStyle ? (
+              <div style={innerStyle}>
+                <BlockView
+                  block={b}
+                  onUpdate={(next) => onUpdate(i, next)}
+                  editable={selectedIdx === i}
+                />
+              </div>
+            ) : (
+              <BlockView
+                block={b}
+                onUpdate={(next) => onUpdate(i, next)}
+                editable={selectedIdx === i}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

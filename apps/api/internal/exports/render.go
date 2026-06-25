@@ -14,10 +14,34 @@ import (
 	"github.com/webbuilder/api/internal/sites"
 )
 
-// Block matches the JSON tree shape: { type, props }.
+// Block matches the JSON tree shape: { type, props, layout?, themeOverride? }.
+// `Layout` + `ThemeOverride` are optional per-block metadata authored in the
+// editor's Layout & Style panel — see apps/web/lib/blockLayout.ts for the
+// authoritative shape.
 type Block struct {
-	Type  string                 `json:"type"`
-	Props map[string]any         `json:"props,omitempty"`
+	Type          string                 `json:"type"`
+	Props         map[string]any         `json:"props,omitempty"`
+	Layout        *BlockLayout           `json:"layout,omitempty"`
+	ThemeOverride *BlockThemeOverride    `json:"themeOverride,omitempty"`
+}
+
+type BlockLayout struct {
+	PT       *float64 `json:"pt,omitempty"`
+	PR       *float64 `json:"pr,omitempty"`
+	PB       *float64 `json:"pb,omitempty"`
+	PL       *float64 `json:"pl,omitempty"`
+	MT       *float64 `json:"mt,omitempty"`
+	MB       *float64 `json:"mb,omitempty"`
+	MaxWidth string   `json:"maxWidth,omitempty"` // full|narrow|prose|wide
+	Align    string   `json:"align,omitempty"`    // left|center|right
+	BG       string   `json:"bg,omitempty"`
+}
+
+type BlockThemeOverride struct {
+	Primary   string `json:"primary,omitempty"`
+	Secondary string `json:"secondary,omitempty"`
+	BG        string `json:"bg,omitempty"`
+	FG        string `json:"fg,omitempty"`
 }
 
 type Tree struct {
@@ -37,8 +61,102 @@ func parseTree(raw json.RawMessage) Tree {
 // but using class names from styles.css instead of Tailwind utilities.
 func renderTree(b *strings.Builder, t Tree) {
 	for _, blk := range t.Blocks {
+		openLayoutWrap(b, blk)
 		renderBlock(b, blk)
+		closeLayoutWrap(b, blk)
 	}
+}
+
+// Tailwind-equivalent max-width presets — must match apps/web/lib/blockLayout.ts.
+var maxWidthPx = map[string]string{
+	"full":   "100%",
+	"wide":   "1280px",
+	"narrow": "640px",
+	"prose":  "720px",
+}
+
+// openLayoutWrap emits the per-block wrapper div(s) that apply user-set padding /
+// margin / alignment / colour override. Mirrors the renderer wrapper exactly so
+// exported static HTML matches live render byte-for-byte (modulo formatting).
+func openLayoutWrap(b *strings.Builder, blk Block) {
+	wrap := layoutWrapStyle(blk)
+	inner := maxWidthInnerStyle(blk)
+	if wrap == "" && inner == "" {
+		b.WriteString(`<div>`)
+		return
+	}
+	if wrap != "" {
+		fmt.Fprintf(b, `<div style="%s">`, escAttr(wrap))
+	} else {
+		b.WriteString(`<div>`)
+	}
+	if inner != "" {
+		fmt.Fprintf(b, `<div style="%s">`, escAttr(inner))
+	}
+}
+
+func closeLayoutWrap(b *strings.Builder, blk Block) {
+	inner := maxWidthInnerStyle(blk)
+	if inner != "" {
+		b.WriteString(`</div>`)
+	}
+	b.WriteString(`</div>`)
+}
+
+func layoutWrapStyle(blk Block) string {
+	var parts []string
+	if l := blk.Layout; l != nil {
+		if l.PT != nil {
+			parts = append(parts, fmt.Sprintf("padding-top:%grem", *l.PT))
+		}
+		if l.PR != nil {
+			parts = append(parts, fmt.Sprintf("padding-right:%grem", *l.PR))
+		}
+		if l.PB != nil {
+			parts = append(parts, fmt.Sprintf("padding-bottom:%grem", *l.PB))
+		}
+		if l.PL != nil {
+			parts = append(parts, fmt.Sprintf("padding-left:%grem", *l.PL))
+		}
+		if l.MT != nil {
+			parts = append(parts, fmt.Sprintf("margin-top:%grem", *l.MT))
+		}
+		if l.MB != nil {
+			parts = append(parts, fmt.Sprintf("margin-bottom:%grem", *l.MB))
+		}
+		if l.BG != "" {
+			parts = append(parts, "background-color:"+l.BG)
+		}
+		if l.Align != "" {
+			parts = append(parts, "text-align:"+l.Align)
+		}
+	}
+	if o := blk.ThemeOverride; o != nil {
+		if o.Primary != "" {
+			parts = append(parts, "--color-primary:"+o.Primary)
+		}
+		if o.Secondary != "" {
+			parts = append(parts, "--color-secondary:"+o.Secondary)
+		}
+		if o.BG != "" {
+			parts = append(parts, "--color-bg:"+o.BG)
+		}
+		if o.FG != "" {
+			parts = append(parts, "--color-fg:"+o.FG)
+		}
+	}
+	return strings.Join(parts, ";")
+}
+
+func maxWidthInnerStyle(blk Block) string {
+	if blk.Layout == nil || blk.Layout.MaxWidth == "" || blk.Layout.MaxWidth == "full" {
+		return ""
+	}
+	w, ok := maxWidthPx[blk.Layout.MaxWidth]
+	if !ok {
+		return ""
+	}
+	return "max-width:" + w + ";margin-left:auto;margin-right:auto;width:100%"
 }
 
 func renderBlock(b *strings.Builder, blk Block) {
@@ -548,6 +666,7 @@ func thousands(n int64) string {
 // for non-dynamic blocks.
 func renderTreeWithData(b *strings.Builder, t Tree, prods []products.Product, posts []blog.Post) {
 	for _, blk := range t.Blocks {
+		openLayoutWrap(b, blk)
 		switch blk.Type {
 		case "ProductGridDynamic":
 			renderProductGridDynamic(b, blk, prods)
@@ -556,6 +675,7 @@ func renderTreeWithData(b *strings.Builder, t Tree, prods []products.Product, po
 		default:
 			renderBlock(b, blk)
 		}
+		closeLayoutWrap(b, blk)
 	}
 }
 

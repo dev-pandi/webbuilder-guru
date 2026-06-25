@@ -4,13 +4,40 @@
 //   - apps/renderer/components/Blocks.tsx     (live render)
 //   - apps/api/internal/exports/render.go     (static export)
 
-export type FieldType = "string" | "textarea" | "number" | "image" | "items";
+// Field kinds the PropEditor can render. New kinds extend this union; the
+// PropEditor's <Field> switch must stay exhaustive.
+export type FieldType =
+  | "string"
+  | "textarea"
+  | "number"
+  | "image"
+  | "items"
+  | "url"
+  | "color"
+  | "select"
+  | "icon";
 
-export type ItemField = { name: string; label: string; type: "string" | "textarea" | "image" };
+export type ItemField =
+  | { name: string; label: string; type: "string" | "textarea" | "image" | "url" | "color" }
+  | { name: string; label: string; type: "select"; options: SelectOption[] };
+
+export type SelectOption = { value: string; label: string };
+
+// Common fields — `group` controls accordion grouping in the PropEditor
+// (defaults to "Konten"). `showIf` hides the field unless its predicate is true.
+type FieldBase = {
+  name: string;
+  label: string;
+  group?: string;
+  help?: string;
+  required?: boolean;
+  showIf?: (props: Record<string, unknown>) => boolean;
+};
 
 export type FieldDef =
-  | { name: string; label: string; type: "string" | "textarea" | "number" | "image"; placeholder?: string }
-  | { name: string; label: string; type: "items"; itemFields: ItemField[] };
+  | (FieldBase & { type: "string" | "textarea" | "number" | "image" | "url" | "color" | "icon"; placeholder?: string })
+  | (FieldBase & { type: "items"; itemFields: ItemField[] })
+  | (FieldBase & { type: "select"; options: SelectOption[] });
 
 export type BlockCategory =
   | "pro"
@@ -64,7 +91,7 @@ export const blockSchemas: BlockSchema[] = [
         type: "items",
         itemFields: [
           { name: "label", label: "Label", type: "string" },
-          { name: "href", label: "Tautan", type: "string" },
+          { name: "href", label: "Tautan", type: "url" },
         ],
       },
     ],
@@ -489,7 +516,7 @@ export const blockSchemas: BlockSchema[] = [
         itemFields: [
           { name: "name", label: "Nama", type: "string" },
           { name: "desc", label: "Deskripsi", type: "textarea" },
-          { name: "href", label: "Tautan", type: "string" },
+          { name: "href", label: "Tautan", type: "url" },
         ],
       },
     ],
@@ -514,7 +541,7 @@ export const blockSchemas: BlockSchema[] = [
         itemFields: [
           { name: "title", label: "Judul", type: "string" },
           { name: "excerpt", label: "Ringkasan", type: "textarea" },
-          { name: "href", label: "Tautan", type: "string" },
+          { name: "href", label: "Tautan", type: "url" },
         ],
       },
     ],
@@ -651,8 +678,14 @@ export const blockSchemas: BlockSchema[] = [
     fields: [
       {
         name: "variant",
-        label: "Tipe (info/success/warning/danger)",
-        type: "string",
+        label: "Tipe",
+        type: "select",
+        options: [
+          { value: "info", label: "Info (biru)" },
+          { value: "success", label: "Sukses (hijau)" },
+          { value: "warning", label: "Peringatan (kuning)" },
+          { value: "danger", label: "Bahaya (merah)" },
+        ],
       },
       { name: "title", label: "Judul", type: "string" },
       { name: "body", label: "Isi", type: "textarea" },
@@ -1086,7 +1119,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "title", label: "Judul", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {
@@ -1105,7 +1138,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "title", label: "Judul", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {
@@ -1128,7 +1161,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "titleAfter", label: "Judul (setelah highlight)", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {
@@ -1147,7 +1180,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "title", label: "Judul", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {
@@ -1168,7 +1201,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "typed", label: "Teks diketik", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {
@@ -1189,7 +1222,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "title", label: "Judul", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {
@@ -1340,7 +1373,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "price", label: "Harga", type: "string" },
       { name: "period", label: "Periode", type: "string" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
       {
         name: "bullets",
         label: "Bullet",
@@ -1463,7 +1496,7 @@ export const blockSchemas: BlockSchema[] = [
       { name: "title", label: "Judul", type: "string" },
       { name: "subtitle", label: "Subjudul", type: "textarea" },
       { name: "ctaLabel", label: "Label CTA", type: "string" },
-      { name: "ctaHref", label: "Tautan CTA", type: "string" },
+      { name: "ctaHref", label: "Tautan CTA", type: "url", showIf: (p) => Boolean(p.ctaLabel) },
     ],
   },
   {

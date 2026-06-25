@@ -24,7 +24,20 @@ export type Page = {
   is_home: boolean;
 };
 
-export type Block = { type: string; props?: Record<string, unknown> };
+export type Block = {
+  type: string;
+  props?: Record<string, unknown>;
+  // Per-block wrapper metadata (padding/margin/maxWidth/align/bg + colour
+  // override). All optional — set in the editor's Layout & Style panel.
+  layout?: {
+    pt?: number; pr?: number; pb?: number; pl?: number;
+    mt?: number; mb?: number;
+    maxWidth?: "full" | "narrow" | "prose" | "wide";
+    align?: "left" | "center" | "right";
+    bg?: string;
+  };
+  themeOverride?: { primary?: string; secondary?: string; bg?: string; fg?: string };
+};
 
 async function fetchJson<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number }> {
   const res = await fetch(`${API}${path}`, { next: { revalidate: 30 } });
