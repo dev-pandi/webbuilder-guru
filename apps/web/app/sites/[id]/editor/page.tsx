@@ -11,6 +11,7 @@ import {
   Monitor,
   Palette,
   Plus,
+  Redo2,
   RotateCcw,
   Save,
   Search,
@@ -18,6 +19,7 @@ import {
   Sparkles,
   Tablet,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,6 +40,10 @@ import { hexToHslComponents, readableForeground } from "@/lib/color";
 import { buildCatalogFontsUrl } from "@/lib/fonts";
 import { PropEditor, type BlockData } from "./PropEditor";
 import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
+import { useBlocksHistory } from "./useBlocksHistory";
+import { SortableBlockList, makeKeys, reorderWithKeys } from "./SortableBlockList";
+import { CanvasBlockToolbar } from "./CanvasOverlay";
+import { EditableText } from "./EditableText";
 
 type PageVersion = {
   id: string;
@@ -87,9 +93,15 @@ export default function EditorPage() {
   const params = useParams<{ id: string }>();
   const [pages, setPages] = useState<Page[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [blocks, setBlocks] = useState<BlockData[]>([]);
+
+  // Block tree lives in a reducer with undo/redo history. selectedIdx +
+  // clipboard are local UI state.
+  const { blocks, setBlocks, replaceAll, undo, redo, canUndo, canRedo } =
+    useBlocksHistory([]);
+  const [blockKeys, setBlockKeys] = useState<string[]>([]);
   const [originalBlocks, setOriginalBlocks] = useState<BlockData[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number>(-1);
+  const [clipboard, setClipboard] = useState<BlockData | null>(null);
   const [saving, setSaving] = useState(false);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -113,7 +125,8 @@ export default function EditorPage() {
         if (home) {
           setCurrentId(home.id);
           const bs = home.tree?.blocks ?? [];
-          setBlocks(bs);
+          replaceAll(bs);
+          setBlockKeys(makeKeys(bs.length));
           setOriginalBlocks(bs);
           setSelectedIdx(bs.length ? 0 : -1);
         }
@@ -143,7 +156,8 @@ export default function EditorPage() {
     if (blocksDirty && !confirm("Ada perubahan belum disimpan. Pindah halaman?")) return;
     setCurrentId(p.id);
     const bs = p.tree?.blocks ?? [];
-    setBlocks(bs);
+    replaceAll(bs);
+    setBlockKeys(makeKeys(bs.length));
     setOriginalBlocks(bs);
     setSelectedIdx(bs.length ? 0 : -1);
   }
@@ -209,13 +223,25 @@ export default function EditorPage() {
     return style as React.CSSProperties;
   }, [theme]);
 
+  // -------- Block mutations --------
+  // Every mutator must keep `blockKeys` aligned with `blocks` so the DnD
+  // sortable context stays consistent across renders.
+
+  function newKey() {
+    return typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  }
+
   function addBlock(type: string, atIdx?: number) {
     const schema = schemaFor(type);
     if (!schema) return;
     const newBlock: BlockData = { type, props: structuredClone(schema.defaults) };
     const insertIdx = atIdx ?? blocks.length;
     const next = [...blocks.slice(0, insertIdx), newBlock, ...blocks.slice(insertIdx)];
+    const keys = [...blockKeys.slice(0, insertIdx), newKey(), ...blockKeys.slice(insertIdx)];
     setBlocks(next);
+    setBlockKeys(keys);
     setSelectedIdx(insertIdx);
     setPaletteOpen(false);
   }
@@ -228,7 +254,9 @@ export default function EditorPage() {
 
   function removeBlock(i: number) {
     const arr = blocks.filter((_, idx) => idx !== i);
+    const keys = blockKeys.filter((_, idx) => idx !== i);
     setBlocks(arr);
+    setBlockKeys(keys);
     if (selectedIdx >= arr.length) setSelectedIdx(arr.length - 1);
   }
 
@@ -237,9 +265,57 @@ export default function EditorPage() {
     if (j < 0 || j >= blocks.length) return;
     const arr = [...blocks];
     [arr[i], arr[j]] = [arr[j], arr[i]];
+    const keys = [...blockKeys];
+    [keys[i], keys[j]] = [keys[j], keys[i]];
     setBlocks(arr);
+    setBlockKeys(keys);
     if (selectedIdx === i) setSelectedIdx(j);
     else if (selectedIdx === j) setSelectedIdx(i);
+  }
+
+  function reorderBlocks(from: number, to: number) {
+    if (from === to) return;
+    const { items, keys } = reorderWithKeys(blocks, blockKeys, from, to);
+    setBlocks(items);
+    setBlockKeys(keys);
+    // Keep selection on the moved item if it was selected.
+    if (selectedIdx === from) setSelectedIdx(to);
+    else if (from < selectedIdx && to >= selectedIdx) setSelectedIdx(selectedIdx - 1);
+    else if (from > selectedIdx && to <= selectedIdx) setSelectedIdx(selectedIdx + 1);
+  }
+
+  function duplicateBlock(i: number) {
+    if (i < 0 || i >= blocks.length) return;
+    const clone: BlockData = structuredClone(blocks[i]);
+    const next = [...blocks.slice(0, i + 1), clone, ...blocks.slice(i + 1)];
+    const keys = [...blockKeys.slice(0, i + 1), newKey(), ...blockKeys.slice(i + 1)];
+    setBlocks(next);
+    setBlockKeys(keys);
+    setSelectedIdx(i + 1);
+  }
+
+  function copyBlock(i: number) {
+    if (i < 0 || i >= blocks.length) return;
+    setClipboard(structuredClone(blocks[i]));
+    toast.success(`Disalin: ${schemaFor(blocks[i].type)?.label ?? blocks[i].type}`);
+  }
+
+  function pasteBlock() {
+    if (!clipboard) return;
+    const insertIdx = selectedIdx >= 0 ? selectedIdx + 1 : blocks.length;
+    const next = [
+      ...blocks.slice(0, insertIdx),
+      structuredClone(clipboard),
+      ...blocks.slice(insertIdx),
+    ];
+    const keys = [
+      ...blockKeys.slice(0, insertIdx),
+      newKey(),
+      ...blockKeys.slice(insertIdx),
+    ];
+    setBlocks(next);
+    setBlockKeys(keys);
+    setSelectedIdx(insertIdx);
   }
 
   async function save() {
@@ -276,18 +352,107 @@ export default function EditorPage() {
     }
   }
 
-  // Keyboard shortcut: Cmd+S / Ctrl+S → save
+  // Keyboard shortcuts — global. We ignore shortcuts while the user is typing
+  // in an input/textarea/contentEditable so inline edit isn't hijacked.
   useEffect(() => {
+    function isEditingTarget(t: EventTarget | null): boolean {
+      const el = t as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable === true
+      );
+    }
+
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+      const mod = e.metaKey || e.ctrlKey;
+      const editing = isEditingTarget(e.target);
+
+      // ⌘S — save (always, even while editing — user expectation)
+      if (mod && e.key.toLowerCase() === "s") {
         e.preventDefault();
         save();
+        return;
+      }
+
+      // ⌘Z / ⌘⇧Z — undo / redo
+      if (mod && e.key.toLowerCase() === "z") {
+        // Don't fight the browser's built-in undo when typing.
+        if (editing) return;
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "y") {
+        if (editing) return;
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      // ⌘D — duplicate selected
+      if (mod && e.key.toLowerCase() === "d") {
+        if (editing) return;
+        e.preventDefault();
+        if (selectedIdx >= 0) duplicateBlock(selectedIdx);
+        return;
+      }
+
+      // ⌘C / ⌘V — copy/paste selected block
+      if (mod && e.key.toLowerCase() === "c") {
+        if (editing) return;
+        if (selectedIdx >= 0) {
+          e.preventDefault();
+          copyBlock(selectedIdx);
+        }
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "v") {
+        if (editing) return;
+        if (clipboard) {
+          e.preventDefault();
+          pasteBlock();
+        }
+        return;
+      }
+
+      // Delete / Backspace — remove selected block
+      if ((e.key === "Delete" || e.key === "Backspace") && !editing) {
+        if (selectedIdx >= 0) {
+          e.preventDefault();
+          const schema = schemaFor(blocks[selectedIdx]?.type ?? "");
+          if (confirm(`Hapus block "${schema?.label ?? blocks[selectedIdx]?.type}"?`)) {
+            removeBlock(selectedIdx);
+          }
+        }
+        return;
+      }
+
+      // / — open palette
+      if (e.key === "/" && !editing) {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+
+      // ↑ / ↓ — navigate block list (when not editing)
+      if (!editing && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        if (blocks.length === 0) return;
+        e.preventDefault();
+        const dir = e.key === "ArrowUp" ? -1 : 1;
+        const next = Math.max(0, Math.min(blocks.length - 1, selectedIdx + dir));
+        setSelectedIdx(next);
+        return;
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blocks, current]);
+  }, [blocks, current, selectedIdx, clipboard, canUndo, canRedo]);
 
   const previewWidth = device === "mobile" ? 375 : device === "tablet" ? 768 : "100%";
 
@@ -357,82 +522,26 @@ export default function EditorPage() {
             </Button>
           </div>
 
-          <ul className="space-y-1">
-            {blocks.map((b, i) => {
-              const schema = schemaFor(b.type);
-              const active = selectedIdx === i;
-              return (
-                <li
-                  key={i}
-                  onClick={() => setSelectedIdx(i)}
-                  className={cn(
-                    "group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-2 text-sm transition-all",
-                    active
-                      ? "border-primary/40 bg-primary/5 shadow-sm"
-                      : "border-transparent hover:border-input hover:bg-muted/50",
-                  )}
-                >
-                  <span className="text-xs">{schema?.emoji ?? "🧩"}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium">
-                      {schema?.label ?? b.type}
-                    </div>
-                  </div>
-                  <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveBlock(i, -1);
-                      }}
-                      disabled={i === 0}
-                      title="Naik"
-                    >
-                      <ChevronUp className="size-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveBlock(i, 1);
-                      }}
-                      disabled={i === blocks.length - 1}
-                      title="Turun"
-                    >
-                      <ChevronDown className="size-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Hapus block "${schema?.label ?? b.type}"?`)) removeBlock(i);
-                      }}
-                      title="Hapus"
-                    >
-                      <Trash2 className="size-3" />
-                    </Button>
-                  </span>
-                </li>
-              );
-            })}
-            {blocks.length === 0 && (
-              <li>
-                <button
-                  onClick={() => setPaletteOpen(true)}
-                  className="flex w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-input py-8 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
-                >
-                  <Plus className="size-4" />
-                  Tambah block pertama
-                </button>
-              </li>
-            )}
-          </ul>
+          {blocks.length === 0 ? (
+            <button
+              onClick={() => setPaletteOpen(true)}
+              className="flex w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-input py-8 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+            >
+              <Plus className="size-4" />
+              Tambah block pertama
+            </button>
+          ) : (
+            <SortableBlockList
+              blocks={blocks}
+              keys={blockKeys}
+              selectedIdx={selectedIdx}
+              onSelect={setSelectedIdx}
+              onReorder={reorderBlocks}
+              onMove={moveBlock}
+              onDuplicate={duplicateBlock}
+              onDelete={removeBlock}
+            />
+          )}
         </div>
       </aside>
 
@@ -468,9 +577,32 @@ export default function EditorPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+            {/* <span className="hidden truncate text-xs text-muted-foreground sm:inline">
               {current?.slug ? `/${current.slug}` : "—"}
-            </span>
+            </span> */}
+            {/* Undo / Redo — visible affordance for the new history capability */}
+            <div className="inline-flex items-center gap-0.5 rounded-md border bg-background p-0.5 shadow-sm">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={undo}
+                disabled={!canUndo}
+                title="Undo (⌘Z)"
+              >
+                <Undo2 className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={redo}
+                disabled={!canRedo}
+                title="Redo (⌘⇧Z)"
+              >
+                <Redo2 className="size-3.5" />
+              </Button>
+            </div>
             <Button
               variant="outline"
               size="sm"
@@ -528,9 +660,14 @@ export default function EditorPage() {
             <div className="wb-canvas" style={canvasStyle}>
               <Preview
                 blocks={blocks}
+                keys={blockKeys}
                 onSelect={setSelectedIdx}
                 selectedIdx={selectedIdx}
                 onAdd={() => setPaletteOpen(true)}
+                onUpdate={updateBlock}
+                onMove={moveBlock}
+                onDuplicate={duplicateBlock}
+                onDelete={removeBlock}
               />
             </div>
           </div>
@@ -557,12 +694,18 @@ export default function EditorPage() {
               {blocks.length} block · halaman {pages.length}
             </span>
           </div>
-          <div className="hidden items-center gap-3 md:flex">
-            <Kbd>⌘ S</Kbd>
-            <span>Simpan</span>
+          <div className="hidden items-center gap-2 md:flex">
+            <Kbd>⌘Z</Kbd>
+            <span>Undo</span>
             <Separator orientation="vertical" className="h-3" />
-            <Kbd>Esc</Kbd>
-            <span>Tutup dialog</span>
+            <Kbd>⌘D</Kbd>
+            <span>Duplikat</span>
+            <Separator orientation="vertical" className="h-3" />
+            <Kbd>/</Kbd>
+            <span>Tambah</span>
+            <Separator orientation="vertical" className="h-3" />
+            <Kbd>⌘S</Kbd>
+            <span>Simpan</span>
           </div>
         </div>
       </section>
@@ -988,14 +1131,24 @@ function DeviceBtn({
 
 function Preview({
   blocks,
+  keys,
   onSelect,
   selectedIdx,
   onAdd,
+  onUpdate,
+  onMove,
+  onDuplicate,
+  onDelete,
 }: {
   blocks: BlockData[];
+  keys: string[];
   onSelect: (i: number) => void;
   selectedIdx: number;
   onAdd: () => void;
+  onUpdate: (i: number, next: BlockData) => void;
+  onMove: (i: number, dir: -1 | 1) => void;
+  onDuplicate: (i: number) => void;
+  onDelete: (i: number) => void;
 }) {
   if (blocks.length === 0) {
     return (
@@ -1018,21 +1171,30 @@ function Preview({
     <div className="animate-in fade-in duration-200">
       {blocks.map((b, i) => (
         <div
-          key={i}
+          key={keys[i] ?? i}
           onClick={() => onSelect(i)}
           className={cn(
-            "relative cursor-pointer transition-all duration-150",
+            "group/blk relative cursor-pointer transition-all duration-150",
             selectedIdx === i
               ? "outline outline-2 outline-primary"
               : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
           )}
         >
           {selectedIdx === i && (
-            <span className="pointer-events-none absolute right-2 top-2 z-10 rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm">
-              {schemaFor(b.type)?.label ?? b.type}
-            </span>
+            <CanvasBlockToolbar
+              block={b}
+              index={i}
+              total={blocks.length}
+              onMove={(dir) => onMove(i, dir)}
+              onDuplicate={() => onDuplicate(i)}
+              onDelete={() => onDelete(i)}
+            />
           )}
-          <BlockView block={b} />
+          <BlockView
+            block={b}
+            onUpdate={(next) => onUpdate(i, next)}
+            editable={selectedIdx === i}
+          />
         </div>
       ))}
     </div>
@@ -1041,8 +1203,23 @@ function Preview({
 
 // ---------- Inline block preview ----------
 
-function BlockView({ block }: { block: BlockData }) {
+function BlockView({
+  block,
+  onUpdate,
+  editable,
+}: {
+  block: BlockData;
+  onUpdate?: (next: BlockData) => void;
+  editable?: boolean;
+}) {
   const p = block.props ?? {};
+  // setProp commits a single field back to the block tree. Only used by the
+  // inline-edit branches — most block types still read-only in the canvas and
+  // are edited via the side panel.
+  function setProp(name: string, value: unknown) {
+    if (!onUpdate) return;
+    onUpdate({ ...block, props: { ...p, [name]: value } });
+  }
   switch (block.type) {
     case "Navbar":
       return (
@@ -1060,8 +1237,29 @@ function BlockView({ block }: { block: BlockData }) {
     case "Hero":
       return (
         <div className="px-6 py-16 text-center">
-          <h1 className="text-3xl font-bold">{String(p.title ?? "")}</h1>
-          <p className="mt-2 text-muted-foreground">{String(p.subtitle ?? "")}</p>
+          {editable ? (
+            <EditableText
+              as="h1"
+              className="text-3xl font-bold"
+              value={String(p.title ?? "")}
+              onChange={(v) => setProp("title", v)}
+              placeholder="Judul hero…"
+            />
+          ) : (
+            <h1 className="text-3xl font-bold">{String(p.title ?? "")}</h1>
+          )}
+          {editable ? (
+            <EditableText
+              as="p"
+              className="mt-2 text-muted-foreground"
+              value={String(p.subtitle ?? "")}
+              onChange={(v) => setProp("subtitle", v)}
+              placeholder="Subjudul…"
+              multiline
+            />
+          ) : (
+            <p className="mt-2 text-muted-foreground">{String(p.subtitle ?? "")}</p>
+          )}
           {p.ctaLabel ? (
             <button className="mt-4 rounded-lg bg-primary px-4 py-2 text-primary-foreground">
               {String(p.ctaLabel)}
@@ -1079,10 +1277,31 @@ function BlockView({ block }: { block: BlockData }) {
               {String(p.eyebrow)}
             </div>
           ) : null}
-          <h1 className="relative text-4xl font-bold tracking-tight">{String(p.title ?? "")}</h1>
-          <p className="relative mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
-            {String(p.subtitle ?? "")}
-          </p>
+          {editable ? (
+            <EditableText
+              as="h1"
+              className="relative text-4xl font-bold tracking-tight"
+              value={String(p.title ?? "")}
+              onChange={(v) => setProp("title", v)}
+              placeholder="Judul…"
+            />
+          ) : (
+            <h1 className="relative text-4xl font-bold tracking-tight">{String(p.title ?? "")}</h1>
+          )}
+          {editable ? (
+            <EditableText
+              as="p"
+              className="relative mx-auto mt-3 max-w-xl text-sm text-muted-foreground"
+              value={String(p.subtitle ?? "")}
+              onChange={(v) => setProp("subtitle", v)}
+              placeholder="Subjudul…"
+              multiline
+            />
+          ) : (
+            <p className="relative mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
+              {String(p.subtitle ?? "")}
+            </p>
+          )}
           <div className="relative mt-6 flex justify-center gap-2">
             {p.ctaLabel ? (
               <button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-md">
@@ -1098,14 +1317,56 @@ function BlockView({ block }: { block: BlockData }) {
         </div>
       );
     case "Heading":
-      return <h2 className="px-6 py-4 text-2xl font-bold">{String(p.text ?? "")}</h2>;
+      return editable ? (
+        <EditableText
+          as="h2"
+          className="px-6 py-4 text-2xl font-bold"
+          value={String(p.text ?? "")}
+          onChange={(v) => setProp("text", v)}
+          placeholder="Judul…"
+        />
+      ) : (
+        <h2 className="px-6 py-4 text-2xl font-bold">{String(p.text ?? "")}</h2>
+      );
     case "Text":
-      return <p className="whitespace-pre-line px-6 py-2">{String(p.body ?? "")}</p>;
+      return editable ? (
+        <EditableText
+          as="p"
+          className="whitespace-pre-line px-6 py-2"
+          value={String(p.body ?? "")}
+          onChange={(v) => setProp("body", v)}
+          placeholder="Paragraf…"
+          multiline
+        />
+      ) : (
+        <p className="whitespace-pre-line px-6 py-2">{String(p.body ?? "")}</p>
+      );
     case "Section":
       return (
         <div className="px-6 py-6">
-          {p.title ? <h3 className="text-lg font-semibold">{String(p.title)}</h3> : null}
-          <p className="mt-1 whitespace-pre-line">{String(p.body ?? "")}</p>
+          {editable ? (
+            <EditableText
+              as="h3"
+              className="text-lg font-semibold"
+              value={String(p.title ?? "")}
+              onChange={(v) => setProp("title", v)}
+              placeholder="Judul section…"
+            />
+          ) : p.title ? (
+            <h3 className="text-lg font-semibold">{String(p.title)}</h3>
+          ) : null}
+          {editable ? (
+            <EditableText
+              as="p"
+              className="mt-1 whitespace-pre-line"
+              value={String(p.body ?? "")}
+              onChange={(v) => setProp("body", v)}
+              placeholder="Isi…"
+              multiline
+            />
+          ) : (
+            <p className="mt-1 whitespace-pre-line">{String(p.body ?? "")}</p>
+          )}
         </div>
       );
     case "FeatureList":

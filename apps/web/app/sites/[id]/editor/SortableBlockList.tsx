@@ -1,0 +1,239 @@
+"use client";
+
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ChevronDown, ChevronUp, Copy, GripVertical, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { schemaFor } from "@/lib/blocks";
+import type { BlockData } from "./PropEditor";
+
+// Stable string IDs for dnd-kit. We can't use array index — when items move,
+// the indices change and dnd-kit gets confused. We need an id that survives
+// the move. Approach: synthesise from index + type, but maintain a stable
+// mapping via the caller's `keys` array so dnd survives reorders.
+//
+// In practice the caller is wb editor where blocks have no stable id field;
+// we cope by tracking a parallel keys array (one symbol per block) that
+// follows the same reorders.
+
+export function SortableBlockList({
+  blocks,
+  keys,
+  selectedIdx,
+  onSelect,
+  onReorder,
+  onMove,
+  onDuplicate,
+  onDelete,
+}: {
+  blocks: BlockData[];
+  keys: string[];
+  selectedIdx: number;
+  onSelect: (i: number) => void;
+  onReorder: (from: number, to: number) => void;
+  onMove: (i: number, dir: -1 | 1) => void;
+  onDuplicate: (i: number) => void;
+  onDelete: (i: number) => void;
+}) {
+  // Pointer sensor with small activation distance so a click still selects
+  // (not every mousedown turns into a drag).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const from = keys.indexOf(String(active.id));
+    const to = keys.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    onReorder(from, to);
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <SortableContext items={keys} strategy={verticalListSortingStrategy}>
+        <ul className="space-y-1">
+          {blocks.map((b, i) => (
+            <SortableRow
+              key={keys[i]}
+              id={keys[i]}
+              block={b}
+              index={i}
+              total={blocks.length}
+              active={selectedIdx === i}
+              onSelect={() => onSelect(i)}
+              onMove={(dir) => onMove(i, dir)}
+              onDuplicate={() => onDuplicate(i)}
+              onDelete={() => onDelete(i)}
+            />
+          ))}
+        </ul>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableRow({
+  id,
+  block,
+  index,
+  total,
+  active,
+  onSelect,
+  onMove,
+  onDuplicate,
+  onDelete,
+}: {
+  id: string;
+  block: BlockData;
+  index: number;
+  total: number;
+  active: boolean;
+  onSelect: () => void;
+  onMove: (dir: -1 | 1) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+  const schema = schemaFor(block.type);
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+    zIndex: isDragging ? 10 : "auto",
+  };
+
+  return (
+    <li ref={setNodeRef} style={style}>
+      <div
+        onClick={onSelect}
+        className={cn(
+          "group flex cursor-pointer items-center gap-1.5 rounded-md border px-1.5 py-2 text-sm transition-all",
+          active
+            ? "border-primary/40 bg-primary/5 shadow-sm"
+            : "border-transparent hover:border-input hover:bg-muted/50",
+          isDragging && "border-primary shadow-lg",
+        )}
+      >
+        {/* Drag handle — separate hit area so clicks elsewhere still select */}
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="cursor-grab text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing"
+          title="Geser untuk pindah"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+
+        <span className="text-xs">{schema?.emoji ?? "🧩"}</span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium">
+            {schema?.label ?? block.type}
+          </div>
+        </div>
+
+        {/* Quick actions — visible on hover/active */}
+        <span
+          className={cn(
+            "flex shrink-0 gap-0.5 transition-opacity",
+            active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMove(-1);
+            }}
+            disabled={index === 0}
+            title="Naik"
+          >
+            <ChevronUp className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMove(1);
+            }}
+            disabled={index === total - 1}
+            title="Turun"
+          >
+            <ChevronDown className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDuplicate();
+            }}
+            title="Duplikat (⌘D)"
+          >
+            <Copy className="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (confirm(`Hapus block "${schema?.label ?? block.type}"?`)) onDelete();
+            }}
+            title="Hapus (Del)"
+          >
+            <Trash2 className="size-3" />
+          </Button>
+        </span>
+      </div>
+    </li>
+  );
+}
+
+// Helper: build a fresh keys array for `n` blocks. Uses crypto.randomUUID()
+// when available so keys survive renders + reorders.
+export function makeKeys(n: number): string[] {
+  return Array.from({ length: n }, () =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2),
+  );
+}
+
+// Reorder keys + blocks together when a drag completes.
+export function reorderWithKeys<T>(items: T[], keys: string[], from: number, to: number): {
+  items: T[];
+  keys: string[];
+} {
+  return {
+    items: arrayMove(items, from, to),
+    keys: arrayMove(keys, from, to),
+  };
+}

@@ -496,3 +496,12 @@
   .wb-pro-orbit .wb-pro-orbit-ring,
   .wb-pro-orbit .wb-pro-orbit-item { animation: none !important; }
 }
+
+/* EditableText placeholder when contentEditable is empty */
+.wb-editable:empty::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  opacity: 0.5;
+  font-style: italic;
+}
+
