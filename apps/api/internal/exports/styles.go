@@ -174,6 +174,11 @@ img { max-width: 100%%; height: auto; display: block; }
 
 .wb-footer { margin-top: 4rem; border-top: 1px solid #e5e7eb; }
 .wb-footer .wb-container { padding: 1.5rem; text-align: center; font-size: 0.875rem; opacity: 0.7; }
+
+/* Container + Columns primitives — Columns auto-stacks to 1 column on small screens */
+.wb-container-block, .wb-columns-block { padding: 1.5rem; }
+.wb-container-inner, .wb-columns-grid { max-width: 1024px; margin-left: auto; margin-right: auto; }
+@media (max-width: 768px) { .wb-columns-grid { grid-template-columns: 1fr !important; } }
 `, primary, secondary, bg, fg, radius, heading, body)
 
 	// Append the Pro block stylesheet — same rules used in renderer + editor

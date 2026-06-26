@@ -14,15 +14,16 @@ import (
 	"github.com/webbuilder/api/internal/sites"
 )
 
-// Block matches the JSON tree shape: { type, props, layout?, themeOverride? }.
+// Block matches the JSON tree shape: { type, props, children?, layout?, themeOverride? }.
 // `Layout` + `ThemeOverride` are optional per-block metadata authored in the
-// editor's Layout & Style panel — see apps/web/lib/blockLayout.ts for the
-// authoritative shape.
+// editor's Layout & Style panel. `Children` populated only for container
+// blocks (Container, Columns) — see apps/web/lib/blocks.ts.
 type Block struct {
-	Type          string                 `json:"type"`
-	Props         map[string]any         `json:"props,omitempty"`
-	Layout        *BlockLayout           `json:"layout,omitempty"`
-	ThemeOverride *BlockThemeOverride    `json:"themeOverride,omitempty"`
+	Type          string              `json:"type"`
+	Props         map[string]any      `json:"props,omitempty"`
+	Children      []Block             `json:"children,omitempty"`
+	Layout        *BlockLayout        `json:"layout,omitempty"`
+	ThemeOverride *BlockThemeOverride `json:"themeOverride,omitempty"`
 }
 
 type BlockLayout struct {
@@ -409,6 +410,49 @@ func renderBlock(b *strings.Builder, blk Block) {
 
 	case "Footer":
 		fmt.Fprintf(b, `<footer class="wb-footer"><div class="wb-container">%s</div></footer>`, esc(str(p, "copyright")))
+
+	// ==========================================================================
+	// CONTAINER primitives — recursive. Children render via renderBlock too.
+	// Layout panel + per-block colour override on the container apply to the
+	// wrapper via openLayoutWrap (already in the call site), so we only emit
+	// the structural shell here.
+	// ==========================================================================
+
+	case "Container":
+		gap := strOr(p, "gap", "1rem")
+		fmt.Fprintf(b, `<section class="wb-container-block"><div class="wb-container-inner" style="display:flex;flex-direction:column;gap:%s">`, escAttr(gap))
+		for _, child := range blk.Children {
+			renderBlock(b, child)
+		}
+		b.WriteString(`</div></section>`)
+
+	case "Columns":
+		cols := intOr(p, "columns", 2)
+		if cols < 1 {
+			cols = 1
+		}
+		if cols > 4 {
+			cols = 4
+		}
+		gap := strOr(p, "gap", "1rem")
+		// Distribute children round-robin across columns — matches editor +
+		// renderer behaviour so previews and live agree.
+		cells := make([][]Block, cols)
+		for ci, child := range blk.Children {
+			cells[ci%cols] = append(cells[ci%cols], child)
+		}
+		fmt.Fprintf(b,
+			`<section class="wb-columns-block"><div class="wb-columns-grid" style="display:grid;grid-template-columns:repeat(%d,minmax(0,1fr));gap:%s">`,
+			cols, escAttr(gap),
+		)
+		for _, col := range cells {
+			b.WriteString(`<div style="display:flex;flex-direction:column;gap:1rem">`)
+			for _, child := range col {
+				renderBlock(b, child)
+			}
+			b.WriteString(`</div>`)
+		}
+		b.WriteString(`</div></section>`)
 
 	// ==========================================================================
 	// PRO blocks — markup matches renderer/editor 1:1. All animation lives in
