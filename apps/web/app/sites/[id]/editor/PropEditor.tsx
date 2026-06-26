@@ -21,6 +21,10 @@ export type BlockData = {
   // to know about layout/colour overrides.
   layout?: BlockLayout;
   themeOverride?: ThemeOverride;
+  // Children — populated only for container-style blocks (Container, Columns).
+  // Renderer recursively walks this; non-container blocks ignore the field.
+  // Schema marks containers via the optional `container: true` flag.
+  children?: BlockData[];
 };
 
 const DEFAULT_GROUP = "Konten";

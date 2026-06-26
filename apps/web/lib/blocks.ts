@@ -76,7 +76,17 @@ export type BlockSchema = {
   emoji?: string;
   defaults: Record<string, unknown>;
   fields: FieldDef[];
+  // `container: true` marks a block whose children should be rendered as
+  // nested blocks (recursive). The editor surfaces a "Konten Dalam" section
+  // for these blocks so users can add/reorder/delete inner content. The
+  // renderer + Go export walk `children` recursively for these types.
+  container?: boolean;
 };
+
+// Convenience — does this schema accept nested blocks?
+export function isContainer(type: string): boolean {
+  return Boolean(schemaFor(type)?.container);
+}
 
 export const blockSchemas: BlockSchema[] = [
   // ---------- Layout ----------
@@ -666,6 +676,66 @@ export const blockSchemas: BlockSchema[] = [
     description: "Spasi vertikal kosong",
     defaults: { size: 64 },
     fields: [{ name: "size", label: "Tinggi (px)", type: "number" }],
+  },
+
+  // ---------- Container Primitives ----------
+  // These accept nested blocks via the BlockData.children field.
+  {
+    type: "Container",
+    label: "Container",
+    category: "layout",
+    emoji: "📦",
+    container: true,
+    description: "Wrapper untuk grup block — atur padding/max-width via Layout panel",
+    defaults: { gap: "1rem" },
+    fields: [
+      {
+        name: "gap",
+        label: "Jarak antar konten",
+        type: "select",
+        options: [
+          { value: "0", label: "Tanpa jarak" },
+          { value: "0.5rem", label: "Kecil (8px)" },
+          { value: "1rem", label: "Sedang (16px)" },
+          { value: "2rem", label: "Besar (32px)" },
+          { value: "4rem", label: "Sangat besar (64px)" },
+        ],
+        help: "Spasi vertikal antar child block.",
+      },
+    ],
+  },
+  {
+    type: "Columns",
+    label: "Columns",
+    category: "layout",
+    emoji: "🟰",
+    container: true,
+    description: "Grid 2/3/4 kolom — tiap kolom bisa diisi block lain",
+    defaults: { columns: 2, gap: "1rem" },
+    fields: [
+      {
+        name: "columns",
+        label: "Jumlah kolom",
+        type: "select",
+        options: [
+          { value: "2", label: "2 kolom" },
+          { value: "3", label: "3 kolom" },
+          { value: "4", label: "4 kolom" },
+        ],
+        help: "Di mobile (≤768px) otomatis stack jadi 1 kolom.",
+      },
+      {
+        name: "gap",
+        label: "Jarak antar kolom",
+        type: "select",
+        options: [
+          { value: "0.5rem", label: "Kecil (8px)" },
+          { value: "1rem", label: "Sedang (16px)" },
+          { value: "2rem", label: "Besar (32px)" },
+          { value: "3rem", label: "Sangat besar (48px)" },
+        ],
+      },
+    ],
   },
 
   // ---------- Konten ----------

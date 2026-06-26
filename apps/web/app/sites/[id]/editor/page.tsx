@@ -35,7 +35,7 @@ import {
 import { toast } from "sonner";
 import { marked } from "marked";
 import { api } from "@/lib/api";
-import { blockSchemas, blockSchemasByCategory, schemaFor } from "@/lib/blocks";
+import { blockSchemas, blockSchemasByCategory, isContainer, schemaFor } from "@/lib/blocks";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -59,6 +59,7 @@ import { CanvasBlockToolbar } from "./CanvasOverlay";
 import { EditableText } from "./EditableText";
 import { PageSettingsDialog } from "./PageSettingsDialog";
 import { MiniMap } from "./MiniMap";
+import { ChildrenEditor } from "./ChildrenEditor";
 
 type PageVersion = {
   id: string;
@@ -1150,6 +1151,15 @@ export default function EditorPage() {
               block={blocks[selectedIdx]}
               onChange={(next) => updateBlock(selectedIdx, next)}
             />
+            {isContainer(blocks[selectedIdx].type) && (
+              <>
+                <Separator className="my-4" />
+                <ChildrenEditor
+                  block={blocks[selectedIdx]}
+                  onChange={(next) => updateBlock(selectedIdx, next)}
+                />
+              </>
+            )}
             <Separator className="my-4" />
             <LayoutPanel
               block={blocks[selectedIdx]}
@@ -1625,6 +1635,20 @@ function HistoryDialog({
 }
 
 // ---------- Tiny helpers ----------
+
+function EmptyContainerHint({ label, compact }: { label: string; compact?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center gap-1.5 rounded-md border border-dashed border-muted-foreground/30 text-[11px] text-muted-foreground",
+        compact ? "py-4" : "py-8",
+      )}
+    >
+      <Plus className="size-3" />
+      {label}
+    </div>
+  );
+}
 
 function PaletteTab({
   active,
@@ -2390,6 +2414,56 @@ function BlockView({
           </span>
         </div>
       );
+
+    case "Container": {
+      const children = block.children ?? [];
+      const gap = String(p.gap ?? "1rem");
+      return (
+        <div
+          className="flex flex-col px-6 py-6"
+          style={{ gap }}
+        >
+          {children.length === 0 ? (
+            <EmptyContainerHint label="Container kosong" />
+          ) : (
+            children.map((child, ci) => (
+              <BlockView key={ci} block={child} />
+            ))
+          )}
+        </div>
+      );
+    }
+
+    case "Columns": {
+      const children = block.children ?? [];
+      const colCount = Math.max(1, Math.min(4, Number(p.columns ?? 2)));
+      const gap = String(p.gap ?? "1rem");
+      // Render exactly `colCount` columns; children with index >= colCount
+      // overflow into nothing for now (user can adjust via panel).
+      const cells: BlockData[][] = Array.from({ length: colCount }, () => []);
+      children.forEach((c, ci) => {
+        cells[ci % colCount].push(c);
+      });
+      return (
+        <div
+          className="grid px-6 py-6 max-md:grid-cols-1"
+          style={{
+            gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+            gap,
+          }}
+        >
+          {cells.map((col, ci) => (
+            <div key={ci} className="flex flex-col gap-3">
+              {col.length === 0 ? (
+                <EmptyContainerHint label={`Kolom ${ci + 1} kosong`} compact />
+              ) : (
+                col.map((child, k) => <BlockView key={k} block={child} />)
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
 
     case "Quote":
       return (

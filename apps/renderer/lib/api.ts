@@ -33,6 +33,9 @@ export type Page = {
 export type Block = {
   type: string;
   props?: Record<string, unknown>;
+  // Nested children — populated only for container-style blocks (Container,
+  // Columns). The renderer recursively walks this when present.
+  children?: Block[];
   // Per-block wrapper metadata (padding/margin/maxWidth/align/bg + colour
   // override). All optional — set in the editor's Layout & Style panel.
   layout?: {

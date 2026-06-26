@@ -779,6 +779,49 @@ function BlockView({ block }: { block: Block }) {
     case "Spacer":
       return <div style={{ height: `${Number(p.size ?? 64)}px` }} aria-hidden />;
 
+    case "Container": {
+      const children = block.children ?? [];
+      const gap = String(p.gap ?? "1rem");
+      return (
+        <section className="px-6 py-6">
+          <div className="mx-auto flex max-w-5xl flex-col" style={{ gap }}>
+            {children.map((c, i) => (
+              <BlockView key={i} block={c} />
+            ))}
+          </div>
+        </section>
+      );
+    }
+
+    case "Columns": {
+      const children = block.children ?? [];
+      const colCount = Math.max(1, Math.min(4, Number(p.columns ?? 2)));
+      const gap = String(p.gap ?? "1rem");
+      const cells: Block[][] = Array.from({ length: colCount }, () => []);
+      children.forEach((c, ci) => {
+        cells[ci % colCount].push(c);
+      });
+      return (
+        <section className="px-6 py-6">
+          <div
+            className="mx-auto grid max-w-5xl max-md:grid-cols-1"
+            style={{
+              gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+              gap,
+            }}
+          >
+            {cells.map((col, ci) => (
+              <div key={ci} className="flex flex-col gap-4">
+                {col.map((c, k) => (
+                  <BlockView key={k} block={c} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
     case "Quote":
       return (
         <section className="mx-auto max-w-3xl px-6 py-16">
