@@ -60,6 +60,20 @@ import { EditableText } from "./EditableText";
 import { PageSettingsDialog } from "./PageSettingsDialog";
 import { MiniMap } from "./MiniMap";
 import { ChildrenEditor } from "./ChildrenEditor";
+import {
+  duplicateAtPath,
+  getAt,
+  insertAt,
+  keyToPath,
+  moveAtPath,
+  pathKey,
+  removeMany,
+  reorderSiblings,
+  samePath,
+  siblingsOf,
+  updateAt,
+  type Path,
+} from "./paths";
 
 type PageVersion = {
   id: string;
@@ -121,13 +135,18 @@ export default function EditorPage() {
     useBlocksHistory([]);
   const [blockKeys, setBlockKeys] = useState<string[]>([]);
   const [originalBlocks, setOriginalBlocks] = useState<BlockData[]>([]);
-  const [selectedIdx, setSelectedIdx] = useState<number>(-1);
-  // selectedIndices is the FULL multi-select set. selectedIdx is the "anchor"
-  // (last clicked, also the block whose props show in the right panel).
-  // Single-selection codepath: selectedIndices stays in sync as a 1-item set.
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  // Clipboard is an array — copy/paste works on the multi-selection.
+  // Selection is PATH-based so it can point at any block in the nested tree.
+  // `selectedPath` is the anchor (last clicked; the block whose props show in
+  // the right panel). `selectedPaths` is the full multi-select set, encoded
+  // as "1.2.3" strings for Set<string> membership.
+  const [selectedPath, setSelectedPath] = useState<Path | null>(null);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  // Clipboard is an array of full BlockData clones.
   const [clipboard, setClipboard] = useState<BlockData[] | null>(null);
+
+  // Derived: the anchor's flat top-level index (null when nothing selected or
+  // selection is inside a container). Only used for sidebar highlighting.
+  const selectedIdx = selectedPath && selectedPath.length === 1 ? selectedPath[0] : -1;
   const [saving, setSaving] = useState(false);
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -196,7 +215,9 @@ export default function EditorPage() {
           replaceAll(bs);
           setBlockKeys(makeKeys(bs.length));
           setOriginalBlocks(bs);
-          setSelectedIdx(bs.length ? 0 : -1);
+          const initial: Path | null = bs.length ? [0] : null;
+          setSelectedPath(initial);
+          setSelectedPaths(initial ? new Set([pathKey(initial)]) : new Set());
         }
       })
       .catch((e) => toast.error((e as Error).message));
@@ -227,41 +248,59 @@ export default function EditorPage() {
     replaceAll(bs);
     setBlockKeys(makeKeys(bs.length));
     setOriginalBlocks(bs);
-    setSelectedIdx(bs.length ? 0 : -1);
-    setSelectedIndices(bs.length ? new Set([0]) : new Set());
+    const initial: Path | null = bs.length ? [0] : null;
+    setSelectedPath(initial);
+    setSelectedPaths(initial ? new Set([pathKey(initial)]) : new Set());
   }
 
   /**
-   * Unified selection handler. Supports:
-   *   - shift-click: extend range from anchor to clicked
-   *   - meta/ctrl-click: toggle the clicked index in the set
-   *   - plain click: single-select (clears the set)
-   * The PropEditor + Layout panels always read the LAST clicked block
-   * (`selectedIdx`) so bulk operations work without ambiguity over which
-   * block is the "current" one.
+   * Unified path-based selection handler.
+   *   - shift-click: extend range within the SAME PARENT as the anchor.
+   *     Cross-parent shift-click falls back to single-select — semantically
+   *     ambiguous anyway (Figma does the same).
+   *   - meta/ctrl-click: toggle the clicked path in the set.
+   *   - plain click: single-select (clears the set to just this path).
    */
-  function selectAt(i: number, mods?: { shift?: boolean; meta?: boolean }) {
-    if (mods?.shift && selectedIdx >= 0 && selectedIdx !== i) {
-      const lo = Math.min(selectedIdx, i);
-      const hi = Math.max(selectedIdx, i);
-      const range = new Set<number>();
-      for (let k = lo; k <= hi; k++) range.add(k);
-      setSelectedIndices(range);
-      setSelectedIdx(i);
-      return;
+  function selectAt(path: Path, mods?: { shift?: boolean; meta?: boolean }) {
+    const key = pathKey(path);
+    if (mods?.shift && selectedPath && !samePath(selectedPath, path)) {
+      // Only extend if both paths share the same parent (siblings).
+      const sameParent =
+        path.length === selectedPath.length &&
+        path.slice(0, -1).every((n, i) => n === selectedPath[i]);
+      if (sameParent) {
+        const parent = path.slice(0, -1);
+        const lo = Math.min(
+          selectedPath[selectedPath.length - 1],
+          path[path.length - 1],
+        );
+        const hi = Math.max(
+          selectedPath[selectedPath.length - 1],
+          path[path.length - 1],
+        );
+        const range = new Set<string>();
+        for (let k = lo; k <= hi; k++) range.add(pathKey([...parent, k]));
+        setSelectedPaths(range);
+        setSelectedPath(path);
+        return;
+      }
     }
     if (mods?.meta) {
-      setSelectedIndices((prev) => {
+      setSelectedPaths((prev) => {
         const next = new Set(prev);
-        if (next.has(i)) next.delete(i);
-        else next.add(i);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
         return next;
       });
-      setSelectedIdx(i);
+      setSelectedPath(path);
       return;
     }
-    setSelectedIndices(new Set([i]));
-    setSelectedIdx(i);
+    setSelectedPaths(new Set([key]));
+    setSelectedPath(path);
+  }
+  // Convenience for top-level selection (still needed by SortableBlockList).
+  function selectTopLevel(i: number, mods?: { shift?: boolean; meta?: boolean }) {
+    selectAt([i], mods);
   }
 
   // Dirty checks — JSON.stringify is fine for the typical block-tree size and
@@ -349,127 +388,159 @@ export default function EditorPage() {
     insertNewBlock(structuredClone(b), atIdx);
   }
 
+  // Insert a top-level block. Nested inserts go through ChildrenEditor which
+  // operates on the parent's children field directly; keeping this handler
+  // top-level-only avoids two conflicting insertion paths.
   function insertNewBlock(block: BlockData, atIdx?: number) {
     const insertIdx = atIdx ?? blocks.length;
     const next = [...blocks.slice(0, insertIdx), block, ...blocks.slice(insertIdx)];
     const keys = [...blockKeys.slice(0, insertIdx), newKey(), ...blockKeys.slice(insertIdx)];
     setBlocks(next);
     setBlockKeys(keys);
-    setSelectedIdx(insertIdx);
+    setSelectedPath([insertIdx]);
+    setSelectedPaths(new Set([pathKey([insertIdx])]));
     setPaletteOpen(false);
   }
 
-  function updateBlock(i: number, next: BlockData) {
-    const arr = [...blocks];
-    arr[i] = next;
-    setBlocks(arr);
+  // ============================================================
+  // Path-based mutators — every mutation locates the target via a
+  // Path (number[]). Top-level ops pass [i]; nested ops pass longer
+  // paths. Block keys are only tracked for top-level (DnD sortable).
+  // ============================================================
+
+  function updateBlock(path: Path, next: BlockData) {
+    setBlocks(updateAt(blocks, path, () => next));
   }
 
-  function removeBlock(i: number) {
-    removeBlocks(new Set([i]));
+  function removeBlock(path: Path) {
+    removeBlocks([path]);
   }
 
-  // Bulk delete — removes every index in `indices` in a single state update so
-  // history records ONE undo step (not N).
-  function removeBlocks(indices: Set<number>) {
-    if (indices.size === 0) return;
-    const arr = blocks.filter((_, idx) => !indices.has(idx));
-    const keys = blockKeys.filter((_, idx) => !indices.has(idx));
-    setBlocks(arr);
-    setBlockKeys(keys);
-    // Re-anchor selection to the next surviving block (or last).
-    const remaining = arr.length;
-    if (remaining === 0) {
-      setSelectedIdx(-1);
-      setSelectedIndices(new Set());
-      return;
+  // Bulk delete — removes each path in one state update so history records ONE
+  // undo step. Deepest-first ordering handled by paths.removeMany.
+  function removeBlocks(paths: Path[]) {
+    if (paths.length === 0) return;
+    const valid = paths.filter((p) => getAt(blocks, p) !== undefined);
+    if (valid.length === 0) return;
+    const next = removeMany(blocks, valid);
+    setBlocks(next);
+    // Prune top-level keys — only removes at depth 1 shift blockKeys.
+    const removedTop = valid
+      .filter((p) => p.length === 1)
+      .map((p) => p[0])
+      .sort((a, b) => b - a);
+    if (removedTop.length) {
+      const keys = [...blockKeys];
+      for (const i of removedTop) keys.splice(i, 1);
+      setBlockKeys(keys);
     }
-    const next = Math.min(selectedIdx, remaining - 1);
-    setSelectedIdx(Math.max(0, next));
-    setSelectedIndices(new Set([Math.max(0, next)]));
+    // Re-anchor selection near the removed anchor.
+    if (selectedPath && paths.some((p) => samePath(p, selectedPath))) {
+      const parent = selectedPath.slice(0, -1);
+      const siblings =
+        parent.length === 0 ? next : getAt(next, parent)?.children ?? [];
+      if (siblings.length === 0) {
+        if (parent.length > 0) {
+          setSelectedPath(parent);
+          setSelectedPaths(new Set([pathKey(parent)]));
+        } else {
+          setSelectedPath(null);
+          setSelectedPaths(new Set());
+        }
+      } else {
+        const lastIdx = selectedPath[selectedPath.length - 1];
+        const anchor = Math.max(0, Math.min(lastIdx, siblings.length - 1));
+        const np = [...parent, anchor];
+        setSelectedPath(np);
+        setSelectedPaths(new Set([pathKey(np)]));
+      }
+    }
   }
 
-  function moveBlock(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= blocks.length) return;
-    const arr = [...blocks];
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-    const keys = [...blockKeys];
-    [keys[i], keys[j]] = [keys[j], keys[i]];
-    setBlocks(arr);
-    setBlockKeys(keys);
-    if (selectedIdx === i) setSelectedIdx(j);
-    else if (selectedIdx === j) setSelectedIdx(i);
+  function moveBlock(path: Path, dir: -1 | 1) {
+    const { tree, newPath } = moveAtPath(blocks, path, dir);
+    if (tree === blocks) return;
+    setBlocks(tree);
+    if (path.length === 1) {
+      const j = path[0] + dir;
+      const keys = [...blockKeys];
+      [keys[path[0]], keys[j]] = [keys[j], keys[path[0]]];
+      setBlockKeys(keys);
+    }
+    if (selectedPath && samePath(selectedPath, path)) {
+      setSelectedPath(newPath);
+      setSelectedPaths(new Set([pathKey(newPath)]));
+    }
   }
 
   function reorderBlocks(from: number, to: number) {
     if (from === to) return;
-    const { items, keys } = reorderWithKeys(blocks, blockKeys, from, to);
-    setBlocks(items);
+    const { keys } = reorderWithKeys(blocks, blockKeys, from, to);
+    setBlocks(reorderSiblings(blocks, [], from, to));
     setBlockKeys(keys);
-    // Keep selection on the moved item if it was selected.
-    if (selectedIdx === from) setSelectedIdx(to);
-    else if (from < selectedIdx && to >= selectedIdx) setSelectedIdx(selectedIdx - 1);
-    else if (from > selectedIdx && to <= selectedIdx) setSelectedIdx(selectedIdx + 1);
-  }
-
-  function duplicateBlock(i: number) {
-    duplicateBlocks(new Set([i]));
-  }
-
-  // Bulk duplicate — clones every selected block in order; inserts the clones
-  // contiguously right after the last selected index.
-  function duplicateBlocks(indices: Set<number>) {
-    if (indices.size === 0) return;
-    const sorted = [...indices].sort((a, b) => a - b);
-    const clones = sorted.map((i) => structuredClone(blocks[i]));
-    const newKeys = sorted.map(() => newKey());
-    const insertAt = sorted[sorted.length - 1] + 1;
-    const next = [...blocks.slice(0, insertAt), ...clones, ...blocks.slice(insertAt)];
-    const keys = [...blockKeys.slice(0, insertAt), ...newKeys, ...blockKeys.slice(insertAt)];
-    setBlocks(next);
-    setBlockKeys(keys);
-    // Move selection to the newly inserted clones.
-    const newSet = new Set<number>();
-    for (let k = 0; k < clones.length; k++) newSet.add(insertAt + k);
-    setSelectedIndices(newSet);
-    setSelectedIdx(insertAt);
-  }
-
-  function copyBlock(i: number) {
-    copyBlocks(new Set([i]));
-  }
-
-  // Save a single block as a reusable snippet. Prompts for a name so the user
-  // can find it later — defaults to "<BlockLabel> #<n>" but they almost always
-  // override.
-  async function saveSnippet(i: number) {
-    if (i < 0 || i >= blocks.length) return;
-    const b = blocks[i];
-    const schema = schemaFor(b.type);
-    const defaultName = `${schema?.label ?? b.type}`;
-    const name = window.prompt("Beri nama snippet:", defaultName);
-    if (!name || !name.trim()) return;
-    try {
-      await api(`/api/v1/snippets`, {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          block_type: b.type,
-          // structuredClone keeps the JSONb stable + drops React-managed refs.
-          block: structuredClone(b),
-        }),
-      });
-      toast.success(`Snippet "${name.trim()}" tersimpan`);
-    } catch (e) {
-      toast.error((e as Error).message);
+    if (selectedPath && selectedPath.length === 1) {
+      const i = selectedPath[0];
+      let newI = i;
+      if (i === from) newI = to;
+      else if (from < i && to >= i) newI = i - 1;
+      else if (from > i && to <= i) newI = i + 1;
+      if (newI !== i) {
+        setSelectedPath([newI]);
+        setSelectedPaths(new Set([pathKey([newI])]));
+      }
     }
   }
 
-  function copyBlocks(indices: Set<number>) {
-    if (indices.size === 0) return;
-    const sorted = [...indices].sort((a, b) => a - b);
-    const out = sorted.map((i) => structuredClone(blocks[i]));
+  function duplicateBlock(path: Path) {
+    duplicateBlocks([path]);
+  }
+
+  function duplicateBlocks(paths: Path[]) {
+    if (paths.length === 0) return;
+    // Deepest-first + rightmost-first so subsequent inserts don't shift
+    // earlier target indices.
+    const sorted = [...paths].sort((a, b) => {
+      if (a.length !== b.length) return b.length - a.length;
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i] - a[i];
+      return 0;
+    });
+    let tree = blocks;
+    let anchor: Path | null = null;
+    const insertedTop: number[] = [];
+    for (const p of sorted) {
+      const r = duplicateAtPath(tree, p);
+      tree = r.tree;
+      anchor = r.newPath;
+      if (p.length === 1) insertedTop.push(r.newPath[0]);
+    }
+    setBlocks(tree);
+    if (insertedTop.length) {
+      const keys = [...blockKeys];
+      const asc = [...insertedTop].sort((a, b) => a - b);
+      for (let n = 0; n < asc.length; n++) keys.splice(asc[n] + n, 0, newKey());
+      setBlockKeys(keys);
+    }
+    if (anchor) {
+      setSelectedPath(anchor);
+      setSelectedPaths(
+        new Set(
+          sorted.map((p) => pathKey([...p.slice(0, -1), p[p.length - 1] + 1])),
+        ),
+      );
+    }
+  }
+
+  function copyBlock(path: Path) {
+    copyBlocks([path]);
+  }
+
+  function copyBlocks(paths: Path[]) {
+    if (paths.length === 0) return;
+    const out = paths
+      .map((p) => getAt(blocks, p))
+      .filter((b): b is BlockData => Boolean(b))
+      .map((b) => structuredClone(b));
+    if (out.length === 0) return;
     setClipboard(out);
     if (out.length === 1) {
       toast.success(`Disalin: ${schemaFor(out[0].type)?.label ?? out[0].type}`);
@@ -480,17 +551,45 @@ export default function EditorPage() {
 
   function pasteBlock() {
     if (!clipboard || clipboard.length === 0) return;
-    const insertIdx = selectedIdx >= 0 ? selectedIdx + 1 : blocks.length;
-    const clones = clipboard.map((b) => structuredClone(b));
-    const newKeys = clones.map(() => newKey());
-    const next = [...blocks.slice(0, insertIdx), ...clones, ...blocks.slice(insertIdx)];
-    const keys = [...blockKeys.slice(0, insertIdx), ...newKeys, ...blockKeys.slice(insertIdx)];
-    setBlocks(next);
-    setBlockKeys(keys);
-    const newSet = new Set<number>();
-    for (let k = 0; k < clones.length; k++) newSet.add(insertIdx + k);
-    setSelectedIndices(newSet);
-    setSelectedIdx(insertIdx);
+    const anchor = selectedPath;
+    const parent: Path = anchor ? anchor.slice(0, -1) : [];
+    const at = anchor ? anchor[anchor.length - 1] + 1 : blocks.length;
+    let tree = blocks;
+    for (let n = 0; n < clipboard.length; n++) {
+      tree = insertAt(tree, parent, at + n, structuredClone(clipboard[n]));
+    }
+    setBlocks(tree);
+    if (parent.length === 0) {
+      const keys = [...blockKeys];
+      const newKeys = clipboard.map(() => newKey());
+      keys.splice(at, 0, ...newKeys);
+      setBlockKeys(keys);
+    }
+    const newSel = new Set<string>();
+    for (let n = 0; n < clipboard.length; n++) newSel.add(pathKey([...parent, at + n]));
+    setSelectedPaths(newSel);
+    setSelectedPath([...parent, at]);
+  }
+
+  async function saveSnippet(path: Path) {
+    const b = getAt(blocks, path);
+    if (!b) return;
+    const schema = schemaFor(b.type);
+    const name = window.prompt("Beri nama snippet:", schema?.label ?? b.type);
+    if (!name || !name.trim()) return;
+    try {
+      await api(`/api/v1/snippets`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          block_type: b.type,
+          block: structuredClone(b),
+        }),
+      });
+      toast.success(`Snippet "${name.trim()}" tersimpan`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   }
 
   // savedAt — wall clock for "Tersimpan otomatis 12 dtk lalu" display.
@@ -660,24 +759,28 @@ export default function EditorPage() {
         return;
       }
 
+      // Materialise the current selection as an array of Paths — used by
+      // all bulk-aware shortcuts below.
+      const currentPaths: Path[] = [...selectedPaths].map(keyToPath);
+
       // ⌘D — duplicate (bulk when multi-selected)
       if (mod && e.key.toLowerCase() === "d") {
         if (editing) return;
         e.preventDefault();
-        if (selectedIndices.size > 1) duplicateBlocks(selectedIndices);
-        else if (selectedIdx >= 0) duplicateBlock(selectedIdx);
+        if (currentPaths.length > 1) duplicateBlocks(currentPaths);
+        else if (selectedPath) duplicateBlock(selectedPath);
         return;
       }
 
       // ⌘C / ⌘V — copy/paste (bulk-aware)
       if (mod && e.key.toLowerCase() === "c") {
         if (editing) return;
-        if (selectedIndices.size > 0) {
+        if (currentPaths.length > 0) {
           e.preventDefault();
-          copyBlocks(selectedIndices);
-        } else if (selectedIdx >= 0) {
+          copyBlocks(currentPaths);
+        } else if (selectedPath) {
           e.preventDefault();
-          copyBlock(selectedIdx);
+          copyBlock(selectedPath);
         }
         return;
       }
@@ -690,29 +793,30 @@ export default function EditorPage() {
         return;
       }
 
-      // ⌘A — select all blocks
+      // ⌘A — select all TOP-LEVEL blocks (nested Cmd+A is niche + confusing).
       if (mod && e.key.toLowerCase() === "a") {
         if (editing) return;
         if (blocks.length === 0) return;
         e.preventDefault();
-        setSelectedIndices(new Set(blocks.map((_, i) => i)));
+        setSelectedPaths(new Set(blocks.map((_, i) => pathKey([i]))));
         return;
       }
 
       // Delete / Backspace — bulk delete when multi-selected
       if ((e.key === "Delete" || e.key === "Backspace") && !editing) {
-        if (selectedIndices.size > 1) {
+        if (currentPaths.length > 1) {
           e.preventDefault();
-          if (confirm(`Hapus ${selectedIndices.size} block?`)) {
-            removeBlocks(selectedIndices);
+          if (confirm(`Hapus ${currentPaths.length} block?`)) {
+            removeBlocks(currentPaths);
           }
           return;
         }
-        if (selectedIdx >= 0) {
+        if (selectedPath) {
           e.preventDefault();
-          const schema = schemaFor(blocks[selectedIdx]?.type ?? "");
-          if (confirm(`Hapus block "${schema?.label ?? blocks[selectedIdx]?.type}"?`)) {
-            removeBlock(selectedIdx);
+          const target = getAt(blocks, selectedPath);
+          const schema = schemaFor(target?.type ?? "");
+          if (confirm(`Hapus block "${schema?.label ?? target?.type}"?`)) {
+            removeBlock(selectedPath);
           }
         }
         return;
@@ -726,19 +830,44 @@ export default function EditorPage() {
       }
 
       // ↑ / ↓ — navigate block list (when not editing)
+      // Esc — navigate up one path level (Webflow-style parent traversal).
+      // At top-level, clears selection instead so hitting Esc twice = deselect.
+      if (e.key === "Escape" && !editing) {
+        if (selectedPath && selectedPath.length > 1) {
+          e.preventDefault();
+          const parent = selectedPath.slice(0, -1);
+          setSelectedPath(parent);
+          setSelectedPaths(new Set([pathKey(parent)]));
+          return;
+        }
+        if (selectedPath && selectedPath.length === 1) {
+          e.preventDefault();
+          setSelectedPath(null);
+          setSelectedPaths(new Set());
+          return;
+        }
+      }
+
       if (!editing && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
         if (blocks.length === 0) return;
         e.preventDefault();
         const dir = e.key === "ArrowUp" ? -1 : 1;
-        const next = Math.max(0, Math.min(blocks.length - 1, selectedIdx + dir));
-        setSelectedIdx(next);
+        // Move within the anchor's parent — supports nested navigation.
+        const anchor = selectedPath ?? [0];
+        const parent = anchor.slice(0, -1);
+        const sibs = siblingsOf(blocks, anchor);
+        const cur = anchor[anchor.length - 1] ?? 0;
+        const nextIdx = Math.max(0, Math.min(sibs.length - 1, cur + dir));
+        const np = [...parent, nextIdx];
+        setSelectedPath(np);
+        setSelectedPaths(new Set([pathKey(np)]));
         return;
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blocks, current, selectedIdx, clipboard, canUndo, canRedo]);
+  }, [blocks, current, selectedPath, selectedPaths, clipboard, canUndo, canRedo]);
 
   const previewWidth = device === "mobile" ? 375 : device === "tablet" ? 768 : "100%";
 
@@ -829,12 +958,21 @@ export default function EditorPage() {
               blocks={blocks}
               keys={blockKeys}
               selectedIdx={selectedIdx}
-              selectedIndices={selectedIndices}
-              onSelect={selectAt}
+              // Convert path-set → int-set for the flat sidebar. Only paths
+              // of length 1 (top-level) render as highlighted in the sidebar.
+              selectedIndices={
+                new Set(
+                  [...selectedPaths]
+                    .map(keyToPath)
+                    .filter((p) => p.length === 1)
+                    .map((p) => p[0]),
+                )
+              }
+              onSelect={(i, mods) => selectAt([i], mods)}
               onReorder={reorderBlocks}
-              onMove={moveBlock}
-              onDuplicate={duplicateBlock}
-              onDelete={removeBlock}
+              onMove={(i, dir) => moveBlock([i], dir)}
+              onDuplicate={(i) => duplicateBlock([i])}
+              onDelete={(i) => removeBlock([i])}
             />
           )}
         </div>
@@ -1016,8 +1154,19 @@ export default function EditorPage() {
               blocks={blocks}
               keys={blockKeys}
               selectedIdx={selectedIdx}
-              selectedIndices={selectedIndices}
-              onJump={setSelectedIdx}
+              // Mini-map still flat — only reflects top-level highlights.
+              selectedIndices={
+                new Set(
+                  [...selectedPaths]
+                    .map(keyToPath)
+                    .filter((p) => p.length === 1)
+                    .map((p) => p[0]),
+                )
+              }
+              onJump={(i) => {
+                setSelectedPath([i]);
+                setSelectedPaths(new Set([pathKey([i])]));
+              }}
               scrollContainerRef={canvasScrollRef}
             />
           )}
@@ -1038,8 +1187,8 @@ export default function EditorPage() {
               <Preview
                 blocks={blocks}
                 keys={blockKeys}
-                onSelect={setSelectedIdx}
-                selectedIdx={selectedIdx}
+                selectedPath={selectedPath}
+                onSelect={selectAt}
                 onAdd={() => setPaletteOpen(true)}
                 onUpdate={updateBlock}
                 onMove={moveBlock}
@@ -1076,11 +1225,11 @@ export default function EditorPage() {
             <Separator orientation="vertical" className="h-3" />
             <span className="hidden sm:inline">
               {blocks.length} block · halaman {pages.length}
-              {selectedIndices.size > 1 && (
+              {selectedPaths.size > 1 && (
                 <>
                   {" · "}
                   <span className="font-medium text-primary">
-                    {selectedIndices.size} dipilih
+                    {selectedPaths.size} dipilih
                   </span>
                 </>
               )}
@@ -1111,6 +1260,9 @@ export default function EditorPage() {
             <Kbd>⌘Z</Kbd>
             <span>Undo</span>
             <Separator orientation="vertical" className="h-3" />
+            <Kbd>Esc</Kbd>
+            <span>Induk</span>
+            <Separator orientation="vertical" className="h-3" />
             <Kbd>⌘D</Kbd>
             <span>Duplikat</span>
             <Separator orientation="vertical" className="h-3" />
@@ -1130,45 +1282,111 @@ export default function EditorPage() {
           rightCollapsed && "pointer-events-none border-transparent bg-transparent p-0 opacity-0",
         )}
       >
-        {selectedIdx >= 0 && blocks[selectedIdx] ? (
-          <>
-            <div className="mb-3 flex items-start gap-2">
-              <span className="text-xl">
-                {schemaFor(blocks[selectedIdx].type)?.emoji ?? "🧩"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold">
-                  {schemaFor(blocks[selectedIdx].type)?.label ?? blocks[selectedIdx].type}
-                </h3>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Block #{selectedIdx + 1} ·{" "}
-                  {schemaFor(blocks[selectedIdx].type)?.description ?? "Edit properti di bawah"}
-                </p>
+        {(() => {
+          const anchor = selectedPath;
+          const target = anchor ? getAt(blocks, anchor) : undefined;
+          if (!anchor || !target) return null;
+          // Build breadcrumb — each ancestor path is clickable so users can
+          // navigate up the tree with one click. Root is not shown; only
+          // populated when we're nested at least one level.
+          const crumbs: Array<{ path: Path; label: string; emoji: string }> = [];
+          for (let d = 1; d <= anchor.length; d++) {
+            const sub = anchor.slice(0, d);
+            const b = getAt(blocks, sub);
+            if (!b) break;
+            const s = schemaFor(b.type);
+            crumbs.push({
+              path: sub,
+              label: s?.label ?? b.type,
+              emoji: s?.emoji ?? "🧩",
+            });
+          }
+          return (
+            <>
+              {crumbs.length > 1 && (
+                <nav
+                  aria-label="Breadcrumb"
+                  className="mb-2 flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground"
+                >
+                  {crumbs.map((c, i) => {
+                    const isLast = i === crumbs.length - 1;
+                    return (
+                      <span key={i} className="inline-flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPath(c.path);
+                            setSelectedPaths(new Set([pathKey(c.path)]));
+                          }}
+                          disabled={isLast}
+                          className={cn(
+                            "inline-flex items-center gap-0.5 rounded px-1 py-0.5",
+                            isLast
+                              ? "font-medium text-foreground"
+                              : "hover:bg-muted hover:text-foreground",
+                          )}
+                          title={`Pindah ke ${c.label}`}
+                        >
+                          <span className="text-[11px]">{c.emoji}</span>
+                          <span className="truncate">{c.label}</span>
+                        </button>
+                        {!isLast && <span className="mx-0.5 opacity-40">›</span>}
+                      </span>
+                    );
+                  })}
+                </nav>
+              )}
+              <div className="mb-3 flex items-start gap-2">
+                <span className="text-xl">
+                  {schemaFor(target.type)?.emoji ?? "🧩"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold">
+                    {schemaFor(target.type)?.label ?? target.type}
+                  </h3>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {schemaFor(target.type)?.description ?? "Edit properti di bawah"}
+                  </p>
+                </div>
+                {anchor.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parent = anchor.slice(0, -1);
+                      setSelectedPath(parent);
+                      setSelectedPaths(new Set([pathKey(parent)]));
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title="Pilih block induk (Esc)"
+                  >
+                    ↖
+                  </button>
+                )}
               </div>
-            </div>
-            <Separator className="mb-4" />
-            <PropEditor
-              block={blocks[selectedIdx]}
-              onChange={(next) => updateBlock(selectedIdx, next)}
-            />
-            {isContainer(blocks[selectedIdx].type) && (
-              <>
-                <Separator className="my-4" />
-                <ChildrenEditor
-                  block={blocks[selectedIdx]}
-                  onChange={(next) => updateBlock(selectedIdx, next)}
-                />
-              </>
-            )}
-            <Separator className="my-4" />
-            <LayoutPanel
-              block={blocks[selectedIdx]}
-              onChange={(next) => updateBlock(selectedIdx, next)}
-              device={device}
-              onDeviceChange={setDevice}
-            />
-          </>
-        ) : (
+              <Separator className="mb-4" />
+              <PropEditor
+                block={target}
+                onChange={(next) => updateBlock(anchor, next)}
+              />
+              {isContainer(target.type) && (
+                <>
+                  <Separator className="my-4" />
+                  <ChildrenEditor
+                    block={target}
+                    onChange={(next) => updateBlock(anchor, next)}
+                  />
+                </>
+              )}
+              <Separator className="my-4" />
+              <LayoutPanel
+                block={target}
+                onChange={(next) => updateBlock(anchor, next)}
+                device={device}
+                onDeviceChange={setDevice}
+              />
+            </>
+          );
+        })() || (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <div className="grid size-12 place-items-center rounded-xl bg-muted">
               <Sparkles className="size-5 text-muted-foreground" />
@@ -1204,8 +1422,11 @@ export default function EditorPage() {
         pageId={current?.id ?? null}
         onRestored={(p) => {
           setPages((ps) => ps.map((x) => (x.id === p.id ? p : x)));
-          setBlocks(p.tree?.blocks ?? []);
-          setSelectedIdx(p.tree?.blocks?.length ? 0 : -1);
+          const bs = p.tree?.blocks ?? [];
+          setBlocks(bs);
+          const initial: Path | null = bs.length ? [0] : null;
+          setSelectedPath(initial);
+          setSelectedPaths(initial ? new Set([pathKey(initial)]) : new Set());
           setHistoryOpen(false);
           toast.success("Versi berhasil dipulihkan");
         }}
@@ -1743,7 +1964,7 @@ function Preview({
   blocks,
   keys,
   onSelect,
-  selectedIdx,
+  selectedPath,
   onAdd,
   onUpdate,
   onMove,
@@ -1754,14 +1975,14 @@ function Preview({
 }: {
   blocks: BlockData[];
   keys: string[];
-  onSelect: (i: number) => void;
-  selectedIdx: number;
+  onSelect: (path: Path, mods?: { shift?: boolean; meta?: boolean }) => void;
+  selectedPath: Path | null;
   onAdd: () => void;
-  onUpdate: (i: number, next: BlockData) => void;
-  onMove: (i: number, dir: -1 | 1) => void;
-  onDuplicate: (i: number) => void;
-  onSaveSnippet: (i: number) => void;
-  onDelete: (i: number) => void;
+  onUpdate: (path: Path, next: BlockData) => void;
+  onMove: (path: Path, dir: -1 | 1) => void;
+  onDuplicate: (path: Path) => void;
+  onSaveSnippet: (path: Path) => void;
+  onDelete: (path: Path) => void;
   device: "desktop" | "tablet" | "mobile";
 }) {
   if (blocks.length === 0) {
@@ -1783,87 +2004,153 @@ function Preview({
   }
   return (
     <div className="animate-in fade-in duration-200">
-      {blocks.map((b, i) => {
-        // Resolve the layout for the device the user is previewing. mobile =
-        // base; tablet/desktop = base + that breakpoint's patch (merged).
-        // This way the canvas preview matches what the renderer will paint
-        // via @media rules in production.
-        const effectiveLayout = layoutForBreakpoint(b.layout, device);
-        // Block hidden on this device → don't render at all (but keep selection
-        // available via sidebar so user can un-hide).
-        if (b.layout?.hidden?.[device]) {
-          return (
-            <div
-              key={keys[i] ?? i}
-              data-block-key={keys[i] ?? String(i)}
-              onClick={() => onSelect(i)}
-              className={cn(
-                "flex cursor-pointer items-center gap-2 border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-2 text-xs text-muted-foreground",
-                selectedIdx === i && "border-primary/60 bg-primary/5",
-              )}
-            >
-              <EyeOff className="size-3" />
-              Block disembunyikan di {device} · klik untuk pilih
-            </div>
-          );
-        }
-        const wrapperStyle = buildLayoutStyle({
-          layout: effectiveLayout,
-          themeOverride: b.themeOverride,
-        });
-        const innerStyle = buildMaxWidthStyle({ layout: effectiveLayout });
-        // CRITICAL: the colour override must apply to BLOCK CONTENT only.
-        // Keeping the toolbar inside the themed wrapper made it inherit the
-        // user's --background / --primary overrides — turning the chrome
-        // unreadable. So we render two siblings: the themed content div
-        // (where wrapper styles live) and the toolbar (which stays in
-        // dashboard chrome).
-        return (
-          <div
-            key={keys[i] ?? i}
-            data-block-key={keys[i] ?? String(i)}
-            onClick={() => onSelect(i)}
-            className={cn(
-              "group/blk relative cursor-pointer transition-all duration-150",
-              selectedIdx === i
-                ? "outline outline-2 outline-primary"
-                : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
-            )}
-          >
-            {/* Themed content — block markup inherits the override */}
-            <div style={wrapperStyle}>
-              {innerStyle ? (
-                <div style={innerStyle}>
-                  <BlockView
-                    block={b}
-                    onUpdate={(next) => onUpdate(i, next)}
-                    editable={selectedIdx === i}
-                  />
-                </div>
-              ) : (
-                <BlockView
-                  block={b}
-                  onUpdate={(next) => onUpdate(i, next)}
-                  editable={selectedIdx === i}
-                />
-              )}
-            </div>
-            {/* Toolbar — sibling, OUTSIDE the themed div, so its bg/border
-                stay on dashboard chrome regardless of block colour override. */}
-            {selectedIdx === i && (
-              <CanvasBlockToolbar
-                block={b}
-                index={i}
-                total={blocks.length}
-                onMove={(dir) => onMove(i, dir)}
-                onDuplicate={() => onDuplicate(i)}
-                onSaveSnippet={() => onSaveSnippet(i)}
-                onDelete={() => onDelete(i)}
-              />
-            )}
+      {blocks.map((b, i) => (
+        <RenderBlockWithChrome
+          key={keys[i] ?? i}
+          block={b}
+          path={[i]}
+          topLevelKey={keys[i] ?? String(i)}
+          topLevelTotal={blocks.length}
+          selectedPath={selectedPath}
+          onSelect={onSelect}
+          onUpdate={onUpdate}
+          onMove={onMove}
+          onDuplicate={onDuplicate}
+          onSaveSnippet={onSaveSnippet}
+          onDelete={onDelete}
+          device={device}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Recursive wrapper that applies selection outline + block toolbar around any
+// block at any depth. Container/Columns cases in BlockView call this
+// component for their children so nested blocks get full click-to-select +
+// toolbar treatment.
+function RenderBlockWithChrome({
+  block: b,
+  path,
+  topLevelKey,
+  topLevelTotal,
+  selectedPath,
+  onSelect,
+  onUpdate,
+  onMove,
+  onDuplicate,
+  onSaveSnippet,
+  onDelete,
+  device,
+}: {
+  block: BlockData;
+  path: Path;
+  topLevelKey?: string;
+  topLevelTotal?: number;
+  selectedPath: Path | null;
+  onSelect: (path: Path, mods?: { shift?: boolean; meta?: boolean }) => void;
+  onUpdate: (path: Path, next: BlockData) => void;
+  onMove: (path: Path, dir: -1 | 1) => void;
+  onDuplicate: (path: Path) => void;
+  onSaveSnippet: (path: Path) => void;
+  onDelete: (path: Path) => void;
+  device: "desktop" | "tablet" | "mobile";
+}) {
+  const isSelected = selectedPath ? samePath(selectedPath, path) : false;
+  const effectiveLayout = layoutForBreakpoint(b.layout, device);
+
+  // Hidden on device — placeholder strip (only for top-level; nested blocks
+  // just don't render).
+  if (b.layout?.hidden?.[device]) {
+    if (path.length > 1) return null;
+    return (
+      <div
+        data-block-key={topLevelKey}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(path, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
+        }}
+        className={cn(
+          "flex cursor-pointer items-center gap-2 border border-dashed border-muted-foreground/30 bg-muted/20 px-4 py-2 text-xs text-muted-foreground",
+          isSelected && "border-primary/60 bg-primary/5",
+        )}
+      >
+        <EyeOff className="size-3" />
+        Block disembunyikan di {device} · klik untuk pilih
+      </div>
+    );
+  }
+
+  const wrapperStyle = buildLayoutStyle({
+    layout: effectiveLayout,
+    themeOverride: b.themeOverride,
+  });
+  const innerStyle = buildMaxWidthStyle({ layout: effectiveLayout });
+  // Size for the total-siblings calc used by the toolbar's move-up/down
+  // disabled state. For nested blocks, siblings are determined by the parent
+  // via path length.
+  const siblingsCount = topLevelTotal ?? 0;
+
+  return (
+    <div
+      data-block-key={topLevelKey}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(path, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
+      }}
+      className={cn(
+        "group/blk relative cursor-pointer transition-all duration-150",
+        isSelected
+          ? "outline outline-2 outline-primary"
+          : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
+      )}
+    >
+      <div style={wrapperStyle}>
+        {innerStyle ? (
+          <div style={innerStyle}>
+            <BlockView
+              block={b}
+              onUpdate={(next) => onUpdate(path, next)}
+              editable={isSelected}
+              path={path}
+              selectedPath={selectedPath}
+              onSelectPath={onSelect}
+              onUpdatePath={onUpdate}
+              onMovePath={onMove}
+              onDuplicatePath={onDuplicate}
+              onSaveSnippetPath={onSaveSnippet}
+              onDeletePath={onDelete}
+              device={device}
+            />
           </div>
-        );
-      })}
+        ) : (
+          <BlockView
+            block={b}
+            onUpdate={(next) => onUpdate(path, next)}
+            editable={isSelected}
+            path={path}
+            selectedPath={selectedPath}
+            onSelectPath={onSelect}
+            onUpdatePath={onUpdate}
+            onMovePath={onMove}
+            onDuplicatePath={onDuplicate}
+            onSaveSnippetPath={onSaveSnippet}
+            onDeletePath={onDelete}
+            device={device}
+          />
+        )}
+      </div>
+      {isSelected && (
+        <CanvasBlockToolbar
+          block={b}
+          index={path[path.length - 1]}
+          total={siblingsCount || 999}
+          onMove={(dir) => onMove(path, dir)}
+          onDuplicate={() => onDuplicate(path)}
+          onSaveSnippet={() => onSaveSnippet(path)}
+          onDelete={() => onDelete(path)}
+        />
+      )}
     </div>
   );
 }
@@ -1874,10 +2161,31 @@ function BlockView({
   block,
   onUpdate,
   editable,
+  // Path-aware props — only passed by RenderBlockWithChrome so children of
+  // Container/Columns can also render with click-select + toolbar chrome. Not
+  // required for terminal blocks (they never inspect these).
+  path,
+  selectedPath,
+  onSelectPath,
+  onUpdatePath,
+  onMovePath,
+  onDuplicatePath,
+  onSaveSnippetPath,
+  onDeletePath,
+  device,
 }: {
   block: BlockData;
   onUpdate?: (next: BlockData) => void;
   editable?: boolean;
+  path?: Path;
+  selectedPath?: Path | null;
+  onSelectPath?: (path: Path, mods?: { shift?: boolean; meta?: boolean }) => void;
+  onUpdatePath?: (path: Path, next: BlockData) => void;
+  onMovePath?: (path: Path, dir: -1 | 1) => void;
+  onDuplicatePath?: (path: Path) => void;
+  onSaveSnippetPath?: (path: Path) => void;
+  onDeletePath?: (path: Path) => void;
+  device?: "desktop" | "tablet" | "mobile";
 }) {
   const p = block.props ?? {};
   // setProp commits a single field back to the block tree. Only used by the
@@ -2418,17 +2726,34 @@ function BlockView({
     case "Container": {
       const children = block.children ?? [];
       const gap = String(p.gap ?? "1rem");
+      // Render children with FULL chrome (click-select, toolbar) if we have
+      // path context. Otherwise fall back to a naive nested BlockView (used
+      // e.g. in a share-preview where path callbacks aren't threaded).
+      const withChrome = path && onSelectPath && onUpdatePath;
       return (
-        <div
-          className="flex flex-col px-6 py-6"
-          style={{ gap }}
-        >
+        <div className="flex flex-col px-6 py-6" style={{ gap }}>
           {children.length === 0 ? (
             <EmptyContainerHint label="Container kosong" />
           ) : (
-            children.map((child, ci) => (
-              <BlockView key={ci} block={child} />
-            ))
+            children.map((child, ci) => {
+              if (!withChrome) return <BlockView key={ci} block={child} />;
+              return (
+                <RenderBlockWithChrome
+                  key={ci}
+                  block={child}
+                  path={[...path!, ci]}
+                  topLevelTotal={children.length}
+                  selectedPath={selectedPath ?? null}
+                  onSelect={onSelectPath!}
+                  onUpdate={onUpdatePath!}
+                  onMove={onMovePath!}
+                  onDuplicate={onDuplicatePath!}
+                  onSaveSnippet={onSaveSnippetPath!}
+                  onDelete={onDeletePath!}
+                  device={device!}
+                />
+              );
+            })
           )}
         </div>
       );
@@ -2438,12 +2763,14 @@ function BlockView({
       const children = block.children ?? [];
       const colCount = Math.max(1, Math.min(4, Number(p.columns ?? 2)));
       const gap = String(p.gap ?? "1rem");
-      // Render exactly `colCount` columns; children with index >= colCount
-      // overflow into nothing for now (user can adjust via panel).
-      const cells: BlockData[][] = Array.from({ length: colCount }, () => []);
+      const cells: Array<Array<{ child: BlockData; ci: number }>> = Array.from(
+        { length: colCount },
+        () => [],
+      );
       children.forEach((c, ci) => {
-        cells[ci % colCount].push(c);
+        cells[ci % colCount].push({ child: c, ci });
       });
+      const withChrome = path && onSelectPath && onUpdatePath;
       return (
         <div
           className="grid px-6 py-6 max-md:grid-cols-1"
@@ -2452,12 +2779,30 @@ function BlockView({
             gap,
           }}
         >
-          {cells.map((col, ci) => (
-            <div key={ci} className="flex flex-col gap-3">
+          {cells.map((col, colI) => (
+            <div key={colI} className="flex flex-col gap-3">
               {col.length === 0 ? (
-                <EmptyContainerHint label={`Kolom ${ci + 1} kosong`} compact />
+                <EmptyContainerHint label={`Kolom ${colI + 1} kosong`} compact />
               ) : (
-                col.map((child, k) => <BlockView key={k} block={child} />)
+                col.map(({ child, ci }) => {
+                  if (!withChrome) return <BlockView key={ci} block={child} />;
+                  return (
+                    <RenderBlockWithChrome
+                      key={ci}
+                      block={child}
+                      path={[...path!, ci]}
+                      topLevelTotal={children.length}
+                      selectedPath={selectedPath ?? null}
+                      onSelect={onSelectPath!}
+                      onUpdate={onUpdatePath!}
+                      onMove={onMovePath!}
+                      onDuplicate={onDuplicatePath!}
+                      onSaveSnippet={onSaveSnippetPath!}
+                      onDelete={onDeletePath!}
+                      device={device!}
+                    />
+                  );
+                })
               )}
             </div>
           ))}

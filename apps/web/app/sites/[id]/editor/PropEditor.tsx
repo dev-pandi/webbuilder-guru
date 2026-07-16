@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +37,7 @@ export function PropEditor({
   onChange: (next: BlockData) => void;
 }) {
   const schema = schemaFor(block.type);
+  const [q, setQ] = useState("");
   if (!schema) {
     return (
       <p className="text-xs text-muted-foreground">Tidak ada skema untuk block ini.</p>
@@ -66,30 +67,77 @@ export function PropEditor({
     return out;
   }, [schema]);
 
-  const singleGroup = grouped.length === 1;
+  // Filter fields by search query — matches label OR field name. If a group
+  // has zero matches after filtering, it's hidden entirely to reduce noise.
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return grouped;
+    return grouped
+      .map((g) => ({
+        ...g,
+        fields: g.fields.filter(
+          (f) =>
+            f.label.toLowerCase().includes(needle) ||
+            f.name.toLowerCase().includes(needle),
+        ),
+      }))
+      .filter((g) => g.fields.length > 0);
+  }, [grouped, q]);
+
+  const singleGroup = filtered.length === 1;
+  // Only show search when there are enough fields to justify it (>4).
+  const showSearch = schema.fields.length > 4;
 
   return (
     <div className="space-y-3">
-      {grouped.map((g, gi) => (
-        <FieldGroup
-          key={g.name}
-          name={g.name}
-          // First group is open by default; rest collapsed when there are many.
-          defaultOpen={singleGroup || gi === 0}
-          showHeader={!singleGroup}
-        >
-          {g.fields
-            .filter((f) => !f.showIf || f.showIf(props))
-            .map((f) => (
-              <Field
-                key={f.name}
-                field={f}
-                value={props[f.name]}
-                onChange={(v) => update(f.name, v)}
-              />
-            ))}
-        </FieldGroup>
-      ))}
+      {showSearch && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari field…"
+            className="h-8 pl-8 pr-7 text-xs"
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => setQ("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Clear"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
+      )}
+      {filtered.length === 0 ? (
+        <p className="rounded border border-dashed py-6 text-center text-[11px] text-muted-foreground">
+          Tidak ada field cocok dengan &quot;{q}&quot;.
+        </p>
+      ) : (
+        filtered.map((g, gi) => (
+          <FieldGroup
+            key={g.name}
+            name={g.name}
+            // Filtering usually collapses to a small set — open everything so
+            // the user immediately sees matches. Unfiltered keeps default behaviour.
+            defaultOpen={q.trim() !== "" || singleGroup || gi === 0}
+            showHeader={!singleGroup}
+          >
+            {g.fields
+              .filter((f) => !f.showIf || f.showIf(props))
+              .map((f) => (
+                <Field
+                  key={f.name}
+                  field={f}
+                  value={props[f.name]}
+                  onChange={(v) => update(f.name, v)}
+                />
+              ))}
+          </FieldGroup>
+        ))
+      )}
     </div>
   );
 }
