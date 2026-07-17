@@ -66,6 +66,7 @@ import {
   insertAt,
   keyToPath,
   moveAtPath,
+  movePath as movePathHelper,
   pathKey,
   removeMany,
   reorderSiblings,
@@ -74,6 +75,22 @@ import {
   updateAt,
   type Path,
 } from "./paths";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 
 type PageVersion = {
   id: string;
@@ -471,6 +488,36 @@ export default function EditorPage() {
       setSelectedPath(newPath);
       setSelectedPaths(new Set([pathKey(newPath)]));
     }
+  }
+
+  // moveTo — path-based cross-parent move used by canvas nested DnD.
+  // Handles the same-parent forward-move index shift via paths.movePath.
+  function moveTo(fromPath: Path, toParent: Path, at: number) {
+    const { tree, newPath } = movePathHelper(blocks, fromPath, toParent, at);
+    if (tree === blocks) return;
+    setBlocks(tree);
+    // If a TOP-LEVEL slot moved, block keys need to stay aligned. Reuse
+    // reorderWithKeys when both from + to are top-level (same parent []).
+    const fromTop = fromPath.length === 1;
+    const toTop = toParent.length === 0;
+    if (fromTop && toTop) {
+      const insertIdx =
+        toParent.length === 0 && at > fromPath[0] ? at - 1 : at;
+      const { keys } = reorderWithKeys(blocks, blockKeys, fromPath[0], insertIdx);
+      setBlockKeys(keys);
+    } else if (fromTop && !toTop) {
+      // Block left the top-level list — remove its key.
+      const keys = [...blockKeys];
+      keys.splice(fromPath[0], 1);
+      setBlockKeys(keys);
+    } else if (!fromTop && toTop) {
+      // Block promoted from nested to top-level — mint a fresh key at `at`.
+      const keys = [...blockKeys];
+      keys.splice(at, 0, newKey());
+      setBlockKeys(keys);
+    }
+    setSelectedPath(newPath);
+    setSelectedPaths(new Set([pathKey(newPath)]));
   }
 
   function reorderBlocks(from: number, to: number) {
@@ -1195,6 +1242,7 @@ export default function EditorPage() {
                 onDuplicate={duplicateBlock}
                 onSaveSnippet={saveSnippet}
                 onDelete={removeBlock}
+                onMoveTo={moveTo}
                 device={device}
               />
             </div>
@@ -1857,6 +1905,42 @@ function HistoryDialog({
 
 // ---------- Tiny helpers ----------
 
+/**
+ * Drop target rendered inside an empty container/column. Announced to
+ * dnd-kit under id "drop:<parentKey>" — the Preview's onDragEnd matches
+ * this shape to know it means "insert as last child of that parent".
+ * Empty top-level parent uses id "drop:" (empty parentKey).
+ */
+function DroppableEmpty({
+  parentPath,
+  label,
+  compact,
+}: {
+  parentPath: Path;
+  label: string;
+  compact?: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `drop:${pathKey(parentPath)}`,
+    data: { parentPath },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex items-center justify-center gap-1.5 rounded-md border border-dashed text-[11px] transition-colors",
+        compact ? "py-4" : "py-8",
+        isOver
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-muted-foreground/30 text-muted-foreground",
+      )}
+    >
+      <Plus className="size-3" />
+      {label}
+    </div>
+  );
+}
+
 function EmptyContainerHint({ label, compact }: { label: string; compact?: boolean }) {
   return (
     <div
@@ -1971,6 +2055,7 @@ function Preview({
   onDuplicate,
   onSaveSnippet,
   onDelete,
+  onMoveTo,
   device,
 }: {
   blocks: BlockData[];
@@ -1983,8 +2068,39 @@ function Preview({
   onDuplicate: (path: Path) => void;
   onSaveSnippet: (path: Path) => void;
   onDelete: (path: Path) => void;
+  // Path-based cross-parent move — called on drag-end.
+  onMoveTo: (fromPath: Path, toParent: Path, at: number) => void;
   device: "desktop" | "tablet" | "mobile";
 }) {
+  // Pointer sensor with an activation distance so clicks (select) don't get
+  // hijacked by drag intent. 4px is enough to distinguish deliberate drag.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const fromPath = keyToPath(String(active.id));
+    const overKey = String(over.id);
+    // Destination — two shapes:
+    //   "drop:<parentKey>" → empty container area, insert as first child
+    //   "<pathKey>"        → sibling, insert at its position
+    if (overKey.startsWith("drop:")) {
+      const parentKey = overKey.slice(5);
+      const toParent: Path = parentKey === "" ? [] : keyToPath(parentKey);
+      // Insert at end of parent's children (empty containers → position 0).
+      const parentChildren =
+        toParent.length === 0
+          ? blocks
+          : getAt(blocks, toParent)?.children ?? [];
+      onMoveTo(fromPath, toParent, parentChildren.length);
+      return;
+    }
+    const overPath = keyToPath(overKey);
+    const toParent = overPath.slice(0, -1);
+    const toIdx = overPath[overPath.length - 1];
+    onMoveTo(fromPath, toParent, toIdx);
+  }
+
   if (blocks.length === 0) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-12 text-center">
@@ -2003,25 +2119,32 @@ function Preview({
     );
   }
   return (
-    <div className="animate-in fade-in duration-200">
-      {blocks.map((b, i) => (
-        <RenderBlockWithChrome
-          key={keys[i] ?? i}
-          block={b}
-          path={[i]}
-          topLevelKey={keys[i] ?? String(i)}
-          topLevelTotal={blocks.length}
-          selectedPath={selectedPath}
-          onSelect={onSelect}
-          onUpdate={onUpdate}
-          onMove={onMove}
-          onDuplicate={onDuplicate}
-          onSaveSnippet={onSaveSnippet}
-          onDelete={onDelete}
-          device={device}
-        />
-      ))}
-    </div>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext
+        items={blocks.map((_, i) => pathKey([i]))}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="animate-in fade-in duration-200">
+          {blocks.map((b, i) => (
+            <RenderBlockWithChrome
+              key={keys[i] ?? i}
+              block={b}
+              path={[i]}
+              topLevelKey={keys[i] ?? String(i)}
+              topLevelTotal={blocks.length}
+              selectedPath={selectedPath}
+              onSelect={onSelect}
+              onUpdate={onUpdate}
+              onMove={onMove}
+              onDuplicate={onDuplicate}
+              onSaveSnippet={onSaveSnippet}
+              onDelete={onDelete}
+              device={device}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
   );
 }
 
@@ -2059,13 +2182,26 @@ function RenderBlockWithChrome({
   const isSelected = selectedPath ? samePath(selectedPath, path) : false;
   const effectiveLayout = layoutForBreakpoint(b.layout, device);
 
+  // Sortable wiring — id = pathKey so cross-context drops can identify the
+  // source. dnd-kit lets us apply the transform + transition to the outer
+  // wrapper so the whole block previews the drop position while dragging.
+  const sortable = useSortable({ id: pathKey(path), data: { path } });
+  const sortableStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition,
+    opacity: sortable.isDragging ? 0.45 : 1,
+    zIndex: sortable.isDragging ? 10 : "auto",
+  };
+
   // Hidden on device — placeholder strip (only for top-level; nested blocks
-  // just don't render).
+  // just don't render). Still sortable so users can drag hidden items.
   if (b.layout?.hidden?.[device]) {
     if (path.length > 1) return null;
     return (
       <div
+        ref={sortable.setNodeRef}
         data-block-key={topLevelKey}
+        style={sortableStyle}
         onClick={(e) => {
           e.stopPropagation();
           onSelect(path, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
@@ -2093,7 +2229,9 @@ function RenderBlockWithChrome({
 
   return (
     <div
+      ref={sortable.setNodeRef}
       data-block-key={topLevelKey}
+      style={sortableStyle}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(path, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
@@ -2105,6 +2243,25 @@ function RenderBlockWithChrome({
           : "hover:outline hover:outline-1 hover:outline-muted-foreground/40",
       )}
     >
+      {/* Drag handle — only visible on hover/selection so it doesn't clutter
+          the canvas. `stopPropagation` on click so grabbing the handle
+          doesn't re-trigger select. */}
+      <button
+        type="button"
+        {...sortable.attributes}
+        {...sortable.listeners}
+        onClick={(e) => e.stopPropagation()}
+        title="Geser untuk memindahkan"
+        className={cn(
+          "pointer-events-auto absolute left-2 top-2 z-20 grid size-6 place-items-center rounded-md border bg-background/95 text-muted-foreground shadow-md backdrop-blur transition-opacity",
+          "cursor-grab active:cursor-grabbing",
+          isSelected
+            ? "opacity-100"
+            : "opacity-0 group-hover/blk:opacity-100",
+        )}
+      >
+        <GripVertical className="size-3.5" />
+      </button>
       <div style={wrapperStyle}>
         {innerStyle ? (
           <div style={innerStyle}>
@@ -2726,18 +2883,17 @@ function BlockView({
     case "Container": {
       const children = block.children ?? [];
       const gap = String(p.gap ?? "1rem");
-      // Render children with FULL chrome (click-select, toolbar) if we have
-      // path context. Otherwise fall back to a naive nested BlockView (used
-      // e.g. in a share-preview where path callbacks aren't threaded).
       const withChrome = path && onSelectPath && onUpdatePath;
+      const items = children.map((_, ci) => pathKey([...(path ?? []), ci]));
       return (
         <div className="flex flex-col px-6 py-6" style={{ gap }}>
-          {children.length === 0 ? (
-            <EmptyContainerHint label="Container kosong" />
-          ) : (
-            children.map((child, ci) => {
-              if (!withChrome) return <BlockView key={ci} block={child} />;
-              return (
+          {withChrome && children.length === 0 ? (
+            // Empty container = a droppable "landing pad" so users can drag
+            // a block INTO it from elsewhere.
+            <DroppableEmpty parentPath={path!} label="Container kosong · lepas block di sini" />
+          ) : withChrome ? (
+            <SortableContext items={items} strategy={verticalListSortingStrategy}>
+              {children.map((child, ci) => (
                 <RenderBlockWithChrome
                   key={ci}
                   block={child}
@@ -2752,8 +2908,10 @@ function BlockView({
                   onDelete={onDeletePath!}
                   device={device!}
                 />
-              );
-            })
+              ))}
+            </SortableContext>
+          ) : (
+            children.map((child, ci) => <BlockView key={ci} block={child} />)
           )}
         </div>
       );
@@ -2763,6 +2921,9 @@ function BlockView({
       const children = block.children ?? [];
       const colCount = Math.max(1, Math.min(4, Number(p.columns ?? 2)));
       const gap = String(p.gap ?? "1rem");
+      // Round-robin cells for VISUAL layout. DnD still operates on the linear
+      // array via a single SortableContext — the visual column arrangement
+      // is decoration only.
       const cells: Array<Array<{ child: BlockData; ci: number }>> = Array.from(
         { length: colCount },
         () => [],
@@ -2771,7 +2932,9 @@ function BlockView({
         cells[ci % colCount].push({ child: c, ci });
       });
       const withChrome = path && onSelectPath && onUpdatePath;
-      return (
+      const items = children.map((_, ci) => pathKey([...(path ?? []), ci]));
+
+      const gridEl = (
         <div
           className="grid px-6 py-6 max-md:grid-cols-1"
           style={{
@@ -2781,7 +2944,17 @@ function BlockView({
         >
           {cells.map((col, colI) => (
             <div key={colI} className="flex flex-col gap-3">
-              {col.length === 0 ? (
+              {col.length === 0 && withChrome ? (
+                // Each empty column gets its own drop zone so users can drop
+                // directly into the specific column they want. We still route
+                // the drop through the top-level parent — the round-robin
+                // splitter reassigns visually.
+                <DroppableEmpty
+                  parentPath={path!}
+                  label={`Kolom ${colI + 1} · lepas di sini`}
+                  compact
+                />
+              ) : col.length === 0 ? (
                 <EmptyContainerHint label={`Kolom ${colI + 1} kosong`} compact />
               ) : (
                 col.map(({ child, ci }) => {
@@ -2807,6 +2980,14 @@ function BlockView({
             </div>
           ))}
         </div>
+      );
+
+      return withChrome ? (
+        <SortableContext items={items} strategy={verticalListSortingStrategy}>
+          {gridEl}
+        </SortableContext>
+      ) : (
+        gridEl
       );
     }
 

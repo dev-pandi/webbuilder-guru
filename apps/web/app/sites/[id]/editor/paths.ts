@@ -215,3 +215,42 @@ export function siblingsOf(blocks: BlockData[], path: Path): BlockData[] {
   const parentPath = path.slice(0, -1);
   return getAt(blocks, parentPath)?.children ?? [];
 }
+
+/**
+ * Move the block at `fromPath` into a new position `at` within `toParent`.
+ * Cross-parent moves supported. Handles the "moving down within same parent"
+ * index-shift so the caller can pass the intended FINAL index; internal
+ * logic adjusts for the removal.
+ *
+ * Returns `{ tree, newPath }` — `newPath` is the block's new address after
+ * the move (useful for keeping selection anchored).
+ *
+ * Guards against moving into own descendants (would orphan the block).
+ */
+export function movePath(
+  blocks: BlockData[],
+  fromPath: Path,
+  toParent: Path,
+  at: number,
+): { tree: BlockData[]; newPath: Path } {
+  const src = getAt(blocks, fromPath);
+  if (!src) return { tree: blocks, newPath: fromPath };
+  // Refuse moves into own subtree — would silently orphan the block.
+  if (isChildOf(toParent, fromPath) || samePath(toParent, fromPath)) {
+    return { tree: blocks, newPath: fromPath };
+  }
+  const fromParent = fromPath.slice(0, -1);
+  const fromIdx = fromPath[fromPath.length - 1];
+  const sameParent =
+    fromParent.length === toParent.length &&
+    fromParent.every((n, i) => n === toParent[i]);
+  // Compute where to insert AFTER removing the source. Same parent + moving
+  // down: since removal shifts everything after `fromIdx` down by 1, the
+  // desired final position `at` maps to insert index (at) as-is only when
+  // at <= fromIdx; if at > fromIdx we insert at (at - 1) to arrive at `at`.
+  let insertIdx = at;
+  if (sameParent && at > fromIdx) insertIdx = at - 1;
+  const withoutSrc = removeAt(blocks, fromPath);
+  const withInserted = insertAt(withoutSrc, toParent, insertIdx, src);
+  return { tree: withInserted, newPath: [...toParent, insertIdx] };
+}
