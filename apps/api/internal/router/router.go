@@ -15,6 +15,7 @@ import (
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/config"
+	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
@@ -58,6 +59,10 @@ type Deps struct {
 	// Registrar is the domain-purchase client. May be nil (feature disabled
 	// when REGISTRAR_API_URL is empty) — callers must nil-check.
 	Registrar *registrar.Client
+
+	// DomainPurchase menjembatani frontend ↔ registrar. Handler check/purchase/
+	// status/webhook. Nil kalau registrar disabled (client wrapper nil).
+	DomainPurchase *domain_purchase.Handler
 
 	Admin *admin.Handler
 

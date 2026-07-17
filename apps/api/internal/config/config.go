@@ -98,6 +98,11 @@ type Config struct {
 	RegistrarAPIURL     string
 	RegistrarAPIKey     string
 	RegistrarAPITimeout time.Duration
+	// RegistrarWebhookSecret adalah shared secret yang di-set ke
+	// registrar-api (`POST /api/user/reseller/config/webhook`). Dipakai
+	// untuk verify HMAC signature pada callback `POST /webhooks/registrar/*`.
+	// Empty = webhook receiver otomatis 503 (fail-closed).
+	RegistrarWebhookSecret string
 }
 
 func Load() Config {
@@ -153,9 +158,10 @@ func Load() Config {
 		GoogleOAuthClientSecret: env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 		GoogleOAuthRedirectURL:  env("GOOGLE_OAUTH_REDIRECT_URL", ""),
 
-		RegistrarAPIURL:     env("REGISTRAR_API_URL", ""),
-		RegistrarAPIKey:     env("REGISTRAR_API_KEY", ""),
-		RegistrarAPITimeout: envDuration("REGISTRAR_API_TIMEOUT", 15*time.Second),
+		RegistrarAPIURL:        env("REGISTRAR_API_URL", ""),
+		RegistrarAPIKey:        env("REGISTRAR_API_KEY", ""),
+		RegistrarAPITimeout:    envDuration("REGISTRAR_API_TIMEOUT", 15*time.Second),
+		RegistrarWebhookSecret: env("REGISTRAR_WEBHOOK_SECRET", ""),
 
 		DBMaxConns:           envInt("DB_MAX_CONNS", 10),
 		DBMinConns:           envInt("DB_MIN_CONNS", 2),

@@ -95,6 +95,15 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/domains/:id/verify", mutateLimit, deps.Domains.Verify)
 	authed.Delete("/domains/:id", mutateLimit, deps.Domains.Delete)
 
+	// Domain purchase (proxy ke registrar-api). Nil-safe kalau feature disabled.
+	if deps.DomainPurchase != nil {
+		authed.Post("/domains/check", mutateLimit, deps.DomainPurchase.Check)
+		authed.Post("/domains/purchase", mutateLimit, deps.DomainPurchase.Purchase)
+		authed.Get("/domains/purchases", deps.DomainPurchase.List)
+		authed.Get("/domains/purchases/:job_id", deps.DomainPurchase.Status)
+		authed.Post("/domains/purchases/:job_id/attach", mutateLimit, deps.DomainPurchase.Attach)
+	}
+
 	// Products
 	authed.Get("/sites/:id/products", deps.Products.ListBySite)
 	authed.Post("/sites/:id/products", mutateLimit, deps.Products.Create)

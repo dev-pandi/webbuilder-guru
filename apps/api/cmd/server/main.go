@@ -17,6 +17,7 @@ import (
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
+	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
@@ -191,6 +192,18 @@ func main() {
 	} else {
 		slog.Info("registrar client: disabled (set REGISTRAR_API_URL + REGISTRAR_API_KEY to enable)")
 	}
+
+	// Domain purchase handler menyatukan repo lokal + registrar client + user
+	// repo (untuk ambil profil kontak). Hanya di-build kalau registrar client
+	// aktif — kalau nil, route domain purchase auto-skip di router.
+	purchaseRepo := domain_purchase.NewRepo(pool)
+	var purchaseHandler *domain_purchase.Handler
+	if registrarClient != nil {
+		purchaseHandler = domain_purchase.NewHandler(purchaseRepo, registrarClient, authRepo, cfg.RegistrarWebhookSecret)
+		if cfg.RegistrarWebhookSecret == "" {
+			slog.Warn("registrar webhook: REGISTRAR_WEBHOOK_SECRET kosong — endpoint akan 503 sampai di-set")
+		}
+	}
 	googleHandler := auth.NewGoogleHandler(
 		authRepo, authHandler,
 		cfg.GoogleOAuthClientID, cfg.GoogleOAuthClientSecret, cfg.GoogleOAuthRedirectURL,
@@ -206,9 +219,10 @@ func main() {
 		Cfg:          cfg,
 		Pool:         pool,
 		Issuer:       issuer,
-		Auth:         authHandler,
-		AuthGoogle:   googleHandler,
-		Registrar:    registrarClient,
+		Auth:           authHandler,
+		AuthGoogle:     googleHandler,
+		Registrar:      registrarClient,
+		DomainPurchase: purchaseHandler,
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo, issuer),
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),

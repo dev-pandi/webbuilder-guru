@@ -164,14 +164,28 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          <Button
-            onClick={() => setShowModal(true)}
-            disabled={!canCreate}
-            className="gap-2 shadow-sm"
-          >
-            <Plus className="size-4" />
-            Buat Situs Baru
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={!canCreate}
+              className="gap-2"
+              asChild
+            >
+              <Link href="/sites/new-with-domain">
+                <Globe2 className="size-4" />
+                <span className="hidden sm:inline">Beli Domain + Buat</span>
+                <span className="sm:hidden">Beli Domain</span>
+              </Link>
+            </Button>
+            <Button
+              onClick={() => setShowModal(true)}
+              disabled={!canCreate}
+              className="gap-2 shadow-sm"
+            >
+              <Plus className="size-4" />
+              Buat Situs Baru
+            </Button>
+          </div>
         </div>
       </div>
 
