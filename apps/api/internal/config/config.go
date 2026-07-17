@@ -91,6 +91,13 @@ type Config struct {
 	GoogleOAuthClientID     string
 	GoogleOAuthClientSecret string
 	GoogleOAuthRedirectURL  string
+
+	// Registrar API — service-to-service integration for domain purchase.
+	// Web builder acts as a reseller. Empty URL = disabled (domain purchase UI
+	// hidden). URL set requires KEY in production (see Validate).
+	RegistrarAPIURL     string
+	RegistrarAPIKey     string
+	RegistrarAPITimeout time.Duration
 }
 
 func Load() Config {
@@ -145,6 +152,10 @@ func Load() Config {
 		GoogleOAuthClientID:     env("GOOGLE_OAUTH_CLIENT_ID", ""),
 		GoogleOAuthClientSecret: env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 		GoogleOAuthRedirectURL:  env("GOOGLE_OAUTH_REDIRECT_URL", ""),
+
+		RegistrarAPIURL:     env("REGISTRAR_API_URL", ""),
+		RegistrarAPIKey:     env("REGISTRAR_API_KEY", ""),
+		RegistrarAPITimeout: envDuration("REGISTRAR_API_TIMEOUT", 15*time.Second),
 
 		DBMaxConns:           envInt("DB_MAX_CONNS", 10),
 		DBMinConns:           envInt("DB_MIN_CONNS", 2),
@@ -236,6 +247,12 @@ func (c Config) Validate() error {
 		if c.SMTPHost == "" || c.SMTPFrom == "" {
 			errs = append(errs, "MAIL_DRIVER=smtp requires SMTP_HOST and SMTP_FROM")
 		}
+	}
+
+	// Registrar API: turning it on requires a real key. A public URL with no
+	// key means every request 401s and users see a broken domain-purchase UI.
+	if c.RegistrarAPIURL != "" && c.RegistrarAPIKey == "" {
+		errs = append(errs, "REGISTRAR_API_URL set but REGISTRAR_API_KEY empty (service account key required)")
 	}
 
 	if len(errs) > 0 {

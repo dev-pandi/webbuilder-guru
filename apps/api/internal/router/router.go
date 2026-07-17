@@ -21,6 +21,7 @@ import (
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
+	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
@@ -53,6 +54,10 @@ type Deps struct {
 
 	Caddy  *caddy.Handler
 	Public *public.Handler
+
+	// Registrar is the domain-purchase client. May be nil (feature disabled
+	// when REGISTRAR_API_URL is empty) — callers must nil-check.
+	Registrar *registrar.Client
 
 	Admin *admin.Handler
 

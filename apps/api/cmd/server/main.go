@@ -26,6 +26,7 @@ import (
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
+	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/seed"
 	"github.com/webbuilder/api/internal/sites"
@@ -175,6 +176,21 @@ func main() {
 		Mailer:     mailer,
 		AppBaseURL: cfg.AppBaseURL,
 	})
+
+	registrarClient, err := registrar.New(registrar.Config{
+		BaseURL: cfg.RegistrarAPIURL,
+		APIKey:  cfg.RegistrarAPIKey,
+		Timeout: cfg.RegistrarAPITimeout,
+	})
+	if err != nil {
+		slog.Error("registrar client init failed", "error", err)
+		os.Exit(1)
+	}
+	if registrarClient != nil {
+		slog.Info("registrar client: enabled", "base_url", cfg.RegistrarAPIURL, "timeout", cfg.RegistrarAPITimeout)
+	} else {
+		slog.Info("registrar client: disabled (set REGISTRAR_API_URL + REGISTRAR_API_KEY to enable)")
+	}
 	googleHandler := auth.NewGoogleHandler(
 		authRepo, authHandler,
 		cfg.GoogleOAuthClientID, cfg.GoogleOAuthClientSecret, cfg.GoogleOAuthRedirectURL,
@@ -192,6 +208,7 @@ func main() {
 		Issuer:       issuer,
 		Auth:         authHandler,
 		AuthGoogle:   googleHandler,
+		Registrar:    registrarClient,
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo, issuer),
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),

@@ -81,6 +81,10 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_OAUTH_REDIRECT_URL: ${GOOGLE_OAUTH_REDIRECT_URL:-http://api.localhost/api/v1/auth/google/callback}
+      # Registrar API (reseller integration — leave URL blank to disable)
+      REGISTRAR_API_URL: ${REGISTRAR_API_URL:-}
+      REGISTRAR_API_KEY: ${REGISTRAR_API_KEY:-}
+      REGISTRAR_API_TIMEOUT: ${REGISTRAR_API_TIMEOUT:-15s}
     depends_on:
       postgres:
         condition: service_healthy
