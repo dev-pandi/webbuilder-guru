@@ -1,4 +1,6 @@
-# Web Builder — Claude Project Notes
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Konteks ini dimuat di setiap sesi. Bekerjalah sebagai senior engineer dengan keahlian gabungan:
 
@@ -17,9 +19,9 @@ Bahasa user-facing copy: **Indonesia**. Komentar code: English ringkas yang menj
 
 | Layer | Tools |
 |-------|-------|
-| Backend | Go 1.22+, Fiber v2, jackc/pgx v5, golang-jwt v5, argon2id, minio-go v7 |
-| Frontend | Next.js 14, TypeScript, Tailwind 3.4, React 18 |
-| DB | PostgreSQL 16. Migrations embedded di `apps/api/internal/db/migrations/`, auto-applied via `schema_migrations` table |
+| Backend | Go 1.24 (toolchain 1.24.3), Fiber v2, jackc/pgx v5, golang-jwt v5, argon2id, minio-go v7, Goose v3 |
+| Frontend | Next.js 14 (App Router), TypeScript 5.5, Tailwind 3.4, React 18, @dnd-kit (editor DnD), TipTap 2 (rich text) |
+| DB | PostgreSQL 16. Migrations embedded di `apps/api/internal/db/migrations/`, auto-applied via `goose_db_version` table |
 | Storage | Pluggable: `local` (disk + static serve) atau `s3` (MinIO/AWS S3) — interface `assets.Storage` |
 | Renderer | App Next.js terpisah, multi-tenant by `Host` header, ISR via `revalidate: 30` |
 | Proxy | Caddy 2 dengan on-demand TLS → `/internal/caddy/ask?domain=` |
@@ -153,13 +155,57 @@ Next.js auto-load `.env.local` (jangan commit). API perlu `.env` di dir tempat `
 
 ## Verifikasi Build
 
-Setiap perubahan backend wajib lolos:
+Perintah yang dijalankan CI (`.github/workflows/ci.yml`) — cocokkan lokal sebelum commit.
+
+**API (Go)** — wajib lolos untuk semua perubahan backend:
 
 ```bash
-cd apps/api && go vet ./... && go build ./...
+cd apps/api
+go vet ./...
+go build ./...
+go test -race -timeout 90s ./...            # semua paket
+go test -race -run TestName ./internal/pkg  # single test / paket tertentu
 ```
 
-Setiap perubahan frontend pastikan typecheck OK. Tidak perlu start dev server otomatis kecuali user meminta.
+**Dashboard (Next.js)**:
+
+```bash
+cd apps/web
+npm run typecheck    # tsc --noEmit
+npm run lint         # next lint
+npm run build        # next build (butuh NEXT_PUBLIC_API_BASE)
+```
+
+**Renderer (Next.js)**:
+
+```bash
+cd apps/renderer
+npm run typecheck
+npm run build        # butuh API_URL
+```
+
+Tidak perlu start dev server otomatis kecuali user minta. Kalau perlu dev:
+`go run ./cmd/server` (API), `npm run dev` (web), `npm run dev -- -p 3001` (renderer).
+
+## Editor Internals (apps/web/app/sites/[id]/editor/)
+
+Block tree adalah `BlockData[]` (JSON) dengan bentuk `{ type, props, children?, layout?, themeOverride? }`. Semua operasi tree **immutable & path-based** — path = array of sibling indices (`[3, 0, 1]` = anak ke-2 dari anak ke-1 top-level block #3).
+
+- **[paths.ts](../apps/web/app/sites/[id]/editor/paths.ts)** — SATU-SATUNYA sumber untuk mutasi tree. Fungsi: `getAt`, `updateAt`, `removeAt`, `removeMany`, `insertAt`, `duplicateAtPath`, `moveAtPath`, `reorderSiblings`, `movePath`, `pathKey`/`keyToPath` (Set membership + React keys), `samePath`, `isChildOf`. **Semua return tree baru** dengan hanya spine yang di-copy → memo React tetap valid.
+- `movePath` menolak drop ke sub-tree diri sendiri (mencegah orphan). `removeMany` sort deepest-first supaya index-shift tidak melenceng.
+- **[PropEditor.tsx](../apps/web/app/sites/[id]/editor/PropEditor.tsx)** — schema-driven form per block type. Blok baru = tambah schema + renderer di sini.
+- **[SortableBlockList.tsx](../apps/web/app/sites/[id]/editor/SortableBlockList.tsx)** — @dnd-kit sortable, panggil `reorderSiblings`/`movePath`.
+- **[useBlocksHistory.ts](../apps/web/app/sites/[id]/editor/useBlocksHistory.ts)** — undo/redo stack, kapasitas fixed.
+
+Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2) renderer di `apps/renderer/app/[...slug]/page.tsx` block dispatch, (3) exporter di `apps/api/internal/exports/`, (4) `styles.go` (CSS) kalau butuh class `.wb-*` baru.
+
+## Renderer (apps/renderer)
+
+- **Route tunggal**: `app/[...slug]/page.tsx` — catch-all yang lookup `Host` header → `GET /public/site-by-host?host=...` → `GET /public/sites/:id/pages/:slug` (slug kosong = `_home`).
+- **ISR**: `export const revalidate = 30` di page — cache 30 detik per Host+path.
+- **Preview**: `_preview/*` route untuk draft (bypass publish, dari dashboard iframe).
+- **Dynamic blocks**: `ProductGridDynamic`, `BlogListDynamic` fetch dari `/public/sites/:id/products` & `/blog` — jangan hard-code data.
+- **Theme tokens** dari site JSON diinject sebagai CSS variables di `<style>` inline di layout (`--color-primary`, `--font-heading`, `--radius`). Blok pakai `var(--color-primary)`, bukan `bg-primary` Tailwind class.
 
 ## Don'ts
 

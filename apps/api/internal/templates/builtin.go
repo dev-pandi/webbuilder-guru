@@ -55,33 +55,40 @@ func variantFontRadius(v string) (heading, body, radius string) {
 }
 
 // palette returns colors for (category, variant).
+//
+// Design rules:
+//   - `secondary` MUST be analogous to `primary` (same hue family, ±30° max).
+//     Complementary pairs (purple+green, teal+amber) always read "amateur"
+//     when rendered as conic-gradient borders / rotating beams.
+//   - Modern variants stay saturated but never mix warm+cool.
+//   - Professional variants use deeper, less-saturated tones for restraint.
 func palette(cat, v string) map[string]string {
 	type p struct{ primary, secondary, bg, fg string }
 	table := map[string]map[string]p{
 		"school": {
-			"modern":       {"#2563eb", "#06b6d4", "#ffffff", "#0f172a"},
-			"clean":        {"#475569", "#94a3b8", "#ffffff", "#1e293b"},
-			"professional": {"#1e3a8a", "#047857", "#fafaf9", "#1c1917"},
+			"modern":       {"#2563eb", "#3b82f6", "#ffffff", "#0f172a"}, // blue analogous
+			"clean":        {"#475569", "#64748b", "#ffffff", "#1e293b"}, // slate analogous
+			"professional": {"#1e3a8a", "#1e40af", "#fafaf9", "#1c1917"}, // deep blue analogous
 		},
 		"umkm": {
-			"modern":       {"#f97316", "#fbbf24", "#fffbf5", "#1f2937"},
-			"clean":        {"#10b981", "#6ee7b7", "#ffffff", "#064e3b"},
-			"professional": {"#0f766e", "#b45309", "#fafaf9", "#1c1917"},
+			"modern":       {"#ea580c", "#c2410c", "#fffbf5", "#1f2937"}, // burnt orange analogous
+			"clean":        {"#059669", "#047857", "#ffffff", "#064e3b"}, // deep green analogous
+			"professional": {"#92400e", "#78350f", "#fafaf9", "#1c1917"}, // artisan amber analogous
 		},
 		"portfolio": {
-			"modern":       {"#a855f7", "#ec4899", "#0f172a", "#f8fafc"},
-			"clean":        {"#0f172a", "#64748b", "#ffffff", "#0f172a"},
-			"professional": {"#1e3a8a", "#0891b2", "#ffffff", "#0f172a"},
+			"modern":       {"#6366f1", "#4f46e5", "#0f172a", "#f8fafc"}, // indigo analogous (was purple+pink)
+			"clean":        {"#0f172a", "#475569", "#ffffff", "#0f172a"}, // grayscale
+			"professional": {"#1e3a8a", "#1e40af", "#ffffff", "#0f172a"}, // deep blue analogous
 		},
 		"teacher": {
-			"modern":       {"#7c3aed", "#22c55e", "#ffffff", "#111827"},
-			"clean":        {"#16a34a", "#84cc16", "#ffffff", "#14532d"},
-			"professional": {"#be123c", "#a16207", "#fffbeb", "#1f1209"},
+			"modern":       {"#7c3aed", "#6d28d9", "#ffffff", "#111827"}, // violet analogous (was purple+green clash)
+			"clean":        {"#059669", "#047857", "#ffffff", "#064e3b"}, // deep green analogous (was green+lime)
+			"professional": {"#9f1239", "#881337", "#fffbeb", "#1f1209"}, // rose analogous (was red+amber)
 		},
 		"blog": {
-			"modern":       {"#dc2626", "#ea580c", "#ffffff", "#111827"},
-			"clean":        {"#111827", "#6b7280", "#ffffff", "#111827"},
-			"professional": {"#1e3a8a", "#b45309", "#fffbf5", "#1c1917"},
+			"modern":       {"#b91c1c", "#991b1b", "#ffffff", "#111827"}, // deep editorial red analogous
+			"clean":        {"#111827", "#374151", "#ffffff", "#111827"}, // grayscale
+			"professional": {"#1e3a8a", "#1e40af", "#fffbf5", "#1c1917"}, // deep blue analogous (was blue+amber)
 		},
 	}
 	if catMap, ok := table[cat]; ok {
@@ -239,36 +246,29 @@ func proHero(variant string, c heroCopy) map[string]any {
 	})
 }
 
-// proFeatureGrid picks a Pro feature block per variant:
+// proFeatureGrid picks a Pro feature block per variant. All three use
+// on-hover interactions only — no always-running conic-gradient borders
+// (which turned 6 cards × rotating primary/secondary into visual chaos
+// when combined with hero + CTA animations elsewhere on the page).
 //
-//	modern       → GlowCardGrid (rotating conic-gradient border)
-//	clean        → TiltCardGrid (subtle 3D tilt on hover)
-//	professional → HoverGlowGrid (radial glow on hover, calmer)
+//	modern       → HoverGlowGrid (radial glow follows hover)
+//	clean        → TiltCardGrid  (subtle 3D tilt on hover)
+//	professional → HoverGlowGrid (calmer radial glow)
 func proFeatureGrid(variant, title string, items []map[string]any) map[string]any {
-	typ := "GlowCardGrid"
-	switch variant {
-	case "clean":
+	typ := "HoverGlowGrid"
+	if variant == "clean" {
 		typ = "TiltCardGrid"
-	case "professional":
-		typ = "HoverGlowGrid"
 	}
 	return block(typ, map[string]any{"title": title, "items": items})
 }
 
 // proFinalCTA — the "convert now" strip at the bottom of the page.
-//
-//	modern       → MovingBorderCTA (rotating gradient border button)
-//	clean        → CTABanner (classic banner)
-//	professional → CTABanner (still classic — dependable feels formal)
+// Always CTABanner (classic + static). Previously modern used
+// MovingBorderCTA (rotating conic button), which — combined with
+// the hero + BorderBeamCard — made the page feel like a carnival.
+// Keeping ONE animated element (the hero) is enough wow.
 func proFinalCTA(variant, title, subtitle, ctaLabel, ctaHref string) map[string]any {
-	if variant == "modern" {
-		return block("MovingBorderCTA", map[string]any{
-			"title":    title,
-			"subtitle": subtitle,
-			"ctaLabel": ctaLabel,
-			"ctaHref":  ctaHref,
-		})
-	}
+	_ = variant // kept in signature for future variant-specific copy
 	return block("CTABanner", map[string]any{
 		"title":    title,
 		"subtitle": subtitle,
@@ -529,10 +529,10 @@ func schoolPages(cv variantCopy, variant string) []map[string]any {
 				{"date": "2025", "title": "Alumni ke-3.200 lulus — mayoritas ke PTN top"},
 			}),
 			proFeatureGrid(variant, "Visi & misi kami", []map[string]any{
-				{"title": "🎯 Visi", "desc": "Menjadi sekolah unggulan yang menghasilkan generasi cerdas, berkarakter, dan siap menghadapi tantangan global."},
-				{"title": "✨ Misi akademik", "desc": "Menyelenggarakan pendidikan berkualitas dengan kurikulum berstandar internasional (Cambridge + Kurikulum Merdeka)."},
-				{"title": "🤝 Misi karakter", "desc": "Menanamkan nilai-nilai moral, etika, dan kearifan budaya Indonesia dalam setiap aspek pembelajaran."},
-				{"title": "🌱 Misi individu", "desc": "Mengembangkan potensi unik setiap siswa lewat konsultasi individual, tes minat bakat, dan program mentoring."},
+				{"title": "Visi", "desc": "Menjadi sekolah unggulan yang menghasilkan generasi cerdas, berkarakter, dan siap menghadapi tantangan global."},
+				{"title": "Misi akademik", "desc": "Menyelenggarakan pendidikan berkualitas dengan kurikulum berstandar internasional (Cambridge + Kurikulum Merdeka)."},
+				{"title": "Misi karakter", "desc": "Menanamkan nilai-nilai moral, etika, dan kearifan budaya Indonesia dalam setiap aspek pembelajaran."},
+				{"title": "Misi individu", "desc": "Mengembangkan potensi unik setiap siswa lewat konsultasi individual, tes minat bakat, dan program mentoring."},
 			}),
 			teamBlock("Tim kepemimpinan", []map[string]any{
 				{"name": "Dr. Ahmad Wijaya, M.Pd.", "role": "Kepala Sekolah · sejak 2018", "image": ""},
@@ -561,31 +561,31 @@ func schoolPages(cv variantCopy, variant string) []map[string]any {
 			subHero("Program akademik unggulan",
 				"Program pendidikan yang dirancang untuk mengembangkan potensi maksimal setiap siswa — dari TK hingga SMP."),
 			proFeatureGrid(variant, "Tiga jenjang pendidikan", []map[string]any{
-				{"title": "🎨 TK / PAUD (3–6 th)", "desc": "Fokus motorik, sosialisasi, dan pengenalan dasar membaca-berhitung melalui bermain. Rasio guru:siswa 1:8."},
-				{"title": "📚 SD (Kelas 1–6)", "desc": "Pondasi akademik kuat dengan pendekatan tematik + integratif Kurikulum Merdeka. Bahasa Inggris intensif dari kelas 1."},
-				{"title": "🚀 SMP (Kelas 7–9)", "desc": "Pendalaman materi + coding, bahasa Inggris dwibahasa, dan program persiapan masuk SMA top."},
+				{"title": "TK / PAUD (3–6 th)", "desc": "Fokus motorik, sosialisasi, dan pengenalan dasar membaca-berhitung melalui bermain. Rasio guru:siswa 1:8."},
+				{"title": "SD (Kelas 1–6)", "desc": "Pondasi akademik kuat dengan pendekatan tematik + integratif Kurikulum Merdeka. Bahasa Inggris intensif dari kelas 1."},
+				{"title": "SMP (Kelas 7–9)", "desc": "Pendalaman materi + coding, bahasa Inggris dwibahasa, dan program persiapan masuk SMA top."},
 			}),
 			block("Section", map[string]any{
 				"title": "Kurikulum Merdeka + Cambridge",
 				"body":  "Kami menggunakan **Kurikulum Merdeka** sebagai basis + **Cambridge Assessment** untuk pengukuran internasional. Setiap mata pelajaran ditujukan untuk mengembangkan 6 dimensi Pelajar Pancasila:\n\n- Beriman, bertakwa, berakhlak mulia\n- Berkebinekaan global\n- Bergotong-royong\n- Mandiri\n- Bernalar kritis\n- Kreatif",
 			}),
 			proFeatureGrid(variant, "Mata pelajaran unggulan", []map[string]any{
-				{"title": "🇬🇧 Bahasa Inggris", "desc": "5 jam/minggu dengan native speaker untuk kelas atas. Sertifikasi Cambridge YLE/KET di akhir jenjang."},
-				{"title": "💻 Coding & Robotika", "desc": "Pengenalan logika pemrograman dari kelas 4 SD. Scratch → Python → Arduino."},
-				{"title": "💪 Karakter & Kepemimpinan", "desc": "Program khusus untuk membangun soft skill: public speaking, teamwork, resilience."},
-				{"title": "🎨 Seni & Olahraga", "desc": "Eksplorasi minat lewat 15+ pilihan ekskul — semuanya rutin tampil di event."},
-				{"title": "🔬 Sains Aplikatif", "desc": "Eksperimen mingguan di lab, kunjungan ke pabrik/museum, project sains akhir semester."},
-				{"title": "🧘 Well-being", "desc": "Sesi mindfulness mingguan + konsultasi psikolog setiap kali dibutuhkan."},
+				{"title": "Bahasa Inggris", "desc": "5 jam/minggu dengan native speaker untuk kelas atas. Sertifikasi Cambridge YLE/KET di akhir jenjang."},
+				{"title": "Coding & Robotika", "desc": "Pengenalan logika pemrograman dari kelas 4 SD. Scratch → Python → Arduino."},
+				{"title": "Karakter & Kepemimpinan", "desc": "Program khusus untuk membangun soft skill: public speaking, teamwork, resilience."},
+				{"title": "Seni & Olahraga", "desc": "Eksplorasi minat lewat 15+ pilihan ekskul — semuanya rutin tampil di event."},
+				{"title": "Sains Aplikatif", "desc": "Eksperimen mingguan di lab, kunjungan ke pabrik/museum, project sains akhir semester."},
+				{"title": "Well-being", "desc": "Sesi mindfulness mingguan + konsultasi psikolog setiap kali dibutuhkan."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "15+ ekstrakurikuler — cari passion kamu",
 				"items": []map[string]any{
-					{"title": "🤖 Robotika", "desc": "Juara nasional 2023 & 2024", "size": "large"},
-					{"title": "⚽ Futsal & Basket", "desc": "Latihan rutin + kompetisi"},
-					{"title": "🎵 Paduan Suara", "desc": "Tampil di kompetisi kota", "size": "wide"},
-					{"title": "📚 Pramuka", "desc": "Wajib kls 4–9"},
-					{"title": "🎨 Seni Lukis", "desc": "Ekspresi kreatif"},
-					{"title": "🏆 Olimpiade", "desc": "Mat/IPA/Bahasa"},
+					{"title": "Robotika", "desc": "Juara nasional 2023 & 2024", "size": "large"},
+					{"title": "Futsal & Basket", "desc": "Latihan rutin + kompetisi"},
+					{"title": "Paduan Suara", "desc": "Tampil di kompetisi kota", "size": "wide"},
+					{"title": "Pramuka", "desc": "Wajib kls 4–9"},
+					{"title": "Seni Lukis", "desc": "Ekspresi kreatif"},
+					{"title": "Olimpiade", "desc": "Mat/IPA/Bahasa"},
 				},
 			}),
 			simpleCTA("Ingin lihat langsung kelas kami?", "Booking tour sekolah + trial class 1 hari untuk anak Anda — gratis.", "Booking tour", "#kunjungan"),
@@ -702,12 +702,12 @@ func umkmPages(cv variantCopy, variant string) []map[string]any {
 				{"value": "4.9/5", "label": "Rating pelanggan"},
 			}),
 			proFeatureGrid(variant, "Kenapa pelanggan pilih kami", []map[string]any{
-				{"title": "🌿 100% bahan lokal", "desc": "Kami membeli langsung dari petani dan pengrajin dengan harga adil — bukan sekedar reseller."},
-				{"title": "✅ QC ketat", "desc": "Setiap produk dicek higienitas + rasa sebelum dikirim. Tidak lolos? Tidak keluar dari gudang."},
-				{"title": "🚚 Kirim same-day", "desc": "Jabodetabek same-day (order sebelum 14.00), luar Jabodetabek 1–3 hari via JNE/J&T/SiCepat."},
-				{"title": "💬 CS ramah", "desc": "Tim CS aktif via WhatsApp 08.00–21.00, respon rata-rata <5 menit di jam kerja."},
-				{"title": "🎁 Packaging premium", "desc": "Setiap paket dibungkus rapi + kartu ucapan gratis. Cocok untuk hampers atau hadiah."},
-				{"title": "♻️ Ramah lingkungan", "desc": "Kemasan biodegradable + program pickup box kosong untuk pelanggan langganan."},
+				{"title": "100% bahan lokal", "desc": "Kami membeli langsung dari petani dan pengrajin dengan harga adil — bukan sekedar reseller."},
+				{"title": "QC ketat", "desc": "Setiap produk dicek higienitas + rasa sebelum dikirim. Tidak lolos? Tidak keluar dari gudang."},
+				{"title": "Kirim same-day", "desc": "Jabodetabek same-day (order sebelum 14.00), luar Jabodetabek 1–3 hari via JNE/J&T/SiCepat."},
+				{"title": "CS ramah", "desc": "Tim CS aktif via WhatsApp 08.00–21.00, respon rata-rata <5 menit di jam kerja."},
+				{"title": "Packaging premium", "desc": "Setiap paket dibungkus rapi + kartu ucapan gratis. Cocok untuk hampers atau hadiah."},
+				{"title": "Ramah lingkungan", "desc": "Kemasan biodegradable + program pickup box kosong untuk pelanggan langganan."},
 			}),
 			block("ProductGridDynamic", map[string]any{
 				"title": "Best seller bulan ini",
@@ -734,7 +734,7 @@ func umkmPages(cv variantCopy, variant string) []map[string]any {
 				},
 			}),
 			block("Section", map[string]any{
-				"title": "🎁 Promo Spesial Bulan Ini",
+				"title": "Promo Spesial Bulan Ini",
 				"body":  "**GRATIS ongkir** untuk pembelian minimal Rp 100.000.\n**Diskon 10%** untuk pelanggan baru — pakai kode `WELCOME10`.\n**Beli 3 gratis 1** untuk produk pilihan setiap hari Jumat!",
 			}),
 			proFinalCTA(variant,
@@ -809,12 +809,12 @@ func umkmPages(cv variantCopy, variant string) []map[string]any {
 				{"date": "2025", "title": "Program pemberdayaan 30+ UMKM mitra"},
 			}),
 			proFeatureGrid(variant, "Komitmen kami", []map[string]any{
-				{"title": "🤝 Mendukung UMKM", "desc": "Kami membayar pengrajin di atas harga pasar dan membantu mereka naik kelas via training + branding."},
-				{"title": "🌱 Bahan pilihan", "desc": "Hanya bahan terbaik yang dipilih. Kalau kami sendiri tidak mau makan, tidak akan kami jual."},
-				{"title": "🛡 Standar keamanan", "desc": "Semua produk diproduksi dengan standar higienitas BPOM. Tanpa pengawet berbahaya."},
-				{"title": "♻️ Ramah lingkungan", "desc": "Kemasan biodegradable + program pickup box untuk pelanggan langganan."},
-				{"title": "💰 Harga adil", "desc": "Margin kami tetap tipis — biar produk terjangkau + pengrajin dapat bagian layak."},
-				{"title": "🚚 Logistik teruji", "desc": "5 mitra ekspedisi + QC packaging sebelum kirim — sudah 99.7% zero-complaint."},
+				{"title": "Mendukung UMKM", "desc": "Kami membayar pengrajin di atas harga pasar dan membantu mereka naik kelas via training + branding."},
+				{"title": "Bahan pilihan", "desc": "Hanya bahan terbaik yang dipilih. Kalau kami sendiri tidak mau makan, tidak akan kami jual."},
+				{"title": "Standar keamanan", "desc": "Semua produk diproduksi dengan standar higienitas BPOM. Tanpa pengawet berbahaya."},
+				{"title": "Ramah lingkungan", "desc": "Kemasan biodegradable + program pickup box untuk pelanggan langganan."},
+				{"title": "Harga adil", "desc": "Margin kami tetap tipis — biar produk terjangkau + pengrajin dapat bagian layak."},
+				{"title": "Logistik teruji", "desc": "5 mitra ekspedisi + QC packaging sebelum kirim — sudah 99.7% zero-complaint."},
 			}),
 			proTestimonials("Kata tim kami sendiri", []map[string]any{
 				{"quote": "Kami percaya produk lokal Indonesia tidak kalah dengan produk impor. Misi kami adalah membuktikan itu setiap hari — satu paket, satu review 5-bintang, satu pengrajin yang naik kelas.", "name": "Nadia Putri", "role": "Founder Toko Bahagia"},
@@ -845,10 +845,10 @@ func umkmPages(cv variantCopy, variant string) []map[string]any {
 				"body":  "```\nHalo kak, mau pesan:\n• [Nama Produk 1] – [Jumlah]\n• [Nama Produk 2] – [Jumlah]\n\nAlamat lengkap:\n[Nama penerima]\n[No HP aktif]\n[Alamat + kode pos]\n```\n\nKirim ke: **0812-3456-7890** (WA)",
 			}),
 			proFeatureGrid(variant, "Metode pembayaran", []map[string]any{
-				{"title": "💳 Transfer bank", "desc": "BCA, Mandiri, BRI, BNI — nomor rekening dikirim setelah konfirmasi order."},
-				{"title": "📱 E-wallet", "desc": "GoPay, OVO, DANA, ShopeePay — auto-verify via nomor unik."},
-				{"title": "💵 COD (bayar di tempat)", "desc": "Tersedia untuk Jabodetabek dengan minimum order Rp 200.000."},
-				{"title": "🏢 Invoice / PO", "desc": "Untuk pesanan corporate / instansi. Term of payment negotiable."},
+				{"title": "Transfer bank", "desc": "BCA, Mandiri, BRI, BNI — nomor rekening dikirim setelah konfirmasi order."},
+				{"title": "E-wallet", "desc": "GoPay, OVO, DANA, ShopeePay — auto-verify via nomor unik."},
+				{"title": "COD (bayar di tempat)", "desc": "Tersedia untuk Jabodetabek dengan minimum order Rp 200.000."},
+				{"title": "Invoice / PO", "desc": "Untuk pesanan corporate / instansi. Term of payment negotiable."},
 			}),
 			block("Section", map[string]any{
 				"title": "Pengiriman & pengembalian",
@@ -958,12 +958,12 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 				{"value": "100%", "label": "On-time delivery"},
 			}),
 			proFeatureGrid(variant, "Apa yang saya kerjakan", []map[string]any{
-				{"title": "💻 Frontend Development", "desc": "Aplikasi React/Next.js dengan UI modern, performa optimal (Lighthouse >95), dan accessible."},
-				{"title": "⚙️ Backend Development", "desc": "REST API dengan Go/Node.js, integrasi database Postgres/Redis, autentikasi JWT/OAuth, deployment Docker+K8s."},
-				{"title": "🎨 UI/UX Design", "desc": "Desain interface yang clean, intuitif, dan memprioritaskan kebutuhan user. Figma → code seamless."},
-				{"title": "📱 Mobile-Responsive", "desc": "Setiap aplikasi dibangun mobile-first — tested di iOS Safari, Chrome Android, dan browser desktop."},
-				{"title": "🚀 Performance Audit", "desc": "Audit performa aplikasi existing, optimasi bundle size, caching strategy, dan database queries."},
-				{"title": "🔐 Security Review", "desc": "Review OWASP top-10 vulnerabilities, secure coding practices, dan hardening deployment."},
+				{"title": "Frontend Development", "desc": "Aplikasi React/Next.js dengan UI modern, performa optimal (Lighthouse >95), dan accessible."},
+				{"title": "Backend Development", "desc": "REST API dengan Go/Node.js, integrasi database Postgres/Redis, autentikasi JWT/OAuth, deployment Docker+K8s."},
+				{"title": "UI/UX Design", "desc": "Desain interface yang clean, intuitif, dan memprioritaskan kebutuhan user. Figma → code seamless."},
+				{"title": "Mobile-Responsive", "desc": "Setiap aplikasi dibangun mobile-first — tested di iOS Safari, Chrome Android, dan browser desktop."},
+				{"title": "Performance Audit", "desc": "Audit performa aplikasi existing, optimasi bundle size, caching strategy, dan database queries."},
+				{"title": "Security Review", "desc": "Review OWASP top-10 vulnerabilities, secure coding practices, dan hardening deployment."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "Project pilihan",
@@ -1024,20 +1024,20 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Web Applications — client work",
 				"items": []map[string]any{
-					{"title": "🛍 E-commerce UMKM", "desc": "50+ merchant · Rp 2M GMV/bulan · Next.js + Stripe", "size": "large"},
-					{"title": "📊 Dashboard Analytics", "desc": "Realtime · <100ms · React + Go + ClickHouse", "size": "wide"},
-					{"title": "🎓 LMS Platform", "desc": "5.000+ siswa · Next.js + Node"},
-					{"title": "🏥 Sistem Klinik", "desc": "Rekam medis · Vue + Laravel"},
-					{"title": "💳 Fintech MVP", "desc": "OJK sandbox · Go + Postgres"},
+					{"title": "E-commerce UMKM", "desc": "50+ merchant · Rp 2M GMV/bulan · Next.js + Stripe", "size": "large"},
+					{"title": "Dashboard Analytics", "desc": "Realtime · <100ms · React + Go + ClickHouse", "size": "wide"},
+					{"title": "LMS Platform", "desc": "5.000+ siswa · Next.js + Node"},
+					{"title": "Sistem Klinik", "desc": "Rekam medis · Vue + Laravel"},
+					{"title": "Fintech MVP", "desc": "OJK sandbox · Go + Postgres"},
 				},
 			}),
 			proFeatureGrid(variant, "Open source & side projects", []map[string]any{
-				{"title": "🛠 go-utils", "desc": "Library Go untuk helper umum. 250+ stars di GitHub, dipakai oleh 30+ project."},
-				{"title": "✍️ Personal Blog Generator", "desc": "Static site generator untuk blog teknis (Markdown → HTML statis, kompilasi <500ms)."},
-				{"title": "🎨 Tailwind Component Kit", "desc": "Collection 40+ komponen UI siap pakai. 1.000+ downloads NPM."},
-				{"title": "📡 Realtime chat starter", "desc": "Full-stack template WebSocket chat dengan presence + typing indicator."},
-				{"title": "🎯 Landing page templates", "desc": "10+ template SaaS landing gratis — pakai stack Next.js + Tailwind."},
-				{"title": "🧪 Testing helpers", "desc": "Playwright helpers untuk visual regression testing + auth flow."},
+				{"title": "go-utils", "desc": "Library Go untuk helper umum. 250+ stars di GitHub, dipakai oleh 30+ project."},
+				{"title": "Personal Blog Generator", "desc": "Static site generator untuk blog teknis (Markdown → HTML statis, kompilasi <500ms)."},
+				{"title": "Tailwind Component Kit", "desc": "Collection 40+ komponen UI siap pakai. 1.000+ downloads NPM."},
+				{"title": "Realtime chat starter", "desc": "Full-stack template WebSocket chat dengan presence + typing indicator."},
+				{"title": "Landing page templates", "desc": "10+ template SaaS landing gratis — pakai stack Next.js + Tailwind."},
+				{"title": "Testing helpers", "desc": "Playwright helpers untuk visual regression testing + auth flow."},
 			}),
 			proTestimonials("Apa kata klien lama", []map[string]any{
 				{"quote": "Detail-oriented, on-time, komunikatif. Saya sudah hire dev freelance banyak, tapi ini yang paling profesional. Direkomendasikan.", "name": "Andi Pratama", "role": "CEO TechCorp · client sejak 2022"},
@@ -1059,12 +1059,12 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 			subHero("Layanan yang saya tawarkan",
 				"Solusi web development untuk berbagai kebutuhan bisnis. Fixed-price untuk scope yang jelas, hourly retainer untuk yang ongoing."),
 			proFeatureGrid(variant, "6 paket layanan utama", []map[string]any{
-				{"title": "🌐 Website Bisnis", "desc": "Landing page + halaman produk + SEO basic. Mulai Rp 5jt · lead time 2 minggu."},
-				{"title": "💼 Web Aplikasi Custom", "desc": "Full-stack aplikasi web fungsional dengan database & autentikasi. Mulai Rp 15jt · 1–3 bulan."},
-				{"title": "🛒 E-commerce", "desc": "Toko online lengkap dengan payment gateway + inventory. Mulai Rp 25jt · 6 minggu."},
-				{"title": "🔧 Maintenance & fix", "desc": "Update fitur, bug fix, optimasi performa. Per jam Rp 500rb atau retainer bulanan."},
-				{"title": "🎨 UI/UX Redesign", "desc": "Perbaikan tampilan aplikasi existing. Wireframe → high-fidelity Figma → code."},
-				{"title": "📚 Konsultasi & mentoring", "desc": "Sesi 1-on-1 untuk arsitektur, code review, atau career advice. Rp 1jt/jam."},
+				{"title": "Website Bisnis", "desc": "Landing page + halaman produk + SEO basic. Mulai Rp 5jt · lead time 2 minggu."},
+				{"title": "Web Aplikasi Custom", "desc": "Full-stack aplikasi web fungsional dengan database & autentikasi. Mulai Rp 15jt · 1–3 bulan."},
+				{"title": "E-commerce", "desc": "Toko online lengkap dengan payment gateway + inventory. Mulai Rp 25jt · 6 minggu."},
+				{"title": "Maintenance & fix", "desc": "Update fitur, bug fix, optimasi performa. Per jam Rp 500rb atau retainer bulanan."},
+				{"title": "UI/UX Redesign", "desc": "Perbaikan tampilan aplikasi existing. Wireframe → high-fidelity Figma → code."},
+				{"title": "Konsultasi & mentoring", "desc": "Sesi 1-on-1 untuk arsitektur, code review, atau career advice. Rp 1jt/jam."},
 			}),
 			block("BorderBeamCard", map[string]any{
 				"title":    "Paket MVP Fixed-Price",
@@ -1126,19 +1126,19 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 				{"date": "2025", "title": "Independent consultant — 24 klien puas & berkembang"},
 			}),
 			proFeatureGrid(variant, "Prinsip kerja", []map[string]any{
-				{"title": "🎯 Ship > perfect", "desc": "Perfect adalah musuh done. Saya prefer ship v1 lalu iterasi berdasarkan feedback real user."},
-				{"title": "📢 Over-communicate", "desc": "Silence itu red flag. Kalau ada blocker, saya kasih tahu HARI ITU juga — bukan Jumat sore."},
-				{"title": "🧑‍💼 Bisnis dulu, tech kedua", "desc": "Saya mikir ROI project sebelum pilih tech stack. Bukan sebaliknya."},
-				{"title": "📚 Terus belajar", "desc": "1 jam/hari untuk baca / eksperimen tech baru. Kalau sudah 3 bulan nggak belajar, saya panic."},
+				{"title": "Ship > perfect", "desc": "Perfect adalah musuh done. Saya prefer ship v1 lalu iterasi berdasarkan feedback real user."},
+				{"title": "Over-communicate", "desc": "Silence itu red flag. Kalau ada blocker, saya kasih tahu HARI ITU juga — bukan Jumat sore."},
+				{"title": "Bisnis dulu, tech kedua", "desc": "Saya mikir ROI project sebelum pilih tech stack. Bukan sebaliknya."},
+				{"title": "Terus belajar", "desc": "1 jam/hari untuk baca / eksperimen tech baru. Kalau sudah 3 bulan nggak belajar, saya panic."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "Selain coding",
 				"items": []map[string]any{
-					{"title": "📷 Fotografi", "desc": "Street photography weekend — Instagram @namasaya.photo · 40+ kota", "size": "large"},
-					{"title": "🎮 Gaming", "desc": "RPG & indie games", "size": "wide"},
-					{"title": "📚 Membaca", "desc": "Sci-fi, bisnis, psychology"},
-					{"title": "🧑‍🏫 Berbagi", "desc": "Mentor komunitas dev lokal"},
-					{"title": "🏃 Lari", "desc": "5K/week · half-marathon 2024"},
+					{"title": "Fotografi", "desc": "Street photography weekend — Instagram @namasaya.photo · 40+ kota", "size": "large"},
+					{"title": "Gaming", "desc": "RPG & indie games", "size": "wide"},
+					{"title": "Membaca", "desc": "Sci-fi, bisnis, psychology"},
+					{"title": "Berbagi", "desc": "Mentor komunitas dev lokal"},
+					{"title": "Lari", "desc": "5K/week · half-marathon 2024"},
 				},
 			}),
 			simpleCTA("Ingin ngobrol tech / karir?",
@@ -1229,12 +1229,12 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 				{"value": "4.9/5", "label": "Rating siswa"},
 			}),
 			proFeatureGrid(variant, "Yang akan kamu pelajari", []map[string]any{
-				{"title": "🔢 Aljabar", "desc": "Dari konsep dasar persamaan linear hingga persiapan Olimpiade OSN/OSP. 25 modul + 100 soal."},
-				{"title": "📊 Statistika", "desc": "Probabilitas, distribusi, dan aplikasi di kehidupan nyata (bukan cuma untuk ujian)."},
-				{"title": "∫ Kalkulus", "desc": "Limit, turunan, integral — dijelaskan dengan analogi sederhana yang bikin kamu ngerti bukan hafal."},
-				{"title": "📐 Geometri", "desc": "Geometri datar, ruang, dan transformasi dengan visualisasi interaktif (bukan cuma gambar 2D di papan)."},
-				{"title": "🎯 Trigonometri", "desc": "Identitas, persamaan, dan aplikasi di fisika & engineering — cocok yang mau lanjut STEM."},
-				{"title": "🏆 Soal Olimpiade", "desc": "Latihan soal tingkat OSN/OSP dengan strategi penyelesaian step-by-step."},
+				{"title": "Aljabar", "desc": "Dari konsep dasar persamaan linear hingga persiapan Olimpiade OSN/OSP. 25 modul + 100 soal."},
+				{"title": "Statistika", "desc": "Probabilitas, distribusi, dan aplikasi di kehidupan nyata (bukan cuma untuk ujian)."},
+				{"title": "Kalkulus", "desc": "Limit, turunan, integral — dijelaskan dengan analogi sederhana yang bikin kamu ngerti bukan hafal."},
+				{"title": "Geometri", "desc": "Geometri datar, ruang, dan transformasi dengan visualisasi interaktif (bukan cuma gambar 2D di papan)."},
+				{"title": "Trigonometri", "desc": "Identitas, persamaan, dan aplikasi di fisika & engineering — cocok yang mau lanjut STEM."},
+				{"title": "Soal Olimpiade", "desc": "Latihan soal tingkat OSN/OSP dengan strategi penyelesaian step-by-step."},
 			}),
 			proTestimonials("Cerita siswa Pak Budi", []map[string]any{
 				{"quote": "Awalnya benci matematika, sekarang nilai saya naik dari 60 ke 92 dalam 1 semester. Pak Budi pinter banget jelasinnya step by step — nggak asal kasih rumus.", "name": "Maya Rachman", "role": "Kelas 12 · SMA 8 Jakarta"},
@@ -1257,7 +1257,7 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 				},
 			}),
 			block("Section", map[string]any{
-				"title": "🎁 Materi gratis untuk kamu",
+				"title": "Materi gratis untuk kamu",
 				"body":  "Saya menyediakan **300+ materi belajar GRATIS** untuk siswa SMA:\n\n- Video penjelasan (rata-rata 8 menit — tidak bertele-tele)\n- PDF ringkasan siap-cetak\n- Bank soal dengan pembahasan step-by-step\n- Quiz mini untuk cek pemahaman\n\nKlik halaman **Materi** untuk mulai belajar sekarang!",
 			}),
 			proFinalCTA(variant,
@@ -1285,20 +1285,20 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 				{"value": "12rb", "label": "Siswa aktif/bulan"},
 			}),
 			proFeatureGrid(variant, "Materi berdasarkan kelas & topik", []map[string]any{
-				{"title": "📘 Aljabar (Kelas 10)", "desc": "Persamaan linear, kuadrat, pertidaksamaan, sistem persamaan. 25 modul + 100 soal dengan pembahasan animasi."},
-				{"title": "📗 Trigonometri (Kelas 11)", "desc": "Identitas, persamaan, grafik + aplikasi ke fisika. 20 modul + 80 soal — cocok yang mau lanjut STEM."},
-				{"title": "📙 Kalkulus (Kelas 11–12)", "desc": "Limit, turunan, integral. 30 modul + 120 soal. Analogi kehidupan sehari-hari, bukan cuma rumus."},
-				{"title": "📕 Statistika & Peluang", "desc": "Distribusi, probabilitas, kombinatorik. 15 modul + 60 soal — sering muncul di UTBK & OSN."},
-				{"title": "📓 Geometri Analitik", "desc": "Persamaan garis, lingkaran, parabola, ellips. 18 modul dengan visualisasi Desmos interaktif."},
-				{"title": "🏆 Persiapan Olimpiade", "desc": "Bank soal OSN/OSP 10 tahun terakhir + strategi penyelesaian dari tim IMO Indonesia."},
+				{"title": "Aljabar (Kelas 10)", "desc": "Persamaan linear, kuadrat, pertidaksamaan, sistem persamaan. 25 modul + 100 soal dengan pembahasan animasi."},
+				{"title": "Trigonometri (Kelas 11)", "desc": "Identitas, persamaan, grafik + aplikasi ke fisika. 20 modul + 80 soal — cocok yang mau lanjut STEM."},
+				{"title": "Kalkulus (Kelas 11–12)", "desc": "Limit, turunan, integral. 30 modul + 120 soal. Analogi kehidupan sehari-hari, bukan cuma rumus."},
+				{"title": "Statistika & Peluang", "desc": "Distribusi, probabilitas, kombinatorik. 15 modul + 60 soal — sering muncul di UTBK & OSN."},
+				{"title": "Geometri Analitik", "desc": "Persamaan garis, lingkaran, parabola, ellips. 18 modul dengan visualisasi Desmos interaktif."},
+				{"title": "Persiapan Olimpiade", "desc": "Bank soal OSN/OSP 10 tahun terakhir + strategi penyelesaian dari tim IMO Indonesia."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "Learning path yang saya rekomendasikan",
 				"items": []map[string]any{
-					{"title": "📗 Kelas 10 — Fondasi", "desc": "Aljabar → persamaan → fungsi. 3 bulan konsisten cukup untuk fondasi solid.", "size": "lg"},
-					{"title": "📘 Kelas 11 — Trigonometri + Limit", "desc": "Fase transisi yang bikin banyak siswa kesulitan. Wajib pelan-pelan.", "size": "md"},
-					{"title": "📙 Kelas 12 — Kalkulus + UTBK", "desc": "Latihan soal HOTS 200+ dengan target skor UTBK 700+.", "size": "md"},
-					{"title": "🏆 Olimpiade — Extra Track", "desc": "Untuk yang serius kompetisi. Sesi tambahan tiap Sabtu.", "size": "lg"},
+					{"title": "Kelas 10 — Fondasi", "desc": "Aljabar → persamaan → fungsi. 3 bulan konsisten cukup untuk fondasi solid.", "size": "lg"},
+					{"title": "Kelas 11 — Trigonometri + Limit", "desc": "Fase transisi yang bikin banyak siswa kesulitan. Wajib pelan-pelan.", "size": "md"},
+					{"title": "Kelas 12 — Kalkulus + UTBK", "desc": "Latihan soal HOTS 200+ dengan target skor UTBK 700+.", "size": "md"},
+					{"title": "Olimpiade — Extra Track", "desc": "Untuk yang serius kompetisi. Sesi tambahan tiap Sabtu.", "size": "lg"},
 				},
 			}),
 			proTestimonials("Cerita siswa yang pakai materi gratis", []map[string]any{
@@ -1350,20 +1350,20 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 				{"value": "94%", "label": "Repeat rate siswa"},
 			}),
 			proFeatureGrid(variant, "Tipe kelas yang tersedia", []map[string]any{
-				{"title": "👤 Privat 1-on-1", "desc": "Rp 350.000/sesi 90 menit. Materi & pace disesuaikan 100% kebutuhan kamu. Ideal untuk yang gap-nya spesifik."},
-				{"title": "👥 Kelas Reguler (3–5 siswa)", "desc": "Rp 450.000/bulan (8× pertemuan). Belajar bareng teman + latihan soal grup. Value terbaik untuk sekolah reguler."},
-				{"title": "🏆 Kelas Olimpiade", "desc": "Rp 750.000/bulan (4× pertemuan). Khusus persiapan OSN/OSP + KSN. Kurikulum dari tim IMO."},
-				{"title": "🎯 Crash Course UTBK", "desc": "Rp 2.500.000 (8× pertemuan intensif). Skor rata-rata siswa naik 150 poin dalam 2 bulan."},
-				{"title": "📝 Kelas PR & Konsultasi", "desc": "Rp 200.000/sesi 60 menit. Bahas PR sekolah + persiapan ulangan. Bisa spontan booking H-1."},
-				{"title": "🎁 Trial Gratis", "desc": "Untuk siswa baru — 1 sesi gratis 60 menit untuk kenalan & assessment awal. Klik kontak untuk booking."},
+				{"title": "Privat 1-on-1", "desc": "Rp 350.000/sesi 90 menit. Materi & pace disesuaikan 100% kebutuhan kamu. Ideal untuk yang gap-nya spesifik."},
+				{"title": "Kelas Reguler (3–5 siswa)", "desc": "Rp 450.000/bulan (8× pertemuan). Belajar bareng teman + latihan soal grup. Value terbaik untuk sekolah reguler."},
+				{"title": "Kelas Olimpiade", "desc": "Rp 750.000/bulan (4× pertemuan). Khusus persiapan OSN/OSP + KSN. Kurikulum dari tim IMO."},
+				{"title": "Crash Course UTBK", "desc": "Rp 2.500.000 (8× pertemuan intensif). Skor rata-rata siswa naik 150 poin dalam 2 bulan."},
+				{"title": "Kelas PR & Konsultasi", "desc": "Rp 200.000/sesi 60 menit. Bahas PR sekolah + persiapan ulangan. Bisa spontan booking H-1."},
+				{"title": "Trial Gratis", "desc": "Untuk siswa baru — 1 sesi gratis 60 menit untuk kenalan & assessment awal. Klik kontak untuk booking."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "Jadwal reguler mingguan",
 				"items": []map[string]any{
-					{"title": "🟢 Senin/Rabu/Jumat sore", "desc": "16.00–17.30 Kelas 10 · 18.00–19.30 Kelas 11 · 19.30–21.00 Kelas 12", "size": "lg"},
-					{"title": "🟢 Selasa/Kamis siang", "desc": "09.00–10.30 & 13.00–14.30 slot privat 1-on-1", "size": "md"},
-					{"title": "🟢 Sabtu pagi", "desc": "08.00–10.00 Kelas Olimpiade · 10.30–12.00 Pembahasan Soal Sulit", "size": "md"},
-					{"title": "🔴 Minggu libur", "desc": "Family day — WhatsApp masih standby untuk emergency PR", "size": "lg"},
+					{"title": "Senin/Rabu/Jumat sore", "desc": "16.00–17.30 Kelas 10 · 18.00–19.30 Kelas 11 · 19.30–21.00 Kelas 12", "size": "lg"},
+					{"title": "Selasa/Kamis siang", "desc": "09.00–10.30 & 13.00–14.30 slot privat 1-on-1", "size": "md"},
+					{"title": "Sabtu pagi", "desc": "08.00–10.00 Kelas Olimpiade · 10.30–12.00 Pembahasan Soal Sulit", "size": "md"},
+					{"title": "Minggu libur", "desc": "Family day — WhatsApp masih standby untuk emergency PR", "size": "lg"},
 				},
 			}),
 			block("BorderBeamCard", map[string]any{
@@ -1433,20 +1433,20 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 				{"year": "2026", "title": "1.200+ siswa · 94% masuk PTN", "desc": "Hitungan kumulatif sepanjang 15 tahun. Yang terpenting: sebagian besar tetap suka matematika sampai sekarang."},
 			}),
 			proFeatureGrid(variant, "Pendidikan & sertifikasi resmi", []map[string]any{
-				{"title": "🎓 S2 Matematika ITB", "desc": "Lulus 2009 cumlaude, IPK 3.87. Tesis di teori bilangan dengan Prof. Iwan Pranoto."},
-				{"title": "🎓 S1 Pendidikan Matematika UPI", "desc": "Lulus 2007. Sudah aktif mengajar les sejak semester 3."},
-				{"title": "📜 Sertifikasi Guru Profesional", "desc": "Kemendikbud RI · nomor sertifikat: 15.2011.MT.045."},
-				{"title": "🏆 Pelatih OSN Terakreditasi", "desc": "Sertifikat dari Kemendikbud Puspresnas — pelatih tingkat provinsi sejak 2015."},
-				{"title": "📚 Author 3 buku SMA", "desc": "\"Matematika SMA Rasa Cerita\" (2019), \"Bank Soal UTBK Matematika\" (2021), \"Olimpiade Untuk Pemula\" (2023)."},
-				{"title": "🎤 Pembicara nasional", "desc": "Rutin diundang MGMP Matematika DKI · kanal Ruangguru · webinar SMA se-Indonesia."},
+				{"title": "S2 Matematika ITB", "desc": "Lulus 2009 cumlaude, IPK 3.87. Tesis di teori bilangan dengan Prof. Iwan Pranoto."},
+				{"title": "S1 Pendidikan Matematika UPI", "desc": "Lulus 2007. Sudah aktif mengajar les sejak semester 3."},
+				{"title": "Sertifikasi Guru Profesional", "desc": "Kemendikbud RI · nomor sertifikat: 15.2011.MT.045."},
+				{"title": "Pelatih OSN Terakreditasi", "desc": "Sertifikat dari Kemendikbud Puspresnas — pelatih tingkat provinsi sejak 2015."},
+				{"title": "Author 3 buku SMA", "desc": "\"Matematika SMA Rasa Cerita\" (2019), \"Bank Soal UTBK Matematika\" (2021), \"Olimpiade Untuk Pemula\" (2023)."},
+				{"title": "Pembicara nasional", "desc": "Rutin diundang MGMP Matematika DKI · kanal Ruangguru · webinar SMA se-Indonesia."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "Pencapaian yang paling saya syukuri",
 				"items": []map[string]any{
-					{"title": "🎯 1.200+ siswa lulus PTN", "desc": "94% masuk pilihan pertama. Yang paling berkesan: siswa dari Papua yang nggak pernah les online sebelumnya, akhirnya masuk FKG UGM.", "size": "lg"},
-					{"title": "🥇 12 medali OSN Nasional", "desc": "3 emas · 5 perak · 4 perunggu. Semua siswa reguler yang saya coach.", "size": "md"},
-					{"title": "📈 Kenaikan rata-rata 30 poin", "desc": "Dalam 3 bulan kelas reguler. Diverifikasi dari 200+ data siswa 2023–2025.", "size": "md"},
-					{"title": "💛 700+ siswa 'lifetime'", "desc": "Siswa yang tetap chat WhatsApp minta saran karir bahkan setelah lulus PTN. Ini yang paling bikin bangga.", "size": "lg"},
+					{"title": "1.200+ siswa lulus PTN", "desc": "94% masuk pilihan pertama. Yang paling berkesan: siswa dari Papua yang nggak pernah les online sebelumnya, akhirnya masuk FKG UGM.", "size": "lg"},
+					{"title": "12 medali OSN Nasional", "desc": "3 emas · 5 perak · 4 perunggu. Semua siswa reguler yang saya coach.", "size": "md"},
+					{"title": "Kenaikan rata-rata 30 poin", "desc": "Dalam 3 bulan kelas reguler. Diverifikasi dari 200+ data siswa 2023–2025.", "size": "md"},
+					{"title": "700+ siswa 'lifetime'", "desc": "Siswa yang tetap chat WhatsApp minta saran karir bahkan setelah lulus PTN. Ini yang paling bikin bangga.", "size": "lg"},
 				},
 			}),
 			proTestimonials("Kata orang-orang yang kenal saya", []map[string]any{
@@ -1567,12 +1567,12 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 				{"value": "8/10", "label": "Rekomendasi baca"},
 			}),
 			proFeatureGrid(variant, "Topik yang sering saya bahas", []map[string]any{
-				{"title": "💻 Teknologi", "desc": "Tutorial coding, review tools, dan tren web development yang benar-benar berguna — bukan hype."},
-				{"title": "⚡ Produktivitas", "desc": "Workflow, habit, dan tools yang saya pakai untuk deep work. Sudah tested, bukan sekedar teori."},
-				{"title": "📚 Buku & belajar", "desc": "Review buku non-fiksi (bisnis, sains, filosofi) dengan takeaway yang bisa langsung dieksekusi."},
-				{"title": "🌱 Refleksi", "desc": "Pelajaran dari perjalanan karir, keputusan bisnis, dan keputusan hidup yang tidak selalu benar."},
-				{"title": "🎯 Karir tech", "desc": "Cara negosiasi salary, memilih company, cari mentor, dan naik jenjang tanpa politik kantor."},
-				{"title": "🧠 Mental model", "desc": "Framework berpikir dari Munger, Kahneman, dan Taleb — diterapkan ke keputusan sehari-hari."},
+				{"title": "Teknologi", "desc": "Tutorial coding, review tools, dan tren web development yang benar-benar berguna — bukan hype."},
+				{"title": "Produktivitas", "desc": "Workflow, habit, dan tools yang saya pakai untuk deep work. Sudah tested, bukan sekedar teori."},
+				{"title": "Buku & belajar", "desc": "Review buku non-fiksi (bisnis, sains, filosofi) dengan takeaway yang bisa langsung dieksekusi."},
+				{"title": "Refleksi", "desc": "Pelajaran dari perjalanan karir, keputusan bisnis, dan keputusan hidup yang tidak selalu benar."},
+				{"title": "Karir tech", "desc": "Cara negosiasi salary, memilih company, cari mentor, dan naik jenjang tanpa politik kantor."},
+				{"title": "Mental model", "desc": "Framework berpikir dari Munger, Kahneman, dan Taleb — diterapkan ke keputusan sehari-hari."},
 			}),
 			proTestimonials("Kata pembaca setia", []map[string]any{
 				{"quote": "Tulisannya bermanfaat dan mudah dicerna — jarang saya ketemu blog Indonesia yang sekelas Farnam Street. Wajib follow untuk yang lagi belajar coding atau career development.", "name": "Rani Pratiwi", "role": "Software Engineer, Traveloka"},
@@ -1580,7 +1580,7 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 				{"quote": "Newsletter Jumat pagi adalah highlight minggu saya. Selalu ada 1 kalimat yang saya screenshot atau kirim ke tim. Recommended banget.", "name": "Sari Wijaya", "role": "Founder, DesignStudio"},
 			}),
 			block("Section", map[string]any{
-				"title": "📬 Kenapa newsletter, bukan cuma blog?",
+				"title": "Kenapa newsletter, bukan cuma blog?",
 				"body":  "Blog itu passive — kamu harus datang. Newsletter itu active — sampai ke inbox kamu, konsisten setiap minggu.\n\nDan jujur: **email inbox** adalah salah satu media paling personal yang masih tersisa di internet 2025. Saya nggak mau nulis untuk algoritma feed, saya mau nulis untuk **kamu** — 1 orang membaca 1 email di pagi Jumat sambil minum kopi.",
 			}),
 			proFinalCTA(variant,
@@ -1618,12 +1618,12 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 				"limit": 50,
 			}),
 			proFeatureGrid(variant, "Kenapa nulis essay panjang di era listicle?", []map[string]any{
-				{"title": "🧠 Deep, bukan skim", "desc": "Listicle 3-menit bikin kamu merasa produktif, tapi nggak nempel. Essay 800-kata memaksa mikir — dan yang mikir yang berubah."},
-				{"title": "✍️ Tulisan = proses berpikir", "desc": "Saya nulis untuk mengklarifikasi pikiran saya sendiri. Kamu kebetulan ikut baca hasil pemikirannya."},
-				{"title": "📅 Konsistensi 3 tahun", "desc": "Rutin publish sejak 2023 tiap Jumat. Ini bukan side project — ini kebiasaan berpikir yang saya jaga."},
-				{"title": "🚫 Anti-clickbait", "desc": "Judul deskriptif, bukan 'You won't believe...'. Kamu berhak tahu isi essay sebelum klik."},
-				{"title": "🔗 Cross-link antar essay", "desc": "Setiap essay merefer ke essay lain yang relevan. Kamu bisa menyelam ke rabbit hole yang bermakna."},
-				{"title": "💌 Reply-friendly", "desc": "Kalau kamu subscribe newsletter, kamu bisa reply email saya langsung. Saya baca semua, meski nggak selalu bisa reply."},
+				{"title": "Deep, bukan skim", "desc": "Listicle 3-menit bikin kamu merasa produktif, tapi nggak nempel. Essay 800-kata memaksa mikir — dan yang mikir yang berubah."},
+				{"title": "Tulisan = proses berpikir", "desc": "Saya nulis untuk mengklarifikasi pikiran saya sendiri. Kamu kebetulan ikut baca hasil pemikirannya."},
+				{"title": "Konsistensi 3 tahun", "desc": "Rutin publish sejak 2023 tiap Jumat. Ini bukan side project — ini kebiasaan berpikir yang saya jaga."},
+				{"title": "Anti-clickbait", "desc": "Judul deskriptif, bukan 'You won't believe...'. Kamu berhak tahu isi essay sebelum klik."},
+				{"title": "Cross-link antar essay", "desc": "Setiap essay merefer ke essay lain yang relevan. Kamu bisa menyelam ke rabbit hole yang bermakna."},
+				{"title": "Reply-friendly", "desc": "Kalau kamu subscribe newsletter, kamu bisa reply email saya langsung. Saya baca semua, meski nggak selalu bisa reply."},
 			}),
 			simpleCTA(
 				"Baru pertama kesini? Mulai dari 5 essay favorit saya",
@@ -1646,21 +1646,21 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Peta topik blog",
 				"items": []map[string]any{
-					{"title": "💻 Teknologi & Coding", "desc": "42 essay. Bukan tutorial 'how-to' — lebih ke 'kapan dipakai, kapan jangan'. Contoh: kenapa saya berhenti pakai TypeScript untuk side project.", "size": "lg"},
-					{"title": "⚡ Produktivitas", "desc": "38 essay. Workflow yang tested, bukan hype. Contoh: cara saya baca 40 buku setahun tanpa jadi Goodreads slave.", "size": "md"},
-					{"title": "📚 Buku & Belajar", "desc": "32 essay. Review buku + framework belajar. Contoh: 5 buku non-fiksi wajib untuk software engineer 2026.", "size": "md"},
-					{"title": "🎯 Karir Tech", "desc": "28 essay. Negosiasi salary, memilih company, cari mentor. Contoh: kapan resign — dan kapan bertahan.", "size": "lg"},
-					{"title": "🌱 Refleksi Pribadi", "desc": "22 essay. Pelajaran dari kegagalan, keputusan salah, dan momen 'aha' yang lucu-nya baru datang setahun kemudian.", "size": "md"},
-					{"title": "🧠 Mental Model", "desc": "18 essay. Framework berpikir dari Munger, Kahneman, Taleb — diterapkan ke keputusan nyata (bukan cuma diquote).", "size": "md"},
+					{"title": "Teknologi & Coding", "desc": "42 essay. Bukan tutorial 'how-to' — lebih ke 'kapan dipakai, kapan jangan'. Contoh: kenapa saya berhenti pakai TypeScript untuk side project.", "size": "lg"},
+					{"title": "Produktivitas", "desc": "38 essay. Workflow yang tested, bukan hype. Contoh: cara saya baca 40 buku setahun tanpa jadi Goodreads slave.", "size": "md"},
+					{"title": "Buku & Belajar", "desc": "32 essay. Review buku + framework belajar. Contoh: 5 buku non-fiksi wajib untuk software engineer 2026.", "size": "md"},
+					{"title": "Karir Tech", "desc": "28 essay. Negosiasi salary, memilih company, cari mentor. Contoh: kapan resign — dan kapan bertahan.", "size": "lg"},
+					{"title": "Refleksi Pribadi", "desc": "22 essay. Pelajaran dari kegagalan, keputusan salah, dan momen 'aha' yang lucu-nya baru datang setahun kemudian.", "size": "md"},
+					{"title": "Mental Model", "desc": "18 essay. Framework berpikir dari Munger, Kahneman, Taleb — diterapkan ke keputusan nyata (bukan cuma diquote).", "size": "md"},
 				},
 			}),
 			proFeatureGrid(variant, "Baru pertama kali? Mulai dari 5 essay favorit saya", []map[string]any{
-				{"title": "📝 Berhenti Baca Buku Bisnis", "desc": "Kenapa saya nggak lagi baca buku bisnis best-seller — dan apa yang saya baca sebagai gantinya. (Kategori: Buku & Belajar)"},
-				{"title": "🚫 Anti-goal 2026", "desc": "Daftar hal yang saya PASTIKAN nggak akan saya kerjakan tahun ini — lebih penting dari daftar goal. (Kategori: Produktivitas)"},
-				{"title": "💰 Kapan Resign", "desc": "Framework 4-pertanyaan yang saya pakai sebelum keluar dari 3 pekerjaan terakhir. (Kategori: Karir Tech)"},
-				{"title": "🤔 Silent Meeting", "desc": "Kenapa tim engineering saya wajib silent meeting 15 menit sebelum diskusi. Hasil: keputusan 3× lebih cepat. (Kategori: Produktivitas)"},
-				{"title": "🐍 TypeScript Fatigue", "desc": "Kapan TypeScript worth-it, kapan cuma bikin ribet. Bahas dari sisi tim junior + solo dev. (Kategori: Teknologi)"},
-				{"title": "📖 Second Brain Setup", "desc": "Setup Obsidian + Readwise saya — 3 tahun konsisten. Bukan tutorial, tapi *kenapa* tiap keputusan setup dibuat. (Kategori: Buku & Belajar)"},
+				{"title": "Berhenti Baca Buku Bisnis", "desc": "Kenapa saya nggak lagi baca buku bisnis best-seller — dan apa yang saya baca sebagai gantinya. (Kategori: Buku & Belajar)"},
+				{"title": "Anti-goal 2026", "desc": "Daftar hal yang saya PASTIKAN nggak akan saya kerjakan tahun ini — lebih penting dari daftar goal. (Kategori: Produktivitas)"},
+				{"title": "Kapan Resign", "desc": "Framework 4-pertanyaan yang saya pakai sebelum keluar dari 3 pekerjaan terakhir. (Kategori: Karir Tech)"},
+				{"title": "Silent Meeting", "desc": "Kenapa tim engineering saya wajib silent meeting 15 menit sebelum diskusi. Hasil: keputusan 3× lebih cepat. (Kategori: Produktivitas)"},
+				{"title": "TypeScript Fatigue", "desc": "Kapan TypeScript worth-it, kapan cuma bikin ribet. Bahas dari sisi tim junior + solo dev. (Kategori: Teknologi)"},
+				{"title": "Second Brain Setup", "desc": "Setup Obsidian + Readwise saya — 3 tahun konsisten. Bukan tutorial, tapi *kenapa* tiap keputusan setup dibuat. (Kategori: Buku & Belajar)"},
 			}),
 			block("BlogListDynamic", map[string]any{
 				"title": "Essay terbaru dari semua kategori",
@@ -1701,20 +1701,20 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 				{"year": "2026", "title": "12.400 subscribers, 180 essay", "desc": "Konsisten Jumat pagi 3 tahun berturut-turut. Belum pernah miss 1 minggu pun."},
 			}),
 			proFeatureGrid(variant, "Kehidupan sehari-hari saya", []map[string]any{
-				{"title": "💼 Pekerjaan utama", "desc": "Senior Software Engineer di startup fintech remote. 4 hari kerja/minggu — 1 hari saya sengaja kosong untuk deep read + nulis."},
-				{"title": "🌍 Lokasi", "desc": "Yogyakarta, Indonesia. Rumah kecil di pinggir sawah. Kopi bikin sendiri pakai V60."},
-				{"title": "✍️ Rutinitas nulis", "desc": "Setiap pagi 5.30–7.00 nulis draft. Rabu edit. Kamis proofread. Jumat 5.00 pagi publish."},
-				{"title": "📚 Membaca", "desc": "40 buku setahun (target 2026). Rasio: 60% non-fiksi (bisnis, sains, filosofi), 40% fiksi (klasik & sastra Indonesia)."},
-				{"title": "🎧 Podcast rutin", "desc": "Huberman Lab, Acquired, Farnam Street, dan Podcast Kuliner Bumi (untuk fun aja)."},
-				{"title": "🚶‍♂️ Off-screen", "desc": "Weekend hiking sekitar Merapi/Merbabu. Sabtu pagi coffeeshop. Minggu family day full — no laptop."},
+				{"title": "Pekerjaan utama", "desc": "Senior Software Engineer di startup fintech remote. 4 hari kerja/minggu — 1 hari saya sengaja kosong untuk deep read + nulis."},
+				{"title": "Lokasi", "desc": "Yogyakarta, Indonesia. Rumah kecil di pinggir sawah. Kopi bikin sendiri pakai V60."},
+				{"title": "Rutinitas nulis", "desc": "Setiap pagi 5.30–7.00 nulis draft. Rabu edit. Kamis proofread. Jumat 5.00 pagi publish."},
+				{"title": "Membaca", "desc": "40 buku setahun (target 2026). Rasio: 60% non-fiksi (bisnis, sains, filosofi), 40% fiksi (klasik & sastra Indonesia)."},
+				{"title": "Podcast rutin", "desc": "Huberman Lab, Acquired, Farnam Street, dan Podcast Kuliner Bumi (untuk fun aja)."},
+				{"title": "Off-screen", "desc": "Weekend hiking sekitar Merapi/Merbabu. Sabtu pagi coffeeshop. Minggu family day full — no laptop."},
 			}),
 			block("BentoGrid", map[string]any{
 				"title": "Setup & tools yang saya pakai (jujur)",
 				"items": []map[string]any{
-					{"title": "💻 Hardware", "desc": "MacBook Air M3 2024 · monitor Dell U2723QE · keyboard Keychron Q1 Pro · headphone Sony WH-1000XM5", "size": "lg"},
-					{"title": "✍️ Menulis", "desc": "Draft: Obsidian · Editing: iA Writer · Publish: Ghost (self-hosted)", "size": "md"},
-					{"title": "📚 Second brain", "desc": "Obsidian + Readwise + Zotero · 3.400 highlights sync-ed", "size": "md"},
-					{"title": "☁️ Productivity", "desc": "Task: Things 3 · Calendar: Fantastical · Kanban: Linear (kerja)", "size": "lg"},
+					{"title": "Hardware", "desc": "MacBook Air M3 2024 · monitor Dell U2723QE · keyboard Keychron Q1 Pro · headphone Sony WH-1000XM5", "size": "lg"},
+					{"title": "Menulis", "desc": "Draft: Obsidian · Editing: iA Writer · Publish: Ghost (self-hosted)", "size": "md"},
+					{"title": "Second brain", "desc": "Obsidian + Readwise + Zotero · 3.400 highlights sync-ed", "size": "md"},
+					{"title": "Productivity", "desc": "Task: Things 3 · Calendar: Fantastical · Kanban: Linear (kerja)", "size": "lg"},
 				},
 			}),
 			statsRow("Yang bikin saya bangga (bukan angka pembaca)", []map[string]any{

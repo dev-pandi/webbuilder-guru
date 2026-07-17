@@ -2367,49 +2367,52 @@ function BlockView({
   switch (block.type) {
     case "Navbar":
       return (
-        <div className="flex items-center justify-between border-b px-6 py-4">
-          <strong>{String(p.brand ?? "")}</strong>
-          <div className="flex gap-4 text-sm">
-            {(p.links as Array<{ label: string; href: string }> | undefined)?.map((l, i) => (
-              <span key={i} className="text-muted-foreground">
-                {l.label}
-              </span>
-            ))}
+        <header className="border-b">
+          <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+            <strong className="text-lg">{String(p.brand ?? "")}</strong>
+            <nav className="flex gap-6 text-sm">
+              {(p.links as Array<{ label: string; href: string }> | undefined)?.map((l, i) => (
+                <span key={i}>{l.label}</span>
+              ))}
+            </nav>
           </div>
-        </div>
+        </header>
       );
     case "Hero":
       return (
-        <div className="px-6 py-16 text-center">
+        <section className="mx-auto max-w-4xl px-6 py-20 text-center">
           {editable ? (
             <EditableText
               as="h1"
-              className="text-3xl font-bold"
+              className="text-5xl font-bold tracking-tight"
               value={String(p.title ?? "")}
               onChange={(v) => setProp("title", v)}
               placeholder="Judul hero…"
             />
           ) : (
-            <h1 className="text-3xl font-bold">{String(p.title ?? "")}</h1>
+            <h1 className="text-5xl font-bold tracking-tight">{String(p.title ?? "")}</h1>
           )}
           {editable ? (
             <EditableText
               as="p"
-              className="mt-2 text-muted-foreground"
+              className="mx-auto mt-4 max-w-2xl text-lg opacity-80"
               value={String(p.subtitle ?? "")}
               onChange={(v) => setProp("subtitle", v)}
               placeholder="Subjudul…"
               multiline
             />
           ) : (
-            <p className="mt-2 text-muted-foreground">{String(p.subtitle ?? "")}</p>
+            <p className="mx-auto mt-4 max-w-2xl text-lg opacity-80">{String(p.subtitle ?? "")}</p>
           )}
           {p.ctaLabel ? (
-            <button className="mt-4 rounded-lg bg-primary px-4 py-2 text-primary-foreground">
+            <button
+              className="mt-8 inline-block px-6 py-3 font-medium text-white"
+              style={{ background: "var(--color-primary)", borderRadius: "var(--radius)" }}
+            >
               {String(p.ctaLabel)}
             </button>
           ) : null}
-        </div>
+        </section>
       );
     case "HeroSpotlight":
       return (
@@ -2464,26 +2467,26 @@ function BlockView({
       return editable ? (
         <EditableText
           as="h2"
-          className="px-6 py-4 text-2xl font-bold"
+          className="mx-auto max-w-5xl px-6 py-6 text-3xl font-bold"
           value={String(p.text ?? "")}
           onChange={(v) => setProp("text", v)}
           placeholder="Judul…"
         />
       ) : (
-        <h2 className="px-6 py-4 text-2xl font-bold">{String(p.text ?? "")}</h2>
+        <h2 className="mx-auto max-w-5xl px-6 py-6 text-3xl font-bold">{String(p.text ?? "")}</h2>
       );
     case "Text":
       return editable ? (
         <EditableText
           as="p"
-          className="whitespace-pre-line px-6 py-2"
+          className="mx-auto max-w-3xl whitespace-pre-line px-6 py-2"
           value={String(p.body ?? "")}
           onChange={(v) => setProp("body", v)}
           placeholder="Paragraf…"
           multiline
         />
       ) : (
-        <p className="whitespace-pre-line px-6 py-2">{String(p.body ?? "")}</p>
+        <p className="mx-auto max-w-3xl whitespace-pre-line px-6 py-2">{String(p.body ?? "")}</p>
       );
     case "RichText": {
       // Markdown → HTML inline. We use the same `marked` lib + `wb-prose` class
@@ -2495,61 +2498,61 @@ function BlockView({
     }
     case "Section":
       return (
-        <div className="px-6 py-6">
+        <section className="mx-auto max-w-5xl px-6 py-10">
           {editable ? (
             <EditableText
               as="h3"
-              className="text-lg font-semibold"
+              className="text-2xl font-semibold"
               value={String(p.title ?? "")}
               onChange={(v) => setProp("title", v)}
               placeholder="Judul section…"
             />
           ) : p.title ? (
-            <h3 className="text-lg font-semibold">{String(p.title)}</h3>
+            <h3 className="text-2xl font-semibold">{String(p.title)}</h3>
           ) : null}
           {editable ? (
             <EditableText
               as="p"
-              className="mt-1 whitespace-pre-line"
+              className="mt-3 whitespace-pre-line opacity-80"
               value={String(p.body ?? "")}
               onChange={(v) => setProp("body", v)}
               placeholder="Isi…"
               multiline
             />
           ) : (
-            <p className="mt-1 whitespace-pre-line">{String(p.body ?? "")}</p>
+            <p className="mt-3 whitespace-pre-line opacity-80">{String(p.body ?? "")}</p>
           )}
-        </div>
+        </section>
       );
     case "FeatureList":
       return (
-        <div className="px-6 py-6">
+        <section className="mx-auto max-w-5xl px-6 py-10">
           {editable ? (
             <EditableText
               as="h3"
-              className="mb-3 text-lg font-semibold"
+              className="mb-6 text-2xl font-semibold"
               value={String(p.title ?? "")}
               onChange={(v) => setProp("title", v)}
               placeholder="Judul…"
             />
           ) : p.title ? (
-            <h3 className="mb-3 text-lg font-semibold">{String(p.title)}</h3>
+            <h3 className="mb-6 text-2xl font-semibold">{String(p.title)}</h3>
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {(p.items as Array<Record<string, unknown>> | undefined)?.map((it, i) => (
-              <div key={i} className="rounded-lg border p-3">
+              <div key={i} className="rounded-xl border p-5">
                 {editable ? (
                   <>
                     <EditableText
                       as="div"
-                      className="font-medium"
+                      className="font-semibold"
                       value={String(it.title ?? "")}
                       onChange={(v) => setItemProp("items", i, "title", v)}
                       placeholder="Judul fitur…"
                     />
                     <EditableText
                       as="div"
-                      className="text-sm text-muted-foreground"
+                      className="mt-1 text-sm opacity-80"
                       value={String(it.desc ?? "")}
                       onChange={(v) => setItemProp("items", i, "desc", v)}
                       placeholder="Deskripsi…"
@@ -2558,14 +2561,14 @@ function BlockView({
                   </>
                 ) : (
                   <>
-                    <div className="font-medium">{String(it.title ?? "")}</div>
-                    <div className="text-sm text-muted-foreground">{String(it.desc ?? "")}</div>
+                    <div className="font-semibold">{String(it.title ?? "")}</div>
+                    <div className="mt-1 text-sm opacity-80">{String(it.desc ?? "")}</div>
                   </>
                 )}
               </div>
             ))}
           </div>
-        </div>
+        </section>
       );
     case "BentoGrid":
       return (
@@ -2630,17 +2633,33 @@ function BlockView({
       );
     case "CTABanner":
       return (
-        <div className="px-6 py-6">
-          <div className="rounded-2xl bg-gradient-to-r from-primary to-primary/70 px-6 py-10 text-center text-white">
-            <h2 className="text-2xl font-bold">{String(p.title ?? "")}</h2>
-            <p className="mt-2 text-sm opacity-90">{String(p.subtitle ?? "")}</p>
+        <section className="px-6 py-12">
+          <div
+            className="relative mx-auto max-w-5xl overflow-hidden rounded-3xl px-8 py-16 text-center text-white"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--color-primary), var(--color-secondary))",
+            }}
+          >
+            <div className="wb-grid-pattern pointer-events-none absolute inset-0 opacity-10" />
+            <h2 className="relative text-3xl font-bold tracking-tight sm:text-4xl">
+              {String(p.title ?? "")}
+            </h2>
+            {p.subtitle ? (
+              <p className="relative mx-auto mt-3 max-w-2xl opacity-90">
+                {String(p.subtitle ?? "")}
+              </p>
+            ) : null}
             {p.ctaLabel ? (
-              <button className="mt-4 rounded-full bg-white px-5 py-2 text-sm font-medium text-foreground">
+              <button
+                className="relative mt-8 inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 font-medium shadow-xl"
+                style={{ color: "var(--color-fg)" }}
+              >
                 {String(p.ctaLabel)} →
               </button>
             ) : null}
           </div>
-        </div>
+        </section>
       );
     case "PricingTable":
       return (
@@ -2743,14 +2762,18 @@ function BlockView({
       );
     case "Testimonial":
       return (
-        <div className="bg-muted/40 px-6 py-6">
+        <section className="mx-auto max-w-3xl px-6 py-10">
           {(p.items as Array<{ name: string; text: string }> | undefined)?.map((t, i) => (
-            <blockquote key={i} className="border-l-4 border-primary pl-4 italic">
+            <blockquote
+              key={i}
+              className="my-4 border-l-4 pl-5 italic"
+              style={{ borderColor: "var(--color-primary)" }}
+            >
               &ldquo;{t.text}&rdquo; —{" "}
               <span className="not-italic font-medium">{t.name}</span>
             </blockquote>
           ))}
-        </div>
+        </section>
       );
     case "ProductGrid":
     case "ProjectGrid":
@@ -2772,9 +2795,11 @@ function BlockView({
       );
     case "Footer":
       return (
-        <div className="border-t px-6 py-4 text-center text-sm text-muted-foreground">
-          {String(p.copyright ?? "")}
-        </div>
+        <footer className="mt-16 border-t">
+          <div className="mx-auto max-w-5xl px-6 py-6 text-center text-sm opacity-70">
+            {String(p.copyright ?? "")}
+          </div>
+        </footer>
       );
     case "ProductGridDynamic":
       return (
