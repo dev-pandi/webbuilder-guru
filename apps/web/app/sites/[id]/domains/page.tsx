@@ -126,7 +126,7 @@ export default function DomainsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">

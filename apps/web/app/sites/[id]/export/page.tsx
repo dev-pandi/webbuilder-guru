@@ -93,7 +93,7 @@ export default function ExportPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-6xl space-y-6 mx-auto">
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
