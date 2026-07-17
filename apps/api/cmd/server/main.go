@@ -171,14 +171,27 @@ func main() {
 	issuer := auth.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 	usageRepo := usage.NewRepo(pool, siteRepo, pageRepo, assetRepo)
 
+	authHandler := auth.NewHandler(authRepo, issuer, auth.HandlerOptions{
+		Mailer:     mailer,
+		AppBaseURL: cfg.AppBaseURL,
+	})
+	googleHandler := auth.NewGoogleHandler(
+		authRepo, authHandler,
+		cfg.GoogleOAuthClientID, cfg.GoogleOAuthClientSecret, cfg.GoogleOAuthRedirectURL,
+		cfg.AppBaseURL,
+	)
+	if googleHandler.Enabled() {
+		slog.Info("google oauth: enabled", "redirect_url", cfg.GoogleOAuthRedirectURL)
+	} else {
+		slog.Info("google oauth: disabled (set GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URL to enable)")
+	}
+
 	deps := router.Deps{
 		Cfg:          cfg,
 		Pool:         pool,
 		Issuer:       issuer,
-		Auth: auth.NewHandler(authRepo, issuer, auth.HandlerOptions{
-			Mailer:     mailer,
-			AppBaseURL: cfg.AppBaseURL,
-		}),
+		Auth:         authHandler,
+		AuthGoogle:   googleHandler,
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo, issuer),
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),

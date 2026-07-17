@@ -77,6 +77,10 @@ services:
       IMAGE_COMPRESS_ENABLED: ${IMAGE_COMPRESS_ENABLED:-true}
       IMAGE_MAX_DIMENSION: ${IMAGE_MAX_DIMENSION:-2000}
       IMAGE_JPEG_QUALITY: ${IMAGE_JPEG_QUALITY:-82}
+      # Google OAuth (optional — set all three to enable)
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URL: ${GOOGLE_OAUTH_REDIRECT_URL:-http://api.localhost/api/v1/auth/google/callback}
     depends_on:
       postgres:
         condition: service_healthy

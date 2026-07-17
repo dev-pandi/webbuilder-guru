@@ -2,12 +2,27 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ArrowRight, Globe2 } from "lucide-react";
 import { api, setTokens } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GoogleButton } from "@/components/GoogleButton";
+
+// Human-friendly copy for the ?error=<code> that the API's OAuth callback
+// appends to /login on failure. Anything unknown falls back to the raw code.
+const OAUTH_ERROR_COPY: Record<string, string> = {
+  state_mismatch: "Sesi login Google kedaluwarsa. Silakan coba lagi.",
+  google_access_denied: "Anda membatalkan proses login di halaman Google.",
+  exchange_failed: "Gagal memverifikasi login Google. Coba beberapa saat lagi.",
+  profile_failed: "Gagal membaca profil Google. Coba lagi.",
+  profile_incomplete: "Profil Google tidak lengkap. Pastikan akun Google Anda punya email publik.",
+  email_unverified: "Alamat email Google Anda belum diverifikasi.",
+  user_upsert_failed: "Terjadi kesalahan saat menyimpan akun Anda.",
+  token_failed: "Terjadi kesalahan saat membuat sesi login.",
+  google_not_configured: "Login Google belum diaktifkan di server.",
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,6 +31,19 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [nextPath, setNextPath] = useState<string | undefined>(undefined);
+
+  // Read ?error= + ?next= from URL on mount (avoids useSearchParams Suspense
+  // requirement for a page that's already 'use client').
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errCode = params.get("error");
+    if (errCode) {
+      setErr(OAUTH_ERROR_COPY[errCode] ?? `Login Google gagal (${errCode}).`);
+    }
+    const next = params.get("next");
+    if (next) setNextPath(next);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -27,7 +55,7 @@ export default function LoginPage() {
         { method: "POST", body: JSON.stringify({ email, password }), auth: false },
       );
       setTokens(data.access_token, data.refresh_token);
-      router.push("/dashboard");
+      router.push(nextPath || "/dashboard");
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -61,6 +89,14 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="rounded-2xl border bg-card shadow-xl shadow-black/5 p-7">
+          <GoogleButton next={nextPath} />
+
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">atau login pakai email</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
           <form onSubmit={onSubmit} className="space-y-4">
             {/* Email */}
             <div className="space-y-1.5">
@@ -147,13 +183,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">atau</span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <p className="mt-5 text-center text-sm text-muted-foreground">
+          <p className="mt-6 text-center text-sm text-muted-foreground">
             Belum punya akun?{" "}
             <Link
               href="/register"

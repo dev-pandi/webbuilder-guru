@@ -16,11 +16,20 @@ import (
 type User struct {
 	ID              uuid.UUID
 	Email           string
-	PasswordHash    string
+	PasswordHash    string // may be empty when the user only has an OAuth login
 	Name            string
 	Role            string
 	CreatedAt       time.Time
 	EmailVerifiedAt *time.Time
+	OAuthGoogleSub  *string // NULL for password-only users
+}
+
+// scanUserCols is the projection every SELECT below uses. Kept in sync with
+// the SELECT statements so a schema-column reorder only needs one edit.
+const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub`
+
+func scanUser(u *User) []any {
+	return []any{&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt, &u.OAuthGoogleSub}
 }
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -34,9 +43,9 @@ func (r *Repo) CreateUser(ctx context.Context, email, hash, name string) (*User,
 	var u User
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3)
-		 RETURNING id, email, password_hash, name, role, created_at, email_verified_at`,
+		 RETURNING `+scanUserCols,
 		email, hash, name,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt)
+	).Scan(scanUser(&u)...)
 	if err != nil {
 		// 23505 = unique_violation
 		if pgErrCode(err) == "23505" {
@@ -50,9 +59,9 @@ func (r *Repo) CreateUser(ctx context.Context, email, hash, name string) (*User,
 func (r *Repo) GetByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, name, role, created_at, email_verified_at FROM users WHERE email = $1`,
+		`SELECT `+scanUserCols+` FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt)
+	).Scan(scanUser(&u)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -83,21 +92,88 @@ func (r *Repo) EnsureAdmin(ctx context.Context, email, passwordHash, name string
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO users (email, password_hash, name, role)
 		VALUES ($1, $2, $3, 'admin')
-		RETURNING id, email, password_hash, name, role, created_at, email_verified_at
-	`, email, passwordHash, name).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt)
+		RETURNING `+scanUserCols,
+		email, passwordHash, name).Scan(scanUser(&u)...)
 	return &u, err
 }
 
 func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	var u User
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, name, role, created_at, email_verified_at FROM users WHERE id = $1`,
+		`SELECT `+scanUserCols+` FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt)
+	).Scan(scanUser(&u)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &u, err
+}
+
+// UpsertGoogleUser links a Google account to an existing user (by email) or
+// creates a fresh Google-only user.
+//
+// Behavior:
+//  1. Row with same oauth_google_sub exists → return it (returning Google login).
+//  2. Row with same email exists → set oauth_google_sub on it (auto-link).
+//     Name is updated only if the existing name was empty (don't overwrite
+//     a user-set display name with the Google profile name).
+//  3. Nothing matches → INSERT with password_hash = NULL.
+//
+// email_verified_at is set to now() for Google users because Google already
+// verified the address (`email_verified: true` from the ID token).
+func (r *Repo) UpsertGoogleUser(ctx context.Context, sub, email, name string) (*User, error) {
+	// 1. Existing Google user.
+	{
+		var u User
+		err := r.pool.QueryRow(ctx,
+			`SELECT `+scanUserCols+` FROM users WHERE oauth_google_sub = $1`, sub,
+		).Scan(scanUser(&u)...)
+		if err == nil {
+			return &u, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+	}
+
+	// 2. Password-user with same email → link.
+	{
+		var u User
+		err := r.pool.QueryRow(ctx, `
+			UPDATE users
+			   SET oauth_google_sub = $1,
+			       name = CASE WHEN name = '' THEN $2 ELSE name END,
+			       email_verified_at = COALESCE(email_verified_at, now()),
+			       updated_at = now()
+			 WHERE email = $3
+			RETURNING `+scanUserCols,
+			sub, name, email,
+		).Scan(scanUser(&u)...)
+		if err == nil {
+			return &u, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+	}
+
+	// 3. Fresh Google-only signup.
+	var u User
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO users (email, password_hash, name, oauth_google_sub, email_verified_at)
+		VALUES ($1, NULL, $2, $3, now())
+		RETURNING `+scanUserCols,
+		email, name, sub,
+	).Scan(scanUser(&u)...)
+	if err != nil {
+		// Rare race: another request created the same email between our two
+		// checks. Retry linking — a second UPDATE will succeed.
+		if pgErrCode(err) == "23505" {
+			return r.UpsertGoogleUser(ctx, sub, email, name)
+		}
+		return nil, err
+	}
+	return &u, nil
 }
 
 // Refresh token = random 32B, stored as sha256 hash.

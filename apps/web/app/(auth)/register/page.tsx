@@ -8,6 +8,7 @@ import { api, setTokens } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GoogleButton } from "@/components/GoogleButton";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -66,6 +67,14 @@ export default function RegisterPage() {
 
         {/* Card */}
         <div className="rounded-2xl border bg-card shadow-xl shadow-black/5 p-7">
+          <GoogleButton label="Daftar dengan Google" />
+
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">atau daftar pakai email</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
           <form onSubmit={onSubmit} className="space-y-4">
             {/* Name */}
             <div className="space-y-1.5">
@@ -191,13 +200,7 @@ export default function RegisterPage() {
             ))}
           </div>
 
-          <div className="mt-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">atau</span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <p className="mt-5 text-center text-sm text-muted-foreground">
+          <p className="mt-6 text-center text-sm text-muted-foreground">
             Sudah punya akun?{" "}
             <Link
               href="/login"

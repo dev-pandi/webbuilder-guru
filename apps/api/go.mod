@@ -1,8 +1,6 @@
 module github.com/webbuilder/api
 
-go 1.24
-
-toolchain go1.24.3
+go 1.25.0
 
 require (
 	github.com/gofiber/fiber/v2 v2.52.5
@@ -14,9 +12,12 @@ require (
 	github.com/minio/minio-go/v7 v7.0.79
 	github.com/pressly/goose/v3 v3.21.1
 	golang.org/x/crypto v0.28.0
+	golang.org/x/image v0.20.0
+	golang.org/x/oauth2 v0.36.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
@@ -40,7 +41,6 @@ require (
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/image v0.20.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect

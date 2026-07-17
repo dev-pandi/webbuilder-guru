@@ -38,7 +38,8 @@ type Deps struct {
 
 	Issuer *auth.TokenIssuer
 
-	Auth      *auth.Handler
+	Auth       *auth.Handler
+	AuthGoogle *auth.GoogleHandler
 	Sites     *sites.Handler
 	Pages     *pages.Handler
 	Domains   *domains.Handler

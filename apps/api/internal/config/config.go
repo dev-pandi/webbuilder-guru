@@ -84,6 +84,13 @@ type Config struct {
 
 	// SentryDSN enables error tracking when set; empty = disabled.
 	SentryDSN string
+
+	// Google OAuth — all three required together to enable "Login with Google".
+	// If any is empty the /auth/google/* routes 503 with a clear "not configured"
+	// message so the frontend can hide the button gracefully.
+	GoogleOAuthClientID     string
+	GoogleOAuthClientSecret string
+	GoogleOAuthRedirectURL  string
 }
 
 func Load() Config {
@@ -134,6 +141,10 @@ func Load() Config {
 		AppBaseURL: env("APP_BASE_URL", "http://app.localhost"),
 
 		SentryDSN: env("SENTRY_DSN", ""),
+
+		GoogleOAuthClientID:     env("GOOGLE_OAUTH_CLIENT_ID", ""),
+		GoogleOAuthClientSecret: env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
+		GoogleOAuthRedirectURL:  env("GOOGLE_OAUTH_REDIRECT_URL", ""),
 
 		DBMaxConns:           envInt("DB_MAX_CONNS", 10),
 		DBMinConns:           envInt("DB_MIN_CONNS", 2),

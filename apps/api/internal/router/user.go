@@ -31,6 +31,15 @@ func MountUser(app *fiber.App, deps Deps) {
 	v1.Post("/auth/email/verify",
 		RateLimitIP(emailVerifyPerWindow, emailVerifyWindow), deps.Auth.ConfirmEmailVerification)
 
+	// Google OAuth — GET (browser redirect). Rate-limit /authorize per IP so a
+	// bot can't spam state cookies. Callback is naturally rate-limited by
+	// Google itself (needs a valid code round-trip).
+	if deps.AuthGoogle != nil {
+		v1.Get("/auth/google/authorize",
+			RateLimitIP(loginPerWindow, loginWindow), deps.AuthGoogle.Authorize)
+		v1.Get("/auth/google/callback", deps.AuthGoogle.Callback)
+	}
+
 	v1.Get("/templates", deps.Templates.List)
 	v1.Get("/template-meta", deps.Templates.Meta)
 	v1.Get("/templates/:slug", deps.Templates.Get)

@@ -147,6 +147,12 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "lookup failed")
 	}
+	// Google-only account (never set a password). Steer them to Google login
+	// instead of the generic "invalid credentials" so UMKM users understand why.
+	if u.PasswordHash == "" {
+		return httpx.Unauthorized(c,
+			"akun ini dibuat via Google. Silakan login pakai Google, lalu set password dari halaman Lupa Password kalau ingin login pakai email/password.")
+	}
 	ok, err := VerifyPassword(req.Password, u.PasswordHash)
 	if err != nil || !ok {
 		return httpx.Unauthorized(c, "invalid credentials")
@@ -343,18 +349,29 @@ func (h *Handler) ConfirmEmailVerification(c *fiber.Ctx) error {
 }
 
 func (h *Handler) issueTokens(c *fiber.Ctx, u *User, status int) error {
-	access, _, err := h.issuer.IssueAccess(u.ID, u.Email, u.Role)
+	access, raw, err := h.MintTokensFor(c.Context(), u)
 	if err != nil {
-		return httpx.Internal(c, "sign failed")
-	}
-	raw, hash, err := GenerateRefreshToken()
-	if err != nil {
-		return httpx.Internal(c, "token gen failed")
-	}
-	if err := h.repo.StoreRefreshToken(c.Context(), u.ID, hash, h.issuer.RefreshTTL()); err != nil {
-		return httpx.Internal(c, "store refresh failed")
+		return httpx.Internal(c, err.Error())
 	}
 	return c.Status(status).JSON(fiber.Map{"data": tokenResp{
 		AccessToken: access, RefreshToken: raw, TokenType: "Bearer",
 	}})
+}
+
+// MintTokensFor issues an access + refresh token pair for the given user and
+// persists the refresh token. Exposed so other flows (OAuth callback) can
+// reuse the exact same JWT/refresh pipeline without duplicating logic.
+func (h *Handler) MintTokensFor(ctx context.Context, u *User) (access, refresh string, err error) {
+	access, _, err = h.issuer.IssueAccess(u.ID, u.Email, u.Role)
+	if err != nil {
+		return "", "", err
+	}
+	raw, hash, err := GenerateRefreshToken()
+	if err != nil {
+		return "", "", err
+	}
+	if err := h.repo.StoreRefreshToken(ctx, u.ID, hash, h.issuer.RefreshTTL()); err != nil {
+		return "", "", err
+	}
+	return access, raw, nil
 }
