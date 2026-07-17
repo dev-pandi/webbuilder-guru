@@ -73,6 +73,33 @@ type meResp struct {
 	Name            string  `json:"name"`
 	Role            string  `json:"role"`
 	EmailVerifiedAt *string `json:"email_verified_at,omitempty"`
+
+	// Contact fields — always returned (empty string when unset) so the
+	// frontend can render the profile form without checking `undefined`.
+	PhoneNumber string `json:"phone_number"`
+	Address     string `json:"address"`
+	City        string `json:"city"`
+	State       string `json:"state"`
+	PostalCode  string `json:"postal_code"`
+}
+
+func toMeResp(u *User) meResp {
+	out := meResp{
+		ID:          u.ID.String(),
+		Email:       u.Email,
+		Name:        u.Name,
+		Role:        u.Role,
+		PhoneNumber: u.PhoneNumber,
+		Address:     u.Address,
+		City:        u.City,
+		State:       u.State,
+		PostalCode:  u.PostalCode,
+	}
+	if u.EmailVerifiedAt != nil {
+		s := u.EmailVerifiedAt.UTC().Format(time.RFC3339)
+		out.EmailVerifiedAt = &s
+	}
+	return out
 }
 
 func (h *Handler) Register(c *fiber.Ctx) error {
@@ -207,12 +234,86 @@ func (h *Handler) Me(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.NotFound(c, "user not found")
 	}
-	out := meResp{ID: u.ID.String(), Email: u.Email, Name: u.Name, Role: u.Role}
-	if u.EmailVerifiedAt != nil {
-		s := u.EmailVerifiedAt.UTC().Format(time.RFC3339)
-		out.EmailVerifiedAt = &s
+	return httpx.OK(c, toMeResp(u))
+}
+
+// updateMeReq mirrors ProfileUpdate — pointer fields so JSON absence means
+// "don't touch", empty string means "clear this column".
+type updateMeReq struct {
+	Name        *string `json:"name,omitempty"`
+	PhoneNumber *string `json:"phone_number,omitempty"`
+	Address     *string `json:"address,omitempty"`
+	City        *string `json:"city,omitempty"`
+	State       *string `json:"state,omitempty"`
+	PostalCode  *string `json:"postal_code,omitempty"`
+}
+
+// UpdateMe patches the current user's profile. Fields not present in the JSON
+// body are left untouched (COALESCE in SQL). Email and password are NOT edited
+// here — email change needs re-verification, password has its own reset flow.
+func (h *Handler) UpdateMe(c *fiber.Ctx) error {
+	cl := ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
 	}
-	return httpx.OK(c, out)
+	var req updateMeReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+
+	// Trim whitespace on the fields the user is submitting. Empty string is
+	// a valid "clear" value so we don't reject it — only spammy over-long
+	// values get rejected below.
+	trim := func(p *string) *string {
+		if p == nil {
+			return nil
+		}
+		v := strings.TrimSpace(*p)
+		return &v
+	}
+	req.Name = trim(req.Name)
+	req.PhoneNumber = trim(req.PhoneNumber)
+	req.Address = trim(req.Address)
+	req.City = trim(req.City)
+	req.State = trim(req.State)
+	req.PostalCode = trim(req.PostalCode)
+
+	// Basic length caps — DB has TEXT so no hard limit, but reject obvious
+	// abuse before writing. Matches the migration comments (255/128/32/16).
+	if req.Name != nil && len(*req.Name) > 128 {
+		return httpx.BadRequest(c, "name terlalu panjang (max 128)")
+	}
+	if req.PhoneNumber != nil && len(*req.PhoneNumber) > 32 {
+		return httpx.BadRequest(c, "nomor HP terlalu panjang (max 32)")
+	}
+	if req.Address != nil && len(*req.Address) > 255 {
+		return httpx.BadRequest(c, "alamat terlalu panjang (max 255)")
+	}
+	if req.City != nil && len(*req.City) > 128 {
+		return httpx.BadRequest(c, "kota terlalu panjang (max 128)")
+	}
+	if req.State != nil && len(*req.State) > 128 {
+		return httpx.BadRequest(c, "provinsi terlalu panjang (max 128)")
+	}
+	if req.PostalCode != nil && len(*req.PostalCode) > 16 {
+		return httpx.BadRequest(c, "kode pos terlalu panjang (max 16)")
+	}
+
+	u, err := h.repo.UpdateProfile(c.Context(), cl.UserID, ProfileUpdate{
+		Name:        req.Name,
+		PhoneNumber: req.PhoneNumber,
+		Address:     req.Address,
+		City:        req.City,
+		State:       req.State,
+		PostalCode:  req.PostalCode,
+	})
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "user not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "update failed")
+	}
+	return httpx.OK(c, toMeResp(u))
 }
 
 // --- Password reset ---

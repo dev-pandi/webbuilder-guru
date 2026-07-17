@@ -48,6 +48,7 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed := v1.Group("/", auth.Required(deps.Issuer))
 
 	authed.Get("/auth/me", deps.Auth.Me)
+	authed.Patch("/auth/me", RateLimitUser(mutationPerWindow, mutationWindow), deps.Auth.UpdateMe)
 	authed.Post("/auth/email/resend",
 		RateLimitUser(emailResendPerWindow, emailResendWindow), deps.Auth.RequestEmailVerification)
 

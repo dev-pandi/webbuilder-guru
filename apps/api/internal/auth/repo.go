@@ -22,14 +22,26 @@ type User struct {
 	CreatedAt       time.Time
 	EmailVerifiedAt *time.Time
 	OAuthGoogleSub  *string // NULL for password-only users
+
+	// Contact / postal fields — populated later via profile edit. Consumed
+	// by the domain registry integration (WHOIS + EPP contact object). All
+	// default to "" so existing users don't need to backfill.
+	PhoneNumber string
+	Address     string
+	City        string
+	State       string
+	PostalCode  string
 }
 
 // scanUserCols is the projection every SELECT below uses. Kept in sync with
 // the SELECT statements so a schema-column reorder only needs one edit.
-const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub`
+const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code`
 
 func scanUser(u *User) []any {
-	return []any{&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt, &u.OAuthGoogleSub}
+	return []any{
+		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt, &u.OAuthGoogleSub,
+		&u.PhoneNumber, &u.Address, &u.City, &u.State, &u.PostalCode,
+	}
 }
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -102,6 +114,42 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	err := r.pool.QueryRow(ctx,
 		`SELECT `+scanUserCols+` FROM users WHERE id = $1`,
 		id,
+	).Scan(scanUser(&u)...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &u, err
+}
+
+// ProfileUpdate captures the editable profile fields. Nil pointers = "don't
+// touch this column", empty string = "clear this column". Lets the frontend
+// send only the fields that actually changed without accidentally wiping
+// unrelated data.
+type ProfileUpdate struct {
+	Name        *string
+	PhoneNumber *string
+	Address     *string
+	City        *string
+	State       *string
+	PostalCode  *string
+}
+
+// UpdateProfile applies a partial update. Uses COALESCE so `NULL` params
+// preserve existing values without needing dynamic SQL.
+func (r *Repo) UpdateProfile(ctx context.Context, userID uuid.UUID, p ProfileUpdate) (*User, error) {
+	var u User
+	err := r.pool.QueryRow(ctx, `
+		UPDATE users
+		   SET name         = COALESCE($2, name),
+		       phone_number = COALESCE($3, phone_number),
+		       address      = COALESCE($4, address),
+		       city         = COALESCE($5, city),
+		       state        = COALESCE($6, state),
+		       postal_code  = COALESCE($7, postal_code),
+		       updated_at   = now()
+		 WHERE id = $1
+		RETURNING `+scanUserCols,
+		userID, p.Name, p.PhoneNumber, p.Address, p.City, p.State, p.PostalCode,
 	).Scan(scanUser(&u)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

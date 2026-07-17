@@ -65,9 +65,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
               </Button>
             )}
-            <Badge variant="secondary" className="hidden sm:inline-flex">
-              {me?.email}
-            </Badge>
+            <Link
+              href="/settings/profile"
+              className="hidden sm:inline-flex"
+              title="Kelola profil akun"
+            >
+              <Badge
+                variant="secondary"
+                className="cursor-pointer transition-colors hover:bg-muted"
+              >
+                {me?.email}
+              </Badge>
+            </Link>
             <Button variant="ghost" size="sm" onClick={logout}>
               <LogOut />
               Keluar
