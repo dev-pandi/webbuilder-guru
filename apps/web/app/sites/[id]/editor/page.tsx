@@ -919,10 +919,172 @@ export default function EditorPage() {
   const previewWidth = device === "mobile" ? 375 : device === "tablet" ? 768 : "100%";
 
   return (
-    <div
-      className="grid h-[calc(100vh-140px)] gap-3 transition-[grid-template-columns] duration-200 ease-out"
-      style={{ gridTemplateColumns: gridCols }}
-    >
+    <div className="flex h-[calc(100vh-140px)] flex-col gap-3">
+      {/* ---------- Toolbar (full width — spans over aside area so nothing gets cut) ---------- */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => setLeftCollapsed((v) => !v)}
+            title={leftCollapsed ? "Tampilkan sidebar kiri" : "Sembunyikan sidebar kiri"}
+          >
+            {leftCollapsed ? (
+              <PanelLeftOpen className="size-3.5" />
+            ) : (
+              <PanelLeftClose className="size-3.5" />
+            )}
+          </Button>
+          <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 shadow-inner">
+            <DeviceBtn
+              active={device === "desktop"}
+              onClick={() => setDevice("desktop")}
+              icon={Monitor}
+              label="Desktop"
+            />
+            <DeviceBtn
+              active={device === "tablet"}
+              onClick={() => setDevice("tablet")}
+              icon={Tablet}
+              label="Tablet"
+            />
+            <DeviceBtn
+              active={device === "mobile"}
+              onClick={() => setDevice("mobile")}
+              icon={Smartphone}
+              label="Mobile"
+            />
+          </div>
+          <span className="hidden items-center gap-1 text-[11px] text-muted-foreground md:inline-flex">
+            <Eye className="size-3" />
+            {device === "desktop" ? "Auto" : device === "tablet" ? "768px" : "375px"}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("size-7", miniMapVisible && "bg-muted text-foreground")}
+            onClick={() => setMiniMapVisible((v) => !v)}
+            title={miniMapVisible ? "Sembunyikan mini-map" : "Tampilkan mini-map"}
+          >
+            <MapIcon className="size-3.5" />
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-0.5 rounded-md border bg-background p-0.5 shadow-sm">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={undo}
+              disabled={!canUndo}
+              title="Undo (⌘Z)"
+            >
+              <Undo2 className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={redo}
+              disabled={!canRedo}
+              title="Redo (⌘⇧Z)"
+            >
+              <Redo2 className="size-3.5" />
+            </Button>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setThemeOpen(true)}
+            className="relative gap-1.5"
+          >
+            <Palette className="size-3.5" />
+            <span className="hidden sm:inline">Tema</span>
+            {themeDirty && (
+              <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-500 ring-2 ring-card" />
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openPreview}
+            disabled={!current}
+            className="gap-1.5"
+            title="Pratinjau draft di tab baru — link berlaku 1 jam"
+          >
+            <Eye className="size-3.5" />
+            <span className="hidden sm:inline">Pratinjau</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSettingsOpen(true)}
+            disabled={!current}
+            className="gap-1.5"
+            title="Pengaturan halaman: judul, SEO, status"
+          >
+            <Settings2 className="size-3.5" />
+            <span className="hidden sm:inline">Pengaturan</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setHistoryOpen(true)}
+            disabled={!current}
+            className="gap-1.5"
+          >
+            <History className="size-3.5" />
+            <span className="hidden sm:inline">Riwayat</span>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => save()}
+            disabled={saving || !current || !blocksDirty}
+            size="sm"
+            className="relative gap-1.5"
+          >
+            <Save className="size-3.5" />
+            {saving ? "Menyimpan…" : "Simpan Draft"}
+            {blocksDirty && !saving && (
+              <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-card" />
+            )}
+          </Button>
+          <Button
+            onClick={publish}
+            disabled={publishing || !current || (!hasUnpublishedChanges && !blocksDirty)}
+            size="sm"
+            className="relative gap-1.5 shadow-sm"
+            title="Salin draft ke versi live yang ditampilkan ke pengunjung"
+          >
+            <Rocket className="size-3.5" />
+            {publishing ? "Menerbitkan…" : "Terbitkan"}
+            {hasUnpublishedChanges && !publishing && (
+              <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-primary" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => setRightCollapsed((v) => !v)}
+            title={rightCollapsed ? "Tampilkan panel kanan" : "Sembunyikan panel kanan"}
+          >
+            {rightCollapsed ? (
+              <PanelRightOpen className="size-3.5" />
+            ) : (
+              <PanelRightClose className="size-3.5" />
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* ---------- Grid: 3-column workspace (aside kiri | canvas | aside kanan) ---------- */}
+      <div
+        className="grid min-h-0 flex-1 gap-3 transition-[grid-template-columns] duration-200 ease-out"
+        style={{ gridTemplateColumns: gridCols }}
+      >
       {/* ---------- Sidebar kiri: Pages + Block tree ---------- */}
       <aside
         className={cn(
@@ -1027,170 +1189,6 @@ export default function EditorPage() {
 
       {/* ---------- Center: Preview ---------- */}
       <section className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between gap-3 border-b bg-card/95 px-3 py-2 backdrop-blur">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={() => setLeftCollapsed((v) => !v)}
-              title={leftCollapsed ? "Tampilkan sidebar kiri" : "Sembunyikan sidebar kiri"}
-            >
-              {leftCollapsed ? (
-                <PanelLeftOpen className="size-3.5" />
-              ) : (
-                <PanelLeftClose className="size-3.5" />
-              )}
-            </Button>
-            <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 shadow-inner">
-              <DeviceBtn
-                active={device === "desktop"}
-                onClick={() => setDevice("desktop")}
-                icon={Monitor}
-                label="Desktop"
-              />
-              <DeviceBtn
-                active={device === "tablet"}
-                onClick={() => setDevice("tablet")}
-                icon={Tablet}
-                label="Tablet"
-              />
-              <DeviceBtn
-                active={device === "mobile"}
-                onClick={() => setDevice("mobile")}
-                icon={Smartphone}
-                label="Mobile"
-              />
-            </div>
-            <span className="hidden items-center gap-1 text-[11px] text-muted-foreground md:inline-flex">
-              <Eye className="size-3" />
-              {device === "desktop" ? "Auto" : device === "tablet" ? "768px" : "375px"}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("size-7", miniMapVisible && "bg-muted text-foreground")}
-              onClick={() => setMiniMapVisible((v) => !v)}
-              title={miniMapVisible ? "Sembunyikan mini-map" : "Tampilkan mini-map"}
-            >
-              <MapIcon className="size-3.5" />
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* <span className="hidden truncate text-xs text-muted-foreground sm:inline">
-              {current?.slug ? `/${current.slug}` : "—"}
-            </span> */}
-            {/* Undo / Redo — visible affordance for the new history capability */}
-            <div className="inline-flex items-center gap-0.5 rounded-md border bg-background p-0.5 shadow-sm">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7"
-                onClick={undo}
-                disabled={!canUndo}
-                title="Undo (⌘Z)"
-              >
-                <Undo2 className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7"
-                onClick={redo}
-                disabled={!canRedo}
-                title="Redo (⌘⇧Z)"
-              >
-                <Redo2 className="size-3.5" />
-              </Button>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setThemeOpen(true)}
-              className="relative gap-1.5"
-            >
-              <Palette className="size-3.5" />
-              <span className="hidden sm:inline">Tema</span>
-              {themeDirty && (
-                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-500 ring-2 ring-card" />
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openPreview}
-              disabled={!current}
-              className="gap-1.5"
-              title="Pratinjau draft di tab baru — link berlaku 1 jam"
-            >
-              <Eye className="size-3.5" />
-              <span className="hidden sm:inline">Pratinjau</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSettingsOpen(true)}
-              disabled={!current}
-              className="gap-1.5"
-              title="Pengaturan halaman: judul, SEO, status"
-            >
-              <Settings2 className="size-3.5" />
-              <span className="hidden sm:inline">Pengaturan</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setHistoryOpen(true)}
-              disabled={!current}
-              className="gap-1.5"
-            >
-              <History className="size-3.5" />
-              <span className="hidden sm:inline">Riwayat</span>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => save()}
-              disabled={saving || !current || !blocksDirty}
-              size="sm"
-              className="relative gap-1.5"
-            >
-              <Save className="size-3.5" />
-              {saving ? "Menyimpan…" : "Simpan Draft"}
-              {blocksDirty && !saving && (
-                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-card" />
-              )}
-            </Button>
-            <Button
-              onClick={publish}
-              disabled={publishing || !current || (!hasUnpublishedChanges && !blocksDirty)}
-              size="sm"
-              className="relative gap-1.5 shadow-sm"
-              title="Salin draft ke versi live yang ditampilkan ke pengunjung"
-            >
-              <Rocket className="size-3.5" />
-              {publishing ? "Menerbitkan…" : "Terbitkan"}
-              {hasUnpublishedChanges && !publishing && (
-                <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-emerald-400 ring-2 ring-primary" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={() => setRightCollapsed((v) => !v)}
-              title={rightCollapsed ? "Tampilkan panel kanan" : "Sembunyikan panel kanan"}
-            >
-              {rightCollapsed ? (
-                <PanelRightOpen className="size-3.5" />
-              ) : (
-                <PanelRightClose className="size-3.5" />
-              )}
-            </Button>
-          </div>
-        </div>
-
         {/* Canvas — browser-like frame. Outer wrapper paints dashboard chrome
             (browser top bar uses dashboard tokens); INNER .wb-canvas applies
             the site theme so blocks inside render in the user's palette/fonts.
@@ -1446,6 +1444,7 @@ export default function EditorPage() {
           </div>
         )}
       </aside>
+      </div>
 
       <ThemeDrawer
         open={themeOpen}
