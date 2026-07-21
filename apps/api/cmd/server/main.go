@@ -113,6 +113,7 @@ func main() {
 	blogRepo := blog.NewRepo(pool)
 	snippetRepo := snippets.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
+	purchaseRepo := domain_purchase.NewRepo(pool)
 
 	if err := seed.Run(ctx, seed.Deps{
 		Pool:      pool,
@@ -196,7 +197,6 @@ func main() {
 	// Domain purchase handler menyatukan repo lokal + registrar client + user
 	// repo (untuk ambil profil kontak). Hanya di-build kalau registrar client
 	// aktif — kalau nil, route domain purchase auto-skip di router.
-	purchaseRepo := domain_purchase.NewRepo(pool)
 	var purchaseHandler *domain_purchase.Handler
 	if registrarClient != nil {
 		purchaseHandler = domain_purchase.NewHandler(purchaseRepo, registrarClient, authRepo, cfg.RegistrarWebhookSecret)
@@ -226,7 +226,7 @@ func main() {
 		Sites:        sites.NewHandler(siteRepo),
 		Pages:        pages.NewHandler(pageRepo, siteRepo, issuer),
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
-		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo),
+		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo, purchaseRepo),
 		Export: exports.NewHandler(&exports.Builder{
 			Sites:    siteRepo,
 			Pages:    pageRepo,

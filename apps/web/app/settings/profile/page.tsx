@@ -11,7 +11,7 @@
 //     isn't built yet.
 
 import { useEffect, useState } from "react";
-import { Loader2, Save, Mail, User as UserIcon, Phone, MapPin, Building2, Map, Hash } from "lucide-react";
+import { Loader2, Save, Mail, User as UserIcon, Phone, MapPin, Building2, Map, Hash, Fingerprint } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -30,11 +30,12 @@ type Me = {
   city: string;
   state: string;
   postal_code: string;
+  nik: string;
 };
 
 // The set of fields this form can edit. Kept as a const array so the diff
 // logic and JSX render loop stay in sync.
-const EDITABLE = ["name", "phone_number", "address", "city", "state", "postal_code"] as const;
+const EDITABLE = ["name", "phone_number", "address", "city", "state", "postal_code", "nik"] as const;
 type EditableKey = (typeof EDITABLE)[number];
 
 export default function ProfilePage() {
@@ -46,6 +47,7 @@ export default function ProfilePage() {
     city: "",
     state: "",
     postal_code: "",
+    nik: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -61,6 +63,7 @@ export default function ProfilePage() {
           city: u.city ?? "",
           state: u.state ?? "",
           postal_code: u.postal_code ?? "",
+          nik: u.nik ?? "",
         });
       })
       .catch((e) => toast.error((e as Error).message))
@@ -146,6 +149,24 @@ export default function ProfilePage() {
                 inputMode="tel"
                 className="max-w-md"
               />
+            </FieldRow>
+
+            <FieldRow icon={Fingerprint} label="NIK (KTP)">
+              <Input
+                value={form.nik}
+                onChange={(e) =>
+                  // NIK Indonesia = 16 digit angka. Filter non-digit + cap 16.
+                  setForm((f) => ({ ...f, nik: e.target.value.replace(/\D/g, "").slice(0, 16) }))
+                }
+                placeholder="16 digit KTP"
+                maxLength={16}
+                inputMode="numeric"
+                className="max-w-md tracking-wider font-mono"
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Wajib untuk registrasi domain <code>.id</code> (regulasi Kemenkominfo).
+                Untuk TLD lain (.com, .net, dst.) boleh dikosongkan.
+              </p>
             </FieldRow>
           </CardContent>
         </Card>

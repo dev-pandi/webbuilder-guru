@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
+	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
@@ -18,15 +19,16 @@ import (
 )
 
 type Handler struct {
-	repo     *Repo
-	sites    *sites.Repo
-	pages    *pages.Repo
-	products *products.Repo // optional — for seeding sample products on UMKM templates
-	blog     *blog.Repo     // optional — for seeding sample blog posts on Blog templates
+	repo      *Repo
+	sites     *sites.Repo
+	pages     *pages.Repo
+	products  *products.Repo         // optional — for seeding sample products on UMKM templates
+	blog      *blog.Repo             // optional — for seeding sample blog posts on Blog templates
+	purchases *domain_purchase.Repo  // required in production — enforces "1 domain = 1 site"
 }
 
-func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo) *Handler {
-	return &Handler{repo: repo, sites: s, pages: p, products: pr, blog: b}
+func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo, dp *domain_purchase.Repo) *Handler {
+	return &Handler{repo: repo, sites: s, pages: p, products: pr, blog: b, purchases: dp}
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
@@ -59,6 +61,10 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 type createFromTemplateReq struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+	// JobID = registrar_job_id dari domain purchase yang statusnya active
+	// dan belum di-attach ke site lain. Wajib — tanpa domain, user tidak
+	// bisa buat situs (1 domain = 1 site).
+	JobID string `json:"job_id"`
 }
 
 type applyTemplateReq struct {
@@ -103,15 +109,20 @@ func (h *Handler) ApplyToSite(c *fiber.Ctx) error {
 
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`)
 
-// POST /sites/from-template/:slug   { slug, name }
+// POST /sites/from-template/:slug   { slug, name, job_id }
 //
-// Seeds:
+// Business rules:
+//   - `job_id` WAJIB. Site cuma bisa dibuat kalau user sudah beli domain
+//     (status=active, milik user, belum di-attach ke site lain).
+//   - 1 domain = 1 site. Setelah create, purchase di-attach ke site baru;
+//     purchase yang sudah di-attach tidak bisa dipakai untuk site kedua.
+//
+// Seeds setelah site jadi:
 //   1. Pages from template (always)
-//   2. Sample products if template category = "umkm" (so /produk page isn't empty)
-//   3. Sample blog posts if template category = "blog" (so /artikel page isn't empty)
+//   2. Sample products if template category = "umkm"
+//   3. Sample blog posts if template category = "blog"
 //
-// Sample seeding is best-effort — errors logged via fiber's logger but don't fail the
-// whole request, since the user already has the site and pages.
+// Sample seeding best-effort — errors di-log tapi tidak fail request.
 func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	tplSlug := c.Params("slug")
@@ -129,11 +140,38 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	}
 	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
 	req.Name = strings.TrimSpace(req.Name)
+	req.JobID = strings.TrimSpace(req.JobID)
 	if !slugRe.MatchString(req.Slug) {
 		return httpx.BadRequest(c, "slug invalid")
 	}
 	if req.Name == "" {
 		req.Name = tpl.Name
+	}
+
+	// Enforce "must own an active, unattached domain purchase" — sesuai
+	// keputusan produk: user hanya boleh buat situs kalau sudah beli domain.
+	if h.purchases == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "purchases_disabled",
+			"Fitur beli domain belum dikonfigurasi di server (REGISTRAR_API_URL kosong).")
+	}
+	if req.JobID == "" {
+		return httpx.Err(c, fiber.StatusBadRequest, "job_id_required",
+			"Domain wajib. Beli domain dulu lewat halaman 'Beli Domain + Buat Situs'.")
+	}
+	purchase, err := h.purchases.GetByJobID(c.Context(), req.JobID, uid)
+	if errors.Is(err, domain_purchase.ErrNotFound) {
+		return httpx.NotFound(c, "domain purchase tidak ditemukan atau bukan milik Anda")
+	}
+	if err != nil {
+		return httpx.Internal(c, "purchase lookup failed")
+	}
+	if purchase.Status != domain_purchase.StatusActive {
+		return httpx.Err(c, fiber.StatusBadRequest, "domain_not_active",
+			"Domain belum aktif — status: "+purchase.Status+". Tunggu sampai domain aktif sebelum buat situs.")
+	}
+	if purchase.SiteID != nil {
+		return httpx.Err(c, fiber.StatusConflict, "domain_already_attached",
+			"Domain sudah dipakai untuk situs lain. 1 domain = 1 situs.")
 	}
 
 	site, err := h.sites.Create(c.Context(), uid, req.Slug, req.Name, &tpl.ID, tpl.Theme)
@@ -145,6 +183,19 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return httpx.Internal(c, "create failed")
+	}
+
+	// Atomic attach — kalau attach gagal (race: purchase sudah di-attach oleh
+	// request lain antara GetByJobID + sini), rollback site untuk cegah
+	// site "yatim" tanpa domain. AttachSite pakai WHERE site_id IS NULL, jadi
+	// kalau race, hanya satu yang menang.
+	if err := h.purchases.AttachSite(c.Context(), req.JobID, uid, site.ID); err != nil {
+		_ = h.sites.Delete(c.Context(), site.ID, uid)
+		if errors.Is(err, domain_purchase.ErrNotFound) {
+			return httpx.Err(c, fiber.StatusConflict, "domain_already_attached",
+				"Domain baru saja di-attach ke situs lain. Coba refresh dashboard.")
+		}
+		return httpx.Internal(c, "attach failed")
 	}
 
 	// 1. Provision template pages.

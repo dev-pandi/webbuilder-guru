@@ -281,21 +281,13 @@ function TemplatePicker({
     setErr(null);
     setCreating(true);
     try {
-      // Backend create-site-from-template mengembalikan Site.
+      // Backend enforces atomic create + attach: kirim job_id, server verify
+      // purchase active + belum di-attach, lalu create site + attach dalam
+      // satu request. Kalau job_id tidak valid → 400/404/409 dari server.
       const site = await api<{ id: string; slug: string }>(
         `/api/v1/sites/from-template/${selected}`,
-        { method: "POST", body: JSON.stringify({ slug, name }) },
+        { method: "POST", body: JSON.stringify({ slug, name, job_id: jobId }) },
       );
-      // Link domain purchase ke site — best effort. Kalau gagal, situs tetap
-      // tercipta; user bisa link manual dari tab Domain nanti.
-      try {
-        await api(`/api/v1/domains/purchases/${jobId}/attach`, {
-          method: "POST",
-          body: JSON.stringify({ site_id: site.id }),
-        });
-      } catch (e) {
-        console.warn("attach domain failed", e);
-      }
       toast.success("Situs berhasil dibuat");
       onCreated(site.id);
     } catch (e) {

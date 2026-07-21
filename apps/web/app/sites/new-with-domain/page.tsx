@@ -47,6 +47,7 @@ type Me = {
   city: string;
   state: string;
   postal_code: string;
+  nik: string;
 };
 
 type CheckResp = {
@@ -75,6 +76,18 @@ const REQUIRED_PROFILE_FIELDS: Array<keyof Me> = [
   "city",
   "postal_code",
 ];
+
+// Label Indonesia untuk pesan "field kosong". Fallback ke key mentah kalau
+// belum di-mapping.
+const FIELD_LABEL: Record<string, string> = {
+  name: "Nama",
+  phone_number: "Nomor HP",
+  address: "Alamat",
+  city: "Kota",
+  state: "Provinsi",
+  postal_code: "Kode Pos",
+  nik: "NIK (KTP)",
+};
 
 export default function NewWithDomainPage() {
   const router = useRouter();
@@ -106,8 +119,14 @@ export default function NewWithDomainPage() {
   const [purchasing, setPurchasing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // NIK hanya wajib kalau user pilih domain .id (Kemenkominfo regulation).
+  // Cek hanya setelah user run domain check — sebelum itu tidak tahu TLD.
+  const needsNik = (checkResult?.domain ?? "").trim().toLowerCase().replace(/\.$/, "").endsWith(".id");
+  const requiredFields: Array<keyof Me> = needsNik
+    ? [...REQUIRED_PROFILE_FIELDS, "nik"]
+    : REQUIRED_PROFILE_FIELDS;
   const missingProfile = me
-    ? REQUIRED_PROFILE_FIELDS.filter((k) => !((me as Record<string, unknown>)[k] || "").toString().trim())
+    ? requiredFields.filter((k) => !((me as Record<string, unknown>)[k] || "").toString().trim())
     : [];
   const profileComplete = me != null && missingProfile.length === 0;
 
@@ -144,7 +163,11 @@ export default function NewWithDomainPage() {
           domain: checkResult.domain,
           years,
           payment_method: paymentMethod,
-          return_url: `${window.location.origin}/sites/pending/${"__JOB__"}`, // ganti setelah dapat job_id
+          // Static return page — pengambil job terbaru user lalu redirect ke
+          // /sites/pending/<job_id>. Kita nggak tahu job_id di sini karena
+          // baru dapat dari response, sedangkan payment session butuh URL
+          // saat POST /purchase.
+          return_url: `${window.location.origin}/checkout/return`,
         }),
       });
       toast.success("Job pembelian dibuat");
@@ -309,13 +332,20 @@ export default function NewWithDomainPage() {
                       {me?.address}, {me?.city}
                       {me?.state ? `, ${me.state}` : ""} {me?.postal_code}
                     </div>
+                    {needsNik && me?.nik && (
+                      <div className="font-mono text-xs">
+                        NIK: {me.nik.slice(0, 6)}••••••{me.nik.slice(-4)}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
                     <AlertCircle className="mt-0.5 size-4 shrink-0" />
                     <div>
                       Lengkapi profil dulu — field kosong:{" "}
-                      <strong>{missingProfile.join(", ")}</strong>
+                      <strong>
+                        {missingProfile.map((k) => FIELD_LABEL[k] ?? k).join(", ")}
+                      </strong>
                     </div>
                   </div>
                 )}

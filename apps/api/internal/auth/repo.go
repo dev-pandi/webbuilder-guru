@@ -31,16 +31,19 @@ type User struct {
 	City        string
 	State       string
 	PostalCode  string
+	// NIK (Nomor Induk Kependudukan). Wajib untuk registrasi domain .id
+	// (Kemenkominfo regulation). Kosong = user belum bisa beli .id domain.
+	Nik string
 }
 
 // scanUserCols is the projection every SELECT below uses. Kept in sync with
 // the SELECT statements so a schema-column reorder only needs one edit.
-const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code`
+const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik`
 
 func scanUser(u *User) []any {
 	return []any{
 		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt, &u.OAuthGoogleSub,
-		&u.PhoneNumber, &u.Address, &u.City, &u.State, &u.PostalCode,
+		&u.PhoneNumber, &u.Address, &u.City, &u.State, &u.PostalCode, &u.Nik,
 	}
 }
 
@@ -132,6 +135,7 @@ type ProfileUpdate struct {
 	City        *string
 	State       *string
 	PostalCode  *string
+	Nik         *string
 }
 
 // UpdateProfile applies a partial update. Uses COALESCE so `NULL` params
@@ -146,10 +150,11 @@ func (r *Repo) UpdateProfile(ctx context.Context, userID uuid.UUID, p ProfileUpd
 		       city         = COALESCE($5, city),
 		       state        = COALESCE($6, state),
 		       postal_code  = COALESCE($7, postal_code),
+		       nik          = COALESCE($8, nik),
 		       updated_at   = now()
 		 WHERE id = $1
 		RETURNING `+scanUserCols,
-		userID, p.Name, p.PhoneNumber, p.Address, p.City, p.State, p.PostalCode,
+		userID, p.Name, p.PhoneNumber, p.Address, p.City, p.State, p.PostalCode, p.Nik,
 	).Scan(scanUser(&u)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

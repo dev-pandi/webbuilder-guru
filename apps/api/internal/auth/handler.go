@@ -81,6 +81,7 @@ type meResp struct {
 	City        string `json:"city"`
 	State       string `json:"state"`
 	PostalCode  string `json:"postal_code"`
+	Nik         string `json:"nik"` // wajib untuk beli domain .id
 }
 
 func toMeResp(u *User) meResp {
@@ -94,6 +95,7 @@ func toMeResp(u *User) meResp {
 		City:        u.City,
 		State:       u.State,
 		PostalCode:  u.PostalCode,
+		Nik:         u.Nik,
 	}
 	if u.EmailVerifiedAt != nil {
 		s := u.EmailVerifiedAt.UTC().Format(time.RFC3339)
@@ -246,6 +248,7 @@ type updateMeReq struct {
 	City        *string `json:"city,omitempty"`
 	State       *string `json:"state,omitempty"`
 	PostalCode  *string `json:"postal_code,omitempty"`
+	Nik         *string `json:"nik,omitempty"`
 }
 
 // UpdateMe patches the current user's profile. Fields not present in the JSON
@@ -277,6 +280,7 @@ func (h *Handler) UpdateMe(c *fiber.Ctx) error {
 	req.City = trim(req.City)
 	req.State = trim(req.State)
 	req.PostalCode = trim(req.PostalCode)
+	req.Nik = trim(req.Nik)
 
 	// Basic length caps — DB has TEXT so no hard limit, but reject obvious
 	// abuse before writing. Matches the migration comments (255/128/32/16).
@@ -298,6 +302,18 @@ func (h *Handler) UpdateMe(c *fiber.Ctx) error {
 	if req.PostalCode != nil && len(*req.PostalCode) > 16 {
 		return httpx.BadRequest(c, "kode pos terlalu panjang (max 16)")
 	}
+	if req.Nik != nil && *req.Nik != "" {
+		// NIK Indonesia = 16 digit numeric. Reject bentuk lain supaya registrar
+		// tidak reject dengan pesan cryptic saat contact:create.
+		if len(*req.Nik) != 16 {
+			return httpx.BadRequest(c, "NIK harus 16 digit")
+		}
+		for _, r := range *req.Nik {
+			if r < '0' || r > '9' {
+				return httpx.BadRequest(c, "NIK harus angka saja")
+			}
+		}
+	}
 
 	u, err := h.repo.UpdateProfile(c.Context(), cl.UserID, ProfileUpdate{
 		Name:        req.Name,
@@ -306,6 +322,7 @@ func (h *Handler) UpdateMe(c *fiber.Ctx) error {
 		City:        req.City,
 		State:       req.State,
 		PostalCode:  req.PostalCode,
+		Nik:         req.Nik,
 	})
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "user not found")

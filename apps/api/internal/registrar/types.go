@@ -65,9 +65,12 @@ type Contact struct {
 	Phone       string `json:"phone"` // E.164 preferred, "+62812..."
 	Address     string `json:"address"`
 	City        string `json:"city"`
-	State       string `json:"state"`        // province in .id context
+	State       string `json:"state"`                  // province in .id context
 	PostalCode  string `json:"postal_code"`
 	CountryCode string `json:"country_code,omitempty"` // ISO-3166 alpha-2
+	// Nik = Nomor Induk Kependudukan (16 digit). Wajib untuk domain .id per
+	// regulasi Kemenkominfo; opsional untuk TLD lain (`.com`, dst.).
+	Nik string `json:"nik,omitempty"`
 }
 
 // RegisterRequest is the payload web builder POSTs to trigger a domain

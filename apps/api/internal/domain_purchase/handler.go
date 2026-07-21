@@ -149,13 +149,11 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusBadRequest, "profile_incomplete",
 			"Lengkapi profil dulu di /settings/profile — field kosong: "+strings.Join(missing, ", "))
 	}
-	// NIK wajib untuk .id — belum ada field di user profile, minta di UI kalau
-	// belum ada. Untuk sekarang, cek zone di sini juga.
-	// TODO: tambah field NIK di user profile (settings/profile) kalau UMKM mau
-	// beli .id. Sementara, tolak .id dengan pesan yang jelas.
-	if strings.HasSuffix(strings.ToLower(req.Domain), ".id") {
+	// NIK wajib untuk domain .id (Kemenkominfo regulation). Kalau user belum
+	// isi, arahkan ke halaman profil. Field NIK sudah tersedia sejak migrasi 0012.
+	if isIDDomain(req.Domain) && strings.TrimSpace(user.Nik) == "" {
 		return httpx.Err(c, fiber.StatusBadRequest, "nik_required_for_id",
-			"Registrasi domain .id butuh NIK — feature belum tersedia di profile. Coba TLD lain (.com, .net, dll) untuk sementara.")
+			"Domain .id wajib butuh NIK. Isi NIK dulu di /settings/profile lalu coba lagi.")
 	}
 
 	// Idempotency key per request. Frontend seharusnya kirim key sendiri
@@ -182,6 +180,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 			State:       user.State,
 			PostalCode:  user.PostalCode,
 			CountryCode: "ID",
+			Nik:         user.Nik,
 		},
 	}
 
@@ -406,6 +405,13 @@ func toResp(p *Purchase) purchaseResp {
 		Status:     p.Status,
 		PaymentURL: p.PaymentURL,
 	}
+}
+
+// isIDDomain deteksi TLD .id (termasuk .co.id, .ac.id, dst.).
+// Case-insensitive; strip trailing "." kalau ada FQDN.
+func isIDDomain(domain string) bool {
+	d := strings.ToLower(strings.TrimRight(strings.TrimSpace(domain), "."))
+	return strings.HasSuffix(d, ".id")
 }
 
 func missingProfileFields(u *auth.User) []string {
