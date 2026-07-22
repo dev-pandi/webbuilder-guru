@@ -154,6 +154,7 @@ func main() {
 		slog.Info("storage ready", "driver", assetStorage.Driver())
 	}
 
+
 	// Mail sender — driver "log" in dev, "smtp" in prod.
 	mailer, err := mail.New(mail.Config{
 		Driver:   cfg.MailDriver,
@@ -190,6 +191,48 @@ func main() {
 	}
 	if registrarClient != nil {
 		slog.Info("registrar client: enabled", "base_url", cfg.RegistrarAPIURL, "timeout", cfg.RegistrarAPITimeout)
+
+		// Auto-login + JWT refresh loop. Kalau credentials di-set, override
+		// REGISTRAR_API_KEY dengan JWT hasil login (30-day TTL) + refresh
+		// tiap 25 hari sebelum expire.
+		if cfg.RegistrarResellerEmail != "" && cfg.RegistrarResellerPassword != "" {
+			loginCtx, cancelLogin := context.WithTimeout(ctx, 15*time.Second)
+			jwt, err := registrarClient.Login(loginCtx, cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
+			cancelLogin()
+			if err != nil {
+				slog.Error("registrar login failed at startup", "error", err,
+					"hint", "cek REGISTRAR_RESELLER_EMAIL + REGISTRAR_RESELLER_PASSWORD, atau kosongkan supaya pakai REGISTRAR_API_KEY apa adanya")
+				os.Exit(1)
+			}
+			registrarClient.SetAPIKey(jwt)
+			slog.Info("registrar jwt: auto-login success (will refresh every 25d)")
+
+			// Background refresh — tick tiap 25 hari (before 30-day expire).
+			// Kalau login gagal di refresh, log error tapi tetap coba lagi
+			// next tick — JWT lama masih valid ~5 hari.
+			go func() {
+				t := time.NewTicker(25 * 24 * time.Hour)
+				defer t.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+						rCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+						jwt, err := registrarClient.Login(rCtx, cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
+						cancel()
+						if err != nil {
+							slog.Error("registrar jwt refresh failed (will retry next tick)", "error", err)
+							continue
+						}
+						registrarClient.SetAPIKey(jwt)
+						slog.Info("registrar jwt: refreshed")
+					}
+				}
+			}()
+		} else if cfg.RegistrarAPIKey == "" {
+			slog.Warn("registrar client: no credentials + no static API key — all reseller calls will 401")
+		}
 	} else {
 		slog.Info("registrar client: disabled (set REGISTRAR_API_URL + REGISTRAR_API_KEY to enable)")
 	}
@@ -199,11 +242,18 @@ func main() {
 	// aktif — kalau nil, route domain purchase auto-skip di router.
 	var purchaseHandler *domain_purchase.Handler
 	if registrarClient != nil {
-		purchaseHandler = domain_purchase.NewHandler(purchaseRepo, registrarClient, authRepo, cfg.RegistrarWebhookSecret)
+		// Dokumen (KTP/NPWP) BUKAN disimpan di web builder — flow multipart
+		// upload diteruskan langsung ke registrar via AttachDocument handler.
+		// Single source of truth = registrar.
+		purchaseHandler = domain_purchase.NewHandler(
+			purchaseRepo, registrarClient, authRepo,
+			cfg.RegistrarWebhookSecret,
+		)
 		if cfg.RegistrarWebhookSecret == "" {
 			slog.Warn("registrar webhook: REGISTRAR_WEBHOOK_SECRET kosong — endpoint akan 503 sampai di-set")
 		}
 	}
+
 	googleHandler := auth.NewGoogleHandler(
 		authRepo, authHandler,
 		cfg.GoogleOAuthClientID, cfg.GoogleOAuthClientSecret, cfg.GoogleOAuthRedirectURL,

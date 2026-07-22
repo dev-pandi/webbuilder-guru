@@ -103,6 +103,13 @@ type Config struct {
 	// untuk verify HMAC signature pada callback `POST /webhooks/registrar/*`.
 	// Empty = webhook receiver otomatis 503 (fail-closed).
 	RegistrarWebhookSecret string
+
+	// Kredensial reseller untuk auto-login + JWT refresh loop. Kalau di-set,
+	// main.go akan login saat startup (override REGISTRAR_API_KEY) dan re-login
+	// tiap ~25 hari (before JWT 30-day expire). Kalau kosong, pakai
+	// REGISTRAR_API_KEY apa adanya — operator harus rotate manual.
+	RegistrarResellerEmail    string
+	RegistrarResellerPassword string
 }
 
 func Load() Config {
@@ -158,10 +165,12 @@ func Load() Config {
 		GoogleOAuthClientSecret: env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 		GoogleOAuthRedirectURL:  env("GOOGLE_OAUTH_REDIRECT_URL", ""),
 
-		RegistrarAPIURL:        env("REGISTRAR_API_URL", ""),
-		RegistrarAPIKey:        env("REGISTRAR_API_KEY", ""),
-		RegistrarAPITimeout:    envDuration("REGISTRAR_API_TIMEOUT", 15*time.Second),
-		RegistrarWebhookSecret: env("REGISTRAR_WEBHOOK_SECRET", ""),
+		RegistrarAPIURL:           env("REGISTRAR_API_URL", ""),
+		RegistrarAPIKey:           env("REGISTRAR_API_KEY", ""),
+		RegistrarAPITimeout:       envDuration("REGISTRAR_API_TIMEOUT", 15*time.Second),
+		RegistrarWebhookSecret:    env("REGISTRAR_WEBHOOK_SECRET", ""),
+		RegistrarResellerEmail:    env("REGISTRAR_RESELLER_EMAIL", ""),
+		RegistrarResellerPassword: env("REGISTRAR_RESELLER_PASSWORD", ""),
 
 		DBMaxConns:           envInt("DB_MAX_CONNS", 10),
 		DBMinConns:           envInt("DB_MIN_CONNS", 2),

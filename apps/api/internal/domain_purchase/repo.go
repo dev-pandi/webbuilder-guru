@@ -15,6 +15,9 @@ import (
 
 // Purchase merepresentasikan satu attempt beli domain. `SiteID` bisa nil —
 // diisi setelah user create situs yang di-attach ke domain ini.
+//
+// Kind = "register" atau "renew". Renew jobs tidak pernah di-attach ke site
+// (site sudah exist dari register sebelumnya) — SiteID selalu nil.
 type Purchase struct {
 	ID             uuid.UUID
 	UserID         uuid.UUID
@@ -22,6 +25,7 @@ type Purchase struct {
 	RegistrarJobID string
 	Domain         string
 	Years          int
+	Kind           string // "register" | "renew"
 	Status         string
 	Reason         string
 	PaymentMethod  string
@@ -30,6 +34,12 @@ type Purchase struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+// Kind constants — mirror registrar_domain_jobs.kind.
+const (
+	KindRegister = "register"
+	KindRenew    = "renew"
+)
 
 // Status constants — mirror registrar-api models.JobStatus*.
 const (
@@ -55,11 +65,11 @@ var (
 	ErrJobTaken = errors.New("registrar_job_id already exists")
 )
 
-const cols = `id, user_id, site_id, registrar_job_id, domain, years, status, reason, payment_method, payment_url, expires_at, created_at, updated_at`
+const cols = `id, user_id, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at, created_at, updated_at`
 
 func scan(row pgx.Row, p *Purchase) error {
 	return row.Scan(
-		&p.ID, &p.UserID, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years,
+		&p.ID, &p.UserID, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
 		&p.Status, &p.Reason, &p.PaymentMethod, &p.PaymentURL,
 		&p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -69,15 +79,18 @@ func scan(row pgx.Row, p *Purchase) error {
 // registrar-api `/domain/register` — kita simpan job_id + payment_url + status
 // awal supaya frontend bisa polling tanpa hit registrar lagi.
 func (r *Repo) Create(ctx context.Context, p *Purchase) error {
+	if p.Kind == "" {
+		p.Kind = KindRegister
+	}
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO domain_purchases
-		(user_id, site_id, registrar_job_id, domain, years, status, reason, payment_method, payment_url, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		(user_id, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		RETURNING `+cols,
-		p.UserID, p.SiteID, p.RegistrarJobID, p.Domain, p.Years,
+		p.UserID, p.SiteID, p.RegistrarJobID, p.Domain, p.Years, p.Kind,
 		p.Status, p.Reason, p.PaymentMethod, p.PaymentURL, p.ExpiresAt,
 	).Scan(
-		&p.ID, &p.UserID, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years,
+		&p.ID, &p.UserID, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
 		&p.Status, &p.Reason, &p.PaymentMethod, &p.PaymentURL,
 		&p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -96,6 +109,25 @@ func (r *Repo) GetByJobID(ctx context.Context, jobID string, userID uuid.UUID) (
 	err := scan(r.pool.QueryRow(ctx,
 		`SELECT `+cols+` FROM domain_purchases WHERE registrar_job_id = $1 AND user_id = $2`,
 		jobID, userID,
+	), &p)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
+}
+
+// GetLatestActiveByDomain cari purchase yang statusnya active + kind=register
+// untuk domain tertentu, scoped ke user. Dipakai Renew handler untuk verify
+// bahwa user memang pemilik domain sebelum forward renew request ke registrar.
+// Renew job sendiri di-exclude (kind != 'register') supaya bisa multiple renew
+// per domain.
+func (r *Repo) GetLatestActiveByDomain(ctx context.Context, domain string, userID uuid.UUID) (*Purchase, error) {
+	var p Purchase
+	err := scan(r.pool.QueryRow(ctx,
+		`SELECT `+cols+` FROM domain_purchases
+		  WHERE user_id = $1 AND domain = $2 AND kind = 'register' AND status = 'active'
+		  ORDER BY created_at DESC LIMIT 1`,
+		userID, domain,
 	), &p)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

@@ -99,9 +99,26 @@ func MountUser(app *fiber.App, deps Deps) {
 	if deps.DomainPurchase != nil {
 		authed.Post("/domains/check", mutateLimit, deps.DomainPurchase.Check)
 		authed.Post("/domains/purchase", mutateLimit, deps.DomainPurchase.Purchase)
+		// Renew existing domain — bikin job baru dengan kind=renew di job tracker
+		// lokal + di registrar. Response shape sama dengan purchase supaya
+		// frontend re-use pending page.
+		authed.Post("/domains/renew", mutateLimit, deps.DomainPurchase.Renew)
+		// Domain management (nameservers + whois) — semua verify ownership.
+		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
+		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
+		authed.Get("/domains/:name/whois", deps.DomainPurchase.Whois)
 		authed.Get("/domains/purchases", deps.DomainPurchase.List)
 		authed.Get("/domains/purchases/:job_id", deps.DomainPurchase.Status)
 		authed.Post("/domains/purchases/:job_id/attach", mutateLimit, deps.DomainPurchase.Attach)
+		// Retry EPP CREATE untuk job yang status=failed (tidak bayar ulang).
+		authed.Post("/domains/purchases/:job_id/retry", mutateLimit, deps.DomainPurchase.Retry)
+		// AttachDocument = multipart passthrough ke registrar. Web builder
+		// TIDAK simpan file — dokumen sensitif (KTP/NPWP) langsung di-forward.
+		// Pakai uploadLimit karena user-initiated file upload (bukan mutation).
+		uploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
+		authed.Post("/domains/purchases/:job_id/documents", uploadLimit, deps.DomainPurchase.AttachDocument)
+		// Categories dropdown untuk form upload. Read-only, no limit.
+		authed.Get("/documents/categories", deps.DomainPurchase.ListCategories)
 	}
 
 	// Products

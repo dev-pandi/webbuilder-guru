@@ -31,10 +31,24 @@ type DomainPrice struct {
 
 // Availability captures whether a domain can be registered. Reason is only
 // set when Available=false (e.g. "reserved", "registered", "invalid_tld").
+//
+// Zone info opsional — registrar-api's /domain/check menyertakan info zone
+// (require_document, auto_approved, dst.) yang dipakai wizard untuk decide
+// apakah user perlu pilih dokumen setelah bayar.
 type Availability struct {
-	Domain    string `json:"domain"`
-	Available bool   `json:"available"`
-	Reason    string `json:"reason,omitempty"`
+	Domain    string    `json:"domain"`
+	Available bool      `json:"available"`
+	Reason    string    `json:"reason,omitempty"`
+	Zone      *ZoneInfo `json:"zone,omitempty"`
+}
+
+// ZoneInfo mirrors registrar-api's zoneInfo di /domain/check response.
+// Semua flag optional — kalau zone tidak ditemukan di registrar, block absent.
+type ZoneInfo struct {
+	Name            string `json:"name"`
+	RequireDocument bool   `json:"require_document"`
+	AutoApproved    bool   `json:"auto_approved"`
+	NikAutoApproved bool   `json:"nik_auto_approved"`
 }
 
 // Whois is a minimal WHOIS shape for the "domain already taken" preview UI.
@@ -89,6 +103,10 @@ type RegisterRequest struct {
 	// IdempotencyKey: web builder generates a UUID per checkout attempt so
 	// double-clicking "Buy" doesn't double-register. Registrar-api dedupes.
 	IdempotencyKey string `json:"idempotency_key"`
+	// PromoCode opsional — kalau ada, registrar-api's resolvePromo helper
+	// akan cari promo aktif dgn code ini + apply diskon. Kalau code tidak
+	// valid, silent fallback ke harga normal (bukan error).
+	PromoCode string `json:"promo_code,omitempty"`
 }
 
 // RegisterResponse is the accepted-but-pending reply. Real registration is
@@ -114,4 +132,19 @@ type RegisterStatus struct {
 	Status    string `json:"status"`
 	Reason    string `json:"reason,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"` // registration expiry (RFC3339), set once Active
+}
+
+// --- Renew (existing endpoint di registrar reseller) ---
+// Target: POST /v1/api/user/reseller/domain/:name/renew
+// Body: RenewRequest
+// Response: RegisterResponse (shape sama dengan register — job_id + payment_url)
+
+// RenewRequest = payload minimal untuk perpanjang domain. `ExternalUserID`
+// opsional; kalau di-set, registrar catat siapa end-user reseller yang trigger.
+type RenewRequest struct {
+	Years          int    `json:"years"`
+	IdempotencyKey string `json:"idempotency_key"`
+	ExternalUserID string `json:"external_user_id,omitempty"`
+	PaymentMethod  string `json:"payment_method"` // "midtrans" | "paylabs"
+	ReturnURL      string `json:"return_url,omitempty"`
 }

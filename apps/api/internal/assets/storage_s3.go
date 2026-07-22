@@ -72,3 +72,14 @@ func (s *s3Storage) Put(ctx context.Context, key string, r io.Reader, size int64
 	}
 	return s.publicURL + "/" + key, nil
 }
+
+func (s *s3Storage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	// GetObject di minio-go returns *Object yang satisfies io.ReadCloser.
+	// Object baru error saat pertama kali di-Read; caller yang handle 404.
+	return s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+}
+
+func (s *s3Storage) Delete(ctx context.Context, key string) error {
+	// RemoveObject idempotent secara semantic — S3 balik 204 kalau key tidak ada.
+	return s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+}

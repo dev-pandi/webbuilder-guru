@@ -61,7 +61,8 @@ type Deps struct {
 	Registrar *registrar.Client
 
 	// DomainPurchase menjembatani frontend ↔ registrar. Handler check/purchase/
-	// status/webhook. Nil kalau registrar disabled (client wrapper nil).
+	// status/webhook + attach document (multipart passthrough). Nil kalau
+	// registrar disabled (client wrapper nil).
 	DomainPurchase *domain_purchase.Handler
 
 	Admin *admin.Handler

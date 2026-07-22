@@ -1,20 +1,27 @@
 "use client";
 
-// Settings gate — same guard pattern as dashboard/layout.tsx (auth required,
-// bounce to /login on 401). We don't duplicate the dashboard chrome here
-// because settings pages already sit under the top-level nav via the header.
+// Settings gate — auth check + sidebar nav (Profil, Domain). Header punya
+// tombol back ke Dashboard + Logout; sidebar sticky di desktop, horizontal
+// scroll di mobile.
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronLeft, LogOut } from "lucide-react";
+import { ChevronLeft, LogOut, User, Globe2 } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Me = { id: string; email: string; role: string };
 
+const NAV = [
+  { href: "/settings/profile", label: "Profil", icon: User },
+  { href: "/settings/domains", label: "Domain", icon: Globe2 },
+] as const;
+
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -46,7 +53,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
               <Link href="/dashboard">
@@ -62,7 +69,32 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           </Button>
         </div>
       </header>
-      <main className="mx-auto max-w-4xl px-6 py-8">{children}</main>
+      <div className="mx-auto grid max-w-5xl gap-6 px-6 py-8 md:grid-cols-[200px_1fr]">
+        <aside className="md:sticky md:top-8 md:self-start">
+          <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+            {NAV.map((item) => {
+              const active = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "inline-flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </aside>
+        <main className="min-w-0">{children}</main>
+      </div>
     </div>
   );
 }

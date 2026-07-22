@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,11 +41,31 @@ type Config struct {
 }
 
 // Client is the typed handle over registrar-api. Concurrency-safe.
+//
+// apiKey adalah long-lived JWT reseller (default TTL 30 hari di registrar).
+// Guarded oleh mu supaya background JWT refresh loop bisa Set-nya tanpa
+// data race dengan handler yang lagi read.
 type Client struct {
 	baseURL string
+	mu      sync.RWMutex // guards apiKey
 	apiKey  string
 	http    *http.Client
 	retries int
+}
+
+// APIKey returns the current JWT (thread-safe read).
+func (c *Client) APIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.apiKey
+}
+
+// SetAPIKey rotates the JWT. Called oleh background refresh loop (di main.go)
+// setelah re-login. Safe untuk dipanggil concurrent dengan request handler.
+func (c *Client) SetAPIKey(newKey string) {
+	c.mu.Lock()
+	c.apiKey = newKey
+	c.mu.Unlock()
 }
 
 // New returns nil if BaseURL is empty (feature disabled). Otherwise it
@@ -140,10 +161,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		if payload != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		if c.apiKey != "" {
+		if key := c.APIKey(); key != "" {
 			// Bearer scheme is the standard reseller pattern; if registrar-api
 			// prefers X-API-Key header later, only this line changes.
-			req.Header.Set("Authorization", "Bearer "+c.apiKey)
+			req.Header.Set("Authorization", "Bearer "+key)
 		}
 
 		resp, err := c.http.Do(req)

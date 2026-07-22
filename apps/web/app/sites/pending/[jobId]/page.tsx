@@ -24,6 +24,9 @@ import {
   ChevronLeft,
   AlertCircle,
   Sparkles,
+  FileText,
+  Send,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken, clearTokens } from "@/lib/api";
@@ -37,7 +40,10 @@ type Purchase = {
   job_id: string;
   domain: string;
   status: string;
+  kind: string; // "register" | "renew" — pending page adapt UI berdasarkan ini
   payment_url?: string;
+  reason?: string; // diisi kalau status=failed (dari registrar)
+  expires_at?: string;
 };
 
 type Template = {
@@ -94,6 +100,7 @@ export default function PendingDomainPage() {
   const [ready, setReady] = useState(false);
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Auth guard.
@@ -148,6 +155,28 @@ export default function PendingDomainPage() {
   useEffect(() => {
     purchaseRef.current = purchase;
   }, [purchase]);
+
+  // Retry — hit backend proxy, biarkan polling loop pickup status baru.
+  async function onRetry() {
+    if (!jobId || retrying) return;
+    setErr(null);
+    setRetrying(true);
+    try {
+      await api(`/api/v1/domains/purchases/${jobId}/retry`, { method: "POST" });
+      toast.success("Retry dikirim ke registrar — status akan update otomatis");
+      // Force segera refresh; polling loop akan lanjut setelah ini.
+      try {
+        const fresh = await api<Purchase>(`/api/v1/domains/purchases/${jobId}`);
+        setPurchase(fresh);
+      } catch {
+        /* diamkan, polling akan pickup */
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   const info = purchase ? STATUS_INFO[purchase.status] ?? { label: purchase.status, hint: "", kind: "wait" as const } : null;
 
@@ -222,6 +251,36 @@ export default function PendingDomainPage() {
                       Menunggu link pembayaran dari gateway… halaman akan refresh otomatis.
                     </p>
                   )}
+
+                  {/* Retry — hanya saat status=failed. TIDAK bayar ulang;
+                      invoice lama tetap valid, registrar re-run EPP CREATE. */}
+                  {purchase.status === "failed" && (
+                    <>
+                      {purchase.reason && (
+                        <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                          <strong>Detail:</strong> {purchase.reason}
+                        </p>
+                      )}
+                      <Button
+                        onClick={onRetry}
+                        disabled={retrying}
+                        className="mt-4 gap-2"
+                        variant="outline"
+                      >
+                        {retrying ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" />
+                            Mencoba lagi…
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="size-4" />
+                            Coba lagi
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -232,13 +291,58 @@ export default function PendingDomainPage() {
           </CardContent>
         </Card>
 
-        {/* Template picker — hanya setelah active */}
-        {purchase?.status === "active" && (
+        {/* Document picker — hanya saat status=pending_document */}
+        {purchase?.status === "pending_document" && (
+          <DocumentUpload
+            jobId={jobId}
+            domain={purchase.domain}
+            onSubmitted={() => {
+              // Kick fresh fetch supaya user melihat status advance segera.
+              (async () => {
+                try {
+                  const fresh = await api<Purchase>(`/api/v1/domains/purchases/${jobId}`);
+                  setPurchase(fresh);
+                } catch (e) {
+                  console.warn("refresh after doc attach failed", e);
+                }
+              })();
+            }}
+          />
+        )}
+
+        {/* Template picker — hanya untuk REGISTER yang baru active.
+            Renew tidak butuh template picker (site sudah ada dari register). */}
+        {purchase?.status === "active" && purchase.kind === "register" && (
           <TemplatePicker
             jobId={jobId}
             domain={purchase.domain}
             onCreated={(siteId) => router.push(`/sites/${siteId}/editor`)}
           />
+        )}
+
+        {/* Renew active → congratulate + link ke Domain Saya. Site sudah ada
+            dari register sebelumnya; user tidak perlu buat baru. */}
+        {purchase?.status === "active" && purchase.kind === "renew" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CheckCircle2 className="size-4 text-emerald-500" />
+                Perpanjangan berhasil
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Domain <code>{purchase.domain}</code> berhasil diperpanjang. Tanggal
+                expire terupdate otomatis.
+              </p>
+              <Button asChild className="gap-2">
+                <Link href="/settings/domains">
+                  Kembali ke Domain Saya
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
         )}
       </main>
     </div>
@@ -388,6 +492,182 @@ function TemplatePicker({
             <span>{err}</span>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// -------------- Document upload (status=pending_document) --------------
+// Registrar meminta KTP/NPWP untuk domain .id. Web builder = passthrough:
+// file dari browser di-forward langsung ke registrar via multipart,
+// TIDAK disimpan di web builder (single source of truth = registrar).
+//
+// User upload fresh setiap kali ada job yang butuh dokumen — no library
+// concept (menghindari duplikasi PII di 2 sistem).
+
+const DOC_MAX_BYTES = 8 * 1024 * 1024;
+const DOC_ALLOWED_MIMES = ["image/png", "image/jpeg", "image/jpg", "application/pdf"];
+
+type DocCategory = { id: number; name: string; parent_id?: number };
+
+function DocumentUpload({
+  jobId,
+  domain,
+  onSubmitted,
+}: {
+  jobId: string;
+  domain: string;
+  onSubmitted: () => void;
+}) {
+  const [categories, setCategories] = useState<DocCategory[]>([]);
+  const [categoryID, setCategoryID] = useState<number>(0);
+  const [file, setFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Categories dari registrar (proxy /api/v1/documents/categories).
+    // Kalau registrar disabled → 503, biarkan array kosong (user tidak bisa
+    // pilih kategori, submit akan gagal graceful).
+    api<DocCategory[]>("/api/v1/documents/categories")
+      .then((list) => {
+        setCategories(list ?? []);
+        if (list && list.length > 0) setCategoryID(list[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (!file) {
+      setErr("Pilih file KTP dulu");
+      return;
+    }
+    if (file.size > DOC_MAX_BYTES) {
+      setErr("File terlalu besar (max 8 MiB)");
+      return;
+    }
+    if (!DOC_ALLOWED_MIMES.includes(file.type)) {
+      setErr("Format tidak didukung — hanya PNG, JPG, atau PDF");
+      return;
+    }
+    if (!categoryID) {
+      setErr("Pilih kategori dokumen");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("category_id", String(categoryID));
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/domains/purchases/${jobId}/documents`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
+          body: fd,
+        },
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.error) {
+        throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+      }
+      toast.success("Dokumen dikirim ke registrar");
+      // Reset form + biar caller refresh status.
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      onSubmitted();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FileText className="size-4 text-amber-600" />
+          Upload dokumen untuk <code className="text-xs">{domain}</code>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Domain <code>{domain}</code> butuh verifikasi identitas (KTP/NPWP sesuai
+          regulasi Kemenkominfo). Upload dokumen di bawah — file dikirim langsung
+          ke registrar tanpa disimpan di server kami.
+        </p>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="doc-category">Kategori dokumen</Label>
+            <select
+              id="doc-category"
+              value={categoryID}
+              onChange={(e) => setCategoryID(Number(e.target.value))}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              disabled={categories.length === 0}
+            >
+              {categories.length === 0 ? (
+                <option value={0}>Kategori tidak tersedia</option>
+              ) : (
+                categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="doc-file">File (PNG, JPG, atau PDF · max 8 MiB)</Label>
+            <input
+              ref={fileInputRef}
+              id="doc-file"
+              type="file"
+              accept={DOC_ALLOWED_MIMES.join(",")}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full rounded-md border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-primary-foreground hover:file:bg-primary/90"
+            />
+            {file && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {file.name} · {(file.size / 1024).toFixed(1)} KB
+              </p>
+            )}
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end">
+            <Button
+              type="submit"
+              disabled={submitting || !file || !categoryID}
+              className="gap-2"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Mengirim…
+                </>
+              ) : (
+                <>
+                  <Send className="size-4" />
+                  Kirim dokumen
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
       </CardContent>
     </Card>
   );

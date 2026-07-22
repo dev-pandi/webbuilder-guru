@@ -109,13 +109,28 @@ export default function DashboardPage() {
 
   useEffect(() => {
     refresh();
-    // Domain purchases — best effort; error di sini tidak block dashboard.
-    // Kalau endpoint 404 (registrar disabled), kartu ini tidak muncul.
-    api<DomainPurchase[]>("/api/v1/domains/purchases?limit=10")
-      .then((list) =>
-        setPendingPurchases((list ?? []).filter((p) => ACTIONABLE_STATUSES.has(p.status))),
-      )
-      .catch(() => {});
+    // Domain purchases — best effort. Kalau endpoint 404 (registrar disabled),
+    // kartu ini tidak muncul.
+    //
+    // Polling 30s untuk auto-refresh kartu "sedang diproses" — user tidak
+    // perlu manual reload saat webhook fire dari registrar. Interval berhenti
+    // diam-diam kalau tidak ada pending (no unnecessary requests).
+    let cancelled = false;
+    async function refreshPurchases() {
+      try {
+        const list = await api<DomainPurchase[]>("/api/v1/domains/purchases?limit=10");
+        if (cancelled) return;
+        setPendingPurchases((list ?? []).filter((p) => ACTIONABLE_STATUSES.has(p.status)));
+      } catch {
+        /* silent — dashboard tidak block */
+      }
+    }
+    refreshPurchases();
+    const iv = setInterval(refreshPurchases, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
   }, []);
 
   return (
@@ -164,9 +179,17 @@ export default function DashboardPage() {
       {/* Domain pending — kartu prompt supaya user tidak lupa lanjutkan alurnya */}
       {pendingPurchases.length > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
-            <Loader2 className="size-4 animate-spin" />
-            Domain sedang diproses
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+              <Loader2 className="size-4 animate-spin" />
+              Domain sedang diproses
+            </div>
+            <Link
+              href="/settings/domains"
+              className="text-xs font-medium text-amber-900 underline underline-offset-4 hover:text-amber-700 dark:text-amber-200"
+            >
+              Lihat semua domain
+            </Link>
           </div>
           <div className="space-y-2">
             {pendingPurchases.map((p) => (

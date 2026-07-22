@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,7 @@ type checkResp struct {
 	Available bool        `json:"available"`
 	Reason    string      `json:"reason,omitempty"`
 	Price     *priceBlock `json:"price,omitempty"`
+	Zone      *zoneBlock  `json:"zone,omitempty"`
 }
 
 type priceBlock struct {
@@ -63,18 +65,32 @@ type priceBlock struct {
 	Transfer float64 `json:"transfer"`
 }
 
+// zoneBlock — flag dari registrar-api's zones table. Frontend pakai untuk
+// tentukan flow post-payment (kalau require_document=true, tampilkan
+// document picker; kalau nik_auto_approved=true, NIK cukup tanpa upload).
+type zoneBlock struct {
+	Name            string `json:"name"`
+	RequireDocument bool   `json:"require_document"`
+	AutoApproved    bool   `json:"auto_approved"`
+	NikAutoApproved bool   `json:"nik_auto_approved"`
+}
+
 type purchaseReq struct {
 	Domain        string `json:"domain"`
 	Years         int    `json:"years"`
 	PaymentMethod string `json:"payment_method"`
 	ReturnURL     string `json:"return_url"`
+	PromoCode     string `json:"promo_code,omitempty"` // forwarded ke registrar
 }
 
 type purchaseResp struct {
 	JobID      string `json:"job_id"`
 	Domain     string `json:"domain"`
 	Status     string `json:"status"`
+	Kind       string `json:"kind"` // "register" | "renew" — frontend adapt UI
+	Reason     string `json:"reason,omitempty"`
 	PaymentURL string `json:"payment_url,omitempty"`
+	ExpiresAt  string `json:"expires_at,omitempty"` // RFC3339 saat kind=register && status=active
 }
 
 // ------------- User endpoints -------------
@@ -93,26 +109,26 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "domain kosong")
 	}
 
-	// Registrar API kita bikin `/domain/check` yang balik price + availability
-	// sekaligus. Client wrapper belum punya method itu — pakai raw for now
-	// via GetDomainPrice + Whois separately (dua panggilan, tapi paling
-	// simple sampai client method ditambah).
-	price, priceErr := h.registrar.GetDomainPrice(c.Context(), req.Domain)
-	avail, availErr := h.registrar.CheckAvailability(c.Context(), req.Domain)
-
-	// Availability adalah info primer; kalau gagal balik 502.
-	if availErr != nil {
-		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", availErr.Error())
+	// Unified reseller check: availability + price + zone flags dalam 1 call.
+	avail, price, err := h.registrar.CheckDomain(c.Context(), req.Domain)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
 	out := checkResp{Domain: req.Domain, Available: avail.Available, Reason: avail.Reason}
-	// Price boleh gagal (misal zone tidak ada di product table) — tetap
-	// return availability supaya user tahu domain unavailable.
-	if priceErr == nil && price != nil {
+	if price != nil {
 		out.Price = &priceBlock{
 			Currency: price.Currency,
 			Register: float64(price.Register),
 			Renew:    float64(price.Renew),
 			Transfer: float64(price.Transfer),
+		}
+	}
+	if avail.Zone != nil {
+		out.Zone = &zoneBlock{
+			Name:            avail.Zone.Name,
+			RequireDocument: avail.Zone.RequireDocument,
+			AutoApproved:    avail.Zone.AutoApproved,
+			NikAutoApproved: avail.Zone.NikAutoApproved,
 		}
 	}
 	return httpx.OK(c, out)
@@ -171,6 +187,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		IdempotencyKey: idem,
 		PaymentMethod:  req.PaymentMethod,
 		ReturnURL:      req.ReturnURL,
+		PromoCode:      strings.TrimSpace(req.PromoCode),
 		Contact: registrar.Contact{
 			Name:        user.Name,
 			Email:       user.Email,
@@ -258,6 +275,258 @@ func (h *Handler) Status(c *fiber.Ctx) error {
 	return httpx.OK(c, toResp(local))
 }
 
+// GetNameservers — GET /api/v1/domains/:name/nameservers
+//
+// Verify ownership dulu (user harus punya active register-job untuk domain
+// ini), lalu proxy ke registrar. Ownership check ganda: web builder DB +
+// registrar-side check.
+func (h *Handler) GetNameservers(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	if _, err := h.repo.GetLatestActiveByDomain(c.Context(), name, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "ownership check failed")
+	}
+	info, err := h.registrar.GetNameservers(c.Context(), name)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	return httpx.OK(c, info)
+}
+
+// UpdateNameservers — POST /api/v1/domains/:name/nameservers
+// Body: { nameservers: [ "ns1.example.com", ... ] } (min 2, max 13)
+func (h *Handler) UpdateNameservers(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+
+	var req struct {
+		Nameservers []string `json:"nameservers"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	// Trim + drop empty upfront; registrar validate hostname format lebih ketat.
+	cleaned := make([]string, 0, len(req.Nameservers))
+	for _, n := range req.Nameservers {
+		if v := strings.ToLower(strings.TrimSpace(n)); v != "" {
+			cleaned = append(cleaned, v)
+		}
+	}
+	if len(cleaned) < 2 {
+		return httpx.BadRequest(c, "minimal 2 nameserver")
+	}
+	if len(cleaned) > 13 {
+		return httpx.BadRequest(c, "maksimal 13 nameserver")
+	}
+
+	if _, err := h.repo.GetLatestActiveByDomain(c.Context(), name, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "ownership check failed")
+	}
+
+	info, err := h.registrar.UpdateNameservers(c.Context(), name, cleaned)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	return httpx.OK(c, info)
+}
+
+// Whois — GET /api/v1/domains/:name/whois
+//
+// Return WHOIS info dari registrar. Ownership required — kita tidak expose
+// public WHOIS ke sembarang user, biar registrar tidak kena rate-limit
+// karena user iseng ngecek domain orang lain via web builder.
+func (h *Handler) Whois(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	if _, err := h.repo.GetLatestActiveByDomain(c.Context(), name, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "ownership check failed")
+	}
+	w, err := h.registrar.Whois(c.Context(), name)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	if w == nil {
+		// Whois() return (nil, nil) kalau domain tidak terdaftar — aneh untuk
+		// domain milik user (active). Return empty struct, biar frontend
+		// tetap render tanpa crash.
+		return httpx.OK(c, map[string]string{"domain": name, "status": "unknown"})
+	}
+	return httpx.OK(c, w)
+}
+
+// Renew — POST /api/v1/domains/renew
+//
+// Body: { domain, years, payment_method, promo_code?, return_url? }
+// Header (opsional): Idempotency-Key
+//
+// Ownership: domain harus punya active register-job milik user (via
+// GetLatestActiveByDomain). Kalau tidak, 404 — user tidak boleh perpanjang
+// domain orang lain.
+//
+// Flow:
+//  1. Verify user pemilik domain.
+//  2. Forward ke registrar RenewDomain → dapat job_id + payment_url.
+//  3. Simpan local dengan kind=renew (site_id nil — site sudah exist).
+//  4. Return sama shape dengan purchase (frontend re-use pending page).
+type renewReq struct {
+	Domain        string `json:"domain"`
+	Years         int    `json:"years"`
+	PaymentMethod string `json:"payment_method"`
+	ReturnURL     string `json:"return_url"`
+}
+
+func (h *Handler) Renew(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	var req renewReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	req.Domain = strings.ToLower(strings.TrimSpace(req.Domain))
+	if req.Domain == "" || req.Years < 1 || req.Years > 10 {
+		return httpx.BadRequest(c, "domain + years (1-10) wajib")
+	}
+	if req.PaymentMethod != "midtrans" && req.PaymentMethod != "paylabs" {
+		return httpx.BadRequest(c, "payment_method harus 'midtrans' atau 'paylabs'")
+	}
+
+	// Ownership: domain harus milik user (via register job active existing).
+	// Kalau tidak, 404 — cegah user perpanjang domain orang lain.
+	if _, err := h.repo.GetLatestActiveByDomain(c.Context(), req.Domain, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "domain lookup failed")
+	}
+
+	idem := c.Get("Idempotency-Key")
+	if idem == "" {
+		idem = uuid.New().String()
+	}
+
+	resp, err := h.registrar.RenewDomain(c.Context(), req.Domain, registrar.RenewRequest{
+		Years:          req.Years,
+		IdempotencyKey: idem,
+		ExternalUserID: cl.UserID.String(),
+		PaymentMethod:  req.PaymentMethod,
+		ReturnURL:      req.ReturnURL,
+	})
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+
+	local := &Purchase{
+		UserID:         cl.UserID,
+		RegistrarJobID: resp.JobID,
+		Domain:         req.Domain,
+		Years:          req.Years,
+		Kind:           KindRenew,
+		Status:         resp.Status,
+		PaymentMethod:  req.PaymentMethod,
+		PaymentURL:     resp.PaymentURL,
+	}
+	if err := h.repo.Create(c.Context(), local); err != nil && !errors.Is(err, ErrJobTaken) {
+		slog.Error("renew: local save failed", "error", err, "job_id", resp.JobID)
+		return httpx.Internal(c, "gagal menyimpan job local")
+	}
+
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseResp{
+		JobID:      resp.JobID,
+		Domain:     req.Domain,
+		Status:     resp.Status,
+		PaymentURL: resp.PaymentURL,
+	}})
+}
+
+// Retry — POST /api/v1/domains/purchases/:job_id/retry
+//
+// Trigger EPP CREATE ulang di registrar untuk job yang status=failed.
+// User TIDAK bayar ulang — invoice + payment lama tetap valid; registrar
+// re-run flow provisioning saja. Kalau retry sukses, status akan advance
+// balik ke pending_provisioning → active.
+//
+// Ownership: job harus milik user (defence terhadap URL guessing).
+// Status: harus terminal-failed. Kalau status lain, registrar reject.
+func (h *Handler) Retry(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	jobID := c.Params("job_id")
+	if jobID == "" {
+		return httpx.BadRequest(c, "job_id required")
+	}
+	// Ownership check dulu — biar tidak leak keberadaan job orang lain.
+	if _, err := h.repo.GetByJobID(c.Context(), jobID, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "job tidak ditemukan")
+		}
+		return httpx.Internal(c, "job lookup failed")
+	}
+
+	resp, err := h.registrar.RetryDomain(c.Context(), jobID)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_retry_failed", err.Error())
+	}
+	// Sync status lokal — registrar sudah pindahkan ke pending_provisioning
+	// biasanya. Reason di-clear (retry sukses).
+	if resp.Status != "" {
+		if _, err := h.repo.UpdateStatus(c.Context(), jobID, resp.Status, "", nil); err != nil {
+			slog.Warn("retry: local status sync failed", "job_id", jobID, "error", err)
+		}
+	}
+	return httpx.OK(c, resp)
+}
+
 func (h *Handler) List(c *fiber.Ctx) error {
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -308,6 +577,120 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 		return httpx.Internal(c, "attach failed")
 	}
 	return httpx.OK(c, fiber.Map{"ok": true})
+}
+
+// AttachDocument — POST /api/v1/domains/purchases/:job_id/documents (multipart)
+//
+// Web builder = transparent proxy: user upload file dari browser, request
+// diteruskan langsung ke registrar's reseller endpoint. Dokumen tidak
+// disimpan di web builder — single source of truth = registrar (menghindari
+// duplikasi PII + sync problem).
+//
+// Multipart fields (dari frontend):
+//   - file        : binary (max 8 MiB — di-enforce Fiber `BodyLimit` + registrar)
+//   - category_id : int (dari registrar's /v1/api/get-category, e.g. 1 = KTP)
+//
+// Flow:
+//  1. Verify job owned by user.
+//  2. Buka file dari multipart, forward ke registrar UploadDocumentForJob.
+//  3. Kalau registrar advance status (pending_document → pending_provisioning),
+//     sync ke tabel domain_purchases lokal.
+//
+// Return: registrar's UploadDocumentResp (job_id, document_id di registrar,
+// status baru, flag status_advanced).
+func (h *Handler) AttachDocument(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	jobID := c.Params("job_id")
+	if jobID == "" {
+		return httpx.BadRequest(c, "job_id required")
+	}
+
+	// Ownership: job harus milik user (biar user A tidak bisa attach dokumen
+	// ke job user B).
+	job, err := h.repo.GetByJobID(c.Context(), jobID, cl.UserID)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "job tidak ditemukan")
+	}
+	if err != nil {
+		return httpx.Internal(c, "job lookup failed")
+	}
+
+	// Ambil multipart file.
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return httpx.BadRequest(c, "field 'file' wajib (multipart)")
+	}
+	categoryID, _ := strconv.Atoi(c.FormValue("category_id"))
+	if categoryID <= 0 {
+		return httpx.BadRequest(c, "field 'category_id' wajib (dari /documents/categories, contoh 1 = KTP)")
+	}
+
+	// Tentukan MIME — trust Content-Type header dulu, fallback ke ekstensi.
+	mime := fh.Header.Get("Content-Type")
+	if mime == "" {
+		switch strings.ToLower(filepath.Ext(fh.Filename)) {
+		case ".png":
+			mime = "image/png"
+		case ".jpg", ".jpeg":
+			mime = "image/jpeg"
+		case ".pdf":
+			mime = "application/pdf"
+		}
+	}
+
+	src, err := fh.Open()
+	if err != nil {
+		return httpx.Internal(c, "buka file gagal")
+	}
+	defer src.Close()
+
+	resp, err := h.registrar.UploadDocumentForJob(
+		c.Context(),
+		job.RegistrarJobID,
+		categoryID,
+		fh.Filename,
+		mime,
+		src,
+	)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_upload_failed", err.Error())
+	}
+
+	// Sync status lokal kalau registrar advance-kan (biasanya
+	// pending_document → pending_provisioning). Best-effort.
+	if resp.StatusAdvanced && resp.Status != "" {
+		if _, err := h.repo.UpdateStatus(c.Context(), job.RegistrarJobID, resp.Status, "", nil); err != nil {
+			slog.Warn("attach doc: local status sync failed", "job_id", job.RegistrarJobID, "error", err)
+		}
+	}
+
+	return httpx.OK(c, resp)
+}
+
+// ListCategories — GET /api/v1/documents/categories
+//
+// Proxy ke registrar public endpoint. UI pakai untuk populate dropdown
+// kategori (KTP, NPWP, dst.) saat user upload dokumen di halaman pending.
+// Category ID di-forward apa adanya ke AttachDocument (registrar's schema).
+//
+// Cache-able di CDN kalau nanti butuh — categories jarang berubah.
+func (h *Handler) ListCategories(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cats, err := h.registrar.ListCategories(c.Context())
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	return httpx.OK(c, cats)
 }
 
 // ------------- Webhook receiver (global, HMAC-authed) -------------
@@ -399,12 +782,18 @@ func verifyHMAC(secret, header string, body []byte) bool {
 // ------------- helpers -------------
 
 func toResp(p *Purchase) purchaseResp {
-	return purchaseResp{
+	out := purchaseResp{
 		JobID:      p.RegistrarJobID,
 		Domain:     p.Domain,
 		Status:     p.Status,
+		Kind:       p.Kind,
+		Reason:     p.Reason,
 		PaymentURL: p.PaymentURL,
 	}
+	if p.ExpiresAt != nil {
+		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 // isIDDomain deteksi TLD .id (termasuk .co.id, .ac.id, dst.).

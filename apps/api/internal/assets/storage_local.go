@@ -65,6 +65,42 @@ func (l *localStorage) LocalRoute() string {
 	return "/uploads"
 }
 
+// resolveKey menerjemahkan storage key → absolute path, dengan traversal guard
+// yang sama dipakai Put. Return error kalau key coba escape baseAbs.
+func (l *localStorage) resolveKey(key string) (string, error) {
+	full := filepath.Join(l.baseAbs, filepath.FromSlash(key))
+	cleaned, err := filepath.Abs(full)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(cleaned, l.baseAbs+string(os.PathSeparator)) && cleaned != l.baseAbs {
+		return "", fmt.Errorf("invalid key (path traversal)")
+	}
+	return cleaned, nil
+}
+
+func (l *localStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	_ = ctx
+	cleaned, err := l.resolveKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(cleaned)
+}
+
+func (l *localStorage) Delete(ctx context.Context, key string) error {
+	_ = ctx
+	cleaned, err := l.resolveKey(key)
+	if err != nil {
+		return err
+	}
+	// os.Remove errors kalau file tidak ada; idempotent: swallow ErrNotExist.
+	if err := os.Remove(cleaned); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func (l *localStorage) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) (string, error) {
 	_ = ctx
 	_ = size

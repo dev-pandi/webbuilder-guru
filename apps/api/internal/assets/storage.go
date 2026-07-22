@@ -11,6 +11,17 @@ import (
 //   - localStorage (local driver — writes to disk, served via /uploads)
 type Storage interface {
 	Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) (publicURL string, err error)
+
+	// Get returns a reader for a previously-stored file. Caller MUST close.
+	// Errors if key doesn't exist. Used oleh handler yang perlu re-read file
+	// tanpa expose public URL (misal forward dokumen KTP ke registrar
+	// via multipart — file tetap privat, tidak lewat public URL).
+	Get(ctx context.Context, key string) (io.ReadCloser, error)
+
+	// Delete removes a previously-stored file. Idempotent: no error if key
+	// tidak ada (biar caller nggak perlu track "sudah delete atau belum").
+	Delete(ctx context.Context, key string) error
+
 	Driver() string
 }
 

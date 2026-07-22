@@ -207,6 +207,48 @@ Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2
 - **Dynamic blocks**: `ProductGridDynamic`, `BlogListDynamic` fetch dari `/public/sites/:id/products` & `/blog` — jangan hard-code data.
 - **Theme tokens** dari site JSON diinject sebagai CSS variables di `<style>` inline di layout (`--color-primary`, `--font-heading`, `--radius`). Blok pakai `var(--color-primary)`, bukan `bg-primary` Tailwind class.
 
+## Domain Purchase Flow (registrar integration)
+
+**Konsep produk**: **1 domain = 1 situs**. User HARUS beli domain dulu sebelum bisa create situs — tidak ada free subdomain flow. `POST /sites/from-template/:slug` wajib `job_id` di body; atomic create + attach.
+
+**Arsitektur**:
+- Web builder API = **transparent proxy** ke `registrar-api` (Go/Gin di `/Users/pandi-rofai/Project/Golang/registrar-api`).
+- Dokumen sensitif (KTP/NPWP) **TIDAK disimpan di web builder** — multipart di-forward langsung ke registrar. Single source of truth = registrar (menghindari duplikasi PII).
+- Client wrapper: [apps/api/internal/registrar/](../apps/api/internal/registrar/) — `Client.CheckDomain / RegisterDomain / GetRegisterStatus / RetryDomain / UploadDocumentForJob / Login / SetAPIKey`.
+- Local job tracker: [apps/api/internal/domain_purchase/](../apps/api/internal/domain_purchase/) — mirror shallow dari `reseller_domain_jobs` di registrar, hanya cache status + link ke `sites.id`.
+
+**Auth ke registrar**: JWT reseller (30-day TTL). Dua mode:
+- **Static**: `REGISTRAR_API_KEY` = JWT hasil login manual sekali. Operator harus rotate manual sebelum 30 hari.
+- **Auto-refresh** (recommended prod): set `REGISTRAR_RESELLER_EMAIL` + `REGISTRAR_RESELLER_PASSWORD`. `main.go` login saat startup + refresh tiap 25 hari via background goroutine.
+
+**Webhook**: registrar POST ke `/webhooks/registrar/domain-status` dengan HMAC signature (`X-Registrar-Signature: sha256=...`). Secret dari `REGISTRAR_WEBHOOK_SECRET` — set via `POST /v1/api/user/reseller/config/webhook` di registrar (return secret, salin ke env web builder).
+
+**Env baru** (`apps/api/.env.example` + `infra/.env.example`):
+- `REGISTRAR_API_URL` (kosong = fitur disabled)
+- `REGISTRAR_API_KEY` (JWT statis, opsional kalau pakai credentials)
+- `REGISTRAR_RESELLER_EMAIL` + `REGISTRAR_RESELLER_PASSWORD` (auto-login)
+- `REGISTRAR_WEBHOOK_SECRET` (HMAC verify)
+- `REGISTRAR_API_TIMEOUT` (default 15s)
+
+**User flow end-to-end**:
+1. Dashboard → **"Beli Domain + Buat Situs"** (satu-satunya CTA create — free subdomain flow sudah dihapus)
+2. `/sites/new-with-domain` — wizard: cari domain → cek availability + harga + zone flags (`require_document`, `auto_approved`) → confirm dengan profile check (nama/HP/alamat/kota/kode pos + NIK kalau .id)
+3. `POST /api/v1/domains/purchase` dengan header `Idempotency-Key: <uuid>` — proxy ke registrar → dapat `job_id` + `payment_url`
+4. Navigate ke `/sites/pending/[jobId]` — polling 3s status:
+   - `pending_payment` → tombol "Buka halaman pembayaran" (Midtrans/Paylabs)
+   - `pending_document` → **DocumentUpload** multipart passthrough (file + category_id) ke registrar
+   - `pending_provisioning` → wait EPP CREATE
+   - `failed` → **tombol "Coba lagi"** (POST `/purchases/:job_id/retry` — TIDAK bayar ulang)
+   - `active` → **TemplatePicker** → pilih template + slug → `POST /sites/from-template/:slug { job_id }` atomic create+attach → editor
+5. Payment gateway redirect ke `/checkout/return` → auto ke `/sites/pending/<jobId>` (via `GET /purchases?limit=1`)
+6. Dashboard poll `/domains/purchases` tiap 30s — kartu "Domain sedang diproses" update tanpa reload
+
+**Yang harus dijaga saat kerja di area ini**:
+- Ownership check di setiap endpoint (`GetByJobID(jobID, userID)` bukan `GetByJobID(jobID)`) — cegah URL guessing
+- Idempotency-Key WAJIB di POST /purchase (frontend generate `useMemo` UUID) — cegah double-charge
+- Error dari registrar dimap ke pesan ID di `friendlyError()` (wizard) — jangan expose "HTTP 403" mentah ke user
+- Path registrar-api: `/v1/api/user/reseller/*` (bukan `/api/reseller/*` — pernah ada mismatch bug)
+
 ## Don'ts
 
 - ❌ Jangan tambah dependency tanpa cek dulu yang sudah ada di `go.mod` / `package.json`.

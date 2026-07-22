@@ -15,7 +15,7 @@
 // balik payment_url yang dipakai halaman /sites/pending polling untuk redirect
 // ke Midtrans/Paylabs begitu URL siap.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -29,6 +29,7 @@ import {
   User,
   ExternalLink,
   ChevronLeft,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken, clearTokens } from "@/lib/api";
@@ -59,6 +60,14 @@ type CheckResp = {
     register: number;
     renew: number;
     transfer: number;
+  };
+  // Zone info dari registrar-api — dipakai wizard untuk pre-warn user
+  // kalau domain ini akan minta upload dokumen setelah bayar.
+  zone?: {
+    name: string;
+    require_document: boolean;
+    auto_approved: boolean;
+    nik_auto_approved: boolean;
   };
 };
 
@@ -114,10 +123,22 @@ export default function NewWithDomainPage() {
   const [domain, setDomain] = useState("");
   const [years, setYears] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs">("midtrans");
+  const [promoCode, setPromoCode] = useState("");
   const [checkResult, setCheckResult] = useState<CheckResp | null>(null);
   const [checking, setChecking] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Idempotency key = 1 UUID per mount wizard (per checkout attempt). Kalau
+  // user double-click "Beli", request kedua bawa key sama → backend dedup
+  // ke job existing bukan bikin dobel invoice.
+  const idempotencyKey = useMemo(
+    () =>
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36),
+    [],
+  );
 
   // NIK hanya wajib kalau user pilih domain .id (Kemenkominfo regulation).
   // Cek hanya setelah user run domain check — sebelum itu tidak tahu TLD.
@@ -146,7 +167,11 @@ export default function NewWithDomainPage() {
       });
       setCheckResult(res);
     } catch (e) {
-      setErr((e as Error).message);
+      // TLD extraction — kalau user ketik "foo.bar", grab "bar" untuk pesan
+      // "TLD .bar belum tersedia".
+      const parts = normalized.split(".");
+      const tld = parts.length > 1 ? parts.slice(1).join(".") : undefined;
+      setErr(friendlyError((e as Error).message, tld));
     } finally {
       setChecking(false);
     }
@@ -159,10 +184,12 @@ export default function NewWithDomainPage() {
     try {
       const res = await api<PurchaseResp>("/api/v1/domains/purchase", {
         method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           domain: checkResult.domain,
           years,
           payment_method: paymentMethod,
+          promo_code: promoCode.trim() || undefined,
           // Static return page — pengambil job terbaru user lalu redirect ke
           // /sites/pending/<job_id>. Kita nggak tahu job_id di sini karena
           // baru dapat dari response, sedangkan payment session butuh URL
@@ -173,7 +200,7 @@ export default function NewWithDomainPage() {
       toast.success("Job pembelian dibuat");
       router.push(`/sites/pending/${res.job_id}`);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(friendlyError((e as Error).message, checkResult.zone?.name));
       setPurchasing(false);
     }
   }
@@ -351,6 +378,23 @@ export default function NewWithDomainPage() {
                 )}
               </div>
 
+              {/* Zone hint — kalau butuh dokumen (mis. .id), pre-warn user
+                  supaya tidak kaget di halaman /sites/pending saat status
+                  jadi pending_document. NIK auto-approved = tidak perlu. */}
+              {checkResult.zone?.require_document && !checkResult.zone?.nik_auto_approved && (
+                <div className="flex items-start gap-2 rounded-md border border-blue-300 bg-blue-50 px-3 py-2.5 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+                  <FileText className="mt-0.5 size-4 shrink-0" />
+                  <div>
+                    Domain <code>.{checkResult.zone.name}</code> butuh upload KTP setelah pembayaran.
+                    Siapkan foto KTP di{" "}
+                    <Link href="/settings/documents" className="underline">
+                      library dokumen
+                    </Link>{" "}
+                    Anda dulu supaya proses langsung lanjut.
+                  </div>
+                </div>
+              )}
+
               {/* Years + payment */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
@@ -380,6 +424,20 @@ export default function NewWithDomainPage() {
                     <option value="paylabs">Paylabs</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Promo code — opsional. Kalau invalid, registrar silent-fallback
+                  ke harga normal (bukan reject) — jadi user boleh coba tanpa risk. */}
+              <div className="space-y-1.5">
+                <Label htmlFor="promo">Kode promo (opsional)</Label>
+                <Input
+                  id="promo"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                  placeholder="Kosongkan kalau tidak ada"
+                  maxLength={32}
+                  className="uppercase tracking-wider"
+                />
               </div>
 
               {/* Total */}
@@ -435,4 +493,34 @@ function formatIDR(amount: number, currency: string) {
     }).format(amount);
   }
   return `${currency} ${amount.toLocaleString("id-ID")}`;
+}
+
+// friendlyError memetakan raw error dari backend/registrar ke pesan ID
+// yang meaningful. Fallback ke raw message kalau tidak match pattern.
+//
+// Kasus yang di-map:
+//   - Zone allowlist (403 dari registrar's zoneAllowedForReseller check)
+//   - Profile incomplete (400 dari purchase handler)
+//   - NIK required untuk .id
+//   - Generic bad gateway / 5xx dari registrar
+function friendlyError(raw: string, tld?: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("tidak di-allow") || lower.includes("zone_not_allowed")) {
+    return tld
+      ? `TLD .${tld} belum tersedia untuk akun ini. Coba TLD lain atau hubungi admin.`
+      : "TLD ini belum tersedia untuk akun Anda. Coba TLD lain atau hubungi admin.";
+  }
+  if (lower.includes("profile_incomplete")) {
+    return "Lengkapi profil dulu di halaman Pengaturan → Profil.";
+  }
+  if (lower.includes("nik_required")) {
+    return "NIK wajib untuk domain .id. Isi NIK di Pengaturan → Profil dulu.";
+  }
+  if (lower.includes("domain tidak tersedia") || lower.includes("already registered")) {
+    return "Domain ini sudah dimiliki orang lain. Coba nama lain.";
+  }
+  if (lower.includes("registrar_error") || lower.includes("bad gateway")) {
+    return "Registrar sedang bermasalah. Coba beberapa saat lagi.";
+  }
+  return raw; // fallback ke pesan asli — user bisa lihat detail teknis
 }
