@@ -24,6 +24,7 @@ import (
 	"github.com/webbuilder/api/internal/logging"
 	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/metrics"
+	"github.com/webbuilder/api/internal/notifier"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
@@ -252,6 +253,21 @@ func main() {
 		if cfg.RegistrarWebhookSecret == "" {
 			slog.Warn("registrar webhook: REGISTRAR_WEBHOOK_SECRET kosong — endpoint akan 503 sampai di-set")
 		}
+
+		// Expiry notifier — scan tiap 24 jam, email user kalau domain aktif
+		// mendekati expire (≤ 30 hari). Dedup per domain via kolom
+		// expiry_notice_sent_at + resend window 7 hari.
+		//
+		// Hanya jalan kalau registrar aktif (kalau tidak ada purchase, tidak
+		// ada yang perlu di-notify). Mailer driver "log" tetap OK — email
+		// akan muncul di stdout untuk verifikasi dev.
+		expiry := notifier.NewExpiry(purchaseRepo, mailer, notifier.ExpiryConfig{
+			Interval:    24 * time.Hour,
+			Within:      30 * 24 * time.Hour,
+			ResendAfter: 7 * 24 * time.Hour,
+			AppBaseURL:  cfg.AppBaseURL,
+		})
+		go expiry.Run(ctx)
 	}
 
 	googleHandler := auth.NewGoogleHandler(

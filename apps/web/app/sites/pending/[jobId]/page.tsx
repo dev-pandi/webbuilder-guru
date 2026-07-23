@@ -29,7 +29,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, getAccessToken, clearTokens } from "@/lib/api";
+import { api, getAccessToken, clearTokens, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -100,6 +100,7 @@ export default function PendingDomainPage() {
   const [ready, setReady] = useState(false);
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false); // job dihapus / expired dari registrar
   const [retrying, setRetrying] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -130,8 +131,17 @@ export default function PendingDomainPage() {
         if (cancelled) return;
         setPurchase(p);
         setErr(null);
+        setNotFound(false);
       } catch (e) {
         if (cancelled) return;
+        // 404 = job lookup failed (dihapus / URL salah). Tampilkan screen
+        // khusus supaya user tidak stuck lihat "HTTP 404" mentah + biar tahu
+        // apa yang harus dilakukan (mulai pembelian baru).
+        if (e instanceof ApiError && e.status === 404) {
+          setNotFound(true);
+          setErr(null);
+          return;
+        }
         setErr((e as Error).message);
       }
     }
@@ -140,6 +150,8 @@ export default function PendingDomainPage() {
     const iv = setInterval(() => {
       const cur = purchaseRef.current;
       if (cur && isTerminal(cur.status)) return; // ideally cleared, but idempotent
+      // Kalau job tidak ada, no point polling lagi — biar interval idle.
+      if (notFoundRef.current) return;
       fetchOnce();
     }, 3000);
     return () => {
@@ -155,6 +167,10 @@ export default function PendingDomainPage() {
   useEffect(() => {
     purchaseRef.current = purchase;
   }, [purchase]);
+  const notFoundRef = useRef(false);
+  useEffect(() => {
+    notFoundRef.current = notFound;
+  }, [notFound]);
 
   // Retry — hit backend proxy, biarkan polling loop pickup status baru.
   async function onRetry() {
@@ -210,7 +226,38 @@ export default function PendingDomainPage() {
           </div>
         )}
 
+        {/* 404 = job tidak ada di sistem (URL salah / job sudah bersihkan). */}
+        {notFound ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <XCircle className="size-4 text-destructive" />
+                Job tidak ditemukan
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Job dengan ID <code className="rounded bg-muted px-1.5 py-0.5">{jobId}</code>{" "}
+                tidak ada di sistem. Kemungkinan URL salah, atau job sudah kadaluwarsa
+                dan dibersihkan oleh registrar.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild className="gap-2">
+                  <Link href="/sites/new-with-domain">
+                    Beli Domain Baru
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/settings/domains">Lihat Domain Saya</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {/* Status card */}
+        {!notFound && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -253,7 +300,10 @@ export default function PendingDomainPage() {
                   )}
 
                   {/* Retry — hanya saat status=failed. TIDAK bayar ulang;
-                      invoice lama tetap valid, registrar re-run EPP CREATE. */}
+                      invoice lama tetap valid, registrar re-run EPP CREATE.
+                      "Mulai baru" tersedia untuk semua terminal state (failed/expired)
+                      supaya user tidak stuck kalau retry berkali-kali gagal atau
+                      window pembayaran habis. Domain di-prefill ke wizard. */}
                   {purchase.status === "failed" && (
                     <>
                       {purchase.reason && (
@@ -261,25 +311,44 @@ export default function PendingDomainPage() {
                           <strong>Detail:</strong> {purchase.reason}
                         </p>
                       )}
-                      <Button
-                        onClick={onRetry}
-                        disabled={retrying}
-                        className="mt-4 gap-2"
-                        variant="outline"
-                      >
-                        {retrying ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" />
-                            Mencoba lagi…
-                          </>
-                        ) : (
-                          <>
-                            <RotateCcw className="size-4" />
-                            Coba lagi
-                          </>
-                        )}
-                      </Button>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Button
+                          onClick={onRetry}
+                          disabled={retrying}
+                          className="gap-2"
+                          variant="outline"
+                        >
+                          {retrying ? (
+                            <>
+                              <Loader2 className="size-4 animate-spin" />
+                              Mencoba lagi…
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="size-4" />
+                              Coba lagi
+                            </>
+                          )}
+                        </Button>
+                        <Button asChild variant="ghost" className="gap-2">
+                          <Link href={`/sites/new-with-domain?domain=${encodeURIComponent(purchase.domain)}`}>
+                            Mulai pembelian baru
+                            <ArrowRight className="size-4" />
+                          </Link>
+                        </Button>
+                      </div>
                     </>
+                  )}
+
+                  {/* Expired: window bayar habis. Tidak ada retry (butuh invoice
+                      baru) — hanya "Mulai baru". */}
+                  {purchase.status === "expired" && (
+                    <Button asChild className="mt-4 gap-2">
+                      <Link href={`/sites/new-with-domain?domain=${encodeURIComponent(purchase.domain)}`}>
+                        Mulai pembelian baru
+                        <ArrowRight className="size-4" />
+                      </Link>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -290,6 +359,7 @@ export default function PendingDomainPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Document picker — hanya saat status=pending_document */}
         {purchase?.status === "pending_document" && (

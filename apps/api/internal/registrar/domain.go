@@ -3,6 +3,7 @@ package registrar
 import (
 	"context"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -225,6 +226,36 @@ func (c *Client) RetryDomain(ctx context.Context, jobID string) (*RegisterStatus
 	}
 	var env envelope[RegisterStatus]
 	if err := c.do(ctx, "POST", "/v1/api/user/reseller/domain/register/"+url.PathEscape(jobID)+"/retry", nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// ListDomains — fetch semua job milik reseller, opsional filter per end-user.
+//
+//	GET /v1/api/user/reseller/domain/list?external_user_id=<uuid>&page=&perPage=
+//
+// Dipakai reconcile flow: tarik ground truth dari registrar → update cache
+// lokal (`domain_purchases`) yang mungkin drift karena webhook missed. Kita
+// selalu pass externalUserID supaya registrar cuma balikin milik user tsb;
+// reseller-scope isolation sudah di-handle registrar (RequireReseller).
+func (c *Client) ListDomains(ctx context.Context, externalUserID string, page, perPage int) (*DomainListResponse, error) {
+	q := url.Values{}
+	if externalUserID != "" {
+		q.Set("external_user_id", externalUserID)
+	}
+	if page > 0 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if perPage > 0 {
+		q.Set("perPage", strconv.Itoa(perPage))
+	}
+	path := "/v1/api/user/reseller/domain/list"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var env envelope[DomainListResponse]
+	if err := c.do(ctx, "GET", path, nil, &env); err != nil {
 		return nil, err
 	}
 	return &env.Data, nil

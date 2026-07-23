@@ -108,6 +108,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
 		authed.Get("/domains/:name/whois", deps.DomainPurchase.Whois)
 		authed.Get("/domains/purchases", deps.DomainPurchase.List)
+		// Sinkronkan status semua job user dari registrar ground truth. User-triggered
+		// via tombol di /settings/domains — fix drift kalau webhook drop.
+		authed.Post("/domains/sync", mutateLimit, deps.DomainPurchase.Sync)
 		authed.Get("/domains/purchases/:job_id", deps.DomainPurchase.Status)
 		authed.Post("/domains/purchases/:job_id/attach", mutateLimit, deps.DomainPurchase.Attach)
 		// Retry EPP CREATE untuk job yang status=failed (tidak bayar ulang).

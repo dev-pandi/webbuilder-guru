@@ -218,6 +218,73 @@ func (r *Repo) UpdatePaymentURL(ctx context.Context, jobID, paymentURL string) e
 	return err
 }
 
+// ExpiryDue = row yang eligible untuk email peringatan. Terpisah dari Purchase
+// karena kita cuma butuh subset field + user email untuk kirim email.
+type ExpiryDue struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	Email     string
+	Name      string
+	Domain    string
+	ExpiresAt time.Time
+}
+
+// ListDueForExpiryNotice cari domain aktif yang expire ≤ `within` dari sekarang,
+// dan (belum pernah di-notify ATAU last notice ≥ `resendAfter` yang lalu).
+//
+// Per (user_id, domain) hanya ambil row expires_at TERBARU — supaya user tidak
+// dapat 2 email untuk domain yang sama (misal karena ada row register + renew).
+// Renewal yang bikin expires_at maju otomatis pindah "target" ke row baru.
+//
+// Skip row yang sudah expire (expires_at < now) — sekali domain expire, tidak
+// ada gunanya kirim peringatan; user perlu action lain (re-register).
+func (r *Repo) ListDueForExpiryNotice(ctx context.Context, within, resendAfter time.Duration) ([]ExpiryDue, error) {
+	// make_interval(hours => N) — native + tidak perlu string-parse Go duration
+	// yang formatnya beda dgn Postgres INTERVAL syntax.
+	withinHours := int(within / time.Hour)
+	resendHours := int(resendAfter / time.Hour)
+	rows, err := r.pool.Query(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (dp.user_id, dp.domain)
+			       dp.id, dp.user_id, dp.domain, dp.expires_at, dp.expiry_notice_sent_at
+			  FROM domain_purchases dp
+			 WHERE dp.status = 'active'
+			   AND dp.expires_at IS NOT NULL
+			 ORDER BY dp.user_id, dp.domain, dp.expires_at DESC
+		)
+		SELECT latest.id, latest.user_id, u.email, u.name, latest.domain, latest.expires_at
+		  FROM latest
+		  JOIN users u ON u.id = latest.user_id
+		 WHERE latest.expires_at > now()
+		   AND latest.expires_at <= now() + make_interval(hours => $1)
+		   AND (latest.expiry_notice_sent_at IS NULL
+		        OR latest.expiry_notice_sent_at < now() - make_interval(hours => $2))
+	`, withinHours, resendHours)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ExpiryDue
+	for rows.Next() {
+		var d ExpiryDue
+		if err := rows.Scan(&d.ID, &d.UserID, &d.Email, &d.Name, &d.Domain, &d.ExpiresAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// MarkExpiryNoticeSent update timestamp supaya row tidak di-notify lagi
+// sampai `resendAfter` window berlalu.
+func (r *Repo) MarkExpiryNoticeSent(ctx context.Context, id uuid.UUID) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE domain_purchases SET expiry_notice_sent_at = now() WHERE id = $1`,
+		id,
+	)
+	return err
+}
+
 func pgErrCode(err error) string {
 	type pgErr interface{ SQLState() string }
 	if e, ok := err.(pgErr); ok {

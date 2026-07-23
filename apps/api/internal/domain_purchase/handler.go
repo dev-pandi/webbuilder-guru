@@ -547,6 +547,69 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	return httpx.OK(c, out)
 }
 
+// Sync — POST /api/v1/domains/sync
+//
+// Reconcile local domain_purchases cache dengan ground truth di registrar.
+// Berguna kalau webhook drop (jaringan, restart, dst.) sehingga status lokal
+// stale. User-triggered via tombol "Sinkronkan" di /settings/domains.
+//
+// Yang di-reconcile per job:
+//   - status (misal registrar sudah tandai expired tapi lokal masih active)
+//   - expires_at (setelah renew sukses, registrar update tanggal baru)
+//
+// Scope: hanya job milik user (registrar filter by external_user_id). Kalau
+// job ada di registrar tapi tidak di lokal, SKIP — itu domain yang di-register
+// dari channel lain (bukan concern web builder).
+//
+// Response: { scanned, updated } — untuk UX feedback singkat.
+func (h *Handler) Sync(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+
+	// perPage 100 = cukup untuk hampir semua user reseller kecil-menengah.
+	// Kalau ada user dengan > 100 domain, tambahkan looping page di future.
+	list, err := h.registrar.ListDomains(c.Context(), cl.UserID.String(), 1, 100)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	if list == nil {
+		return httpx.OK(c, fiber.Map{"scanned": 0, "updated": 0})
+	}
+
+	var updated int
+	for _, it := range list.Items {
+		if it.JobID == "" {
+			continue
+		}
+		var expires *time.Time
+		if it.ExpiresAt != "" {
+			if t, err := time.Parse(time.RFC3339, it.ExpiresAt); err == nil {
+				expires = &t
+			}
+		}
+		// UpdateStatus idempotent — hanya update kalau status berbeda. Kalau
+		// job_id tidak ada di lokal, RowsAffected = 0 (silent skip).
+		changed, err := h.repo.UpdateStatus(c.Context(), it.JobID, it.Status, "", expires)
+		if err != nil {
+			slog.Warn("sync: update failed", "job_id", it.JobID, "error", err)
+			continue
+		}
+		if changed {
+			updated++
+		}
+	}
+	return httpx.OK(c, fiber.Map{
+		"scanned": len(list.Items),
+		"updated": updated,
+	})
+}
+
 // Attach — dipanggil setelah user pilih template + slug supaya domain
 // ter-link ke sites.id. Idempoten: sekali attached, tidak bisa detach dari
 // endpoint ini (harus lewat delete site).

@@ -113,7 +113,9 @@ export default function ProfilePage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Profil Akun</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Data kontak & alamat akan dipakai untuk pendaftaran domain (WHOIS contact) dan invoice.
+          Data kontak & alamat dipakai sebagai WHOIS contact + invoice untuk{" "}
+          <strong>domain baru</strong>. Perubahan di sini <em>tidak</em> otomatis
+          ter-update ke domain yang sudah aktif.
         </p>
       </div>
 

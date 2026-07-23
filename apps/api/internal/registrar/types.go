@@ -148,3 +148,25 @@ type RenewRequest struct {
 	PaymentMethod  string `json:"payment_method"` // "midtrans" | "paylabs"
 	ReturnURL      string `json:"return_url,omitempty"`
 }
+
+// --- List domains (GET /v1/api/user/reseller/domain/list) ---
+
+// DomainListItem mirrors registrar listItem — subset yang web builder butuh
+// untuk sync/reconcile local domain_purchases cache. Field paginasi ada di
+// wrapper DomainListResponse.
+type DomainListItem struct {
+	JobID          string `json:"job_id"`
+	Domain         string `json:"domain"`
+	Status         string `json:"status"`
+	Kind           string `json:"kind"`
+	ExternalUserID string `json:"external_user_id"`
+	ExpiresAt      string `json:"expires_at,omitempty"` // RFC3339
+	CreatedAt      string `json:"created_at"`
+}
+
+// DomainListResponse — response envelope untuk listing paginated. Pagination
+// field sengaja `any` supaya kalau registrar tweak shape kita tidak break.
+type DomainListResponse struct {
+	Items      []DomainListItem `json:"items"`
+	Pagination any              `json:"pagination,omitempty"`
+}

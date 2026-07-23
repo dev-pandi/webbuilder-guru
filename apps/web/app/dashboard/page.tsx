@@ -16,6 +16,8 @@ import {
   FileText,
   HardDrive,
   ExternalLink,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtBytes, pct } from "@/lib/format";
@@ -56,14 +58,16 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
   },
 };
 
-// Purchase = shape yang di-return /api/v1/domains/purchases. Kita hanya butuh
-// subset di dashboard untuk kartu "sedang diproses"; polling detail dilakukan
-// di /sites/pending/[jobId].
+// Purchase = shape yang di-return /api/v1/domains/purchases. Dashboard butuh
+// dua use case: kartu "sedang diproses" + banner "mau expire". Detail flow
+// tetap di /sites/pending/[jobId] & /settings/domains/[name].
 type DomainPurchase = {
   job_id: string;
   domain: string;
   status: string;
+  kind: string;
   payment_url?: string;
+  expires_at?: string;
 };
 
 // Status yang layak ditampilkan di kartu "sedang diproses" dashboard.
@@ -75,12 +79,18 @@ const ACTIONABLE_STATUSES = new Set([
   "pending_provisioning",
 ]);
 
+// Ambang batas peringatan expire — konsisten dengan /settings/domains (formatExpiry).
+const EXPIRY_WARN_DAYS = 30;
+
 export default function DashboardPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [usageMap, setUsageMap] = useState<Record<string, SiteUsage>>({});
   const [err, setErr] = useState<string | null>(null);
   const [loadingSites, setLoadingSites] = useState(true);
   const [pendingPurchases, setPendingPurchases] = useState<DomainPurchase[]>([]);
+  // Domain aktif yang expire ≤ 30 hari — banner prominent supaya user tidak
+  // ketinggalan renewal (kalau miss, site down + support ticket).
+  const [expiringPurchases, setExpiringPurchases] = useState<DomainPurchase[]>([]);
 
   async function refresh() {
     setLoadingSites(true);
@@ -118,9 +128,13 @@ export default function DashboardPage() {
     let cancelled = false;
     async function refreshPurchases() {
       try {
-        const list = await api<DomainPurchase[]>("/api/v1/domains/purchases?limit=10");
+        // limit 100 karena expiring banner butuh sweep semua active — 10 terlalu
+        // kecil untuk user dengan banyak domain.
+        const list = await api<DomainPurchase[]>("/api/v1/domains/purchases?limit=100");
         if (cancelled) return;
-        setPendingPurchases((list ?? []).filter((p) => ACTIONABLE_STATUSES.has(p.status)));
+        const items = list ?? [];
+        setPendingPurchases(items.filter((p) => ACTIONABLE_STATUSES.has(p.status)));
+        setExpiringPurchases(items.filter(isExpiringSoon));
       } catch {
         /* silent — dashboard tidak block */
       }
@@ -173,6 +187,52 @@ export default function DashboardPage() {
         <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="size-4 shrink-0" />
           <span><span className="font-medium">Gagal memuat:</span> {err}</span>
+        </div>
+      )}
+
+      {/* Expiry warning — top-of-page karena missing renewal = site down */}
+      {expiringPurchases.length > 0 && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-red-900 dark:text-red-200">
+              <AlertTriangle className="size-4" />
+              Domain akan segera expire
+            </div>
+            <Link
+              href="/settings/domains"
+              className="text-xs font-medium text-red-900 underline underline-offset-4 hover:text-red-700 dark:text-red-200"
+            >
+              Kelola domain
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {expiringPurchases.map((p) => {
+              const days = p.expires_at ? daysUntil(p.expires_at) : 0;
+              const label =
+                days < 0
+                  ? `sudah expire ${Math.abs(days)} hari lalu`
+                  : days === 0
+                    ? "expire hari ini"
+                    : `sisa ${days} hari`;
+              return (
+                <Link
+                  key={p.job_id}
+                  href={`/settings/domains/${encodeURIComponent(p.domain)}`}
+                  className="flex items-center justify-between rounded-lg border bg-background px-3 py-2.5 text-sm transition-colors hover:border-red-400"
+                >
+                  <div className="flex items-center gap-2">
+                    <Globe2 className="size-4 text-muted-foreground" />
+                    <code className="font-medium">{p.domain}</code>
+                    <Badge variant="destructive" className="gap-1 text-xs">
+                      <RefreshCw className="size-3" />
+                      {label}
+                    </Badge>
+                  </div>
+                  <ArrowRight className="size-4 text-muted-foreground" />
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -405,5 +465,22 @@ function statusCopy(status: string): string {
     default:
       return status;
   }
+}
+
+// isExpiringSoon — filter untuk expiry warning banner. Hanya register-kind
+// active yang punya expires_at dalam ≤ EXPIRY_WARN_DAYS (termasuk yang sudah
+// lewat / negatif). Renew-kind di-skip supaya banner tidak double.
+function isExpiringSoon(p: DomainPurchase): boolean {
+  if (p.status !== "active" || p.kind !== "register" || !p.expires_at) return false;
+  const dt = new Date(p.expires_at);
+  if (isNaN(dt.getTime())) return false;
+  const days = Math.round((dt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  return days <= EXPIRY_WARN_DAYS;
+}
+
+// daysUntil — days remaining sampai iso date; negatif = sudah expire.
+function daysUntil(iso: string): number {
+  const dt = new Date(iso);
+  return Math.round((dt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 

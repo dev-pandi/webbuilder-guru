@@ -63,6 +63,7 @@ export default function DomainsSettingsPage() {
   const router = useRouter();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [renewTarget, setRenewTarget] = useState<Purchase | null>(null);
 
@@ -75,6 +76,28 @@ export default function DomainsSettingsPage() {
       setErr((e as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Sinkronkan tarik ground truth dari registrar → update local cache.
+  // Setelah sukses, refresh() supaya UI reflect status baru (expires_at, dsb.).
+  async function onSync() {
+    setSyncing(true);
+    try {
+      const res = await api<{ scanned: number; updated: number }>(
+        "/api/v1/domains/sync",
+        { method: "POST" },
+      );
+      if (res.updated > 0) {
+        toast.success(`${res.updated} domain diperbarui dari registrar`);
+      } else {
+        toast.success(`Semua ${res.scanned} domain sudah sinkron`);
+      }
+      await refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -101,10 +124,27 @@ export default function DomainsSettingsPage() {
             Semua domain yang Anda beli, lengkap dengan status registrasi dan tanggal expire.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading} className="gap-2">
-          <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSync}
+            disabled={syncing || loading}
+            className="gap-2"
+            title="Ambil status terbaru langsung dari registrar (fix drift)"
+          >
+            {syncing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Sinkronkan
+          </Button>
+          <Button variant="ghost" size="sm" onClick={refresh} disabled={loading} className="gap-2">
+            <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {err && (

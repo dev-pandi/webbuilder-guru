@@ -2,6 +2,19 @@ const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost";
 
 export type ApiResult<T> = { data: T } | { error: { code: string; message: string } };
 
+// ApiError menambah `status` + `code` di atas Error biasa. Callers boleh
+// tetap pakai `(e as Error).message` — subclass ini fully backward compat.
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 function tokenKey() {
   return "wb_access_token";
 }
@@ -39,8 +52,9 @@ export async function api<T>(
   const res = await fetch(`${BASE}${path}`, { ...opts, headers, cache: "no-store" });
   const body = (await res.json().catch(() => ({}))) as ApiResult<T>;
   if (!res.ok || "error" in body) {
+    const code = "error" in body ? body.error.code : "";
     const msg = "error" in body ? body.error.message : `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(res.status, code, msg);
   }
   return (body as { data: T }).data;
 }

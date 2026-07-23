@@ -16,7 +16,7 @@
 // ke Midtrans/Paylabs begitu URL siap.
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   Search,
@@ -100,6 +100,10 @@ const FIELD_LABEL: Record<string, string> = {
 
 export default function NewWithDomainPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Prefill dari ?domain=... — dipakai saat user datang dari halaman terminal
+  // failed/expired ("Mulai pembelian baru") supaya tidak perlu ngetik ulang.
+  const prefillDomain = (searchParams.get("domain") ?? "").toLowerCase().trim();
 
   // Auth gate (page ini di luar (dashboard) group, jadi guard sendiri).
   const [ready, setReady] = useState(false);
@@ -120,7 +124,7 @@ export default function NewWithDomainPage() {
   }, [router]);
 
   // Wizard state.
-  const [domain, setDomain] = useState("");
+  const [domain, setDomain] = useState(prefillDomain);
   const [years, setYears] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs">("midtrans");
   const [promoCode, setPromoCode] = useState("");
