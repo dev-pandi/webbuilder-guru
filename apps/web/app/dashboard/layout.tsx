@@ -3,10 +3,26 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Settings, LogOut, Mail, Loader2 } from "lucide-react";
+import {
+  Settings,
+  LogOut,
+  Mail,
+  Loader2,
+  User,
+  ShieldCheck,
+  ChevronDown,
+  Globe2,
+} from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Me = {
   id: string;
@@ -52,41 +68,135 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-muted/30">
       {me && !me.email_verified_at && <VerifyBanner />}
       <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <Link href="/dashboard" className="text-lg font-bold tracking-tight">
             Web<span className="text-primary">Builder</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {me?.role === "admin" && (
-              <Button variant="outline" size="sm" asChild>
+              <Button variant="outline" size="sm" asChild className="gap-1.5">
                 <Link href="/admin">
-                  <Settings />
-                  <span className="hidden sm:inline">Admin Panel</span>
+                  <ShieldCheck className="size-4" />
+                  <span className="hidden sm:inline">Admin</span>
                 </Link>
               </Button>
             )}
-            <Link
-              href="/settings/profile"
-              className="hidden sm:inline-flex"
-              title="Kelola profil akun"
-            >
-              <Badge
-                variant="secondary"
-                className="cursor-pointer transition-colors hover:bg-muted"
-              >
-                {me?.email}
-              </Badge>
-            </Link>
-            <Button variant="ghost" size="sm" onClick={logout}>
-              <LogOut />
-              Keluar
-            </Button>
+            {me && <UserMenu me={me} onLogout={logout} />}
           </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
     </div>
   );
+}
+
+// UserMenu — trigger avatar + email → dropdown dengan quick actions.
+// Sengaja compact di trigger (avatar + email di sm+) supaya header tidak
+// crowded; detail (nama, role) muncul di label dropdown.
+function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-full border bg-background pr-2 pl-1 py-1 text-sm transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          aria-label="Menu akun"
+        >
+          <Avatar name={me.name} email={me.email} />
+          <span className="hidden max-w-[180px] truncate text-xs font-medium text-muted-foreground sm:inline">
+            {me.email}
+          </span>
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent align="end" className="w-64">
+        {/* Identity block */}
+        <div className="flex items-center gap-3 px-2.5 pb-3 pt-2">
+          <Avatar name={me.name} email={me.email} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{me.name || "Pengguna"}</div>
+            <div className="truncate text-xs text-muted-foreground">{me.email}</div>
+            {me.role === "admin" && (
+              <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                <ShieldCheck className="size-2.5" />
+                Admin
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuLabel>Akun</DropdownMenuLabel>
+        <DropdownMenuItem asChild>
+          <Link href="/settings/profile">
+            <User className="size-4 text-muted-foreground" />
+            Profil
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings/domains">
+            <Globe2 className="size-4 text-muted-foreground" />
+            Domain Saya
+          </Link>
+        </DropdownMenuItem>
+
+        {me.role === "admin" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Admin</DropdownMenuLabel>
+            <DropdownMenuItem asChild>
+              <Link href="/admin">
+                <Settings className="size-4 text-muted-foreground" />
+                Admin Panel
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={onLogout}
+          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+        >
+          <LogOut className="size-4" />
+          Keluar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function Avatar({
+  name,
+  email,
+  size = "sm",
+}: {
+  name: string;
+  email: string;
+  size?: "sm" | "lg";
+}) {
+  const initials = getInitials(name, email);
+  const cls = size === "lg" ? "size-10 text-sm" : "size-7 text-[11px]";
+  return (
+    <div
+      className={
+        "flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 font-bold text-primary-foreground " +
+        cls
+      }
+    >
+      {initials}
+    </div>
+  );
+}
+
+function getInitials(name: string, email: string): string {
+  const source = name.trim() || email;
+  const parts = source.split(/[\s._@-]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
 function VerifyBanner() {
