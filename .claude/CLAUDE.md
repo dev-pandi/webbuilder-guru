@@ -254,6 +254,11 @@ Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2
 - **Sync**: `POST /api/v1/domains/sync` — user-triggered self-heal drift kalau webhook drop. Backend juga auto-run tiap 6 jam via goroutine `Handler.RunPeriodicSync` di [cmd/server/main.go](../apps/api/cmd/server/main.go).
 - **Expiry email notifier**: [internal/notifier/expiry.go](../apps/api/internal/notifier/expiry.go) — background goroutine, scan tiap 24 jam. Kirim email peringatan per user (Bahasa Indonesia + deep-link `/settings/domains/<domain>`) untuk domain aktif expire ≤ 30 hari, dedup via kolom `expiry_notice_sent_at` + resend 7 hari.
 - **Dashboard banner**: 2 kartu — "Domain sedang diproses" (pending states) + "Domain akan segera expire" (< 30 hari, sisa hari relative label). Filter dedupe per-domain (`latestActivePerDomain`) supaya post-renewal user tidak lihat tanggal lama.
+- **Admin observability**: `/admin/registrar` — dua tab. **Webhook** (rotate secret) + **Domain Purchases** (paginated + filter status/kind/search, join users untuk email). `GET /api/v1/admin/registrar/purchases` pakai `AdminList` repo method dengan whitelist sort preset.
+- **Hardening**:
+  - Webhook receiver rate-limit 600/60s per source IP (defence in depth di atas HMAC verify).
+  - Registrar client auto-recover 401: kalau JWT ditolak di tengah siklus 25-day refresh, `Client.do` re-login sekali + retry (serialized via `reauthMu`). Aktif kalau `SetCredentials` dipanggil di startup.
+  - Metrics counters di [/metrics](../apps/api/internal/router/global.go): `domain_purchases_created_total{kind}`, `domain_purchase_webhooks_total{result=processed|invalid_signature|stale_timestamp|disabled}`, `domain_purchase_reconcile_runs_total{trigger=user|periodic}`, `domain_purchase_reconcile_updated_total`, `domain_expiry_notices_total{result=sent|failed}`, `registrar_jwt_reauth_total{result=success|failed|skipped_racewin}`.
 
 **Yang harus dijaga saat kerja di area ini**:
 - Ownership check di setiap endpoint (`GetByJobID(jobID, userID)` bukan `GetByJobID(jobID)`) — cegah URL guessing

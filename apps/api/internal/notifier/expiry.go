@@ -12,6 +12,7 @@ import (
 
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/mail"
+	"github.com/webbuilder/api/internal/metrics"
 )
 
 // ExpiryConfig mengatur behaviour job peringatan expire.
@@ -101,8 +102,16 @@ func (n *ExpiryNotifier) RunOnce(ctx context.Context) error {
 		}
 		if err := n.mailer.Send(ctx, msg); err != nil {
 			slog.Warn("notifier: send failed", "to", d.Email, "domain", d.Domain, "error", err)
+			metrics.Default.CounterInc("domain_expiry_notices_total",
+				"Expiry notice emails by result",
+				map[string]string{"result": "failed"},
+			)
 			continue
 		}
+		metrics.Default.CounterInc("domain_expiry_notices_total",
+			"Expiry notice emails by result",
+			map[string]string{"result": "sent"},
+		)
 		if err := n.repo.MarkExpiryNoticeSent(ctx, d.ID); err != nil {
 			// Kirim sudah sukses; kalau mark gagal user akan dapat email lagi
 			// besok. Tidak fatal tapi noisy — log warn.

@@ -11,6 +11,7 @@ package domain_purchase
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -356,4 +357,207 @@ func findDomain(items []ExpiryDue, domain string) *ExpiryDue {
 		}
 	}
 	return nil
+}
+
+// ---------- AdminList ----------
+
+func TestRepo_AdminList_FilterByStatus(t *testing.T) {
+	repo := needsDB(t)
+	ctx := context.Background()
+	userID := makeUser(t, ctx)
+
+	// Seed 3 rows: active, failed, pending_payment.
+	seedStatuses := []string{StatusActive, StatusFailed, StatusPendingPayment}
+	domainTag := "flt-" + uuid.NewString()[:8]
+	for i, s := range seedStatuses {
+		if err := repo.Create(ctx, &Purchase{
+			UserID: userID, RegistrarJobID: "adm-" + uuid.NewString(),
+			Domain: domainTag + fmt.Sprintf(".%d.id", i),
+			Years:  1, Status: s,
+		}); err != nil {
+			t.Fatalf("Create[%d]: %v", i, err)
+		}
+	}
+
+	// Filter status=failed → hanya 1 dari seed kita.
+	items, total, err := repo.AdminList(ctx, AdminListFilter{
+		Status: StatusFailed,
+		Like:   "%" + domainTag + "%",
+		Limit:  50,
+		Offset: 0,
+	})
+	if err != nil {
+		t.Fatalf("AdminList: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total = %d, want 1 (filter status=failed)", total)
+	}
+	if len(items) != 1 || items[0].Status != StatusFailed {
+		t.Errorf("items = %+v, want single failed", items)
+	}
+	// UserEmail + UserName di-join dari users table — verify non-empty.
+	if items[0].UserEmail == "" {
+		t.Error("UserEmail should be populated from JOIN")
+	}
+}
+
+func TestRepo_AdminList_LikeMatchesDomainAndEmail(t *testing.T) {
+	repo := needsDB(t)
+	ctx := context.Background()
+
+	// User A dengan email berpola khusus → search by email substring.
+	// User B dengan email berbeda tapi domain berpola khusus → search by domain.
+	userA := makeUser(t, ctx) // email: u-<uuid>@test.local
+	userB := makeUser(t, ctx)
+
+	uniqDomain := "domsrch-" + uuid.NewString()[:8] + ".id"
+
+	if err := repo.Create(ctx, &Purchase{
+		UserID: userA, RegistrarJobID: "adom-" + uuid.NewString(),
+		Domain: "regular-a.id", Years: 1, Status: StatusActive,
+	}); err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	if err := repo.Create(ctx, &Purchase{
+		UserID: userB, RegistrarJobID: "bdom-" + uuid.NewString(),
+		Domain: uniqDomain, Years: 1, Status: StatusActive,
+	}); err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	// Search by domain substring → hanya B.
+	items, total, err := repo.AdminList(ctx, AdminListFilter{
+		Like:   "%domsrch-%",
+		Limit:  50,
+		Offset: 0,
+	})
+	if err != nil {
+		t.Fatalf("AdminList by domain: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].Domain != uniqDomain {
+		t.Errorf("by domain = %+v (total %d), want single %s", items, total, uniqDomain)
+	}
+
+	// Search by user A's email substring — makeUser bikin email u-<uuid>@test.local,
+	// jadi substring UUID hasil unique per user.
+	emailFragment := userA.String()[:8]
+	items, total, err = repo.AdminList(ctx, AdminListFilter{
+		Like:   "%" + emailFragment + "%",
+		Limit:  50,
+		Offset: 0,
+	})
+	if err != nil {
+		t.Fatalf("AdminList by email: %v", err)
+	}
+	// User A punya 1 row.
+	if total != 1 || len(items) != 1 || items[0].UserID != userA {
+		t.Errorf("by email = %+v, want single owned by userA", items)
+	}
+}
+
+func TestRepo_AdminList_SortPresets(t *testing.T) {
+	repo := needsDB(t)
+	ctx := context.Background()
+	userID := makeUser(t, ctx)
+
+	// 3 domain dengan expires_at berbeda untuk verify sort=expires_soon.
+	// Prefix unik supaya isolate dari test lain (via LIKE filter).
+	tag := "srt-" + uuid.NewString()[:8]
+	rows := []struct {
+		domain string
+		exp    time.Time
+	}{
+		{tag + "-c.id", time.Now().Add(300 * 24 * time.Hour)},
+		{tag + "-a.id", time.Now().Add(10 * 24 * time.Hour)},
+		{tag + "-b.id", time.Now().Add(100 * 24 * time.Hour)},
+	}
+	for _, r := range rows {
+		jobID := "srt-" + uuid.NewString()
+		if err := repo.Create(ctx, &Purchase{
+			UserID: userID, RegistrarJobID: jobID,
+			Domain: r.domain, Years: 1, Status: StatusActive,
+		}); err != nil {
+			t.Fatalf("Create %s: %v", r.domain, err)
+		}
+		if _, err := repo.UpdateStatus(ctx, jobID, StatusActive, "", &r.exp); err != nil {
+			t.Fatalf("UpdateStatus %s: %v", r.domain, err)
+		}
+	}
+
+	cases := []struct {
+		sort   string
+		first  string // domain yang harus muncul di posisi pertama
+		reason string
+	}{
+		{"domain_asc", tag + "-a.id", "alphabetical A first"},
+		{"domain_desc", tag + "-c.id", "reverse alphabetical C first"},
+		{"expires_soon", tag + "-a.id", "smallest expires_at first"},
+	}
+	for _, c := range cases {
+		t.Run(c.sort, func(t *testing.T) {
+			items, _, err := repo.AdminList(ctx, AdminListFilter{
+				Like: "%" + tag + "%",
+				Sort: c.sort, Limit: 10, Offset: 0,
+			})
+			if err != nil {
+				t.Fatalf("AdminList: %v", err)
+			}
+			if len(items) == 0 || items[0].Domain != c.first {
+				t.Errorf("sort=%s first = %v, want %s (%s)",
+					c.sort, first(items), c.first, c.reason)
+			}
+		})
+	}
+}
+
+func TestRepo_AdminList_Pagination(t *testing.T) {
+	repo := needsDB(t)
+	ctx := context.Background()
+	userID := makeUser(t, ctx)
+	tag := "pg-" + uuid.NewString()[:8]
+
+	for i := 0; i < 5; i++ {
+		if err := repo.Create(ctx, &Purchase{
+			UserID: userID, RegistrarJobID: "pg-" + uuid.NewString(),
+			Domain: fmt.Sprintf("%s.%d.id", tag, i),
+			Years:  1, Status: StatusPendingPayment,
+		}); err != nil {
+			t.Fatalf("Create[%d]: %v", i, err)
+		}
+	}
+
+	// Page 1 size 2 → 2 items, total 5.
+	items, total, err := repo.AdminList(ctx, AdminListFilter{
+		Like:  "%" + tag + "%",
+		Limit: 2, Offset: 0,
+	})
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("total = %d, want 5", total)
+	}
+	if len(items) != 2 {
+		t.Errorf("page 1 len = %d, want 2", len(items))
+	}
+
+	// Page 3 size 2 → 1 item sisa.
+	items, _, err = repo.AdminList(ctx, AdminListFilter{
+		Like:  "%" + tag + "%",
+		Limit: 2, Offset: 4,
+	})
+	if err != nil {
+		t.Fatalf("page 3: %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("page 3 len = %d, want 1", len(items))
+	}
+}
+
+// first returns first item's Domain or "<empty>" — helper cleaner test output.
+func first(items []AdminPurchase) string {
+	if len(items) == 0 {
+		return "<empty>"
+	}
+	return items[0].Domain
 }

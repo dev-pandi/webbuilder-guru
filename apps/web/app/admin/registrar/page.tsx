@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { RegistrarSectionNav } from "./_nav";
 import {
   Dialog,
   DialogContent,
@@ -116,6 +117,7 @@ export default function AdminRegistrarPage() {
 
   return (
     <div className="space-y-6">
+      <RegistrarSectionNav />
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="mb-1 flex items-center gap-2">

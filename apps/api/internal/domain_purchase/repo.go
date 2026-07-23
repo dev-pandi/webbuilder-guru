@@ -6,6 +6,7 @@ package domain_purchase
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -216,6 +217,131 @@ func (r *Repo) UpdatePaymentURL(ctx context.Context, jobID, paymentURL string) e
 		paymentURL, jobID,
 	)
 	return err
+}
+
+// AdminPurchase = row untuk admin observability. Join dengan users supaya
+// tabel admin bisa tampil email + nama tanpa lookup terpisah per row.
+type AdminPurchase struct {
+	Purchase
+	UserEmail string
+	UserName  string
+}
+
+// AdminListFilter — filter query untuk admin purchases list.
+type AdminListFilter struct {
+	Status string // exact match ("" = semua)
+	Kind   string // exact match ("" = semua)
+	Like   string // LIKE pattern (dari httpx.LikePattern) — match domain OR user email
+	Sort   string // whitelist di orderSQL, default "created_at DESC"
+	Limit  int
+	Offset int
+}
+
+// orderAdminPurchasesSQL whitelist untuk sort preset. JANGAN interpolasi
+// user input mentah — bahaya SQL injection.
+func orderAdminPurchasesSQL(preset string) string {
+	switch preset {
+	case "domain_asc":
+		return "dp.domain ASC, dp.created_at DESC"
+	case "domain_desc":
+		return "dp.domain DESC, dp.created_at DESC"
+	case "expires_soon":
+		// NULLs last supaya baris yang belum ada expiry tidak dominate.
+		return "dp.expires_at ASC NULLS LAST, dp.created_at DESC"
+	case "created_asc":
+		return "dp.created_at ASC"
+	default:
+		return "dp.created_at DESC"
+	}
+}
+
+// AdminList — paginated + filter, join users. Dipakai halaman
+// /admin/registrar/purchases untuk ops trace pembelian bermasalah.
+func (r *Repo) AdminList(ctx context.Context, f AdminListFilter) ([]AdminPurchase, int, error) {
+	where := []string{"1=1"}
+	args := []any{}
+	i := 1
+	if f.Status != "" {
+		where = append(where, "dp.status = $"+itoaPos(i))
+		args = append(args, f.Status)
+		i++
+	}
+	if f.Kind != "" {
+		where = append(where, "dp.kind = $"+itoaPos(i))
+		args = append(args, f.Kind)
+		i++
+	}
+	if f.Like != "" && f.Like != "%%" {
+		// Search domain ATAU user email — 1 argument (pattern) dipakai dua kali.
+		where = append(where,
+			"(LOWER(dp.domain) LIKE $"+itoaPos(i)+" OR LOWER(u.email) LIKE $"+itoaPos(i)+")")
+		args = append(args, f.Like)
+		i++
+	}
+
+	whereSQL := strings.Join(where, " AND ")
+	orderSQL := orderAdminPurchasesSQL(f.Sort)
+
+	// Count query dulu supaya total accurate walaupun page kosong.
+	var total int
+	if err := r.pool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM domain_purchases dp JOIN users u ON u.id = dp.user_id WHERE "+whereSQL,
+		args...,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	// Data query — pagination arg terakhir supaya index-nya predictable.
+	dataArgs := append(append([]any{}, args...), f.Limit, f.Offset)
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+prefixedCols("dp")+`, u.email, u.name
+		  FROM domain_purchases dp
+		  JOIN users u ON u.id = dp.user_id
+		 WHERE `+whereSQL+`
+		 ORDER BY `+orderSQL+`
+		 LIMIT $`+itoaPos(i)+` OFFSET $`+itoaPos(i+1),
+		dataArgs...,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var out []AdminPurchase
+	for rows.Next() {
+		var a AdminPurchase
+		if err := rows.Scan(
+			&a.ID, &a.UserID, &a.SiteID, &a.RegistrarJobID, &a.Domain, &a.Years, &a.Kind,
+			&a.Status, &a.Reason, &a.PaymentMethod, &a.PaymentURL,
+			&a.ExpiresAt, &a.CreatedAt, &a.UpdatedAt,
+			&a.UserEmail, &a.UserName,
+		); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, a)
+	}
+	return out, total, rows.Err()
+}
+
+// prefixedCols = `cols` versi dengan alias table. `cols` di file lain tanpa
+// prefix — kita perlu prefix di query JOIN supaya tidak ambiguous.
+func prefixedCols(alias string) string {
+	parts := strings.Split(cols, ", ")
+	for i, p := range parts {
+		parts[i] = alias + "." + p
+	}
+	return strings.Join(parts, ", ")
+}
+
+// itoaPos — small int → decimal string untuk positional arg $1, $2, ...
+// Ditinggal simple (max 999 args cukup untuk WHERE builder).
+func itoaPos(n int) string {
+	if n < 10 {
+		return string(rune('0' + n))
+	}
+	if n < 100 {
+		return string(rune('0'+n/10)) + string(rune('0'+n%10))
+	}
+	return string(rune('0'+n/100)) + string(rune('0'+(n/10)%10)) + string(rune('0'+n%10))
 }
 
 // ExpiryDue = row yang eligible untuk email peringatan. Terpisah dari Purchase

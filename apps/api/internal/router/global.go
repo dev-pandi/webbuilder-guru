@@ -57,9 +57,14 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	app.Get("/internal/caddy/ask", deps.Caddy.Ask)
 
 	// Registrar webhook — HMAC-authed, no JWT. Registrar-api POST kesini
-	// setiap kali status job (register/renew) berubah.
+	// setiap kali status job (register/renew) berubah. Rate-limit per source IP
+	// sebagai defence in depth — HMAC verify sudah menolak payload invalid,
+	// tapi tanpa limit CPU tetap terpakai per garbage request.
 	if deps.DomainPurchase != nil {
-		app.Post("/webhooks/registrar/domain-status", deps.DomainPurchase.Webhook)
+		app.Post("/webhooks/registrar/domain-status",
+			RateLimitIP(webhookPerWindow, webhookWindow),
+			deps.DomainPurchase.Webhook,
+		)
 	}
 
 	// Public read endpoints (renderer). 30s TTL matches renderer's ISR

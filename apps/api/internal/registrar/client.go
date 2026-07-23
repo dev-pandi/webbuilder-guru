@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/webbuilder/api/internal/metrics"
 )
 
 // Config bundles the runtime knobs. BaseURL is the ONLY required field;
@@ -47,8 +49,20 @@ type Config struct {
 // data race dengan handler yang lagi read.
 type Client struct {
 	baseURL string
-	mu      sync.RWMutex // guards apiKey
+	mu      sync.RWMutex // guards apiKey + credEmail/credPassword
 	apiKey  string
+
+	// Credentials untuk auto-recover kalau JWT ditolak 401 (mis. registrar
+	// revoke di tengah siklus 25-day refresh). Set via SetCredentials — kalau
+	// kosong, 401 tetap propagate ke caller.
+	credEmail    string
+	credPassword string
+
+	// reauthMu serialize reauth: kalau 10 request 401 bersamaan, hanya 1 yang
+	// login; sisanya menunggu + pakai JWT baru. Terpisah dari mu supaya
+	// APIKey() reads tetap cepat.
+	reauthMu sync.Mutex
+
 	http    *http.Client
 	retries int
 }
@@ -66,6 +80,70 @@ func (c *Client) SetAPIKey(newKey string) {
 	c.mu.Lock()
 	c.apiKey = newKey
 	c.mu.Unlock()
+}
+
+// SetCredentials aktifkan JWT 401 auto-recover. Setelah dipanggil, `do` akan
+// try Login+retry sekali kalau dapat 401 (JWT invalid di tengah siklus refresh
+// karena registrar revoke, rotate credentials, dst.).
+//
+// Kosongkan salah satu untuk disable (mis. static-key deployment).
+func (c *Client) SetCredentials(email, password string) {
+	c.mu.Lock()
+	c.credEmail = email
+	c.credPassword = password
+	c.mu.Unlock()
+}
+
+// hasCredentials — true kalau auto-recover eligible.
+func (c *Client) hasCredentials() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.credEmail != "" && c.credPassword != ""
+}
+
+// tryReauth login pakai stored credentials + SetAPIKey. Serialized via
+// reauthMu — concurrent 401 tidak trigger multiple login. Return true kalau
+// key sudah fresh (either kita yang login, atau goroutine lain sudah).
+//
+// Optimization: kalau apiKey sudah berubah sejak snapshot yang dilihat caller,
+// skip login dan pakai key baru. Untuk simplicity, snapshot dibandingkan
+// via parameter `staleKey`.
+func (c *Client) tryReauth(ctx context.Context, staleKey string) bool {
+	c.reauthMu.Lock()
+	defer c.reauthMu.Unlock()
+
+	// Double-check: kalau apiKey sudah berubah, someone else did the work.
+	if cur := c.APIKey(); cur != staleKey && cur != "" {
+		metrics.Default.CounterInc("registrar_jwt_reauth_total",
+			"Auto-recover login attempts by result",
+			map[string]string{"result": "skipped_racewin"},
+		)
+		return true
+	}
+	c.mu.RLock()
+	email, password := c.credEmail, c.credPassword
+	c.mu.RUnlock()
+	if email == "" || password == "" {
+		return false
+	}
+
+	// Login pakai timeout ketat — jangan blok request path terlalu lama.
+	loginCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	jwt, err := c.Login(loginCtx, email, password)
+	if err != nil {
+		metrics.Default.CounterInc("registrar_jwt_reauth_total",
+			"Auto-recover login attempts by result",
+			map[string]string{"result": "failed"},
+		)
+		return false
+	}
+	c.SetAPIKey(jwt)
+	metrics.Default.CounterInc("registrar_jwt_reauth_total",
+		"Auto-recover login attempts by result",
+		map[string]string{"result": "success"},
+	)
+	return true
 }
 
 // New returns nil if BaseURL is empty (feature disabled). Otherwise it
@@ -137,6 +215,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		payload = b
 	}
 
+	// reauthed = true kalau kita sudah trigger auto-recover di request ini.
+	// Cegah loop kalau login sukses tapi JWT baru masih ditolak 401 (mis. bug
+	// permissions upstream) — daripada infinite reauth.
+	var reauthed bool
+	// Skip Login path sendiri untuk reauth — kalau login endpoint balik 401,
+	// itu credential invalid, tidak boleh dipakai jadi trigger reauth ulang.
+	isLoginPath := strings.HasSuffix(path, "/v1/api/user/login")
+
 	var lastErr error
 	for attempt := 0; attempt < c.retries; attempt++ {
 		if attempt > 0 {
@@ -161,10 +247,11 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		if payload != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
-		if key := c.APIKey(); key != "" {
+		currentKey := c.APIKey()
+		if currentKey != "" {
 			// Bearer scheme is the standard reseller pattern; if registrar-api
 			// prefers X-API-Key header later, only this line changes.
-			req.Header.Set("Authorization", "Bearer "+key)
+			req.Header.Set("Authorization", "Bearer "+currentKey)
 		}
 
 		resp, err := c.http.Do(req)
@@ -193,7 +280,20 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 
 		apiErr := decodeError(resp.StatusCode, raw)
-		// Retry only on transient server errors. 4xx = caller mistake.
+
+		// 401 auto-recover: JWT invalid (revoke / rotate). Coba re-login sekali
+		// pakai stored credentials, lalu retry request ini. Consume slot retry
+		// yang sama — kalau login gagal atau retry masih 401, propagate.
+		if resp.StatusCode == 401 && !reauthed && !isLoginPath && c.hasCredentials() {
+			reauthed = true
+			if c.tryReauth(ctx, currentKey) {
+				lastErr = apiErr
+				continue
+			}
+		}
+
+		// Retry only on transient server errors. 4xx (kecuali 401 di atas) =
+		// caller mistake.
 		if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
 			lastErr = apiErr
 			continue

@@ -20,7 +20,17 @@ import (
 
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/registrar"
+)
+
+// Metric names — kept as constants supaya konsisten dgn dashboard Prometheus
+// dan mudah di-grep. Value/help berpasangan dengan CounterInc call site.
+const (
+	metricPurchasesCreated  = "domain_purchases_created_total"
+	metricWebhooksReceived  = "domain_purchase_webhooks_total"
+	metricReconcileRuns     = "domain_purchase_reconcile_runs_total"
+	metricReconcileUpdated  = "domain_purchase_reconcile_updated_total"
 )
 
 // Handler menjembatani frontend web builder ↔ registrar-api.
@@ -225,6 +235,10 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 			return httpx.Internal(c, "gagal menyimpan job local")
 		}
 	}
+	metrics.Default.CounterInc(metricPurchasesCreated,
+		"Domain purchase jobs created (register/renew)",
+		map[string]string{"kind": KindRegister},
+	)
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseResp{
 		JobID:      resp.JobID,
@@ -475,6 +489,10 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		slog.Error("renew: local save failed", "error", err, "job_id", resp.JobID)
 		return httpx.Internal(c, "gagal menyimpan job local")
 	}
+	metrics.Default.CounterInc(metricPurchasesCreated,
+		"Domain purchase jobs created (register/renew)",
+		map[string]string{"kind": KindRenew},
+	)
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseResp{
 		JobID:      resp.JobID,
@@ -576,46 +594,85 @@ func (h *Handler) Sync(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
+	metrics.Default.CounterInc(metricReconcileRuns,
+		"Reconcile runs by trigger",
+		map[string]string{"trigger": "user"},
+	)
+	if updated > 0 {
+		metrics.Default.CounterAdd(metricReconcileUpdated,
+			"Rows updated across all reconcile runs",
+			nil, uint64(updated),
+		)
+	}
 	return httpx.OK(c, fiber.Map{"scanned": scanned, "updated": updated})
 }
+
+// reconcilePerPage = ukuran page saat sweep registrar list. 100 = balance
+// antara jumlah round-trip dan payload size (registrar-side default).
+const reconcilePerPage = 100
+
+// reconcileMaxPages = cap safety supaya kalau registrar salah return non-strictly
+// decreasing page (misconfigured pagination), loop tidak infinite. 50 pages ×
+// 100 = 5000 jobs — cukup untuk reseller besar; realistis MVP.
+const reconcileMaxPages = 50
 
 // reconcile = pure logic shared antara HTTP handler + background loop.
 // externalUserID kosong = ambil SEMUA job reseller (dipakai background loop);
 // non-kosong = filter ke user tsb (dipakai per-user HTTP sync).
 //
-// perPage 100 = cukup untuk hampir semua reseller kecil-menengah. Kalau
-// registrar balik penuh, ada domain yang mungkin ter-skip — future work:
-// pagination loop sampai `len(items) < perPage`.
+// Loop paginasi sampai halaman terakhir (items < perPage) atau cap
+// reconcileMaxPages tercapai. Sebelumnya cuma page 1 → reseller dengan >100
+// domain silent-skip sisanya. Kalau ctx cancel di tengah loop, return apa
+// yang sudah reconciled (partial success — acceptable).
 func (h *Handler) reconcile(ctx context.Context, externalUserID string) (scanned, updated int, err error) {
-	list, err := h.registrar.ListDomains(ctx, externalUserID, 1, 100)
-	if err != nil {
-		return 0, 0, err
-	}
-	if list == nil {
-		return 0, 0, nil
-	}
-	for _, it := range list.Items {
-		if it.JobID == "" {
-			continue
+	for page := 1; page <= reconcileMaxPages; page++ {
+		if err := ctx.Err(); err != nil {
+			return scanned, updated, err
 		}
-		var expires *time.Time
-		if it.ExpiresAt != "" {
-			if t, err := time.Parse(time.RFC3339, it.ExpiresAt); err == nil {
-				expires = &t
+		list, listErr := h.registrar.ListDomains(ctx, externalUserID, page, reconcilePerPage)
+		if listErr != nil {
+			// Page 1 gagal = tidak ada progress → propagate. Page >1 gagal =
+			// partial progress ada; log + return apa yang sudah dilakukan.
+			if page == 1 {
+				return 0, 0, listErr
+			}
+			slog.Warn("reconcile: pagination stopped on error",
+				"error", listErr, "page", page, "scanned", scanned, "updated", updated)
+			return scanned, updated, nil
+		}
+		if list == nil || len(list.Items) == 0 {
+			return scanned, updated, nil
+		}
+		scanned += len(list.Items)
+		for _, it := range list.Items {
+			if it.JobID == "" {
+				continue
+			}
+			var expires *time.Time
+			if it.ExpiresAt != "" {
+				if t, err := time.Parse(time.RFC3339, it.ExpiresAt); err == nil {
+					expires = &t
+				}
+			}
+			// UpdateStatus idempotent — hanya update kalau status berbeda. Kalau
+			// job_id tidak ada di lokal, RowsAffected = 0 (silent skip).
+			changed, err := h.repo.UpdateStatus(ctx, it.JobID, it.Status, "", expires)
+			if err != nil {
+				slog.Warn("reconcile: update failed", "job_id", it.JobID, "error", err)
+				continue
+			}
+			if changed {
+				updated++
 			}
 		}
-		// UpdateStatus idempotent — hanya update kalau status berbeda. Kalau
-		// job_id tidak ada di lokal, RowsAffected = 0 (silent skip).
-		changed, err := h.repo.UpdateStatus(ctx, it.JobID, it.Status, "", expires)
-		if err != nil {
-			slog.Warn("reconcile: update failed", "job_id", it.JobID, "error", err)
-			continue
-		}
-		if changed {
-			updated++
+		// Partial page = halaman terakhir. Hemat 1 round-trip.
+		if len(list.Items) < reconcilePerPage {
+			return scanned, updated, nil
 		}
 	}
-	return len(list.Items), updated, nil
+	slog.Warn("reconcile: hit max pages cap — reseller has more domains than expected",
+		"max_pages", reconcileMaxPages, "per_page", reconcilePerPage)
+	return scanned, updated, nil
 }
 
 // RunPeriodicSync menjalankan reconcile untuk SEMUA user reseller (empty
@@ -637,7 +694,15 @@ func (h *Handler) RunPeriodicSync(ctx context.Context, interval time.Duration) {
 			slog.Warn("periodic sync failed (retry next tick)", "error", err)
 			return
 		}
+		metrics.Default.CounterInc(metricReconcileRuns,
+			"Reconcile runs by trigger",
+			map[string]string{"trigger": "periodic"},
+		)
 		if updated > 0 {
+			metrics.Default.CounterAdd(metricReconcileUpdated,
+				"Rows updated across all reconcile runs",
+				nil, uint64(updated),
+			)
 			slog.Info("periodic sync completed", "scanned", scanned, "updated", updated)
 		}
 	}
@@ -814,6 +879,77 @@ func (h *Handler) ListCategories(c *fiber.Ctx) error {
 //   3. Response ada `webhook_secret` — SEKALI ini muncul. Admin salin ke env
 //      `REGISTRAR_WEBHOOK_SECRET` + restart API supaya HMAC verify pakai secret baru.
 
+// AdminListPurchases — GET /api/v1/admin/registrar/purchases
+//
+// Paginated + filter (status, kind, q). Join dengan users → row include email
+// + nama supaya admin bisa trace tanpa lookup manual.
+//
+// Query params:
+//   status: pending_payment | pending_document | pending_provisioning | active | failed | expired
+//   kind:   register | renew
+//   q:      LIKE match domain OR user email
+//   page, page_size, sort (default created_at DESC)
+func (h *Handler) AdminListPurchases(c *fiber.Ctx) error {
+	p := httpx.ParsePagination(c)
+	f := AdminListFilter{
+		Status: c.Query("status"),
+		Kind:   c.Query("kind"),
+		Like:   p.LikePattern(),
+		Sort:   p.Sort,
+		Limit:  p.PageSize,
+		Offset: p.Offset(),
+	}
+	items, total, err := h.repo.AdminList(c.Context(), f)
+	if err != nil {
+		slog.Error("admin list purchases failed", "error", err)
+		return httpx.Internal(c, "list failed")
+	}
+	// Transform ke response shape ringkas — jangan expose raw column tanpa filter.
+	type row struct {
+		JobID         string  `json:"job_id"`
+		Domain        string  `json:"domain"`
+		Status        string  `json:"status"`
+		Kind          string  `json:"kind"`
+		Reason        string  `json:"reason,omitempty"`
+		Years         int     `json:"years"`
+		PaymentMethod string  `json:"payment_method,omitempty"`
+		ExpiresAt     string  `json:"expires_at,omitempty"`
+		CreatedAt     string  `json:"created_at"`
+		UpdatedAt     string  `json:"updated_at"`
+		UserID        string  `json:"user_id"`
+		UserEmail     string  `json:"user_email"`
+		UserName      string  `json:"user_name"`
+		SiteID        *string `json:"site_id,omitempty"`
+	}
+	out := make([]row, 0, len(items))
+	for i := range items {
+		it := &items[i]
+		r := row{
+			JobID:         it.RegistrarJobID,
+			Domain:        it.Domain,
+			Status:        it.Status,
+			Kind:          it.Kind,
+			Reason:        it.Reason,
+			Years:         it.Years,
+			PaymentMethod: it.PaymentMethod,
+			CreatedAt:     it.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt:     it.UpdatedAt.UTC().Format(time.RFC3339),
+			UserID:        it.UserID.String(),
+			UserEmail:     it.UserEmail,
+			UserName:      it.UserName,
+		}
+		if it.ExpiresAt != nil {
+			r.ExpiresAt = it.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		if it.SiteID != nil {
+			s := it.SiteID.String()
+			r.SiteID = &s
+		}
+		out = append(out, r)
+	}
+	return httpx.OK(c, httpx.MakePaginated(out, p, total))
+}
+
 func (h *Handler) AdminGetWebhookConfig(c *fiber.Ctx) error {
 	if h.registrar == nil {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
@@ -877,16 +1013,28 @@ type webhookPayload struct {
 func (h *Handler) Webhook(c *fiber.Ctx) error {
 	if h.webhookSecret == "" {
 		// Fail-closed: kalau operator lupa set secret, jangan terima apapun.
+		metrics.Default.CounterInc(metricWebhooksReceived,
+			"Webhook receiver hits by outcome",
+			map[string]string{"result": "disabled"},
+		)
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "webhook_disabled",
 			"REGISTRAR_WEBHOOK_SECRET belum di-set di web builder.")
 	}
 	body := c.Body()
 	if !verifyHMAC(h.webhookSecret, c.Get("X-Registrar-Signature"), body) {
+		metrics.Default.CounterInc(metricWebhooksReceived,
+			"Webhook receiver hits by outcome",
+			map[string]string{"result": "invalid_signature"},
+		)
 		return httpx.Err(c, fiber.StatusUnauthorized, "invalid_signature", "signature mismatch")
 	}
 	// Replay protection.
 	if ts, _ := strconv.ParseInt(c.Get("X-Registrar-Timestamp"), 10, 64); ts > 0 {
 		if time.Since(time.Unix(ts, 0)).Abs() > 5*time.Minute {
+			metrics.Default.CounterInc(metricWebhooksReceived,
+				"Webhook receiver hits by outcome",
+				map[string]string{"result": "stale_timestamp"},
+			)
 			return httpx.Err(c, fiber.StatusUnauthorized, "stale_timestamp",
 				"webhook timestamp > 5m — reject to mitigate replay")
 		}
@@ -921,6 +1069,10 @@ func (h *Handler) Webhook(c *fiber.Ctx) error {
 		// sini kalau site_id sudah di-attach. Untuk MVP, biar frontend yang
 		// prompt user untuk lanjut ke template picker.
 	}
+	metrics.Default.CounterInc(metricWebhooksReceived,
+		"Webhook receiver hits by outcome",
+		map[string]string{"result": "processed"},
+	)
 	return c.SendStatus(fiber.StatusOK)
 }
 

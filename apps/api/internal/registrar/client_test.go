@@ -216,3 +216,102 @@ type wrappedErr struct{ inner error }
 func (w wrappedErr) Error() string { return "wrap: " + w.inner.Error() }
 func (w wrappedErr) Unwrap() error { return w.inner }
 func errWrap(e error) error        { return wrappedErr{inner: e} }
+
+func TestClient_401_AutoRecover_LoginAndRetry(t *testing.T) {
+	// Simulasi: JWT lama "stale-jwt" → server balik 401. Login endpoint balik
+	// JWT baru "fresh-jwt". Client harus retry request awal pakai fresh-jwt.
+	var authHeaders []string
+	var loginHits int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/api/user/login" {
+			atomic.AddInt32(&loginHits, 1)
+			_, _ = io.WriteString(w, `{"token":"fresh-jwt"}`)
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		authHeaders = append(authHeaders, auth)
+		if auth == "Bearer fresh-jwt" {
+			_, _ = io.WriteString(w, `{"data":{"ok":true}}`)
+			return
+		}
+		// stale JWT → 401
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":{"code":"jwt_invalid","message":"expired"}}`)
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{BaseURL: srv.URL, APIKey: "stale-jwt", Timeout: 2 * time.Second, Retries: 2})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	c.SetCredentials("test@example.com", "secret")
+
+	if err := c.do(context.Background(), "GET", "/some/resource", nil, nil); err != nil {
+		t.Fatalf("expected success after reauth, got %v", err)
+	}
+	if atomic.LoadInt32(&loginHits) != 1 {
+		t.Errorf("login should be called exactly once, got %d", loginHits)
+	}
+	if len(authHeaders) != 2 {
+		t.Fatalf("expected 2 request auths (stale + fresh), got %d: %v", len(authHeaders), authHeaders)
+	}
+	if authHeaders[0] != "Bearer stale-jwt" || authHeaders[1] != "Bearer fresh-jwt" {
+		t.Errorf("auth headers = %v, want [stale, fresh]", authHeaders)
+	}
+	if c.APIKey() != "fresh-jwt" {
+		t.Errorf("APIKey after reauth = %q, want fresh-jwt", c.APIKey())
+	}
+}
+
+func TestClient_401_NoRecoverWithoutCredentials(t *testing.T) {
+	// Tanpa SetCredentials, 401 langsung propagate — client tidak coba login.
+	var loginHits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/api/user/login" {
+			atomic.AddInt32(&loginHits, 1)
+			_, _ = io.WriteString(w, `{"token":"whatever"}`)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":{"code":"jwt_invalid","message":"expired"}}`)
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{BaseURL: srv.URL, APIKey: "stale", Timeout: time.Second, Retries: 2})
+	err := c.do(context.Background(), "GET", "/x", nil, nil)
+	if err == nil {
+		t.Fatal("expected 401 error to propagate")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != 401 {
+		t.Errorf("expected APIError status=401, got %v", err)
+	}
+	if atomic.LoadInt32(&loginHits) != 0 {
+		t.Errorf("login should NOT be called without credentials, got %d hits", loginHits)
+	}
+}
+
+func TestClient_401_LoginPathDoesNotRecurse(t *testing.T) {
+	// Guard: kalau /v1/api/user/login sendiri balik 401 (credential salah),
+	// jangan trigger reauth ulang — akan infinite recurse. Login harus fail-fast.
+	var loginHits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&loginHits, 1)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":{"code":"bad_credentials","message":"wrong password"}}`)
+	}))
+	defer srv.Close()
+
+	c, _ := New(Config{BaseURL: srv.URL, Timeout: time.Second, Retries: 2})
+	c.SetCredentials("wrong@example.com", "wrong")
+
+	_, err := c.Login(context.Background(), "wrong@example.com", "wrong")
+	if err == nil {
+		t.Fatal("expected Login to fail with 401")
+	}
+	// Login endpoint hit paling banyak `Retries` kali (2), TIDAK loop reauth.
+	if n := atomic.LoadInt32(&loginHits); n > 2 {
+		t.Errorf("login hit %d times, expected ≤2 (no reauth recursion)", n)
+	}
+}

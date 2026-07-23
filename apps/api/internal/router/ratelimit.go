@@ -40,6 +40,14 @@ const (
 	uploadWindow      = 60 * time.Minute // per hour per user
 	mutationPerWindow = 300              // 300 writes
 	mutationWindow    = 60 * time.Second // per minute per user (generous burst)
+
+	// Registrar webhook receiver — per-IP defence in depth. HMAC-authed sudah
+	// filter payload valid, tapi tanpa rate-limit attacker bisa hammer endpoint
+	// dengan payload garbage yang gagal verify (CPU cycle terpakai per request).
+	// Generous karena registrar legit boleh burst callback (banyak job update
+	// bersamaan setelah payment batch).
+	webhookPerWindow = 600                // 600 hits
+	webhookWindow    = 60 * time.Second   // per menit per source IP
 )
 
 // RateLimitIP keys by client IP. Use for unauthenticated endpoints (login,

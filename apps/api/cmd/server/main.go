@@ -197,6 +197,11 @@ func main() {
 		// REGISTRAR_API_KEY dengan JWT hasil login (30-day TTL) + refresh
 		// tiap 25 hari sebelum expire.
 		if cfg.RegistrarResellerEmail != "" && cfg.RegistrarResellerPassword != "" {
+			// Simpan credentials di client supaya `do` bisa auto-recover
+			// kalau JWT ditolak 401 di tengah siklus 25-day refresh (mis.
+			// registrar revoke). Client akan re-login sekali + retry request.
+			registrarClient.SetCredentials(cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
+
 			loginCtx, cancelLogin := context.WithTimeout(ctx, 15*time.Second)
 			jwt, err := registrarClient.Login(loginCtx, cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
 			cancelLogin()
@@ -206,7 +211,7 @@ func main() {
 				os.Exit(1)
 			}
 			registrarClient.SetAPIKey(jwt)
-			slog.Info("registrar jwt: auto-login success (will refresh every 25d)")
+			slog.Info("registrar jwt: auto-login success (will refresh every 25d, auto-recover on 401)")
 
 			// Background refresh — tick tiap 25 hari (before 30-day expire).
 			// Kalau login gagal di refresh, log error tapi tetap coba lagi

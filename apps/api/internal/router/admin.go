@@ -30,6 +30,7 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	if deps.DomainPurchase != nil {
 		g.Get("/registrar/webhook", deps.DomainPurchase.AdminGetWebhookConfig)
 		g.Post("/registrar/webhook", deps.DomainPurchase.AdminSetWebhookConfig)
+		g.Get("/registrar/purchases", deps.DomainPurchase.AdminListPurchases)
 	}
 
 	// pprof exposes detailed runtime data (heap profile can leak secrets in
