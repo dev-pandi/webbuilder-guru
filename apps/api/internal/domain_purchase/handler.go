@@ -58,11 +58,24 @@ func NewHandler(repo *Repo, r *registrar.Client, users *auth.Repo, webhookSecret
 // ------------- Requests / responses -------------
 
 type checkReq struct {
+	// Domain bisa full FQDN ("myshop.co.id") atau SLD-only ("myshop"). Registrar
+	// yang decide behavior — SLD-only → return results per allowed zone; full →
+	// return 1 entry.
 	Domain string `json:"domain"`
 }
 
+// checkResp = envelope shape identik dengan registrar (passthrough).
+// Frontend cukup baca `results` array; kalau length 1 tampilkan single card,
+// length >1 tampilkan grid. `allowed_zones` untuk hint UI.
 type checkResp struct {
+	Query        string        `json:"query"`
+	AllowedZones []string      `json:"allowed_zones"`
+	Results      []checkEntry  `json:"results"`
+}
+
+type checkEntry struct {
 	Domain    string      `json:"domain"`
+	TLD       string      `json:"tld"`
 	Available bool        `json:"available"`
 	Reason    string      `json:"reason,omitempty"`
 	Price     *priceBlock `json:"price,omitempty"`
@@ -120,27 +133,41 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "domain kosong")
 	}
 
-	// Unified reseller check: availability + price + zone flags dalam 1 call.
-	avail, price, err := h.registrar.CheckDomain(c.Context(), req.Domain)
+	// Reseller check: batch EPP untuk 1..N zone dalam 1 call. Response include
+	// `allowed_zones` supaya UI bisa hint TLD yang tersedia untuk reseller ini.
+	res, err := h.registrar.CheckDomain(c.Context(), req.Domain)
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
-	out := checkResp{Domain: req.Domain, Available: avail.Available, Reason: avail.Reason}
-	if price != nil {
-		out.Price = &priceBlock{
-			Currency: price.Currency,
-			Register: float64(price.Register),
-			Renew:    float64(price.Renew),
-			Transfer: float64(price.Transfer),
-		}
+	out := checkResp{
+		Query:        res.Query,
+		AllowedZones: res.AllowedZones,
+		Results:      make([]checkEntry, 0, len(res.Results)),
 	}
-	if avail.Zone != nil {
-		out.Zone = &zoneBlock{
-			Name:            avail.Zone.Name,
-			RequireDocument: avail.Zone.RequireDocument,
-			AutoApproved:    avail.Zone.AutoApproved,
-			NikAutoApproved: avail.Zone.NikAutoApproved,
+	for _, r := range res.Results {
+		e := checkEntry{
+			Domain:    r.Domain,
+			TLD:       r.TLD,
+			Available: r.Available,
+			Reason:    r.Reason,
 		}
+		if r.Price != nil {
+			e.Price = &priceBlock{
+				Currency: r.Price.Currency,
+				Register: r.Price.Register,
+				Renew:    r.Price.Renew,
+				Transfer: r.Price.Transfer,
+			}
+		}
+		if r.Zone != nil {
+			e.Zone = &zoneBlock{
+				Name:            r.Zone.Name,
+				RequireDocument: r.Zone.RequireDocument,
+				AutoApproved:    r.Zone.AutoApproved,
+				NikAutoApproved: r.Zone.NikAutoApproved,
+			}
+		}
+		out.Results = append(out.Results, e)
 	}
 	return httpx.OK(c, out)
 }

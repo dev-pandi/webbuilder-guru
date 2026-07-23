@@ -63,6 +63,40 @@ type Whois struct {
 	OwnerMasked string `json:"owner_masked,omitempty"` // partial redaction for privacy
 }
 
+// --- Reseller check (POST /v1/api/user/reseller/domain/check) ---
+
+// DomainCheckResponse — envelope response dari reseller check. Registrar batch
+// EPP query untuk 1..N zone dan return semua di `Results`. `AllowedZones`
+// = daftar TLD yang reseller boleh handle; UI pakai ini untuk hint sebelum
+// user mulai search (mis. show sebagai chips).
+type DomainCheckResponse struct {
+	Query        string             `json:"query"`
+	AllowedZones []string           `json:"allowed_zones"`
+	Results      []DomainCheckEntry `json:"results"`
+}
+
+// DomainCheckEntry — 1 domain hasil check. Price + Zone opsional (silent-absent
+// kalau product/zone belum di-config di registrar untuk kombinasi tsb).
+type DomainCheckEntry struct {
+	Domain    string          `json:"domain"`
+	TLD       string          `json:"tld"`
+	Available bool            `json:"available"`
+	Reason    string          `json:"reason,omitempty"`
+	Price     *PriceInfo      `json:"price,omitempty"`
+	Zone      *ZoneInfo       `json:"zone,omitempty"`
+}
+
+// PriceInfo mirrors registrar's price block (float64 currency amounts). Beda
+// dengan `DomainPrice` yang pakai int64 minor units — kita jaga fidelity
+// float64 di boundary registrar API supaya tidak lose precision kalau nanti
+// harga bukan bilangan bulat.
+type PriceInfo struct {
+	Currency string  `json:"currency"`
+	Register float64 `json:"register"`
+	Renew    float64 `json:"renew"`
+	Transfer float64 `json:"transfer"`
+}
+
 // --- Register domain (TBD reseller endpoint) ---
 // Target endpoint spec (to be confirmed with registrar-api team):
 //   POST /api/reseller/domain/register

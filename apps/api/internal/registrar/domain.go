@@ -58,77 +58,55 @@ func (c *Client) Whois(ctx context.Context, domain string) (*Whois, error) {
 	return &env.Data, nil
 }
 
-// CheckDomain hits the reseller endpoint yang balik availability + harga +
-// zone flags dalam satu response:
+// CheckDomain hits the reseller check endpoint:
 //
 //	POST /v1/api/user/reseller/domain/check
-//	body: {"domain": "..."}
+//	body: {"domain": "myshop"}         → SLD-only, multi-zone check
+//	body: {"domain": "myshop.co.id"}   → single-zone check
 //
-// Wajib reseller auth (Bearer). Zone info (`RequireDocument`, dst.) hanya
-// diisi kalau zone terdaftar di registrar. Kalau tidak, tetap balik price +
-// availability tanpa Zone.
-type checkDomainRegistrarResp struct {
-	Domain    string     `json:"domain"`
-	TLD       string     `json:"tld"`
-	Available bool       `json:"available"`
-	Reason    string     `json:"reason"`
-	Price     *priceInfo `json:"price,omitempty"`
-	Zone      *ZoneInfo  `json:"zone,omitempty"`
-}
-
-// priceInfo mirrors reseller check response's price block.
-type priceInfo struct {
-	Currency string  `json:"currency"`
-	Register float64 `json:"register"`
-	Renew    float64 `json:"renew"`
-	Transfer float64 `json:"transfer"`
-}
-
-// CheckDomain unified call untuk wizard — return semua yang dibutuhkan
-// (availability + price + zone flags) sekali panggil.
-func (c *Client) CheckDomain(ctx context.Context, domain string) (*Availability, *DomainPrice, error) {
+// Registrar batch-check via EPP (1 round-trip) dan return envelope dengan:
+//   - query        : input asli (post-trim/lower)
+//   - allowed_zones: TLD yang reseller boleh handle — dipakai UI hint
+//   - results      : per-domain entry (available, reason, price, zone flags)
+//
+// Wajib reseller auth (Bearer). `Price`/`Zone` per entry silent-absent kalau
+// tidak ter-config (bukan error).
+func (c *Client) CheckDomain(ctx context.Context, domain string) (*DomainCheckResponse, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
-		return nil, nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
 	}
-	var env envelope[checkDomainRegistrarResp]
+	var env envelope[DomainCheckResponse]
 	body := map[string]string{"domain": domain}
 	if err := c.do(ctx, "POST", "/v1/api/user/reseller/domain/check", body, &env); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	avail := &Availability{
-		Domain:    env.Data.Domain,
-		Available: env.Data.Available,
-		Reason:    env.Data.Reason,
-		Zone:      env.Data.Zone,
-	}
-	var price *DomainPrice
-	if env.Data.Price != nil {
-		price = &DomainPrice{
-			Domain:   env.Data.Domain,
-			TLD:      env.Data.TLD,
-			Currency: env.Data.Price.Currency,
-			Register: int64(env.Data.Price.Register),
-			Renew:    int64(env.Data.Price.Renew),
-			Transfer: int64(env.Data.Price.Transfer),
-		}
-	}
-	return avail, price, nil
+	return &env.Data, nil
 }
 
-// CheckAvailability is a semantic wrapper — pakai reseller CheckDomain
-// karena butuh zone info. Kalau reseller call gagal (misal registrar down),
-// fallback ke public Whois untuk minimal availability sinyal.
+// CheckAvailability = semantic wrapper untuk single-domain query (input WAJIB
+// full FQDN). Return entry pertama dari results (registrar guarantee 1 entry
+// untuk single-zone input). Kalau reseller call gagal (401/5xx), fallback ke
+// public Whois — better than blocking user.
 func (c *Client) CheckAvailability(ctx context.Context, domain string) (*Availability, error) {
-	avail, _, err := c.CheckDomain(ctx, domain)
-	if err == nil {
-		return avail, nil
+	res, err := c.CheckDomain(ctx, domain)
+	if err == nil && len(res.Results) > 0 {
+		r := &res.Results[0]
+		return &Availability{
+			Domain:    r.Domain,
+			Available: r.Available,
+			Reason:    r.Reason,
+			Zone:      r.Zone,
+		}, nil
 	}
-	// Fallback: reseller call gagal (401/5xx). Public whois masih bisa jawab
-	// availability tanpa harga/zone. Better than blocking user.
+	// Fallback via public Whois — return availability sinyal minimal tanpa
+	// harga/zone. Kalau Whois juga gagal, propagate error asli dari reseller.
 	w, wErr := c.Whois(ctx, domain)
 	if wErr != nil {
-		return nil, err // return error asli dari reseller call
+		if err != nil {
+			return nil, err
+		}
+		return nil, wErr
 	}
 	if w == nil {
 		return &Availability{Domain: domain, Available: true}, nil

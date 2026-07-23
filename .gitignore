@@ -11,6 +11,8 @@ out/
 
 # Go
 apps/api/bin/
+apps/api/tmp/
+apps/api/build-errors.log
 *.test
 *.out
 

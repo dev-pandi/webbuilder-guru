@@ -190,7 +190,7 @@ npm run build        # butuh API_URL
 ```
 
 Tidak perlu start dev server otomatis kecuali user minta. Kalau perlu dev:
-`go run ./cmd/server` (API), `npm run dev` (web), `npm run dev -- -p 3001` (renderer).
+`go run ./cmd/server` (API) atau `air` (hot-reload — install `go install github.com/air-verse/air@latest`, config di [apps/api/.air.toml](../apps/api/.air.toml)), `npm run dev` (web), `npm run dev -- -p 3001` (renderer).
 
 ## Editor Internals (apps/web/app/sites/[id]/editor/)
 

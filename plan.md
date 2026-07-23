@@ -102,6 +102,15 @@ Group `/api/v1` (semua JSON, JWT kecuali yang publik).
 
 **Domains** — `POST /sites/:id/domains`, `DELETE /domains/:id`, `POST /domains/:id/verify` (cek DNS A/CNAME), `GET /domains/:id/status`.
 
+**Domain purchase (registrar reseller)** — beli domain baru untuk user langsung dari web builder (bukan pointing custom domain existing):
+- `POST /sites/:id/domain-purchase/check` → proxy ke `POST /reseller/domain/check` di registrar-api
+- `POST /sites/:id/domain-purchase/register` → proxy ke `POST /reseller/domain/register`
+- `POST /domain-purchase/:job_id/document` → proxy ke `POST /reseller/domain/register/:job_id/documents`
+- `GET /domain-purchase/:job_id/status` → poll `GET /reseller/domain/register/:job_id/status`
+- Webhook receiver `POST /internal/registrar/webhook` → menerima notifikasi status dari registrar-api (HMAC-SHA256 verify), broadcast ke user via SSE/WebSocket atau update site status
+
+Detail integrasi di §14.
+
 **Caddy hook** — `GET /internal/caddy/ask?domain=...` → 200 jika domain `verified` + site `active`, 403 lainnya. Lindungi via shared secret/IP allowlist.
 
 **Public renderer endpoints** — `GET /public/sites/by-host?host=...`, `GET /public/sites/:id/pages/:slug` (dipanggil dari Next.js renderer, dengan cache header).
@@ -279,7 +288,288 @@ web-builder/
   worker/             # export & background jobs
 ```
 
-## 14. Hal yang Perlu Dikonfirmasi Sebelum Mulai
+## 14. Integrasi Registrar-API Reseller (domain purchase flow)
+
+Web builder = **reseller** di registrar-api (`../Golang/registrar-api/plan.md`).
+Backend Fiber kita jadi proxy antara UI user dan registrar-api reseller
+endpoints. Konsumen registrar-api = server web builder (server-to-server),
+bukan browser user langsung.
+
+### 14.1 Setup awal
+
+1. Admin registrar-api create account untuk web builder company:
+   - Register user via `POST /api/global/register` biasa
+   - Admin: `PATCH /api/admin/user/:id/reseller` dengan `{"is_reseller": 1}`
+   - Admin: `PUT /api/admin/user/:id/reseller/zones` dengan `{"zones": ["biz.id", "web.id"]}` (atau `[]` untuk semua)
+   - Admin: `POST /api/admin/user/:id/reseller/webhook` dengan `webhook_url` → dapat plaintext `webhook_secret` (simpan sekali!)
+2. Web builder ENV vars:
+   ```
+   REGISTRAR_API_BASE_URL=https://api.pandi.id
+   REGISTRAR_API_EMAIL=reseller@webbuilder.id
+   REGISTRAR_API_PASSWORD=...
+   REGISTRAR_WEBHOOK_SECRET=64-hex-chars-from-admin
+   ```
+3. Login flow: server-side saja, JWT reseller **TTL 30 hari**. Simpan token
+   di DB (encrypted at rest) + auto-refresh sebelum expiry.
+
+### 14.2 Client Go (di `internal/registrar/`)
+
+Struct + factory dasar:
+
+```go
+type Client struct {
+    base   string
+    token  string
+    httpc  *http.Client
+}
+
+func NewClient(base, email, password string) (*Client, error) {
+    // POST /v1/api/user/login → dapat token
+    // Set c.token, return
+}
+
+func (c *Client) authHeader(req *http.Request) {
+    req.Header.Set("Authorization", "Bearer "+c.token)
+}
+```
+
+Methods yang perlu:
+
+| Method Go | Endpoint registrar-api |
+|-----------|------------------------|
+| `CheckDomain(sld string)` | `POST /reseller/domain/check` body `{"domain": "sld"}` → multi-zone results |
+| `RegisterDomain(req RegisterReq)` | `POST /reseller/domain/register` |
+| `JobStatus(jobID string)` | `GET /reseller/domain/register/:job_id/status` |
+| `UploadJobDoc(jobID, file, catID)` | `POST /reseller/domain/register/:job_id/documents` multipart |
+| `RetryJob(jobID string)` | `POST /reseller/domain/register/:job_id/retry` |
+| `ListDomains(externalUserID string)` | `GET /reseller/domain/list?external_user_id=X` |
+| `Renew(name string, req RenewReq)` | `POST /reseller/domain/:name/renew` |
+| `GetNS(name string)` | `GET /reseller/domain/:name/nameservers` |
+| `UpdateNS(name string, ns []string)` | `POST /reseller/domain/:name/nameservers` |
+| `ListDocuments(externalUserID)` | `GET /reseller/documents?external_user_id=X&all=true` |
+| `UploadDocument(externalUserID, file, catID)` | `POST /reseller/documents` multipart |
+
+### 14.3 Design keputusan penting
+
+**No ID masking di reseller API.** Web builder simpan **plain int** IDs
+langsung dari response ke DB:
+- `documents.id`, `invoice_id` → plain int (stable across APP_KEY rotation)
+- `job_id` → opaque string `job_xxx` (tidak masked, memang string ID)
+- `external_user_id` → UUID dari sisi web builder (opaque tag)
+
+Rationale: reseller API server-to-server, masking tidak protect enumeration
+(end-user tidak call langsung). Plain int lebih safe untuk long-term storage
++ debugging. Lihat backend plan §10.7.
+
+**Ownership isolation dua lapis:**
+1. **Cross-reseller** — JWT `is_reseller=1` + registrar-api middleware
+   auto-scope by `user_id`. Web builder A tidak bisa lihat web builder B.
+2. **Cross-end-user** — `external_user_id` tag di setiap dokumen + job.
+   Web builder WAJIB kirim `external_user_id` di:
+   - Setiap `POST /reseller/documents` upload (tanpa ini → 400)
+   - `GET /reseller/documents?external_user_id=X` untuk picker per-user
+   - `POST /reseller/domain/register` body — divalidasi match dengan
+     `document_ids[].external_user_id`
+
+Tanpa external_user_id filter, dokumen KTP UMKM A bisa leak ke UMKM B dropdown
+(tersimpan di user_id yang sama = web builder). CRITICAL.
+
+### 14.4 Flow domain purchase (end-to-end)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ User Browser                          Web Builder BE            │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Ketik "myshop" di wizard          → POST /sites/:id/domain- │
+│                                        purchase/check           │
+│                                                                 │
+│                                        ↓ proxy                  │
+│                                                                 │
+│                     Web Builder BE  → POST /reseller/domain/    │
+│                                        check                    │
+│                                        body: {"domain":"myshop"}│
+│                                                                 │
+│                     Registrar-API   ← results[] multi-zone      │
+│                                        + zone.require_document, │
+│                                        allowed_zones            │
+│                                                                 │
+│ 2. UI tampilkan opsi: myshop.biz.id, myshop.web.id, ...         │
+│    User pilih myshop.biz.id (zone.require_document=true)        │
+│    UI prompt upload KTP (karena require_document=true, no NIK)  │
+│                                                                 │
+│ 3. Upload KTP → POST /sites/:id/domain-purchase/upload          │
+│                        ↓ proxy                                  │
+│                     BE → POST /reseller/documents               │
+│                          multipart: file, external_user_id,     │
+│                                     category_id                 │
+│                          ← {id: 42} (plain int, no masking)     │
+│                     BE simpan doc_id=42 di web builder DB       │
+│                                                                 │
+│ 4. Checkout: POST /sites/:id/domain-purchase/register           │
+│                        ↓ proxy                                  │
+│                     BE → POST /reseller/domain/register         │
+│                          body: {                                │
+│                            domain, years, contact,              │
+│                            external_user_id: user.uuid,         │
+│                            document_ids: [42],                  │
+│                            payment_method: "midtrans",          │
+│                            idempotency_key: uuid.NewString()    │
+│                          }                                      │
+│                          ← {job_id, payment_url,                │
+│                             next_action: "wait_provisioning"}   │
+│                                                                 │
+│ 5. UI redirect ke payment_url (Midtrans Snap)                   │
+│                                                                 │
+│ 6. User bayar → Midtrans callback ke registrar-api              │
+│                                                                 │
+│ 7. Registrar-API → POST webhook_url (web builder BE):           │
+│                    /internal/registrar/webhook                  │
+│                    {job_id, status: "pending_provisioning",     │
+│                     signature: sha256=hex(hmac(secret,body))}   │
+│                                                                 │
+│ 8. Web builder BE verify HMAC → update site.status,             │
+│    push SSE ke user browser: "Domain sedang di-provision"       │
+│                                                                 │
+│ 9. Worker registrar-api EPP CREATE selesai → webhook lagi:      │
+│    {job_id, status: "active", expires_at}                       │
+│                                                                 │
+│ 10. UI notify user: "Domain aktif!" → publish site              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 14.5 Webhook receiver
+
+Backend endpoint: `POST /internal/registrar/webhook`
+
+Verify HMAC-SHA256:
+
+```go
+func verifyRegistrarWebhook(r *http.Request, secret string) ([]byte, error) {
+    // Read raw body (buffer)
+    body, _ := io.ReadAll(r.Body)
+
+    // Compute expected signature
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(body)
+    want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+
+    got := r.Header.Get("X-Registrar-Signature")
+    if !hmac.Equal([]byte(got), []byte(want)) {
+        return nil, errors.New("invalid signature")
+    }
+
+    // Verify timestamp (anti-replay, reject > 5 menit)
+    ts, _ := strconv.ParseInt(r.Header.Get("X-Registrar-Timestamp"), 10, 64)
+    if time.Since(time.Unix(ts, 0)) > 5*time.Minute {
+        return nil, errors.New("timestamp too old")
+    }
+    return body, nil
+}
+```
+
+Payload format:
+```json
+{
+  "job_id": "job_2f8b19a3",
+  "external_user_id": "user-uuid-in-web-builder",
+  "domain": "myshop.biz.id",
+  "status": "active",
+  "reason": "",
+  "expires_at": "2027-07-23T00:00:00Z",
+  "sent_at": "2026-07-23T14:30:00Z"
+}
+```
+
+Status values: `pending_payment`, `pending_document`, `pending_provisioning`,
+`active`, `failed`, `expired`. Map ke site status di web builder DB.
+
+**Retry policy** (server-side): registrar-api retry 5x dengan backoff
+`30s → 2m → 10m → 1h → 6h`. Kalau ke-5 fail, admin registrar-api bisa
+manual re-drive via `POST /admin/reseller/job/:job_id/webhook/redispatch`.
+
+### 14.6 Schema DB tambahan
+
+```sql
+-- Track domain purchase jobs per site
+CREATE TABLE site_domain_purchases (
+    id                UUID PRIMARY KEY,
+    site_id           UUID REFERENCES sites(id),
+    user_id           UUID REFERENCES users(id),
+    registrar_job_id  VARCHAR(64) UNIQUE,   -- job_xxx dari registrar-api
+    domain            VARCHAR(255) NOT NULL,
+    status            VARCHAR(32) NOT NULL, -- mirror registrar status
+    expires_at        TIMESTAMPTZ,
+    payment_url       TEXT,
+    invoice_id_str    VARCHAR(64),          -- plain int as string
+    external_user_id  VARCHAR(128),         -- kita pass ke registrar
+    document_id_int   BIGINT,               -- registrar doc id (plain int)
+    reason            TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ON site_domain_purchases (user_id, external_user_id);
+CREATE INDEX ON site_domain_purchases (status);
+```
+
+Isolation:
+- `external_user_id` = user.uuid di web builder (kita pass sebagai opaque)
+- `document_id_int` = plain int dari `POST /reseller/documents` response
+- `registrar_job_id` = opaque string, dipakai untuk polling + webhook match
+
+### 14.7 Zone whitelist & fitur promo
+
+Beberapa fitur di registrar-api yang perlu di-expose di UI web builder:
+
+- **Zone yang di-allow** — `zones.allowed_zones` di response check → tampilkan
+  dropdown TLD sesuai scope reseller (mis. hanya `.biz.id`, `.web.id`)
+- **`require_document` flag** — kalau `true` untuk zone yang dipilih, wizard
+  wajib step "Upload KTP" sebelum lanjut checkout
+- **`nik_auto_approved` bypass** — kalau `true` + user isi NIK, skip step
+  upload KTP (Kemenkominfo whitelist tertentu)
+- **`next_action` di register response** — konfirmasi backend flow:
+  `wait_provisioning` (langsung tunggu) vs `upload_document` (masih perlu doc)
+- **Promo code** (opsional) — pass `promo_code` di request register/renew,
+  backend silent-fallback ke harga normal kalau invalid (no error)
+
+### 14.8 Rate limit + error handling
+
+- Registrar-api tidak explicit rate limit reseller. Web builder harus
+  self-throttle:
+  - Max 100 register/hour untuk 1 reseller (soft internal limit)
+  - Exponential backoff kalau 502/503 dari registrar (EPP down)
+- Error mapping:
+  - 400/422 → surface ke UI (user salah input)
+  - 403 → policy error, hint dari message (mis. zone tidak allowed)
+  - 409 → conflict (domain sudah taken, idempotency key dobel)
+  - 5xx → retry di worker (bukan fail-fast di request)
+
+### 14.9 Referensi
+
+- Backend spec lengkap: [`../../Golang/registrar-api/plan.md`](../../Golang/registrar-api/plan.md)
+- Bruno API collection: `../../Golang/registrar-api/bruno/`
+- Frontend register-frontend plan (kalau reseller pakai owner dashboard):
+  `../../Nextjs/register-frontend/plan.md`
+- Reseller API endpoints (cheat-sheet):
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/reseller/domain/check` | Availability + pricing multi-zone |
+| POST | `/reseller/domain/register` | Register + payment URL |
+| GET  | `/reseller/domain/register/:job_id/status` | Polling status |
+| POST | `/reseller/domain/register/:job_id/documents` | Upload KTP post-payment |
+| POST | `/reseller/domain/register/:job_id/retry` | Retry EPP fail |
+| GET  | `/reseller/documents` | List dokumen (filter external_user_id) |
+| POST | `/reseller/documents` | Upload dokumen (tag external_user_id) |
+| GET  | `/reseller/domain/list` | List domain milik reseller |
+| POST | `/reseller/domain/:name/renew` | Renew |
+| GET  | `/reseller/domain/:name/nameservers` | Baca NS |
+| POST | `/reseller/domain/:name/nameservers` | Update NS |
+| GET  | `/reseller/config/webhook` | Read webhook URL |
+| POST | `/reseller/config/webhook` | Rotate secret |
+
+---
+
+## 15. Hal yang Perlu Dikonfirmasi Sebelum Mulai
 
 1. Target deploy: VPS single-node, Docker Swarm, atau k8s?
 2. Object storage: pakai S3 AWS, MinIO self-host, atau lokal disk dulu?

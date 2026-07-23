@@ -1,0 +1,59 @@
+# Air config untuk hot-reload dev API.
+#
+# Install sekali (global):
+#   go install github.com/air-verse/air@latest
+#
+# Jalankan dari `apps/api/`:
+#   cd apps/api && air
+#
+# Behavior: watch semua *.go + migrations SQL → rebuild → restart binary.
+# Log dari process ditampilkan real-time. Ctrl+C = graceful shutdown.
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Build binary ke folder tmp/ supaya tidak conflict dengan `go build ./...`
+  bin = "tmp/api"
+  cmd = "go build -o ./tmp/api ./cmd/server"
+
+  # File extensions yang trigger rebuild.
+  include_ext = ["go", "sql", "tmpl", "tpl", "html"]
+
+  # Folder yang di-skip supaya tidak infinite loop / spam rebuild.
+  exclude_dir = ["tmp", "uploads", "internal/db/migrations/testdata"]
+  exclude_file = []
+
+  # Regex untuk skip test file — kita mau rebuild saat production code berubah,
+  # bukan setiap kali edit test (yang dijalankan via `go test` terpisah).
+  exclude_regex = ["_test\\.go"]
+
+  # Skip file yang di-generate atau vendored.
+  exclude_unchanged = true
+  follow_symlink = false
+
+  # Kill signal + delay supaya listener socket sempat release sebelum restart.
+  kill_delay = "500ms"
+  send_interrupt = true
+  stop_on_error = true
+
+  # Debounce — kalau editor save banyak file sekaligus (mis. gofmt on save),
+  # tunggu 300ms sebelum rebuild.
+  delay = 300
+
+  # Log build error ke stdout supaya user lihat kenapa compile gagal.
+  log = "build-errors.log"
+
+[log]
+  # Timestamp di prefix log — helpful saat debug urutan event.
+  time = true
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  # Bersihkan tmp/ + build-errors.log saat air exit.
+  clean_on_exit = true

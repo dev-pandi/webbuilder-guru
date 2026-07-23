@@ -121,6 +121,97 @@ func TestWhois_RegisteredReturnsRecord(t *testing.T) {
 	}
 }
 
+func TestCheckDomain_SLDOnly_ReturnsMultiZoneEnvelope(t *testing.T) {
+	// SLD input "myshop" → registrar batch check → response include allowed_zones
+	// + results per zone. Verify client parse semua field dengan benar termasuk
+	// nested Price (float64) + Zone flags.
+	body := `{"data":{
+		"query":"myshop",
+		"allowed_zones":["id","co.id","com"],
+		"results":[
+			{"domain":"myshop.id","tld":"id","available":true,"price":{"currency":"IDR","register":250000,"renew":250000,"transfer":300000},"zone":{"name":"id","require_document":true,"auto_approved":false,"nik_auto_approved":true}},
+			{"domain":"myshop.co.id","tld":"co.id","available":false,"reason":"registered"},
+			{"domain":"myshop.com","tld":"com","available":true,"price":{"currency":"IDR","register":180000,"renew":180000,"transfer":180000}}
+		]
+	}}`
+	srv := newRouterServer(t, []route{{
+		method:   "POST",
+		pathHead: "/v1/api/user/reseller/domain/check",
+		body:     body,
+	}})
+	c := clientTo(t, srv.URL)
+
+	res, err := c.CheckDomain(context.Background(), "myshop")
+	if err != nil {
+		t.Fatalf("CheckDomain: %v", err)
+	}
+	if res.Query != "myshop" {
+		t.Errorf("Query = %q, want myshop", res.Query)
+	}
+	if len(res.AllowedZones) != 3 {
+		t.Errorf("AllowedZones len = %d, want 3", len(res.AllowedZones))
+	}
+	if len(res.Results) != 3 {
+		t.Fatalf("Results len = %d, want 3", len(res.Results))
+	}
+
+	// Row 1: available + price + zone with NIK flag.
+	r0 := res.Results[0]
+	if r0.Domain != "myshop.id" || !r0.Available {
+		t.Errorf("row0 = %+v", r0)
+	}
+	if r0.Price == nil || r0.Price.Register != 250000 {
+		t.Errorf("row0 Price = %+v, want Register=250000", r0.Price)
+	}
+	if r0.Zone == nil || !r0.Zone.RequireDocument || !r0.Zone.NikAutoApproved {
+		t.Errorf("row0 Zone flags = %+v", r0.Zone)
+	}
+
+	// Row 2: unavailable, reason only, no price/zone.
+	r1 := res.Results[1]
+	if r1.Available || r1.Reason != "registered" {
+		t.Errorf("row1 unavailability wrong: %+v", r1)
+	}
+	if r1.Price != nil || r1.Zone != nil {
+		t.Errorf("row1 should have nil Price/Zone: %+v", r1)
+	}
+
+	// Row 3: available, price, no zone (silent-absent).
+	r2 := res.Results[2]
+	if !r2.Available || r2.Price == nil || r2.Zone != nil {
+		t.Errorf("row2 shape wrong: %+v (price=%v zone=%v)", r2, r2.Price, r2.Zone)
+	}
+}
+
+func TestCheckDomain_FullDomain_ReturnsSingleResult(t *testing.T) {
+	body := `{"data":{
+		"query":"myshop.co.id",
+		"allowed_zones":["id","co.id","com"],
+		"results":[{"domain":"myshop.co.id","tld":"co.id","available":true,"price":{"currency":"IDR","register":300000,"renew":300000,"transfer":300000}}]
+	}}`
+	srv := newRouterServer(t, []route{{
+		method:   "POST",
+		pathHead: "/v1/api/user/reseller/domain/check",
+		body:     body,
+	}})
+	c := clientTo(t, srv.URL)
+
+	res, err := c.CheckDomain(context.Background(), "myshop.co.id")
+	if err != nil {
+		t.Fatalf("CheckDomain: %v", err)
+	}
+	if len(res.Results) != 1 || res.Results[0].Domain != "myshop.co.id" {
+		t.Errorf("expected single co.id entry, got %+v", res.Results)
+	}
+}
+
+func TestCheckDomain_EmptyDomain(t *testing.T) {
+	c := clientTo(t, "http://ignored")
+	if _, err := c.CheckDomain(context.Background(), "  "); err == nil {
+		t.Fatal("expected error on empty domain")
+	}
+}
+
 func TestCheckAvailability_FallbackWhenResellerFails(t *testing.T) {
 	// Reseller check → 500. Whois public → 200 "registered".
 	// Client harus fallback ke Whois dan report available=false.
