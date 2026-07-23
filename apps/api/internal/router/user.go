@@ -128,6 +128,10 @@ func MountUser(app *fiber.App, deps Deps) {
 		// client). Semua passthrough — web builder tidak simpan file.
 		authed.Get("/documents", deps.DomainPurchase.ListDocuments)
 		authed.Post("/documents", uploadLimit, deps.DomainPurchase.UploadDocument)
+		// Preview 1 dokumen (base64 data URI, ownership + external_user_id
+		// enforced di registrar + web builder proxy). Dipakai tombol "Lihat"
+		// di /settings/documents.
+		authed.Get("/documents/:id", deps.DomainPurchase.ShowDocument)
 	}
 
 	// Products

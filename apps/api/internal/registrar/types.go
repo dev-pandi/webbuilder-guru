@@ -234,6 +234,15 @@ type DocumentListResponse struct {
 	Pagination any        `json:"pagination,omitempty"`
 }
 
+// DocumentPreview — response dari GET /reseller/documents/:id.
+// `Image` sudah dalam data URI (`data:image/jpeg;base64,...`) siap di-render.
+// `Type` = MIME asli (image/jpeg, image/png, application/pdf).
+type DocumentPreview struct {
+	ID    uint64 `json:"id"`
+	Type  string `json:"type"`
+	Image string `json:"image"`
+}
+
 // --- Reseller webhook config (GET/POST /v1/api/user/reseller/config/webhook) ---
 
 // WebhookConfig = shape yang di-return registrar untuk config webhook.

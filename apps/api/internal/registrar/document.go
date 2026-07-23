@@ -169,6 +169,27 @@ func (c *Client) ListDocuments(
 	return &env.Data, nil
 }
 
+// ShowDocument — GET /v1/api/user/reseller/documents/:id
+//
+// Ambil content dokumen (base64 data URI) untuk preview di UI. Ownership +
+// external_user_id di-enforce di registrar. Web builder proxy WAJIB inject
+// externalUserID dari JWT (bukan trust client) supaya user A tidak preview
+// KTP user B via ID guessing.
+func (c *Client) ShowDocument(ctx context.Context, externalUserID string, id uint64) (*DocumentPreview, error) {
+	if id == 0 {
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "document id kosong"}
+	}
+	path := "/v1/api/user/reseller/documents/" + strconv.FormatUint(id, 10)
+	if externalUserID != "" {
+		path += "?external_user_id=" + url.QueryEscape(externalUserID)
+	}
+	var env envelope[DocumentPreview]
+	if err := c.do(ctx, "GET", path, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
 // UploadDocument — POST /v1/api/user/reseller/documents (pre-attach flow).
 //
 // Beda dari UploadDocumentForJob (yang scope ke 1 job untuk post-payment

@@ -13,7 +13,6 @@
 // yang butuh verifikasi identitas (KTP/NPWP).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import {
   FileText,
   Loader2,
@@ -21,8 +20,9 @@ import {
   RefreshCw,
   Upload,
   X,
-  ExternalLink,
+  Eye,
   Files,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken } from "@/lib/api";
@@ -31,6 +31,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ALLOWED_MIMES = ["image/png", "image/jpeg", "image/jpg", "application/pdf"];
@@ -201,6 +209,7 @@ export function DocumentsCard() {
 }
 
 function DocumentRow({ doc }: { doc: Document }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
   return (
     <li className="flex flex-wrap items-center gap-3 py-3">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -219,15 +228,107 @@ function DocumentRow({ doc }: { doc: Document }) {
           Di-upload {formatDate(doc.created_at)}
         </div>
       </div>
-      {doc.doc_url && (
-        <Button variant="ghost" size="sm" asChild className="gap-1.5">
-          <Link href={doc.doc_url} target="_blank" rel="noopener noreferrer">
-            Lihat
-            <ExternalLink className="size-3" />
-          </Link>
-        </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setPreviewOpen(true)}
+        className="gap-1.5"
+      >
+        <Eye className="size-3.5" />
+        Lihat
+      </Button>
+      {previewOpen && (
+        <PreviewDialog doc={doc} onClose={() => setPreviewOpen(false)} />
       )}
     </li>
+  );
+}
+
+// PreviewDialog fetch content via /api/v1/documents/:id (proxied ke registrar
+// dengan external_user_id di-inject dari JWT). Response `image` sudah data URI
+// (`data:image/png;base64,...` atau `data:application/pdf;base64,...`),
+// langsung set ke <img> / <iframe> tanpa transform.
+function PreviewDialog({ doc, onClose }: { doc: Document; onClose: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState<{ image: string; type: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ id: number; type: string; image: string }>(`/api/v1/documents/${doc.id}`)
+      .then((res) => {
+        if (!cancelled) setPreview({ image: res.image, type: res.type });
+      })
+      .catch((e) => {
+        if (!cancelled) setErr((e as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc.id]);
+
+  const isPDF = preview?.type === "application/pdf";
+  const isImage = preview?.type?.startsWith("image/");
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <FileText className="size-4 text-primary" />
+            {doc.name || "Preview dokumen"}
+          </DialogTitle>
+          <DialogDescription>
+            {doc.category_name ? `Kategori: ${doc.category_name} · ` : ""}
+            Di-upload {formatDate(doc.created_at)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[70vh] overflow-auto rounded-lg border bg-muted/20">
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Memuat preview…
+            </div>
+          )}
+          {!loading && err && (
+            <div className="flex items-start gap-2 p-4 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
+          {!loading && preview && isImage && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={preview.image}
+              alt={doc.name || "dokumen"}
+              className="mx-auto block max-h-[65vh] w-auto object-contain"
+            />
+          )}
+          {!loading && preview && isPDF && (
+            <iframe
+              src={preview.image}
+              title={doc.name || "dokumen"}
+              className="h-[65vh] w-full"
+            />
+          )}
+          {!loading && preview && !isImage && !isPDF && (
+            <p className="p-4 text-sm text-muted-foreground">
+              Format {preview.type} tidak bisa di-preview inline.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Tutup
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

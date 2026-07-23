@@ -982,6 +982,31 @@ func (h *Handler) UploadDocument(c *fiber.Ctx) error {
 	return httpx.OK(c, doc)
 }
 
+// ShowDocument — GET /api/v1/documents/:id
+//
+// Proxy preview dokumen (base64 data URI). external_user_id di-inject dari
+// JWT claims — bukan trust client — supaya user A tidak preview KTP user B
+// via ID guessing. Registrar ownership check jadi defence-in-depth kedua.
+func (h *Handler) ShowDocument(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	preview, err := h.registrar.ShowDocument(c.Context(), cl.UserID.String(), id)
+	if err != nil {
+		return proxyRegistrarErr(c, "registrar_error", err)
+	}
+	return httpx.OK(c, preview)
+}
+
 // ListCategories — GET /api/v1/documents/categories
 //
 // Proxy ke registrar public endpoint. UI pakai untuk populate dropdown
