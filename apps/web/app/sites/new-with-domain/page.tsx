@@ -42,7 +42,10 @@ export default function NewWithDomainPage() {
   // failed/expired ("Mulai pembelian baru") supaya tidak perlu ngetik ulang.
   const prefillDomain = (searchParams.get("domain") ?? "").toLowerCase().trim();
 
-  // Auth gate.
+  // Auth gate + profile fetch. `me` di-refresh saat window regains focus
+  // supaya user yang edit profil di tab lain (atau /settings/profile) langsung
+  // dapat data baru begitu balik ke wizard — cegah stale "Profil belum
+  // lengkap" warning padahal sudah diisi.
   const [ready, setReady] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
   useEffect(() => {
@@ -50,13 +53,25 @@ export default function NewWithDomainPage() {
       router.replace("/login");
       return;
     }
-    api<Me>("/api/v1/auth/me")
-      .then(setMe)
-      .catch(() => {
-        clearTokens();
-        router.replace("/login");
-      })
-      .finally(() => setReady(true));
+    const fetchMe = () =>
+      api<Me>("/api/v1/auth/me")
+        .then(setMe)
+        .catch(() => {
+          clearTokens();
+          router.replace("/login");
+        });
+    fetchMe().finally(() => setReady(true));
+
+    // Re-fetch saat tab kembali fokus atau document visible lagi.
+    const onFocus = () => {
+      if (getAccessToken()) void fetchMe();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, [router]);
 
   // Wizard state.
@@ -87,9 +102,9 @@ export default function NewWithDomainPage() {
     [],
   );
 
-  // NIK opsional untuk semua TLD — kalau user isi, dipakai (zone yang
-  // nik_auto_approved bisa skip upload KTP). Kalau kosong, purchase lanjut
-  // dan user upload dokumen di halaman pending kalau zone butuh.
+  // NIK selalu opsional — tidak block frontend. Kalau ternyata registrar
+  // reject (mis. zone .id yang butuh NIK per regulasi), user akan dapat
+  // pesan Indonesia jelas dari backend + friendly toast.
   const missingProfile = missingProfileFields(me);
   const profileComplete = me != null && missingProfile.length === 0;
 

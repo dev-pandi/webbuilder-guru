@@ -132,8 +132,11 @@ func New(deps Deps) *fiber.App {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(deps.Cfg.CORSOrigins, ","),
 		AllowCredentials: true,
-		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
-		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+		// Idempotency-Key wajib di whitelist — dipakai POST /domains/purchase +
+		// /domains/renew supaya browser tidak block preflight (CORS spec: custom
+		// header selain simple list harus di-declare eksplisit).
+		AllowHeaders: "Origin,Content-Type,Accept,Authorization,Idempotency-Key",
+		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	}))
 
 	MountGlobal(app, deps)

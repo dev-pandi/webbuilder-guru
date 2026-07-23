@@ -307,31 +307,78 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	return lastErr
 }
 
-// decodeError extracts { "error": { "code", "message" } } if present.
-// Falls back to the raw body when the shape doesn't match — better to leak a
-// bit of the response than swallow a useful diagnostic.
+// decodeError extract pesan error dari beberapa shape yang di-return registrar
+// (dan variasi Go/Gin/Fiber lain). Fallback ke raw body kalau tidak match —
+// better leak sedikit dari swallow diagnostic useful.
+//
+// Shape yang dikenali (dicoba berurutan):
+//  1. { "error": { "code", "message" } }                — nested envelope
+//  2. { "message": "..." }                              — flat singular
+//  3. { "messages": "..." } atau ["..." , ...]          — registrar-api Gin
+//  4. { "error": "..." } string flat                    — beberapa gateway
 func decodeError(status int, raw []byte) *APIError {
 	var wire struct {
 		Error struct {
 			Code    string `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
-		Message string `json:"message"` // some endpoints use flat message
+		ErrorFlat json.RawMessage `json:"-"` // handled via separate parse
+		Message   string          `json:"message"`
+		Messages  json.RawMessage `json:"messages"`
+		Code      json.RawMessage `json:"code"` // registrar kirim int, bisa string juga
 	}
 	msg := ""
 	code := ""
 	if err := json.Unmarshal(raw, &wire); err == nil {
-		if wire.Error.Message != "" {
+		switch {
+		case wire.Error.Message != "":
 			code = wire.Error.Code
 			msg = wire.Error.Message
-		} else if wire.Message != "" {
+		case wire.Message != "":
 			msg = wire.Message
+		case len(wire.Messages) > 0:
+			msg = flattenMessages(wire.Messages)
+		}
+		// Kalau ada `code` int, propagate sebagai string (mis. "400").
+		if code == "" && len(wire.Code) > 0 {
+			var n int
+			if err := json.Unmarshal(wire.Code, &n); err == nil && n > 0 {
+				code = fmt.Sprintf("%d", n)
+			} else {
+				var s string
+				if err := json.Unmarshal(wire.Code, &s); err == nil {
+					code = s
+				}
+			}
+		}
+	}
+	// Fallback ke {"error":"string"} shape (bukan object).
+	if msg == "" {
+		var flat struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(raw, &flat); err == nil && flat.Error != "" {
+			msg = flat.Error
 		}
 	}
 	if msg == "" {
 		msg = snip(raw)
 	}
 	return &APIError{Status: status, Code: code, Msg: msg}
+}
+
+// flattenMessages handle `messages` sebagai string tunggal atau []string.
+// Registrar's respondErr biasanya string, tapi validator bisa balik array.
+func flattenMessages(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		return strings.Join(arr, "; ")
+	}
+	return ""
 }
 
 // snip caps body previews so log lines don't blow up on huge error dumps.

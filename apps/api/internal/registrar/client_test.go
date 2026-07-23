@@ -190,6 +190,37 @@ func TestDecodeError_FlatMessageFallback(t *testing.T) {
 	}
 }
 
+func TestDecodeError_RegistrarMessagesPluralShape(t *testing.T) {
+	// Registrar-api (Gin) balik {"code":400,"messages":"..."} — beda dari
+	// {"error":{...}} pattern web builder. Verify parser handle keduanya.
+	raw := []byte(`{"code":400,"messages":"contact.nik wajib untuk domain .id"}`)
+	e := decodeError(400, raw)
+	if e.Msg != "contact.nik wajib untuk domain .id" {
+		t.Errorf("Msg = %q, want clean 'contact.nik wajib ...' (bukan raw JSON)", e.Msg)
+	}
+	if e.Code != "400" {
+		t.Errorf("Code = %q, want '400' (dari field code int)", e.Code)
+	}
+}
+
+func TestDecodeError_MessagesArrayShape(t *testing.T) {
+	// Validator balik "messages":["field1 wajib","field2 invalid"] → join dengan ";".
+	raw := []byte(`{"code":422,"messages":["email wajib","password minimal 8"]}`)
+	e := decodeError(422, raw)
+	if e.Msg != "email wajib; password minimal 8" {
+		t.Errorf("Msg = %q, want joined array", e.Msg)
+	}
+}
+
+func TestDecodeError_ErrorStringShape(t *testing.T) {
+	// Beberapa gateway balik {"error":"..."} string flat.
+	raw := []byte(`{"error":"upstream timeout"}`)
+	e := decodeError(504, raw)
+	if e.Msg != "upstream timeout" {
+		t.Errorf("Msg = %q, want 'upstream timeout'", e.Msg)
+	}
+}
+
 func TestDecodeError_NonJSON_ReturnsSnippedBody(t *testing.T) {
 	raw := []byte("<html>500 Internal Error</html>")
 	e := decodeError(500, raw)

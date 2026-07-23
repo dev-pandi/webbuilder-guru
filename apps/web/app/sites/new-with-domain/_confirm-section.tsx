@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { CheckEntry, Me, PaymentMethod } from "./_types";
-import { formatIDR } from "./_helpers";
+import { formatIDR, FIELD_LABEL } from "./_helpers";
 import { ProfileBlock } from "./_profile-block";
 import { DocumentPicker } from "./_document-picker";
 
@@ -181,7 +181,8 @@ export function ConfirmSection(props: {
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
           {!profileComplete && (
             <Badge variant="secondary" className="justify-center text-xs">
-              Lengkapi profil dulu
+              Kurang:{" "}
+              {missingProfile.map((k) => FIELD_LABEL[k] ?? k).join(", ")}
             </Badge>
           )}
           <Button

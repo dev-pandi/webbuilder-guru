@@ -44,8 +44,8 @@ export function friendlyError(raw: string, tld?: string): string {
   if (lower.includes("profile_incomplete")) {
     return "Lengkapi profil dulu di halaman Pengaturan → Profil.";
   }
-  if (lower.includes("nik_required")) {
-    return "NIK wajib untuk domain .id. Isi NIK di Pengaturan → Profil dulu.";
+  if (lower.includes("nik_required") || lower.includes("contact.nik") || lower.includes("nik wajib")) {
+    return "Domain ini butuh NIK (KTP) dari registrar. Isi NIK di Pengaturan → Profil dulu.";
   }
   if (lower.includes("domain tidak tersedia") || lower.includes("already registered")) {
     return "Domain ini sudah dimiliki orang lain. Coba nama lain.";
@@ -59,10 +59,11 @@ export function friendlyError(raw: string, tld?: string): string {
   return raw;
 }
 
-// missingProfileFields — turunkan daftar field kosong dari profile object.
-// NIK selalu opsional: kalau diisi, registrar boleh pakai untuk skip upload
-// KTP di zone yang `nik_auto_approved`. Kalau kosong, purchase tetap jalan
-// dan user upload dokumen di halaman pending status kalau zone butuh.
+// missingProfileFields — daftar field kosong dari profile. NIK SELALU
+// opsional di sisi frontend — kalau registrar zone butuh NIK (mis. .id per
+// regulasi Kemenkominfo), backend yang tangkap + balik pesan Indonesia
+// yang jelas. Kita tidak mau block user di sini karena kebanyakan TLD
+// (.com/.net/dst.) tidak butuh NIK.
 export function missingProfileFields(me: Me | null): Array<keyof Me> {
   if (!me) return [];
   return REQUIRED_PROFILE_FIELDS.filter(

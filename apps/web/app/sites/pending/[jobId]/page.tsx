@@ -92,6 +92,26 @@ function isTerminal(status: string) {
   return status === "active" || status === "failed" || status === "expired";
 }
 
+// friendlyRetryConflict — pattern-match error 409 dari POST /purchases/:id/retry
+// supaya user tidak lihat pesan teknis registrar. Ada 2 kasus umum:
+//   1. Job tidak punya invoice_id/domain_row_id → gagal sebelum payment init,
+//      tidak recoverable. User harus register ulang.
+//   2. Status bukan `failed` (mis. sudah active atau masih pending) → retry
+//      tidak masuk akal untuk state itu.
+function friendlyRetryConflict(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("invoice_id atau domain_row_id") ||
+    lower.includes("mungkin gagal sebelum payment")
+  ) {
+    return "Job ini tidak bisa di-coba lagi karena gagal sebelum pembayaran ter-inisialisasi. Klik 'Mulai pembelian baru' untuk mengulang dari awal.";
+  }
+  if (lower.includes("hanya job dengan status=failed")) {
+    return "Job ini bukan dalam status 'failed' — retry tidak berlaku. Refresh halaman untuk lihat status terbaru.";
+  }
+  return raw;
+}
+
 export default function PendingDomainPage() {
   const router = useRouter();
   const params = useParams<{ jobId: string }>();
@@ -102,6 +122,10 @@ export default function PendingDomainPage() {
   const [err, setErr] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false); // job dihapus / expired dari registrar
   const [retrying, setRetrying] = useState(false);
+  // Kalau retry balik 409 "invoice_id atau domain_row_id" (gagal sebelum
+  // payment init), job tidak bisa direcover. Hide tombol Coba lagi + emphasize
+  // Mulai baru supaya user tidak stuck klik retry berulang.
+  const [retryUnrecoverable, setRetryUnrecoverable] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Auth guard.
@@ -188,7 +212,22 @@ export default function PendingDomainPage() {
         /* diamkan, polling akan pickup */
       }
     } catch (e) {
-      setErr((e as Error).message);
+      // Detect "job tidak bisa di-retry" — bisa datang sebagai 409 direct
+      // (backend proxy status baru) atau embedded di 502 message (backend
+      // lama). Pattern-match message untuk cover keduanya.
+      const raw = (e as Error).message;
+      const isUnrecoverable =
+        raw.toLowerCase().includes("invoice_id atau domain_row_id") ||
+        raw.toLowerCase().includes("mungkin gagal sebelum payment");
+      if (isUnrecoverable || (e instanceof ApiError && e.status === 409)) {
+        const msg = friendlyRetryConflict(raw);
+        setErr(msg);
+        toast.error(msg);
+        // Cegah user click retry lagi — tombol akan hidden, ganti Mulai baru.
+        if (isUnrecoverable) setRetryUnrecoverable(true);
+      } else {
+        setErr(raw);
+      }
     } finally {
       setRetrying(false);
     }
@@ -312,25 +351,35 @@ export default function PendingDomainPage() {
                         </p>
                       )}
                       <div className="mt-4 flex flex-wrap gap-2">
+                        {/* Retry cuma muncul kalau bukan "unrecoverable"
+                            (gagal sebelum payment init). Setelah 1x klik yang
+                            balik 409, retryUnrecoverable=true → hide + fokus
+                            ke Mulai baru. */}
+                        {!retryUnrecoverable && (
+                          <Button
+                            onClick={onRetry}
+                            disabled={retrying}
+                            className="gap-2"
+                            variant="outline"
+                          >
+                            {retrying ? (
+                              <>
+                                <Loader2 className="size-4 animate-spin" />
+                                Mencoba lagi…
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw className="size-4" />
+                                Coba lagi
+                              </>
+                            )}
+                          </Button>
+                        )}
                         <Button
-                          onClick={onRetry}
-                          disabled={retrying}
+                          asChild
+                          variant={retryUnrecoverable ? "default" : "ghost"}
                           className="gap-2"
-                          variant="outline"
                         >
-                          {retrying ? (
-                            <>
-                              <Loader2 className="size-4 animate-spin" />
-                              Mencoba lagi…
-                            </>
-                          ) : (
-                            <>
-                              <RotateCcw className="size-4" />
-                              Coba lagi
-                            </>
-                          )}
-                        </Button>
-                        <Button asChild variant="ghost" className="gap-2">
                           <Link href={`/sites/new-with-domain?domain=${encodeURIComponent(purchase.domain)}`}>
                             Mulai pembelian baru
                             <ArrowRight className="size-4" />

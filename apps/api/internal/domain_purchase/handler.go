@@ -204,10 +204,11 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusBadRequest, "profile_incomplete",
 			"Lengkapi profil dulu di /settings/profile — field kosong: "+strings.Join(missing, ", "))
 	}
-	// NIK opsional — kalau user sudah isi, forward ke registrar (bisa dipakai
-	// untuk zone `.id` yang punya `nik_auto_approved` supaya skip upload KTP).
-	// Kalau kosong, purchase tetap jalan; user akan dituntun upload dokumen di
-	// halaman pending status kalau zone butuh.
+	// NIK selalu opsional di sisi kita. Kalau ternyata zone butuh (mis. .id
+	// per regulasi Kemenkominfo), registrar akan reject → error di-map ke
+	// pesan friendly Indonesia via friendlyError frontend + decodeError shape
+	// handling (client.go). Web builder tidak enforce upfront supaya TLD
+	// non-.id (yang majority) tidak kena syarat NIK.
 
 	// Idempotency key per request. Frontend seharusnya kirim key sendiri
 	// (dari UUID checkout), tapi kalau tidak, kita generate di sini —
@@ -561,7 +562,7 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 
 	resp, err := h.registrar.RetryDomain(c.Context(), jobID)
 	if err != nil {
-		return httpx.Err(c, fiber.StatusBadGateway, "registrar_retry_failed", err.Error())
+		return proxyRegistrarErr(c, "registrar_retry_failed", err)
 	}
 	// Sync status lokal — registrar sudah pindahkan ke pending_provisioning
 	// biasanya. Reason di-clear (retry sukses).
@@ -1226,6 +1227,22 @@ func verifyHMAC(secret, header string, body []byte) bool {
 }
 
 // ------------- helpers -------------
+
+// proxyRegistrarErr map error dari registrar client ke response Fiber dengan
+// status semantic yang benar:
+//   - APIError 4xx (client-side issue di registrar) → propagate status apa adanya
+//     supaya frontend bisa branch (mis. 409 conflict, 404 not found).
+//   - APIError 5xx / network error → 502 Bad Gateway (upstream problem).
+//
+// `code` = business error code untuk frontend (mis. "registrar_retry_failed").
+// Pesan tetap dari registrar (sudah di-clean via decodeError shape handling).
+func proxyRegistrarErr(c *fiber.Ctx, code string, err error) error {
+	var apiErr *registrar.APIError
+	if errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 {
+		return httpx.Err(c, apiErr.Status, code, apiErr.Msg)
+	}
+	return httpx.Err(c, fiber.StatusBadGateway, code, err.Error())
+}
 
 func toResp(p *Purchase) purchaseResp {
 	out := purchaseResp{
