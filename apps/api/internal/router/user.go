@@ -122,6 +122,12 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/purchases/:job_id/documents", uploadLimit, deps.DomainPurchase.AttachDocument)
 		// Categories dropdown untuk form upload. Read-only, no limit.
 		authed.Get("/documents/categories", deps.DomainPurchase.ListCategories)
+		// Reseller document library (pre-attach flow) — user upload dokumen
+		// SEBELUM checkout, dapat ID, kirim di POST /purchase document_ids[].
+		// Scoped by user UUID (external_user_id inject dari JWT, bukan trust
+		// client). Semua passthrough — web builder tidak simpan file.
+		authed.Get("/documents", deps.DomainPurchase.ListDocuments)
+		authed.Post("/documents", uploadLimit, deps.DomainPurchase.UploadDocument)
 	}
 
 	// Products

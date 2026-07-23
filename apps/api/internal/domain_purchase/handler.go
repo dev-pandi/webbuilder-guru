@@ -100,11 +100,12 @@ type zoneBlock struct {
 }
 
 type purchaseReq struct {
-	Domain        string `json:"domain"`
-	Years         int    `json:"years"`
-	PaymentMethod string `json:"payment_method"`
-	ReturnURL     string `json:"return_url"`
-	PromoCode     string `json:"promo_code,omitempty"` // forwarded ke registrar
+	Domain        string   `json:"domain"`
+	Years         int      `json:"years"`
+	PaymentMethod string   `json:"payment_method"`
+	ReturnURL     string   `json:"return_url"`
+	PromoCode     string   `json:"promo_code,omitempty"`   // forwarded ke registrar
+	DocumentIDs   []uint64 `json:"document_ids,omitempty"` // pre-attach docs
 }
 
 type purchaseResp struct {
@@ -203,12 +204,10 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusBadRequest, "profile_incomplete",
 			"Lengkapi profil dulu di /settings/profile — field kosong: "+strings.Join(missing, ", "))
 	}
-	// NIK wajib untuk domain .id (Kemenkominfo regulation). Kalau user belum
-	// isi, arahkan ke halaman profil. Field NIK sudah tersedia sejak migrasi 0012.
-	if isIDDomain(req.Domain) && strings.TrimSpace(user.Nik) == "" {
-		return httpx.Err(c, fiber.StatusBadRequest, "nik_required_for_id",
-			"Domain .id wajib butuh NIK. Isi NIK dulu di /settings/profile lalu coba lagi.")
-	}
+	// NIK opsional — kalau user sudah isi, forward ke registrar (bisa dipakai
+	// untuk zone `.id` yang punya `nik_auto_approved` supaya skip upload KTP).
+	// Kalau kosong, purchase tetap jalan; user akan dituntun upload dokumen di
+	// halaman pending status kalau zone butuh.
 
 	// Idempotency key per request. Frontend seharusnya kirim key sendiri
 	// (dari UUID checkout), tapi kalau tidak, kita generate di sini —
@@ -226,6 +225,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		PaymentMethod:  req.PaymentMethod,
 		ReturnURL:      req.ReturnURL,
 		PromoCode:      strings.TrimSpace(req.PromoCode),
+		DocumentIDs:    req.DocumentIDs,
 		Contact: registrar.Contact{
 			Name:        user.Name,
 			Email:       user.Email,
@@ -874,6 +874,113 @@ func (h *Handler) AttachDocument(c *fiber.Ctx) error {
 	return httpx.OK(c, resp)
 }
 
+// ListDocuments — GET /api/v1/documents
+//
+// Proxy list dokumen registrar user tsb (scoped by user UUID sebagai
+// external_user_id — enforce di sini, TIDAK boleh trust query param dari
+// client). Cegah user A lihat KTP user B walaupun sama-sama reseller sisi
+// registrar.
+//
+// Query params:
+//   category_id: opsional filter (0/kosong = semua)
+//   all=true:    non-paginated (buat dropdown/picker)
+//   page, page_size: standar pagination kalau all=false
+//
+// Response: passthrough envelope registrar (items[] + pagination).
+func (h *Handler) ListDocuments(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	catID, _ := strconv.ParseUint(c.Query("category_id"), 10, 64)
+	all := strings.EqualFold(c.Query("all"), "true")
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	perPage, _ := strconv.Atoi(c.Query("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage <= 0 || perPage > 100 {
+		perPage = 20
+	}
+	res, err := h.registrar.ListDocuments(c.Context(), cl.UserID.String(), catID, page, perPage, all)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	return httpx.OK(c, res)
+}
+
+// UploadDocument — POST /api/v1/documents (multipart)
+//
+// Transparent proxy: user upload file → di-forward langsung ke registrar
+// dengan external_user_id di-inject dari JWT claims (user TIDAK boleh set
+// external_user_id sendiri — kalau bisa, user A bisa tag KTP ke user B).
+//
+// Web builder TIDAK simpan file. Response berisi ID dokumen registrar yang
+// bisa dipakai frontend untuk pre-attach di POST /domains/purchase.
+//
+// Multipart fields:
+//   file        : binary (PNG/JPG/PDF, max 8 MiB — enforce di Fiber BodyLimit + registrar)
+//   category_id : int (WAJIB, dari /documents/categories)
+//   name        : opsional label
+func (h *Handler) UploadDocument(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return httpx.BadRequest(c, "field 'file' wajib (multipart)")
+	}
+	categoryID, _ := strconv.ParseUint(c.FormValue("category_id"), 10, 64)
+	if categoryID == 0 {
+		return httpx.BadRequest(c, "field 'category_id' wajib (dari /documents/categories, contoh 1 = KTP)")
+	}
+	name := strings.TrimSpace(c.FormValue("name"))
+
+	// Tentukan MIME — trust Content-Type header, fallback ke ekstensi.
+	mime := fh.Header.Get("Content-Type")
+	if mime == "" {
+		switch strings.ToLower(filepath.Ext(fh.Filename)) {
+		case ".png":
+			mime = "image/png"
+		case ".jpg", ".jpeg":
+			mime = "image/jpeg"
+		case ".pdf":
+			mime = "application/pdf"
+		}
+	}
+
+	src, err := fh.Open()
+	if err != nil {
+		return httpx.Internal(c, "buka file gagal")
+	}
+	defer src.Close()
+
+	// external_user_id di-inject dari JWT — NEVER trust request param.
+	doc, err := h.registrar.UploadDocument(
+		c.Context(),
+		cl.UserID.String(),
+		categoryID,
+		name,
+		fh.Filename,
+		mime,
+		src,
+	)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_upload_failed", err.Error())
+	}
+	return httpx.OK(c, doc)
+}
+
 // ListCategories — GET /api/v1/documents/categories
 //
 // Proxy ke registrar public endpoint. UI pakai untuk populate dropdown
@@ -1133,13 +1240,6 @@ func toResp(p *Purchase) purchaseResp {
 		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)
 	}
 	return out
-}
-
-// isIDDomain deteksi TLD .id (termasuk .co.id, .ac.id, dst.).
-// Case-insensitive; strip trailing "." kalau ada FQDN.
-func isIDDomain(domain string) bool {
-	d := strings.ToLower(strings.TrimRight(strings.TrimSpace(domain), "."))
-	return strings.HasSuffix(d, ".id")
 }
 
 func missingProfileFields(u *auth.User) []string {

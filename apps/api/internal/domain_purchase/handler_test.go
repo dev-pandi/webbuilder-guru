@@ -31,27 +31,6 @@ func TestIsTerminal(t *testing.T) {
 	}
 }
 
-func TestIsIDDomain(t *testing.T) {
-	cases := map[string]bool{
-		"toko.id":         true,
-		"MYSHOP.ID":       true,
-		"foo.co.id":       true,
-		"foo.ac.id":       true,
-		"bar.my.id.":      true, // trailing dot dibersihkan
-		"  space.id  ":    true,
-		"example.com":     false,
-		"foo.id.net":      false, // TLD net, bukan id
-		"":                false,
-		"id":              false, // no TLD delimiter
-		"nested.mid.name": false,
-	}
-	for input, want := range cases {
-		if got := isIDDomain(input); got != want {
-			t.Errorf("isIDDomain(%q) = %v, want %v", input, got, want)
-		}
-	}
-}
-
 func TestMissingProfileFields(t *testing.T) {
 	cases := []struct {
 		name string

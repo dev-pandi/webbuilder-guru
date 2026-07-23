@@ -141,6 +141,12 @@ type RegisterRequest struct {
 	// akan cari promo aktif dgn code ini + apply diskon. Kalau code tidak
 	// valid, silent fallback ke harga normal (bukan error).
 	PromoCode string `json:"promo_code,omitempty"`
+	// DocumentIDs = ID dokumen dari registrar (hasil POST /reseller/documents
+	// dengan tag external_user_id sama). Kalau zone butuh dokumen dan array
+	// non-empty, registrar auto-attach → job skip pending_document, langsung
+	// ke pending_provisioning. Kosong = flow post-payment (user upload nanti
+	// via POST /register/:job_id/documents).
+	DocumentIDs []uint64 `json:"document_ids,omitempty"`
 }
 
 // RegisterResponse is the accepted-but-pending reply. Real registration is
@@ -203,6 +209,29 @@ type DomainListItem struct {
 type DomainListResponse struct {
 	Items      []DomainListItem `json:"items"`
 	Pagination any              `json:"pagination,omitempty"`
+}
+
+// --- Reseller document library (GET/POST /v1/api/user/reseller/documents) ---
+
+// Document = 1 baris dokumen di registrar's document library, di-tag ke
+// external_user_id (= web builder users.id UUID) supaya tidak mix antar
+// end-user. Web builder NEVER simpan file — hanya cache ID + metadata untuk
+// picker UI. `DocURL` bisa jadi absolute atau relative path dari registrar.
+type Document struct {
+	ID             uint64 `json:"id"`
+	Name           string `json:"name"`
+	CategoryID     uint64 `json:"category_id"`
+	CategoryName   string `json:"category_name,omitempty"`
+	DocURL         string `json:"doc_url"`
+	ExternalUserID string `json:"external_user_id,omitempty"`
+	CreatedAt      string `json:"created_at"`
+}
+
+// DocumentListResponse — response paginated dari GET /reseller/documents.
+// `Pagination` any supaya kalau registrar tweak shape tidak break.
+type DocumentListResponse struct {
+	Items      []Document `json:"items"`
+	Pagination any        `json:"pagination,omitempty"`
 }
 
 // --- Reseller webhook config (GET/POST /v1/api/user/reseller/config/webhook) ---
