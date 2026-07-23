@@ -167,6 +167,11 @@ go test -race -timeout 90s ./...            # semua paket
 go test -race -run TestName ./internal/pkg  # single test / paket tertentu
 ```
 
+Integration test yang butuh Postgres: set `TEST_DATABASE_URL` (contoh:
+`postgres://test:test@localhost:5432/webbuilder_test?sslmode=disable`). Kalau
+kosong, test SKIP otomatis. CI selalu set (Postgres service di
+[.github/workflows/ci.yml](../.github/workflows/ci.yml)).
+
 **Dashboard (Next.js)**:
 
 ```bash
@@ -214,8 +219,8 @@ Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2
 **Arsitektur**:
 - Web builder API = **transparent proxy** ke `registrar-api` (Go/Gin di `/Users/pandi-rofai/Project/Golang/registrar-api`).
 - Dokumen sensitif (KTP/NPWP) **TIDAK disimpan di web builder** — multipart di-forward langsung ke registrar. Single source of truth = registrar (menghindari duplikasi PII).
-- Client wrapper: [apps/api/internal/registrar/](../apps/api/internal/registrar/) — `Client.CheckDomain / RegisterDomain / GetRegisterStatus / RetryDomain / UploadDocumentForJob / Login / SetAPIKey`.
-- Local job tracker: [apps/api/internal/domain_purchase/](../apps/api/internal/domain_purchase/) — mirror shallow dari `reseller_domain_jobs` di registrar, hanya cache status + link ke `sites.id`.
+- Client wrapper: [apps/api/internal/registrar/](../apps/api/internal/registrar/) — `Client.CheckDomain / RegisterDomain / GetRegisterStatus / RetryDomain / RenewDomain / ListDomains / GetNameservers / UpdateNameservers / Whois / UploadDocumentForJob / Login / SetAPIKey`. `SetAPIKey` thread-safe (`sync.RWMutex`) untuk background refresh loop.
+- Local job tracker: [apps/api/internal/domain_purchase/](../apps/api/internal/domain_purchase/) — mirror shallow dari `reseller_domain_jobs` di registrar, cache status + kind + expires_at + link ke `sites.id`.
 
 **Auth ke registrar**: JWT reseller (30-day TTL). Dua mode:
 - **Static**: `REGISTRAR_API_KEY` = JWT hasil login manual sekali. Operator harus rotate manual sebelum 30 hari.
@@ -243,11 +248,20 @@ Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2
 5. Payment gateway redirect ke `/checkout/return` → auto ke `/sites/pending/<jobId>` (via `GET /purchases?limit=1`)
 6. Dashboard poll `/domains/purchases` tiap 30s — kartu "Domain sedang diproses" update tanpa reload
 
+**Sub-flow yang sudah live**:
+- **Renew**: `POST /api/v1/domains/renew` → jobs bertype `kind=renew` dengan flow polling sama seperti register. UI reuse `/sites/pending/[jobId]` — kalau `kind=renew` template picker skipped, ganti dengan kartu "Perpanjangan berhasil".
+- **Nameserver + WHOIS**: [/settings/domains/[name]](../apps/web/app/settings/domains/) — user edit NS (min 2, max 13, hostname regex client-side) + view WHOIS. Semua ownership-verified.
+- **Sync**: `POST /api/v1/domains/sync` — user-triggered self-heal drift kalau webhook drop. Backend juga auto-run tiap 6 jam via goroutine `Handler.RunPeriodicSync` di [cmd/server/main.go](../apps/api/cmd/server/main.go).
+- **Expiry email notifier**: [internal/notifier/expiry.go](../apps/api/internal/notifier/expiry.go) — background goroutine, scan tiap 24 jam. Kirim email peringatan per user (Bahasa Indonesia + deep-link `/settings/domains/<domain>`) untuk domain aktif expire ≤ 30 hari, dedup via kolom `expiry_notice_sent_at` + resend 7 hari.
+- **Dashboard banner**: 2 kartu — "Domain sedang diproses" (pending states) + "Domain akan segera expire" (< 30 hari, sisa hari relative label). Filter dedupe per-domain (`latestActivePerDomain`) supaya post-renewal user tidak lihat tanggal lama.
+
 **Yang harus dijaga saat kerja di area ini**:
 - Ownership check di setiap endpoint (`GetByJobID(jobID, userID)` bukan `GetByJobID(jobID)`) — cegah URL guessing
-- Idempotency-Key WAJIB di POST /purchase (frontend generate `useMemo` UUID) — cegah double-charge
+- Idempotency-Key WAJIB di POST /purchase + /renew (frontend generate `useMemo` UUID) — cegah double-charge
 - Error dari registrar dimap ke pesan ID di `friendlyError()` (wizard) — jangan expose "HTTP 403" mentah ke user
 - Path registrar-api: `/v1/api/user/reseller/*` (bukan `/api/reseller/*` — pernah ada mismatch bug)
+- **Dedupe expires_at per domain di frontend**: setelah renew, register-row punya expires_at lama, renew-row punya yang baru. Selalu pakai `latestActivePerDomain(items)` helper (di dashboard + settings/domains) — jangan filter `kind === "register"`.
+- `lib/api.ts` throw `ApiError` (subclass Error dengan `.status` + `.code`) — pattern-match status 404/403 untuk friendly screen, bukan string-match message.
 
 ## Don'ts
 

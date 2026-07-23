@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2 } from "lucide-react";
+import { BarChart3, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2, Webhook } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -15,6 +15,7 @@ const nav = [
   { href: "/admin", label: "Overview", icon: BarChart3 },
   { href: "/admin/users", label: "Pengguna", icon: Users },
   { href: "/admin/sites", label: "Situs", icon: Globe2 },
+  { href: "/admin/registrar", label: "Registrar", icon: Webhook },
 ];
 
 function getInitials(name: string, email: string) {

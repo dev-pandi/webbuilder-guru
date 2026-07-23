@@ -268,6 +268,11 @@ func main() {
 			AppBaseURL:  cfg.AppBaseURL,
 		})
 		go expiry.Run(ctx)
+
+		// Periodic sync — self-heal drift kalau webhook drop. 6 jam cukup untuk
+		// tetap responsive tanpa spam registrar. User bisa tetap trigger manual
+		// via tombol "Sinkronkan" di /settings/domains kalau perlu update segera.
+		go purchaseHandler.RunPeriodicSync(ctx, 6*time.Hour)
 	}
 
 	googleHandler := auth.NewGoogleHandler(

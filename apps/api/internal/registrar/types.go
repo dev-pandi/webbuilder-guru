@@ -170,3 +170,24 @@ type DomainListResponse struct {
 	Items      []DomainListItem `json:"items"`
 	Pagination any              `json:"pagination,omitempty"`
 }
+
+// --- Reseller webhook config (GET/POST /v1/api/user/reseller/config/webhook) ---
+
+// WebhookConfig = shape yang di-return registrar untuk config webhook.
+//
+// Field `Secret` hanya diisi saat POST (rotate) — GET selalu balik kosong
+// karena secret write-only di registrar. Operator wajib simpan secret saat
+// rotate; kalau hilang, harus rotate ulang.
+type WebhookConfig struct {
+	URL            string `json:"webhook_url"`
+	Secret         string `json:"webhook_secret,omitempty"` // hanya di POST response
+	ExternalPrefix string `json:"external_prefix,omitempty"`
+}
+
+// WebhookConfigRequest — body untuk POST /config/webhook. URL wajib absolute
+// (http/https), prefix opsional (dipakai kalau registrar-side ingin insert
+// path prefix di webhook target URL).
+type WebhookConfigRequest struct {
+	URL            string `json:"webhook_url"`
+	ExternalPrefix string `json:"external_prefix,omitempty"`
+}

@@ -105,12 +105,13 @@ export default function DomainsSettingsPage() {
     refresh();
   }, []);
 
-  // Group by status: active dulu, lalu pending, lalu terminal (failed/expired).
+  // Group by status: active dulu (dedupe per domain — kalau ada register +
+  // renew keduanya active, tampilkan satu row dengan expires_at terbaru),
+  // lalu pending (hanya truly pending — active renew sudah selesai, masuk ke
+  // aktif via dedupe), lalu terminal (failed/expired).
   const grouped = useMemo(() => {
-    const active = purchases.filter((p) => p.status === "active" && p.kind === "register");
-    const pending = purchases.filter(
-      (p) => p.status.startsWith("pending_") || (p.status === "active" && p.kind === "renew"),
-    );
+    const active = latestActivePerDomain(purchases);
+    const pending = purchases.filter((p) => p.status.startsWith("pending_"));
     const terminal = purchases.filter((p) => p.status === "failed" || p.status === "expired");
     return { active, pending, terminal };
   }, [purchases]);
@@ -462,6 +463,25 @@ function RenewDialog({
 void Input;
 
 // -------------- helpers --------------
+
+// latestActivePerDomain — dedupe active purchases by domain, ambil expires_at
+// paling akhir. Sinkron dengan dashboard + backend notifier (DISTINCT ON per
+// domain). Menghindari 1 domain muncul 2x (register + renew) di UI.
+function latestActivePerDomain(items: Purchase[]): Purchase[] {
+  const byDomain = new Map<string, Purchase>();
+  for (const p of items) {
+    if (p.status !== "active") continue;
+    const cur = byDomain.get(p.domain);
+    if (!cur) {
+      byDomain.set(p.domain, p);
+      continue;
+    }
+    const curTs = cur.expires_at ? new Date(cur.expires_at).getTime() : 0;
+    const newTs = p.expires_at ? new Date(p.expires_at).getTime() : 0;
+    if (newTs > curTs) byDomain.set(p.domain, p);
+  }
+  return Array.from(byDomain.values());
+}
 
 function formatExpiry(iso?: string): { label: string; urgent: boolean } | null {
   if (!iso) return null;

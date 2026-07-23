@@ -2,6 +2,7 @@ package domain_purchase
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -571,18 +572,28 @@ func (h *Handler) Sync(c *fiber.Ctx) error {
 	if cl == nil {
 		return httpx.Unauthorized(c, "no claims")
 	}
-
-	// perPage 100 = cukup untuk hampir semua user reseller kecil-menengah.
-	// Kalau ada user dengan > 100 domain, tambahkan looping page di future.
-	list, err := h.registrar.ListDomains(c.Context(), cl.UserID.String(), 1, 100)
+	scanned, updated, err := h.reconcile(c.Context(), cl.UserID.String())
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
-	if list == nil {
-		return httpx.OK(c, fiber.Map{"scanned": 0, "updated": 0})
-	}
+	return httpx.OK(c, fiber.Map{"scanned": scanned, "updated": updated})
+}
 
-	var updated int
+// reconcile = pure logic shared antara HTTP handler + background loop.
+// externalUserID kosong = ambil SEMUA job reseller (dipakai background loop);
+// non-kosong = filter ke user tsb (dipakai per-user HTTP sync).
+//
+// perPage 100 = cukup untuk hampir semua reseller kecil-menengah. Kalau
+// registrar balik penuh, ada domain yang mungkin ter-skip — future work:
+// pagination loop sampai `len(items) < perPage`.
+func (h *Handler) reconcile(ctx context.Context, externalUserID string) (scanned, updated int, err error) {
+	list, err := h.registrar.ListDomains(ctx, externalUserID, 1, 100)
+	if err != nil {
+		return 0, 0, err
+	}
+	if list == nil {
+		return 0, 0, nil
+	}
 	for _, it := range list.Items {
 		if it.JobID == "" {
 			continue
@@ -595,19 +606,53 @@ func (h *Handler) Sync(c *fiber.Ctx) error {
 		}
 		// UpdateStatus idempotent — hanya update kalau status berbeda. Kalau
 		// job_id tidak ada di lokal, RowsAffected = 0 (silent skip).
-		changed, err := h.repo.UpdateStatus(c.Context(), it.JobID, it.Status, "", expires)
+		changed, err := h.repo.UpdateStatus(ctx, it.JobID, it.Status, "", expires)
 		if err != nil {
-			slog.Warn("sync: update failed", "job_id", it.JobID, "error", err)
+			slog.Warn("reconcile: update failed", "job_id", it.JobID, "error", err)
 			continue
 		}
 		if changed {
 			updated++
 		}
 	}
-	return httpx.OK(c, fiber.Map{
-		"scanned": len(list.Items),
-		"updated": updated,
-	})
+	return len(list.Items), updated, nil
+}
+
+// RunPeriodicSync menjalankan reconcile untuk SEMUA user reseller (empty
+// filter) tiap `interval`. Blok sampai ctx cancel — panggil dari goroutine.
+// Fire-and-forget: error di-log tapi tidak stop loop.
+//
+// First tick langsung fire supaya restart cepat pickup drift.
+func (h *Handler) RunPeriodicSync(ctx context.Context, interval time.Duration) {
+	if h.registrar == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = 6 * time.Hour
+	}
+	slog.Info("domain purchase: periodic sync started", "interval", interval)
+	tick := func() {
+		scanned, updated, err := h.reconcile(ctx, "")
+		if err != nil {
+			slog.Warn("periodic sync failed (retry next tick)", "error", err)
+			return
+		}
+		if updated > 0 {
+			slog.Info("periodic sync completed", "scanned", scanned, "updated", updated)
+		}
+	}
+	tick()
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("domain purchase: periodic sync stopped")
+			return
+		case <-t.C:
+			tick()
+		}
+	}
 }
 
 // Attach — dipanggil setelah user pilih template + slug supaya domain
@@ -754,6 +799,58 @@ func (h *Handler) ListCategories(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
 	return httpx.OK(c, cats)
+}
+
+// ------------- Admin: registrar webhook config -------------
+//
+// Endpoint di bawah HANYA di-mount di /api/v1/admin/* — proteksi via
+// auth.RequireAdmin di router. Berbeda dari `Webhook` yang menerima callback
+// dari registrar (HMAC-authed, no JWT); yang di bawah adalah reseller-scoped
+// config di registrar (siapa URL webhook + rotate secret).
+//
+// Alur operasional:
+//   1. Admin buka /admin/registrar → dashboard load `AdminGetWebhookConfig`
+//   2. Kalau URL kosong / mau pindah: input URL baru → `AdminSetWebhookConfig`
+//   3. Response ada `webhook_secret` — SEKALI ini muncul. Admin salin ke env
+//      `REGISTRAR_WEBHOOK_SECRET` + restart API supaya HMAC verify pakai secret baru.
+
+func (h *Handler) AdminGetWebhookConfig(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cfg, err := h.registrar.GetWebhookConfig(c.Context())
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	return httpx.OK(c, cfg)
+}
+
+func (h *Handler) AdminSetWebhookConfig(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	var req registrar.WebhookConfigRequest
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.URL == "" {
+		return httpx.BadRequest(c, "webhook_url wajib")
+	}
+	if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+		return httpx.BadRequest(c, "webhook_url harus http:// atau https://")
+	}
+	cfg, err := h.registrar.SetWebhookConfig(c.Context(), req)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	// Log info WITHOUT secret — supaya audit trail ada, tapi tidak leak.
+	slog.Info("admin: registrar webhook rotated",
+		"url", cfg.URL, "external_prefix", cfg.ExternalPrefix,
+	)
+	return httpx.OK(c, cfg)
 }
 
 // ------------- Webhook receiver (global, HMAC-authed) -------------

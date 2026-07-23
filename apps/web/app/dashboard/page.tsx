@@ -134,7 +134,10 @@ export default function DashboardPage() {
         if (cancelled) return;
         const items = list ?? [];
         setPendingPurchases(items.filter((p) => ACTIONABLE_STATUSES.has(p.status)));
-        setExpiringPurchases(items.filter(isExpiringSoon));
+        // Expiry check per DOMAIN, bukan per-row: setelah renew, register-row
+        // punya expires_at lama tapi renew-row punya expires_at baru. Ambil
+        // yang terbaru per domain supaya user tidak salah panik.
+        setExpiringPurchases(latestActivePerDomain(items).filter(isExpiringSoon));
       } catch {
         /* silent — dashboard tidak block */
       }
@@ -467,15 +470,36 @@ function statusCopy(status: string): string {
   }
 }
 
-// isExpiringSoon — filter untuk expiry warning banner. Hanya register-kind
-// active yang punya expires_at dalam ≤ EXPIRY_WARN_DAYS (termasuk yang sudah
-// lewat / negatif). Renew-kind di-skip supaya banner tidak double.
+// isExpiringSoon — filter untuk expiry warning banner. Active + expires_at
+// dalam ≤ EXPIRY_WARN_DAYS (termasuk yang sudah lewat/negatif). Kind tidak
+// difilter karena input sudah di-dedupe latestActivePerDomain — kalau ada
+// renew active untuk domain, itu yang jadi source of truth expires_at.
 function isExpiringSoon(p: DomainPurchase): boolean {
-  if (p.status !== "active" || p.kind !== "register" || !p.expires_at) return false;
+  if (p.status !== "active" || !p.expires_at) return false;
   const dt = new Date(p.expires_at);
   if (isNaN(dt.getTime())) return false;
   const days = Math.round((dt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   return days <= EXPIRY_WARN_DAYS;
+}
+
+// latestActivePerDomain — dedupe active purchases by domain, ambil yang
+// `expires_at` paling akhir. Menghindari 2 baris untuk 1 domain (register +
+// renew) di UI dan memastikan tanggal yang ditampilkan konsisten dengan
+// backend notifier (yang juga DISTINCT ON per domain by max expires_at).
+function latestActivePerDomain(items: DomainPurchase[]): DomainPurchase[] {
+  const byDomain = new Map<string, DomainPurchase>();
+  for (const p of items) {
+    if (p.status !== "active") continue;
+    const cur = byDomain.get(p.domain);
+    if (!cur) {
+      byDomain.set(p.domain, p);
+      continue;
+    }
+    const curTs = cur.expires_at ? new Date(cur.expires_at).getTime() : 0;
+    const newTs = p.expires_at ? new Date(p.expires_at).getTime() : 0;
+    if (newTs > curTs) byDomain.set(p.domain, p);
+  }
+  return Array.from(byDomain.values());
 }
 
 // daysUntil — days remaining sampai iso date; negatif = sudah expire.

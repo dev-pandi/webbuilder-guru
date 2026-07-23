@@ -24,6 +24,14 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Patch("/sites/:id/quota", deps.Admin.UpdateSiteQuota)
 	g.Delete("/sites/:id", deps.Admin.DeleteSite)
 
+	// Registrar webhook config — reseller-scoped di registrar, tapi dari sisi
+	// web builder ini pengaturan operator (bukan per-user). Hanya di-mount
+	// kalau DomainPurchase handler aktif (nil-safe = registrar disabled).
+	if deps.DomainPurchase != nil {
+		g.Get("/registrar/webhook", deps.DomainPurchase.AdminGetWebhookConfig)
+		g.Post("/registrar/webhook", deps.DomainPurchase.AdminSetWebhookConfig)
+	}
+
 	// pprof exposes detailed runtime data (heap profile can leak secrets in
 	// strings, CPU profile blocks the process). Always behind admin + opt-in
 	// via env so it's not on in default prod deployments.
