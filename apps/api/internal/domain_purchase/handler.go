@@ -469,6 +469,7 @@ type renewReq struct {
 	Years         int    `json:"years"`
 	PaymentMethod string `json:"payment_method"`
 	ReturnURL     string `json:"return_url"`
+	PromoCode     string `json:"promo_code,omitempty"` // forwarded ke registrar
 }
 
 func (h *Handler) Renew(c *fiber.Ctx) error {
@@ -512,6 +513,7 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		ExternalUserID: cl.UserID.String(),
 		PaymentMethod:  req.PaymentMethod,
 		ReturnURL:      req.ReturnURL,
+		PromoCode:      strings.TrimSpace(req.PromoCode),
 	})
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())

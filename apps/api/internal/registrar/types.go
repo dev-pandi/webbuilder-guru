@@ -187,6 +187,10 @@ type RenewRequest struct {
 	ExternalUserID string `json:"external_user_id,omitempty"`
 	PaymentMethod  string `json:"payment_method"` // "midtrans" | "paylabs"
 	ReturnURL      string `json:"return_url,omitempty"`
+	// PromoCode opsional — registrar cari promo aktif dengan applies_to=renew.
+	// Kalau invalid/expired/rule mismatch → silent fallback ke harga normal
+	// (bukan error). Konsisten dengan register flow.
+	PromoCode string `json:"promo_code,omitempty"`
 }
 
 // --- List domains (GET /v1/api/user/reseller/domain/list) ---

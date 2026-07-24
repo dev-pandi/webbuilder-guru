@@ -54,39 +54,69 @@ type Template = {
   description: string;
 };
 
-// Copy per status — Indonesia-friendly, jelas action yang harus user lakukan.
-const STATUS_INFO: Record<string, { label: string; hint: string; kind: "wait" | "ok" | "bad" }> = {
-  pending_payment: {
-    label: "Menunggu pembayaran",
-    hint: "Klik tombol di bawah untuk bayar via gateway. Halaman ini akan refresh otomatis.",
-    kind: "wait",
-  },
-  pending_document: {
-    label: "Menunggu dokumen",
-    hint: "Registrar meminta upload KTP/NPWP. Fitur upload akan segera dibuka.",
-    kind: "wait",
-  },
-  pending_provisioning: {
-    label: "Sedang diproses registrar",
-    hint: "Pembayaran diterima. Domain sedang di-daftarkan ke registry (biasanya 1–5 menit).",
-    kind: "wait",
-  },
-  active: {
-    label: "Domain aktif",
-    hint: "Domain Anda sudah live. Pilih template di bawah untuk buat situs.",
-    kind: "ok",
-  },
-  failed: {
-    label: "Gagal",
-    hint: "Pendaftaran domain gagal. Cek pesan detail di bawah.",
-    kind: "bad",
-  },
-  expired: {
-    label: "Kadaluwarsa",
-    hint: "Batas waktu pembayaran habis. Silakan coba beli lagi.",
-    kind: "bad",
-  },
-};
+// statusInfo — copy per status + kind. Register vs renew punya semantik beda:
+// register bikin domain BARU, renew hanya extend expiry — domain tetap
+// aktif selama proses renew. Copy harus reflect itu supaya user tidak panik
+// lihat "sedang diproses" mengira domain-nya offline.
+type StatusInfo = { label: string; hint: string; kind: "wait" | "ok" | "bad" };
+
+function statusInfo(status: string, purchaseKind: string): StatusInfo {
+  const isRenew = purchaseKind === "renew";
+  switch (status) {
+    case "pending_payment":
+      return {
+        label: "Menunggu pembayaran",
+        hint: "Klik tombol di bawah untuk bayar via gateway. Halaman ini akan refresh otomatis.",
+        kind: "wait",
+      };
+    case "pending_document":
+      return {
+        label: "Menunggu dokumen",
+        hint: "Registrar meminta upload KTP/NPWP. Silakan upload di form bawah.",
+        kind: "wait",
+      };
+    case "pending_provisioning":
+      return isRenew
+        ? {
+            label: "Perpanjangan sedang diproses",
+            hint: "Pembayaran diterima. Registrar sedang extend expiry di registry (biasanya 1–5 menit). Domain Anda TETAP AKTIF selama proses.",
+            kind: "wait",
+          }
+        : {
+            label: "Sedang diproses registrar",
+            hint: "Pembayaran diterima. Domain sedang di-daftarkan ke registry (biasanya 1–5 menit).",
+            kind: "wait",
+          };
+    case "active":
+      return isRenew
+        ? {
+            label: "Perpanjangan berhasil",
+            hint: "Tanggal expire domain sudah diperbarui.",
+            kind: "ok",
+          }
+        : {
+            label: "Domain aktif",
+            hint: "Domain Anda sudah live. Pilih template di bawah untuk buat situs.",
+            kind: "ok",
+          };
+    case "failed":
+      return {
+        label: "Gagal",
+        hint: isRenew
+          ? "Perpanjangan gagal. Cek detail di bawah — domain Anda tidak terpengaruh."
+          : "Pendaftaran domain gagal. Cek pesan detail di bawah.",
+        kind: "bad",
+      };
+    case "expired":
+      return {
+        label: "Kadaluwarsa",
+        hint: "Batas waktu pembayaran habis. Silakan coba lagi.",
+        kind: "bad",
+      };
+    default:
+      return { label: status, hint: "", kind: "wait" };
+  }
+}
 
 function isTerminal(status: string) {
   return status === "active" || status === "failed" || status === "expired";
@@ -233,7 +263,7 @@ export default function PendingDomainPage() {
     }
   }
 
-  const info = purchase ? STATUS_INFO[purchase.status] ?? { label: purchase.status, hint: "", kind: "wait" as const } : null;
+  const info = purchase ? statusInfo(purchase.status, purchase.kind) : null;
 
   if (!ready) {
     return (
@@ -253,7 +283,9 @@ export default function PendingDomainPage() {
               <span className="hidden sm:inline">Dashboard</span>
             </Link>
           </Button>
-          <span className="text-lg font-semibold">Status Pembelian Domain</span>
+          <span className="text-lg font-semibold">
+            {purchase?.kind === "renew" ? "Status Perpanjangan Domain" : "Status Pembelian Domain"}
+          </span>
         </div>
       </header>
 
@@ -302,7 +334,7 @@ export default function PendingDomainPage() {
             <CardTitle className="text-base">
               {purchase ? (
                 <>
-                  Domain{" "}
+                  {purchase.kind === "renew" ? "Perpanjangan " : "Pembelian "}
                   <code className="rounded bg-muted px-1.5 py-0.5">{purchase.domain}</code>
                 </>
               ) : (

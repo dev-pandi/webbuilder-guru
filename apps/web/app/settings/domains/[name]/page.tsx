@@ -20,7 +20,6 @@ import {
   Info,
   Server,
   RefreshCw,
-  ArrowRight,
   Plus,
   Trash2,
   Save,
@@ -33,14 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { RenewDialog } from "../_renew-dialog";
 
 type Purchase = {
   job_id: string;
@@ -412,115 +404,6 @@ function NameserverPanel({
 
 // -------------- Renew dialog (sama dengan di list page) --------------
 
-function RenewDialog({
-  domain,
-  onClose,
-  onCreated,
-}: {
-  domain: string;
-  onClose: () => void;
-  onCreated: (jobID: string) => void;
-}) {
-  const [years, setYears] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs">("midtrans");
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const idempotencyKey = useMemo(
-    () =>
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36),
-    [],
-  );
-
-  async function onSubmit() {
-    setErr(null);
-    setSubmitting(true);
-    try {
-      const res = await api<{ job_id: string }>("/api/v1/domains/renew", {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({
-          domain,
-          years,
-          payment_method: paymentMethod,
-          return_url: `${window.location.origin}/checkout/return`,
-        }),
-      });
-      onCreated(res.job_id);
-    } catch (e) {
-      setErr((e as Error).message);
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Perpanjang <code className="text-sm">{domain}</code></DialogTitle>
-          <DialogDescription>
-            Pilih durasi + metode pembayaran. Anda akan diarahkan ke halaman
-            pembayaran gateway.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="renew-years">Lama perpanjangan</Label>
-            <select
-              id="renew-years"
-              value={years}
-              onChange={(e) => setYears(Number(e.target.value))}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            >
-              {[1, 2, 3, 5, 10].map((y) => (
-                <option key={y} value={y}>
-                  {y} tahun
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="renew-payment">Metode pembayaran</Label>
-            <select
-              id="renew-payment"
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as "midtrans" | "paylabs")}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            >
-              <option value="midtrans">Midtrans</option>
-              <option value="paylabs">Paylabs</option>
-            </select>
-          </div>
-          {err && (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-              <AlertCircle className="size-4 shrink-0" />
-              <span>{err}</span>
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Batal
-          </Button>
-          <Button onClick={onSubmit} disabled={submitting} className="gap-2">
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Memproses…
-              </>
-            ) : (
-              <>
-                Perpanjang & bayar
-                <ArrowRight className="size-4" />
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 // -------------- helpers --------------
 

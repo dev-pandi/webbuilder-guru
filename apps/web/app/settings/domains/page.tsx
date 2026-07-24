@@ -29,16 +29,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { RenewDialog } from "./_renew-dialog";
 
 type Purchase = {
   job_id: string;
@@ -109,11 +100,22 @@ export default function DomainsSettingsPage() {
   // renew keduanya active, tampilkan satu row dengan expires_at terbaru),
   // lalu pending (hanya truly pending — active renew sudah selesai, masuk ke
   // aktif via dedupe), lalu terminal (failed/expired).
+  // Split pending: register-kind = domain BARU yang belum bisa dipakai
+  // (blocking). Renew-kind = perpanjangan domain existing (non-blocking,
+  // domain tetap aktif selama proses). Split supaya user tidak panik
+  // lihat "sedang diproses" mengira domain-nya offline.
   const grouped = useMemo(() => {
     const active = latestActivePerDomain(purchases);
-    const pending = purchases.filter((p) => p.status.startsWith("pending_"));
+    const pendingNew = purchases.filter(
+      (p) => p.status.startsWith("pending_") && p.kind !== "renew",
+    );
+    const pendingRenew = purchases.filter(
+      (p) => p.status.startsWith("pending_") && p.kind === "renew",
+    );
     const terminal = purchases.filter((p) => p.status === "failed" || p.status === "expired");
-    return { active, pending, terminal };
+    // Set domain-domain yang sedang di-perpanjang — buat badge di ActiveRow.
+    const renewingDomains = new Set(pendingRenew.map((p) => p.domain));
+    return { active, pendingNew, pendingRenew, renewingDomains, terminal };
   }, [purchases]);
 
   return (
@@ -179,13 +181,31 @@ export default function DomainsSettingsPage() {
           {grouped.active.length > 0 && (
             <Section title="Aktif" count={grouped.active.length} icon={CheckCircle2} iconClass="text-emerald-500">
               {grouped.active.map((p) => (
-                <ActiveRow key={p.job_id} p={p} onRenew={() => setRenewTarget(p)} />
+                <ActiveRow
+                  key={p.job_id}
+                  p={p}
+                  isRenewing={grouped.renewingDomains.has(p.domain)}
+                  onRenew={() => setRenewTarget(p)}
+                />
               ))}
             </Section>
           )}
-          {grouped.pending.length > 0 && (
-            <Section title="Sedang diproses" count={grouped.pending.length} icon={Clock} iconClass="text-amber-500">
-              {grouped.pending.map((p) => (
+          {grouped.pendingNew.length > 0 && (
+            <Section title="Domain baru sedang diproses" count={grouped.pendingNew.length} icon={Clock} iconClass="text-amber-500">
+              {grouped.pendingNew.map((p) => (
+                <PendingRow key={p.job_id} p={p} />
+              ))}
+            </Section>
+          )}
+          {grouped.pendingRenew.length > 0 && (
+            <Section
+              title="Perpanjangan berjalan"
+              count={grouped.pendingRenew.length}
+              icon={RefreshCw}
+              iconClass="text-blue-500"
+              subtitle="Domain-domain di bawah tetap AKTIF selama proses perpanjangan"
+            >
+              {grouped.pendingRenew.map((p) => (
                 <PendingRow key={p.job_id} p={p} />
               ))}
             </Section>
@@ -220,12 +240,14 @@ function Section({
   count,
   icon: Icon,
   iconClass,
+  subtitle,
   children,
 }: {
   title: string;
   count: number;
   icon: React.ComponentType<{ className?: string }>;
   iconClass?: string;
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -238,6 +260,9 @@ function Section({
             {count}
           </Badge>
         </CardTitle>
+        {subtitle && (
+          <p className="pt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+        )}
       </CardHeader>
       <CardContent className="pt-0">
         <ul className="divide-y">{children}</ul>
@@ -246,7 +271,15 @@ function Section({
   );
 }
 
-function ActiveRow({ p, onRenew }: { p: Purchase; onRenew: () => void }) {
+function ActiveRow({
+  p,
+  isRenewing,
+  onRenew,
+}: {
+  p: Purchase;
+  isRenewing?: boolean;
+  onRenew: () => void;
+}) {
   const expiryInfo = useMemo(() => formatExpiry(p.expires_at), [p.expires_at]);
   const detailHref = `/settings/domains/${encodeURIComponent(p.domain)}`;
   return (
@@ -263,6 +296,12 @@ function ActiveRow({ p, onRenew }: { p: Purchase; onRenew: () => void }) {
           <Badge variant="success" className="text-xs">
             Aktif
           </Badge>
+          {isRenewing && (
+            <Badge variant="secondary" className="gap-1 text-[10px]">
+              <Loader2 className="size-2.5 animate-spin" />
+              Sedang diperpanjang
+            </Badge>
+          )}
         </div>
         {expiryInfo && (
           <div className={`mt-0.5 text-xs ${expiryInfo.urgent ? "text-destructive" : "text-muted-foreground"}`}>
@@ -276,7 +315,17 @@ function ActiveRow({ p, onRenew }: { p: Purchase; onRenew: () => void }) {
           <ArrowRight className="size-3.5" />
         </Link>
       </Button>
-      <Button variant="outline" size="sm" onClick={onRenew} className="gap-1.5">
+      {/* Tombol Perpanjang di-disable kalau ada renew job pending — cegah
+          user click 2x bikin invoice ganda. Kalau perpanjangan gagal, tombol
+          otomatis aktif lagi (baris hilang dari pendingRenew). */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onRenew}
+        disabled={isRenewing}
+        className="gap-1.5"
+        title={isRenewing ? "Perpanjangan sedang berjalan" : "Perpanjang domain"}
+      >
         <RefreshCw className="size-3.5" />
         Perpanjang
       </Button>
@@ -341,126 +390,6 @@ function TerminalRow({ p }: { p: Purchase }) {
     </li>
   );
 }
-
-// -------------- Renew dialog --------------
-
-function RenewDialog({
-  domain,
-  onClose,
-  onCreated,
-}: {
-  domain: string;
-  onClose: () => void;
-  onCreated: (jobID: string) => void;
-}) {
-  const [years, setYears] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs">("midtrans");
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  // Idempotency key per dialog open — cegah double-click bikin 2 renew job.
-  const idempotencyKey = useMemo(
-    () =>
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36),
-    [],
-  );
-
-  async function onSubmit() {
-    setErr(null);
-    setSubmitting(true);
-    try {
-      const res = await api<{ job_id: string }>("/api/v1/domains/renew", {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({
-          domain,
-          years,
-          payment_method: paymentMethod,
-          return_url: `${window.location.origin}/checkout/return`,
-        }),
-      });
-      onCreated(res.job_id);
-    } catch (e) {
-      setErr((e as Error).message);
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Perpanjang <code className="text-sm">{domain}</code></DialogTitle>
-          <DialogDescription>
-            Pilih durasi perpanjangan dan metode pembayaran. Anda akan diarahkan
-            ke halaman pembayaran gateway setelah konfirmasi.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="renew-years">Lama perpanjangan</Label>
-            <select
-              id="renew-years"
-              value={years}
-              onChange={(e) => setYears(Number(e.target.value))}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            >
-              {[1, 2, 3, 5, 10].map((y) => (
-                <option key={y} value={y}>
-                  {y} tahun
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="renew-payment">Metode pembayaran</Label>
-            <select
-              id="renew-payment"
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as "midtrans" | "paylabs")}
-              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-            >
-              <option value="midtrans">Midtrans (kartu / VA / e-wallet)</option>
-              <option value="paylabs">Paylabs</option>
-            </select>
-          </div>
-
-          {err && (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-              <AlertCircle className="size-4 shrink-0" />
-              <span>{err}</span>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Batal
-          </Button>
-          <Button onClick={onSubmit} disabled={submitting} className="gap-2">
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Memproses…
-              </>
-            ) : (
-              <>
-                Perpanjang & bayar
-                <ArrowRight className="size-4" />
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Unused prop suppression untuk Input/Card import ceremony (defensive).
-void Input;
 
 // -------------- helpers --------------
 
