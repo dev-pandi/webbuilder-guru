@@ -551,9 +551,15 @@ function TemplatePicker({
 }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const defaultSlug = useMemo(() => domain.split(".")[0], [domain]);
-  const [slug, setSlug] = useState(defaultSlug);
-  const [name, setName] = useState(defaultSlug);
+  // Nama situs default dari SLD domain (mis. "myshop" dari "myshop.co.id").
+  // User bisa edit — slug backend auto-generate dari nama ini (internal only,
+  // tidak jadi URL karena free-subdomain flow sudah dihapus).
+  const defaultName = useMemo(() => {
+    const sld = domain.split(".")[0] ?? "";
+    // Capitalize supaya UX lebih natural sebagai "nama toko".
+    return sld.charAt(0).toUpperCase() + sld.slice(1);
+  }, [domain]);
+  const [name, setName] = useState(defaultName);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -568,10 +574,10 @@ function TemplatePicker({
     try {
       // Backend enforces atomic create + attach: kirim job_id, server verify
       // purchase active + belum di-attach, lalu create site + attach dalam
-      // satu request. Kalau job_id tidak valid → 400/404/409 dari server.
+      // satu request. Slug auto-generate dari name di backend (tidak dikirim).
       const site = await api<{ id: string; slug: string }>(
         `/api/v1/sites/from-template/${selected}`,
-        { method: "POST", body: JSON.stringify({ slug, name, job_id: jobId }) },
+        { method: "POST", body: JSON.stringify({ name, job_id: jobId }) },
       );
       toast.success("Situs berhasil dibuat");
       onCreated(site.id);
@@ -626,31 +632,24 @@ function TemplatePicker({
 
         {selected && (
           <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="slug">Slug (subdomain platform)</Label>
-                <Input
-                  id="slug"
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-                  placeholder="myshop"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Nama situs</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Toko Bahagia"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="name">Nama situs</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Toko Bahagia"
+                maxLength={128}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Nama tampil di dashboard + judul default halaman. Bisa diubah nanti.
+              </p>
             </div>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <Badge variant="secondary" className="text-xs">
-                Domain <code>{domain}</code> akan otomatis di-attach
+                Domain <code>{domain}</code> otomatis di-attach
               </Badge>
-              <Button onClick={onCreate} disabled={creating || !slug || !name} className="gap-2">
+              <Button onClick={onCreate} disabled={creating || !name.trim()} className="gap-2">
                 {creating ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />

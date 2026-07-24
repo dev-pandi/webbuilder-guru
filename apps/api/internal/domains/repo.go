@@ -12,7 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const MaxDomainsPerSite = 3
+// MaxDomainsPerSite = 1 per konsep produk "1 domain = 1 situs". Dulu 3 (era
+// free-subdomain era + custom-domain add), sekarang tiap site diikat ke satu
+// hostname yang di-attach saat purchase atau add-custom-domain (mutually
+// exclusive di UI). Kalau nanti butuh dukung "alias domain" (mis. .com
+// redirect ke .id), bisa naikkan lagi + tambah flag primary.
+const MaxDomainsPerSite = 1
 
 type Domain struct {
 	ID            uuid.UUID  `json:"id"`

@@ -313,7 +313,7 @@ func main() {
 		}),
 		Usage:        usage.NewHandler(usageRepo, siteRepo),
 		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
-		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo, cfg.RendererDefaultHost),
+		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo),
 		Admin:        admin.NewHandler(adminRepo),
 		Cloudflare:   cloudflare.NewHandler(cloudflareRepo),
 		Products:     products.NewHandler(productRepo, siteRepo),

@@ -174,19 +174,6 @@ func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 	return &s, err
 }
 
-// GetBySlug returns a published site by its platform slug (e.g. <slug>.example.id).
-func (r *Repo) GetBySlug(ctx context.Context, slug string) (*Site, error) {
-	var s Site
-	err := r.pool.QueryRow(ctx, `
-		SELECT `+siteCols+`
-		FROM sites WHERE slug = $1 AND status = 'published'
-	`, slug).Scan(scanArgs(&s)...)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	return &s, err
-}
-
 // sitePrefixedCols returns siteCols with a table alias for JOIN queries.
 func sitePrefixedCols(alias string) string {
 	cols := []string{

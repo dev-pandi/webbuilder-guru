@@ -18,10 +18,15 @@ type Handler struct {
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
 
+// slugRe = validasi kalau client kirim slug custom (opsional). Kalau tidak
+// kirim, backend auto-generate via Slugify(name). Slug tidak lagi jadi URL
+// user-facing (subdomain fallback sudah dihapus per konsep 1 domain = 1
+// situs), tapi tetap disimpan sebagai identifier internal untuk backward
+// compat + export folder naming.
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`)
 
 type createReq struct {
-	Slug       string          `json:"slug"`
+	Slug       string          `json:"slug,omitempty"` // opsional — auto-generate kalau kosong
 	Name       string          `json:"name"`
 	TemplateID *uuid.UUID      `json:"template_id"`
 	Theme      json.RawMessage `json:"theme"`
@@ -50,23 +55,97 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	}
 	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
 	req.Name = strings.TrimSpace(req.Name)
-	if !slugRe.MatchString(req.Slug) {
-		return httpx.BadRequest(c, "slug must be lowercase a-z, 0-9, hyphen (2-40 chars)")
-	}
 	if req.Name == "" {
 		return httpx.BadRequest(c, "name required")
 	}
-	s, err := h.repo.Create(c.Context(), uid, req.Slug, req.Name, req.TemplateID, req.Theme)
-	if errors.Is(err, ErrSlugTaken) {
-		return httpx.Conflict(c, "slug already taken")
+	// Slug opsional — auto-generate dari name kalau kosong. Kalau client
+	// tetap kirim custom, validate format. Retry N kali dengan random suffix
+	// kalau collision (slug tetap unique global untuk export folder naming).
+	if req.Slug != "" && !slugRe.MatchString(req.Slug) {
+		return httpx.BadRequest(c, "slug format tidak valid (huruf kecil, angka, hyphen, 2-40 char)")
 	}
-	if errors.Is(err, ErrLimitReached) {
-		return httpx.Forbidden(c, "site limit reached")
+	if req.Slug == "" {
+		req.Slug = Slugify(req.Name)
 	}
+	s, err := h.createWithSlugRetry(c, uid, req)
 	if err != nil {
-		return httpx.Internal(c, "create failed")
+		return err
 	}
 	return httpx.Created(c, s)
+}
+
+// createWithSlugRetry try Create sampai 5x — kalau ErrSlugTaken (client tidak
+// supply slug custom), tambah random suffix. Kalau client supply custom slug
+// yang collision, tetap return 409 (biar user aware).
+func (h *Handler) createWithSlugRetry(c *fiber.Ctx, uid uuid.UUID, req createReq) (*Site, error) {
+	userSupplied := req.Slug != "" && strings.EqualFold(req.Slug, strings.TrimSpace(req.Slug))
+	// Track intent: kalau req.Slug identik dengan Slugify(name), kita di-generate — bebas retry.
+	generated := req.Slug == Slugify(req.Name)
+
+	base := req.Slug
+	for attempt := 0; attempt < 5; attempt++ {
+		s, err := h.repo.Create(c.Context(), uid, req.Slug, req.Name, req.TemplateID, req.Theme)
+		if err == nil {
+			return s, nil
+		}
+		if errors.Is(err, ErrSlugTaken) {
+			if !generated && userSupplied {
+				return nil, httpx.Conflict(c, "slug already taken")
+			}
+			req.Slug = base + "-" + randomSuffix()
+			continue
+		}
+		if errors.Is(err, ErrLimitReached) {
+			return nil, httpx.Forbidden(c, "site limit reached")
+		}
+		return nil, httpx.Internal(c, "create failed")
+	}
+	return nil, httpx.Internal(c, "gagal generate slug unik setelah 5 percobaan")
+}
+
+// Slugify convert nama ke URL-safe kebab-case. Contoh: "Toko Bahagia!" → "toko-bahagia".
+// Kalau hasil kosong (nama semuanya non-alnum), fallback ke "site" + random suffix.
+// Exported supaya paket lain (mis. templates) bisa reuse generator yang sama.
+func Slugify(name string) string {
+	s := strings.ToLower(name)
+	// Ganti setiap run non-alnum jadi single hyphen.
+	var b strings.Builder
+	prevHyphen := true // hindari leading hyphen
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevHyphen = false
+		} else if !prevHyphen {
+			b.WriteRune('-')
+			prevHyphen = true
+		}
+	}
+	out := strings.TrimRight(b.String(), "-")
+	if len(out) < 2 {
+		return "site-" + randomSuffix()
+	}
+	if len(out) > 40 {
+		out = out[:40]
+		out = strings.TrimRight(out, "-")
+	}
+	return out
+}
+
+// randomSuffix — 6 char base36 (angka + huruf kecil). Cukup untuk cegah
+// collision pada slug auto-generated tanpa bikin URL kepanjangan.
+func randomSuffix() string {
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 6)
+	for i := range b {
+		b[i] = chars[randInt(len(chars))]
+	}
+	return string(b)
+}
+
+// randInt = math/rand di-abstract supaya bisa di-mock kalau perlu deterministic
+// di test. Untuk suffix collision-avoidance, entropy math/rand cukup.
+func randInt(n int) int {
+	return int(uuid.New().ID() % uint32(n))
 }
 
 func (h *Handler) Get(c *fiber.Ctx) error {

@@ -17,25 +17,20 @@ import (
 // Public read-only endpoints consumed by the renderer.
 
 type Handler struct {
-	sites               *sites.Repo
-	pages               *pages.Repo
-	products            *products.Repo
-	blog                *blog.Repo
-	rendererDefaultHost string
+	sites    *sites.Repo
+	pages    *pages.Repo
+	products *products.Repo
+	blog     *blog.Repo
 }
 
-func NewHandler(s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo, rendererDefaultHost string) *Handler {
-	return &Handler{
-		sites:               s,
-		pages:               p,
-		products:            pr,
-		blog:                b,
-		rendererDefaultHost: rendererDefaultHost,
-	}
+func NewHandler(s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo) *Handler {
+	return &Handler{sites: s, pages: p, products: pr, blog: b}
 }
 
 // GET /public/site-by-host?host=<hostname>
-// Resolves either a custom verified domain or a "<slug>.<rendererDefaultHost>" subdomain.
+// Resolves site by custom verified domain. Free-subdomain fallback
+// (<slug>.<rendererDefaultHost>) sudah dihapus — konsep "1 domain = 1 situs"
+// tidak lagi menyediakan URL platform gratis.
 func (h *Handler) SiteByHost(c *fiber.Ctx) error {
 	host := strings.ToLower(strings.TrimSpace(c.Query("host")))
 	if host == "" {
@@ -45,12 +40,6 @@ func (h *Handler) SiteByHost(c *fiber.Ctx) error {
 		return httpx.OK(c, s)
 	} else if !errors.Is(err, sites.ErrNotFound) {
 		return httpx.Internal(c, "lookup failed")
-	}
-	if h.rendererDefaultHost != "" && strings.HasSuffix(host, "."+h.rendererDefaultHost) {
-		slug := strings.TrimSuffix(host, "."+h.rendererDefaultHost)
-		if s, err := h.sites.GetBySlug(c.Context(), slug); err == nil {
-			return httpx.OK(c, s)
-		}
 	}
 	return httpx.NotFound(c, "no site published for this host")
 }

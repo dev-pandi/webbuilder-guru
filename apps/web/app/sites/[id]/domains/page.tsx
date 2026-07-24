@@ -139,7 +139,8 @@ export default function DomainsPage() {
         </div>
         <h1 className="text-2xl font-bold tracking-tight">Domain</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Hubungkan domain milik Anda ke situs ini.
+          Setiap situs punya <strong>1 domain</strong>. Kalau Anda beli via wizard, domain
+          otomatis ter-attach. Alternatif: hubungkan domain milik Anda sendiri di sini.
         </p>
       </div>
 
@@ -301,54 +302,69 @@ export default function DomainsPage() {
           </div>
         </div>
 
-        {/* Right: add form */}
+        {/* Right: add form — hidden kalau slot 1-domain sudah terisi. */}
         <div className="rounded-xl border bg-card shadow-sm p-5 space-y-4 h-fit">
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <Plus className="size-4 text-muted-foreground" />
-              <p className="text-sm font-semibold">Tambah Domain</p>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Masukkan hostname tanpa <code className="font-mono">https://</code>
-            </p>
-          </div>
-
-          <form onSubmit={add} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="hostname" className="text-sm font-medium">
-                Hostname
-              </Label>
-              <Input
-                id="hostname"
-                required
-                value={hostname}
-                onChange={(e) => setHostname(e.target.value.toLowerCase())}
-                placeholder="tokoanda.id"
-                className="h-10 font-mono bg-muted/40 border-transparent focus:border-input focus:bg-background transition-colors"
-              />
-            </div>
-
-            {formErr && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <AlertCircle className="size-3.5 shrink-0" />
-                {formErr}
+          {domains.length >= 1 ? (
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <Info className="size-4 text-muted-foreground" />
+                <p className="text-sm font-semibold">Slot domain terisi</p>
               </div>
-            )}
+              <p className="text-xs text-muted-foreground">
+                Situs ini sudah punya domain aktif. Batas <strong>1 domain per
+                situs</strong> — hapus domain lama dulu kalau mau ganti ke yang baru.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <Plus className="size-4 text-muted-foreground" />
+                  <p className="text-sm font-semibold">Tambah Domain</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Masukkan hostname tanpa <code className="font-mono">https://</code>
+                </p>
+              </div>
 
-            <Button type="submit" disabled={adding} className="w-full gap-2 shadow-sm">
-              {adding ? (
-                <><Loader2 className="size-4 animate-spin" /> Menambahkan…</>
-              ) : (
-                <><Plus className="size-4" /> Tambah Domain</>
-              )}
-            </Button>
-          </form>
+              <form onSubmit={add} className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="hostname" className="text-sm font-medium">
+                    Hostname
+                  </Label>
+                  <Input
+                    id="hostname"
+                    required
+                    value={hostname}
+                    onChange={(e) => setHostname(e.target.value.toLowerCase())}
+                    placeholder="tokoanda.id"
+                    className="h-10 font-mono bg-muted/40 border-transparent focus:border-input focus:bg-background transition-colors"
+                  />
+                </div>
 
-          <div className="rounded-lg bg-muted/40 px-3 py-3 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">Tips DNS</p>
-            <p>Arahkan A record domain Anda ke IP server platform.</p>
-            <p>Propagasi DNS bisa memakan waktu hingga 24 jam.</p>
-          </div>
+                {formErr && (
+                  <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    <AlertCircle className="size-3.5 shrink-0" />
+                    {formErr}
+                  </div>
+                )}
+
+                <Button type="submit" disabled={adding} className="w-full gap-2 shadow-sm">
+                  {adding ? (
+                    <><Loader2 className="size-4 animate-spin" /> Menambahkan…</>
+                  ) : (
+                    <><Plus className="size-4" /> Tambah Domain</>
+                  )}
+                </Button>
+              </form>
+
+              <div className="rounded-lg bg-muted/40 px-3 py-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">Tips DNS</p>
+                <p>Arahkan A record domain Anda ke IP server platform.</p>
+                <p>Propagasi DNS bisa memakan waktu hingga 24 jam.</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

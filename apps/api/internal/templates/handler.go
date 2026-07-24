@@ -141,11 +141,16 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	req.Slug = strings.ToLower(strings.TrimSpace(req.Slug))
 	req.Name = strings.TrimSpace(req.Name)
 	req.JobID = strings.TrimSpace(req.JobID)
-	if !slugRe.MatchString(req.Slug) {
-		return httpx.BadRequest(c, "slug invalid")
-	}
 	if req.Name == "" {
 		req.Name = tpl.Name
+	}
+	// Slug opsional — auto-generate dari name kalau kosong (subdomain fallback
+	// sudah dihapus, slug hanya internal identifier + export folder naming).
+	if req.Slug != "" && !slugRe.MatchString(req.Slug) {
+		return httpx.BadRequest(c, "slug format tidak valid (huruf kecil, angka, hyphen, 2-40 char)")
+	}
+	if req.Slug == "" {
+		req.Slug = sites.Slugify(req.Name)
 	}
 
 	// Enforce "must own an active, unattached domain purchase" — sesuai
