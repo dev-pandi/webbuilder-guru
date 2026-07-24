@@ -135,6 +135,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		// enforced di registrar + web builder proxy). Dipakai tombol "Lihat"
 		// di /settings/documents.
 		authed.Get("/documents/:id", deps.DomainPurchase.ShowDocument)
+		// Invoice list — proxy ke registrar dengan external_user_id inject
+		// dari JWT (isolation). Read-only, no rate limit.
+		authed.Get("/invoices", deps.DomainPurchase.ListInvoices)
 	}
 
 	// Products

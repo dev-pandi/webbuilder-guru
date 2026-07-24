@@ -215,6 +215,41 @@ type DomainListResponse struct {
 	Pagination any              `json:"pagination,omitempty"`
 }
 
+// --- Reseller invoices (GET /v1/api/user/reseller/invoices) ---
+
+// Invoice = 1 baris invoice yang di-link ke reseller_domain_jobs milik reseller
+// yang login. Registrar sudah strip billing address (privacy) — kita tidak
+// pernah ekspos data itu ke UI. Jobs[] = 1..N job yang share invoice ini
+// (umumnya 1:1 dengan register atau renew).
+type Invoice struct {
+	ID              uint64        `json:"id"`
+	UUID            string        `json:"uuid"`
+	InvoiceNumber   string        `json:"invoice_number"`
+	TotalPrice      float64       `json:"total_price"`
+	Status          string        `json:"status"` // "Unpaid" | "On Check" | "Paid" | "Canceled" | "Expired" | "Refund" | "Rejected"
+	DueDate         string        `json:"due_date"`
+	TransactionDate string        `json:"transaction_date,omitempty"`
+	CreatedAt       string        `json:"created_at"`
+	Jobs            []InvoiceJob  `json:"jobs"`
+}
+
+// InvoiceJob = ringkasan job yang link ke invoice ini. Sudah cukup untuk render
+// row: user tahu domain + jenis (register/renew) tanpa second-fetch.
+type InvoiceJob struct {
+	JobID          string `json:"job_id"`
+	Domain         string `json:"domain"`
+	Kind           string `json:"kind"`   // "register" | "renew"
+	Years          int    `json:"years"`
+	Status         string `json:"status"` // job status di registrar
+	ExternalUserID string `json:"external_user_id,omitempty"`
+}
+
+// InvoiceListResponse — envelope paginated dari GET /reseller/invoices.
+type InvoiceListResponse struct {
+	Items      []Invoice `json:"items"`
+	Pagination any       `json:"pagination,omitempty"`
+}
+
 // --- Reseller document library (GET/POST /v1/api/user/reseller/documents) ---
 
 // Document = 1 baris dokumen di registrar's document library, di-tag ke

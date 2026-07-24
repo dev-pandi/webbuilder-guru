@@ -935,6 +935,51 @@ func (h *Handler) ListDocuments(c *fiber.Ctx) error {
 	return httpx.OK(c, res)
 }
 
+// ListInvoices — GET /api/v1/invoices
+//
+// Proxy list invoice registrar untuk user tsb (external_user_id di-inject
+// dari JWT claims — TIDAK boleh trust query param). Registrar sudah strip
+// billing address (privacy), kita passthrough saja envelope-nya.
+//
+// Query params (semua opsional):
+//
+//	status    : comma-separated (unpaid, on_check, rejected, paid, canceled, expired, refund)
+//	search    : filter domain name (LIKE %search%)
+//	page, page_size : pagination standar (default 1, 20; max 100)
+//
+// Response: passthrough envelope registrar → { items[], pagination{} }.
+// Setiap item punya jobs[] dengan (job_id, domain, kind, years, status) —
+// frontend bisa render tabel invoice + link ke pending page tanpa refetch.
+func (h *Handler) ListInvoices(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	perPage, _ := strconv.Atoi(c.Query("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage <= 0 || perPage > 100 {
+		perPage = 20
+	}
+	res, err := h.registrar.ListInvoices(
+		c.Context(),
+		cl.UserID.String(),
+		c.Query("status"),
+		c.Query("search"),
+		page, perPage,
+	)
+	if err != nil {
+		return proxyRegistrarErr(c, "registrar_error", err)
+	}
+	return httpx.OK(c, res)
+}
+
 // UploadDocument — POST /api/v1/documents (multipart)
 //
 // Transparent proxy: user upload file → di-forward langsung ke registrar
