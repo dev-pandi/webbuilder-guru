@@ -148,6 +148,33 @@ export async function getBlogPost(siteId: string, slug: string): Promise<BlogPos
   return r.ok ? r.data : null;
 }
 
+// --- Forms (public read for renderer) ---
+
+export type FormField = {
+  name: string;
+  label: string;
+  type: "text" | "email" | "tel" | "textarea" | "url";
+  required?: boolean;
+  placeholder?: string;
+};
+
+export type PublicForm = {
+  id: string;
+  site_id: string;
+  name: string;
+  kind: string;
+  fields: FormField[] | null;
+};
+
+// Fetch definisi form (fields, kind, name) untuk render di renderer. Endpoint
+// public — TIDAK expose notify_email. UUID validation dilakukan di backend, kita
+// pass-through saja (invalid → 400 → return null).
+export async function getPublicForm(id: string): Promise<PublicForm | null> {
+  if (!id) return null;
+  const r = await fetchJson<PublicForm>(`/public/forms/${encodeURIComponent(id)}`);
+  return r.ok ? r.data : null;
+}
+
 // formatPrice — IDR aware, smallest-unit input (15000 → "Rp 15.000")
 export function formatPrice(price: number, currency: string): string {
   if (currency === "IDR") return `Rp ${price.toLocaleString("id-ID")}`;

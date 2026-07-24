@@ -202,6 +202,34 @@ func (h *Handler) DeleteSubmission(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 
+// GetPublic — GET /public/forms/:id
+//
+// Return definisi form (name, kind, fields) untuk renderer supaya bisa render
+// HTML form yang benar. TIDAK expose `notify_email` (privacy — email owner
+// tidak perlu bocor ke visitor situs). Site_id juga OK expose karena visitor
+// sudah tahu (fetch dari renderer di host site itu sendiri).
+func (h *Handler) GetPublic(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid form id")
+	}
+	form, err := h.repo.GetByID(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "form not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "form lookup failed")
+	}
+	// Strip fields yang sensitive sebelum return.
+	return httpx.OK(c, fiber.Map{
+		"id":      form.ID,
+		"site_id": form.SiteID,
+		"name":    form.Name,
+		"kind":    form.Kind,
+		"fields":  form.Fields,
+	})
+}
+
 // -------- Public submit (no JWT, rate-limited di router) --------
 
 // Submit — POST /public/forms/:id/submit

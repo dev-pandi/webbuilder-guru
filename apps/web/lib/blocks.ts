@@ -1129,6 +1129,39 @@ export const blockSchemas: BlockSchema[] = [
     ],
   },
   {
+    type: "Form",
+    label: "Form Terhubung (DB) ✨",
+    category: "marketing",
+    emoji: "📮",
+    description:
+      "Form yang tersimpan ke inbox — pilih form dari tab Form, submit masuk ke database + notifikasi email",
+    defaults: {
+      formId: "",
+      title: "Hubungi Kami",
+      subtitle: "Isi form di bawah — kami akan reply lewat email.",
+      submitLabel: "Kirim",
+      successMessage: "Terima kasih! Pesan Anda sudah kami terima.",
+    },
+    fields: [
+      {
+        name: "formId",
+        label: "Form ID",
+        type: "string",
+        placeholder: "paste dari tab Form → tombol Copy ID",
+        help: "Buat form di tab Form dulu, lalu salin ID-nya ke sini.",
+        required: true,
+      },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subjudul", type: "textarea" },
+      { name: "submitLabel", label: "Label tombol submit", type: "string" },
+      {
+        name: "successMessage",
+        label: "Pesan setelah submit sukses",
+        type: "textarea",
+      },
+    ],
+  },
+  {
     type: "Tabs",
     label: "Tabs (CSS-only) ✨",
     category: "marketing",

@@ -114,6 +114,11 @@ img { max-width: 100%%; height: auto; display: block; }
 
 .wb-empty { text-align: center; padding: 2rem; opacity: 0.6; }
 
+.wb-form-placeholder { max-width: 40rem; margin: 0 auto; padding: 3rem 1.5rem; text-align: center; }
+.wb-form-placeholder h3 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+.wb-form-placeholder p { opacity: 0.8; margin-bottom: 1.25rem; }
+.wb-form-placeholder-note { display: inline-block; padding: 1rem 1.25rem; border: 1px dashed #cbd5e1; border-radius: 0.75rem; font-size: 0.875rem; opacity: 0.75; }
+
 /* Detail pages (product + blog) */
 .wb-breadcrumb { margin-bottom: 1.5rem; font-size: 0.875rem; opacity: 0.7; }
 .wb-breadcrumb a { color: inherit; text-decoration: none; }

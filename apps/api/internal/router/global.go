@@ -75,6 +75,10 @@ func MountGlobal(app *fiber.App, deps Deps) {
 			RateLimitIP(formSubmitPerWindow, formSubmitWindow),
 			deps.Forms.Submit,
 		)
+		// Public form definition — renderer fetch untuk render HTML form yang
+		// benar (fields, labels, types). Notify email TIDAK di-return
+		// (privacy). Cache 60s di edge (form definition jarang berubah).
+		app.Get("/public/forms/:id", deps.Forms.GetPublic)
 	}
 
 	// Public analytics beacon — renderer POST hit setiap page render.

@@ -1,5 +1,6 @@
 import { marked } from "marked";
-import { formatPrice, listBlogPosts, listProducts, type Block } from "@/lib/api";
+import { formatPrice, getPublicForm, listBlogPosts, listProducts, type Block } from "@/lib/api";
+import { FormBlock } from "@/components/FormBlock";
 
 // marked configured once at module scope — strips raw HTML so a malicious
 // markdown payload (`<script>`) can't leak through. Matches the blog renderer
@@ -168,6 +169,9 @@ export async function RenderBlocks({
       }
       if (b.type === "BlogListDynamic") {
         return withLayout(b, i, <BlogListDynamicAsync block={b} siteId={siteId} />);
+      }
+      if (b.type === "Form") {
+        return withLayout(b, i, <FormBlockAsync block={b} />);
       }
       return withLayout(b, i, <BlockView block={b} />);
     }),
@@ -1818,6 +1822,44 @@ async function ProductGridDynamic({ block, siteId }: { block: Block; siteId: str
         </div>
       )}
     </section>
+  );
+}
+
+// FormBlockAsync — server component yang fetch definisi form (fields, kind)
+// via /public/forms/:id, lalu render FormBlock client component untuk submit
+// handling. Kalau formId kosong (belum di-set di editor) atau form deleted,
+// render placeholder helpful supaya owner tahu apa yang perlu difix.
+async function FormBlockAsync({ block }: { block: Block }) {
+  const p = block.props ?? {};
+  const formId = String(p.formId ?? "");
+  if (!formId) {
+    return (
+      <section className="mx-auto max-w-2xl px-6 py-10">
+        <div className="rounded-xl border border-dashed p-6 text-center text-sm opacity-70">
+          Form belum dipilih. Buka editor → block Form → tempel Form ID dari tab Form.
+        </div>
+      </section>
+    );
+  }
+  const form = await getPublicForm(formId);
+  if (!form || !form.fields || form.fields.length === 0) {
+    return (
+      <section className="mx-auto max-w-2xl px-6 py-10">
+        <div className="rounded-xl border border-dashed p-6 text-center text-sm opacity-70">
+          Form tidak ditemukan atau belum ada field. Periksa Form ID di editor.
+        </div>
+      </section>
+    );
+  }
+  return (
+    <FormBlock
+      formId={form.id}
+      fields={form.fields}
+      title={p.title ? String(p.title) : undefined}
+      subtitle={p.subtitle ? String(p.subtitle) : undefined}
+      submitLabel={p.submitLabel ? String(p.submitLabel) : undefined}
+      successMessage={p.successMessage ? String(p.successMessage) : undefined}
+    />
   );
 }
 

@@ -733,6 +733,20 @@ func renderBlock(b *strings.Builder, blk Block) {
 		}
 		b.WriteString(`</div></div></section>`)
 
+	case "Form":
+		// Connected form (backed by DB) tidak bisa berfungsi di static export —
+		// butuh API kita untuk submit ke database + kirim notifikasi email.
+		// Render placeholder informatif supaya layout tidak kosong.
+		b.WriteString(`<section class="wb-form-placeholder">`)
+		if t := str(p, "title"); t != "" {
+			fmt.Fprintf(b, `<h3>%s</h3>`, esc(t))
+		}
+		if s := str(p, "subtitle"); s != "" {
+			fmt.Fprintf(b, `<p>%s</p>`, esc(s))
+		}
+		b.WriteString(`<div class="wb-form-placeholder-note">Form ini hanya aktif pada versi online — submit butuh backend Web Builder.</div>`)
+		b.WriteString(`</section>`)
+
 	default:
 		// Unknown block: render comment marker, don't fail.
 		fmt.Fprintf(b, `<!-- block:%s -->`, esc(blk.Type))
