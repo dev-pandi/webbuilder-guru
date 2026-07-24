@@ -123,13 +123,18 @@ type purchaseReq struct {
 }
 
 type purchaseResp struct {
-	JobID      string `json:"job_id"`
-	Domain     string `json:"domain"`
-	Status     string `json:"status"`
-	Kind       string `json:"kind"` // "register" | "renew" — frontend adapt UI
-	Reason     string `json:"reason,omitempty"`
-	PaymentURL string `json:"payment_url,omitempty"`
-	ExpiresAt  string `json:"expires_at,omitempty"` // RFC3339 saat kind=register && status=active
+	JobID      string  `json:"job_id"`
+	Domain     string  `json:"domain"`
+	Status     string  `json:"status"`
+	Kind       string  `json:"kind"` // "register" | "renew" — frontend adapt UI
+	Reason     string  `json:"reason,omitempty"`
+	PaymentURL string  `json:"payment_url,omitempty"`
+	ExpiresAt  string  `json:"expires_at,omitempty"` // RFC3339 saat kind=register && status=active
+	// SiteID di-set kalau user sudah attach purchase ini ke sites row (via
+	// POST /sites/from-template/:slug atau /purchases/:job_id/attach).
+	// Nil = domain aktif tapi belum ada situs → frontend prompt user pilih
+	// template. Frontend pakai ini untuk decide CTA "Buat situs" vs "Edit situs".
+	SiteID *string `json:"site_id,omitempty"`
 }
 
 // ------------- User endpoints -------------
@@ -1389,6 +1394,10 @@ func toResp(p *Purchase) purchaseResp {
 	}
 	if p.ExpiresAt != nil {
 		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if p.SiteID != nil {
+		s := p.SiteID.String()
+		out.SiteID = &s
 	}
 	return out
 }

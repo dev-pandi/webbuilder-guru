@@ -68,6 +68,7 @@ type DomainPurchase = {
   kind: string;
   payment_url?: string;
   expires_at?: string;
+  site_id?: string; // null = domain aktif tapi belum ada situs → prompt "Buat situs"
 };
 
 // Status yang layak ditampilkan di kartu "sedang diproses" dashboard.
@@ -91,6 +92,9 @@ export default function DashboardPage() {
   // Domain aktif yang expire ≤ 30 hari — banner prominent supaya user tidak
   // ketinggalan renewal (kalau miss, site down + support ticket).
   const [expiringPurchases, setExpiringPurchases] = useState<DomainPurchase[]>([]);
+  // Semua domain aktif (register-kind) — dipakai untuk section "Domain Anda"
+  // yang tampilkan status attached + CTA "Buat situs" kalau belum attached.
+  const [activeDomains, setActiveDomains] = useState<DomainPurchase[]>([]);
 
   async function refresh() {
     setLoadingSites(true);
@@ -138,6 +142,12 @@ export default function DashboardPage() {
         // punya expires_at lama tapi renew-row punya expires_at baru. Ambil
         // yang terbaru per domain supaya user tidak salah panik.
         setExpiringPurchases(latestActivePerDomain(items).filter(isExpiringSoon));
+        // Domain aktif register-kind — filter kind=register saja karena renew
+        // job aktif tidak nambah entitas domain (cuma extend expiry). site_id
+        // di-carry supaya UI bisa show "Buat situs" vs "Edit situs".
+        setActiveDomains(
+          items.filter((p) => p.status === "active" && p.kind === "register"),
+        );
       } catch {
         /* silent — dashboard tidak block */
       }
@@ -273,6 +283,13 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Domain Aktif — dedupe per domain, prioritas domain yang BELUM ada
+          situs (butuh action: pilih template). Domain yang sudah attached
+          ke situs muncul juga tapi dengan CTA "Edit situs". */}
+      {activeDomains.length > 0 && (
+        <ActiveDomainsSection domains={latestActivePerDomain(activeDomains)} sites={sites} />
       )}
 
       {/* Site grid */}
@@ -451,6 +468,123 @@ function UsageRow({
       </div>
       <Progress value={percent} indicatorClassName={barColor} className="h-1.5 bg-muted" />
     </div>
+  );
+}
+
+// ActiveDomainsSection — daftar domain aktif user. Prioritas visual:
+// domain yang belum di-attach ke situs muncul dulu dengan CTA prominent
+// "Buat situs" (butuh action). Domain yang sudah attached muncul di bawah
+// dengan link "Edit situs" (informational).
+//
+// Kenapa penting di dashboard: core product "1 domain = 1 situs" — user
+// harus lihat domain-nya + entry point ke bikin situs tanpa perlu ke settings.
+function ActiveDomainsSection({
+  domains,
+  sites,
+}: {
+  domains: DomainPurchase[];
+  sites: Site[];
+}) {
+  // Sort: unattached dulu, attached di bawah. Antar unattached, expire terdekat.
+  const sorted = [...domains].sort((a, b) => {
+    const aAttached = a.site_id ? 1 : 0;
+    const bAttached = b.site_id ? 1 : 0;
+    if (aAttached !== bAttached) return aAttached - bAttached;
+    const aExp = a.expires_at ? new Date(a.expires_at).getTime() : Infinity;
+    const bExp = b.expires_at ? new Date(b.expires_at).getTime() : Infinity;
+    return aExp - bExp;
+  });
+  const unattached = sorted.filter((d) => !d.site_id);
+  const bySiteID = new Map(sites.map((s) => [s.id, s]));
+
+  return (
+    <div className="rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="flex size-7 items-center justify-center rounded-md bg-primary/10">
+            <Globe2 className="size-4 text-primary" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Domain Anda</div>
+            <div className="text-[11px] text-muted-foreground">
+              {unattached.length > 0
+                ? `${unattached.length} domain belum ada situs`
+                : `${domains.length} domain aktif`}
+            </div>
+          </div>
+        </div>
+        <Link
+          href="/settings/domains"
+          className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Lihat semua
+        </Link>
+      </div>
+
+      <ul className="space-y-2">
+        {sorted.map((d) => (
+          <ActiveDomainRow key={d.job_id} d={d} site={d.site_id ? bySiteID.get(d.site_id) : undefined} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ActiveDomainRow({ d, site }: { d: DomainPurchase; site: Site | undefined }) {
+  const attached = !!d.site_id;
+  return (
+    <li
+      className={
+        "flex flex-wrap items-center gap-3 rounded-lg border p-3 transition-colors " +
+        (attached ? "border-border bg-background" : "border-primary/40 bg-primary/5")
+      }
+    >
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+        <Globe2 className="size-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="text-sm font-semibold">{d.domain}</code>
+          {attached ? (
+            <Badge variant="secondary" className="text-[10px]">
+              <CheckCircle2 className="mr-1 size-2.5" />
+              Ada situs
+            </Badge>
+          ) : (
+            <Badge variant="success" className="gap-1 text-[10px]">
+              <Sparkles className="size-2.5" />
+              Siap dibuat situs
+            </Badge>
+          )}
+        </div>
+        {attached && site && (
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            {site.name} · /{site.slug}
+          </div>
+        )}
+        {!attached && (
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            Pilih template + bikin situs sekarang — gratis, ~1 menit.
+          </div>
+        )}
+      </div>
+      {attached && site ? (
+        <Button asChild size="sm" variant="outline" className="gap-1.5">
+          <Link href={`/sites/${site.id}/editor`}>
+            <Pencil className="size-3.5" />
+            Edit situs
+          </Link>
+        </Button>
+      ) : (
+        <Button asChild size="sm" className="gap-1.5 shadow-sm">
+          <Link href={`/sites/pending/${d.job_id}`}>
+            <Sparkles className="size-3.5" />
+            Buat situs
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </Button>
+      )}
+    </li>
   );
 }
 

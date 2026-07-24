@@ -44,6 +44,7 @@ type Purchase = {
   payment_url?: string;
   reason?: string; // diisi kalau status=failed (dari registrar)
   expires_at?: string;
+  site_id?: string; // set kalau domain sudah di-attach ke sites row
 };
 
 type Template = {
@@ -461,14 +462,43 @@ export default function PendingDomainPage() {
           />
         )}
 
-        {/* Template picker — hanya untuk REGISTER yang baru active.
-            Renew tidak butuh template picker (site sudah ada dari register). */}
-        {purchase?.status === "active" && purchase.kind === "register" && (
+        {/* Template picker — hanya untuk REGISTER yang baru active DAN
+            belum ada situs (site_id null). Kalau sudah attached, tampil
+            "situs sudah dibuat" + link edit alih-alih picker (cegah bug
+            "coba attach 2x" + kejelasan UX). */}
+        {purchase?.status === "active" && purchase.kind === "register" && !purchase.site_id && (
           <TemplatePicker
             jobId={jobId}
             domain={purchase.domain}
             onCreated={(siteId) => router.push(`/sites/${siteId}/editor`)}
           />
+        )}
+        {purchase?.status === "active" && purchase.kind === "register" && purchase.site_id && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CheckCircle2 className="size-4 text-emerald-500" />
+                Situs sudah dibuat
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Domain <code>{purchase.domain}</code> sudah ter-attach ke situs
+                Anda. Lanjut edit atau kembali ke dashboard.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild className="gap-2">
+                  <Link href={`/sites/${purchase.site_id}/editor`}>
+                    Edit situs
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/dashboard">Ke Dashboard</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Renew active → congratulate + link ke Domain Saya. Site sudah ada
