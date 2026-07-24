@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
 	"github.com/webbuilder/api/internal/admin"
+	"github.com/webbuilder/api/internal/analytics"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
@@ -20,6 +21,7 @@ import (
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
+	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
@@ -72,6 +74,14 @@ type Deps struct {
 	// dimatikan, cukup jangan build handler-nya di main). Router mount
 	// nil-safe di admin.go.
 	Cloudflare *cloudflare.Handler
+
+	// Forms — user CRUD form + submissions inbox + public submit endpoint.
+	// Mount di user.go (JWT) + global.go (public POST /public/forms/:id/submit).
+	Forms *forms.Handler
+
+	// Analytics — page view counter. Public POST (renderer beacon) + authed
+	// GET (dashboard summary). Nil-safe.
+	Analytics *analytics.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

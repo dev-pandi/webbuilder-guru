@@ -46,8 +46,20 @@ const (
 	// dengan payload garbage yang gagal verify (CPU cycle terpakai per request).
 	// Generous karena registrar legit boleh burst callback (banyak job update
 	// bersamaan setelah payment batch).
-	webhookPerWindow = 600                // 600 hits
-	webhookWindow    = 60 * time.Second   // per menit per source IP
+	webhookPerWindow = 600              // 600 hits
+	webhookWindow    = 60 * time.Second // per menit per source IP
+
+	// Public form submit — per-IP anti-spam. User asli submit paling banyak
+	// 1x per form load, jadi 10/menit sudah generous. Kombinasi honeypot
+	// field "_hp" di renderer sudah filter mayoritas bot dumb.
+	formSubmitPerWindow = 10
+	formSubmitWindow    = 60 * time.Second
+
+	// Public analytics pageview beacon — per-IP high limit karena setiap
+	// pageload trigger 1 hit. 200/menit = 3.3 view/detik per IP (bot spam
+	// tetap kena; user asli tidak).
+	analyticsPerWindow = 200
+	analyticsWindow    = 60 * time.Second
 )
 
 // RateLimitIP keys by client IP. Use for unauthenticated endpoints (login,

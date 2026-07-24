@@ -12,12 +12,21 @@ import {
   Loader2,
   CloudUpload,
   File,
+  Trash2,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken } from "@/lib/api";
 import { Pagination, useDebounced, type PaginatedResult } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { fmtBytes } from "@/lib/format";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost";
@@ -46,6 +55,8 @@ export default function AssetsPage() {
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
+  const [deletingID, setDeletingID] = useState<string | null>(null);
 
   useEffect(() => { setPage(1); }, [debouncedQ]);
 
@@ -97,6 +108,22 @@ export default function AssetsPage() {
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function onDelete(a: Asset) {
+    if (!confirm("Hapus aset ini? Kalau dipakai di halaman/produk/blog, gambar akan hilang di render.")) {
+      return;
+    }
+    setDeletingID(a.id);
+    try {
+      await api(`/api/v1/assets/${a.id}`, { method: "DELETE" });
+      toast.success("Aset dihapus");
+      await refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDeletingID(null);
     }
   }
 
@@ -263,13 +290,23 @@ export default function AssetsPage() {
               {assets.map((a) => {
                 const isCopied = copied === a.url;
                 const isImage = a.mime.startsWith("image/");
+                const isDeleting = deletingID === a.id;
                 return (
                   <div
                     key={a.id}
-                    className="group overflow-hidden rounded-xl border bg-muted/20 transition-all hover:shadow-md hover:-translate-y-0.5"
+                    className={`group overflow-hidden rounded-xl border bg-muted/20 transition-all hover:shadow-md hover:-translate-y-0.5 ${
+                      isDeleting ? "pointer-events-none opacity-50" : ""
+                    }`}
                   >
-                    {/* Preview */}
-                    <div className="aspect-square overflow-hidden bg-muted/50">
+                    {/* Preview — click untuk buka modal full-size */}
+                    <button
+                      type="button"
+                      onClick={() => isImage && setPreviewAsset(a)}
+                      className={`relative block aspect-square w-full overflow-hidden bg-muted/50 ${
+                        isImage ? "cursor-zoom-in" : "cursor-default"
+                      }`}
+                      title={isImage ? "Klik untuk preview" : undefined}
+                    >
                       {isImage ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -282,9 +319,16 @@ export default function AssetsPage() {
                           <File className="size-8 text-muted-foreground" />
                         </div>
                       )}
-                    </div>
+                      {isImage && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/20 group-hover:opacity-100">
+                          <div className="rounded-full bg-white/95 p-2 shadow-md">
+                            <Eye className="size-4 text-foreground" />
+                          </div>
+                        </div>
+                      )}
+                    </button>
 
-                    {/* Meta + copy */}
+                    {/* Meta + actions */}
                     <div className="p-2.5 space-y-1.5">
                       <div className="flex items-center justify-between gap-1">
                         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground truncate">
@@ -294,20 +338,34 @@ export default function AssetsPage() {
                           {fmtBytes(a.size)}
                         </span>
                       </div>
-                      <button
-                        onClick={() => copy(a.url)}
-                        className={`flex w-full items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
-                          isCopied
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                            : "border-border bg-background hover:bg-muted"
-                        }`}
-                      >
-                        {isCopied ? (
-                          <><Check className="size-3" /> Tersalin!</>
-                        ) : (
-                          <><Copy className="size-3" /> Copy URL</>
-                        )}
-                      </button>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => copy(a.url)}
+                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
+                            isCopied
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                              : "border-border bg-background hover:bg-muted"
+                          }`}
+                        >
+                          {isCopied ? (
+                            <><Check className="size-3" /> Tersalin!</>
+                          ) : (
+                            <><Copy className="size-3" /> Copy</>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => onDelete(a)}
+                          disabled={isDeleting}
+                          className="flex items-center justify-center rounded-lg border border-border bg-background px-2 py-1.5 text-destructive transition-colors hover:border-destructive/40 hover:bg-destructive/5"
+                          title="Hapus aset"
+                        >
+                          {isDeleting ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-3" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
@@ -328,6 +386,52 @@ export default function AssetsPage() {
           </div>
         )}
       </div>
+
+      {/* Preview modal — buka full-size gambar kalau user klik card. */}
+      {previewAsset && (
+        <Dialog open onOpenChange={(open) => !open && setPreviewAsset(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-sm">
+                <ImageIcon className="size-4 text-muted-foreground" />
+                <span className="font-mono text-xs">
+                  {previewAsset.mime}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  · {fmtBytes(previewAsset.size)}
+                </span>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-auto rounded-lg border bg-muted/20">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewAsset.url}
+                alt=""
+                className="mx-auto block max-h-[65vh] w-auto object-contain"
+              />
+            </div>
+            <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+              <button
+                onClick={() => copy(previewAsset.url)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  copied === previewAsset.url
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                    : "border-border bg-background hover:bg-muted"
+                }`}
+              >
+                {copied === previewAsset.url ? (
+                  <><Check className="size-3" /> Tersalin!</>
+                ) : (
+                  <><Copy className="size-3" /> Copy URL</>
+                )}
+              </button>
+              <Button variant="outline" size="sm" onClick={() => setPreviewAsset(null)}>
+                Tutup
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

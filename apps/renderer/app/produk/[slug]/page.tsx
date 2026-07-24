@@ -2,6 +2,8 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { formatPrice, getProduct, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
+import { buildProduct, wrap } from "@/lib/schema";
+import { PageViewBeacon } from "@/components/PageViewBeacon";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +19,15 @@ export default async function ProductDetail({ params }: { params: { slug: string
 
   const fontHref = googleFontsUrl(site.theme);
   const gallery = Array.isArray(product.gallery) ? product.gallery : [];
+  const baseURL = `https://${host()}`;
+  const productLD = wrap([buildProduct(product, baseURL)]);
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: productLD }} />
+      <PageViewBeacon siteId={site.id} pageSlug={`/produk/${params.slug}`} />
       <main className="mx-auto max-w-5xl px-6 py-12">
         <nav className="mb-6 text-sm opacity-70">
           <a href="/" className="hover:underline">

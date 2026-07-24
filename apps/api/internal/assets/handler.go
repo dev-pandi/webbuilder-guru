@@ -213,3 +213,62 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	}
 	return httpx.OK(c, httpx.MakePaginated(items, p, total))
 }
+
+// DELETE /api/v1/assets/:id
+//
+// Hapus 1 asset — remove file dari storage + row dari DB. Storage delete
+// jalan dulu; kalau gagal, DB row TIDAK dihapus (biar user bisa retry;
+// orphan file di storage lebih baik daripada stale DB pointer ke file yang
+// hilang, karena URL yang di-serve akan 404 di renderer).
+//
+// Ownership: cek via sites.GetOwned pakai site_id dari asset row — user tidak
+// bisa hapus asset situs lain via URL guessing.
+func (h *Handler) Delete(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid asset id")
+	}
+	asset, err := h.repo.GetByID(c.Context(), id)
+	if err != nil {
+		return httpx.NotFound(c, "asset not found")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), asset.SiteID, uid); err != nil {
+		// Return NotFound (bukan Forbidden) supaya tidak leak keberadaan asset.
+		return httpx.NotFound(c, "asset not found")
+	}
+
+	// URL disimpan sebagai path serveable (mis. "/uploads/xxx.png" untuk local
+	// atau "https://cdn/…" untuk S3). Storage.Delete expect storage key —
+	// extract dari URL (strip base + query).
+	key := storageKeyFromURL(asset.URL)
+	if key != "" {
+		if err := h.storage.Delete(c.Context(), key); err != nil {
+			slog.Warn("asset delete: storage cleanup failed (continue with DB delete anyway to prevent stale pointer)",
+				"error", err, "asset_id", id, "key", key)
+		}
+	}
+	if _, err := h.repo.Delete(c.Context(), id); err != nil {
+		return httpx.Internal(c, "delete failed")
+	}
+	return httpx.OK(c, fiber.Map{"ok": true})
+}
+
+// storageKeyFromURL extract storage key dari serving URL. Format URL bisa:
+//   - local:  "http://api.localhost/uploads/xxxx.png" → "xxxx.png"
+//   - s3:     "https://cdn.example/assets/yyyy.jpg"  → "yyyy.jpg"
+//
+// Sederhana: ambil basename setelah "/" terakhir. Kalau ada query string,
+// strip juga. Sufficient untuk pattern current — kalau future butuh subfolder,
+// upgrade parser.
+func storageKeyFromURL(u string) string {
+	// Strip query string.
+	if i := strings.Index(u, "?"); i >= 0 {
+		u = u[:i]
+	}
+	// Basename setelah "/" terakhir.
+	if i := strings.LastIndex(u, "/"); i >= 0 && i < len(u)-1 {
+		return u[i+1:]
+	}
+	return u
+}

@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { marked } from "marked";
 import { getBlogPost, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
+import { buildArticle, wrap } from "@/lib/schema";
+import { PageViewBeacon } from "@/components/PageViewBeacon";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +35,15 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
   const fontHref = googleFontsUrl(site.theme);
   const html = await marked.parse(post.content_md ?? "");
   const tags = Array.isArray(post.tags) ? post.tags : [];
+  const baseURL = `https://${host()}`;
+  const articleLD = wrap([buildArticle(post, site, baseURL)]);
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: articleLD }} />
+      <PageViewBeacon siteId={site.id} pageSlug={`/blog/${params.slug}`} />
       <main className="mx-auto max-w-3xl px-6 py-12">
         <nav className="mb-6 text-sm opacity-70">
           <a href="/" className="hover:underline">

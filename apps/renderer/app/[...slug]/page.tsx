@@ -1,8 +1,10 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
+import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { getPage, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
+import { buildOrganization, buildWebSite, wrap } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +17,22 @@ export default async function CatchAll({ params }: { params: { slug: string[] } 
   if (!page) notFound();
   const blocks = page.tree?.blocks ?? [];
   const fontHref = googleFontsUrl(site.theme);
+  // Schema.org JSON-LD — inject WebSite + Organization di homepage, Organization
+  // saja di sub-pages (WebSite cukup 1x per site sesuai Google guideline).
+  const baseURL = `https://${host}`;
+  const schemas = page.is_home
+    ? [buildWebSite(site, baseURL), buildOrganization(site, baseURL)]
+    : [buildOrganization(site, baseURL)];
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: wrap(schemas) }}
+      />
       <RenderBlocks blocks={blocks} siteId={site.id} />
+      <PageViewBeacon siteId={site.id} pageSlug={page.is_home ? "" : slug} />
     </>
   );
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/webbuilder/api/internal/admin"
+	"github.com/webbuilder/api/internal/analytics"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
@@ -22,6 +23,7 @@ import (
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
+	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/logging"
 	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/metrics"
@@ -117,6 +119,8 @@ func main() {
 	adminRepo := admin.NewRepo(pool)
 	purchaseRepo := domain_purchase.NewRepo(pool)
 	cloudflareRepo := cloudflare.NewRepo(pool)
+	formsRepo := forms.NewRepo(pool)
+	analyticsRepo := analytics.NewRepo(pool)
 
 	if err := seed.Run(ctx, seed.Deps{
 		Pool:      pool,
@@ -316,6 +320,8 @@ func main() {
 		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo),
 		Admin:        admin.NewHandler(adminRepo),
 		Cloudflare:   cloudflare.NewHandler(cloudflareRepo),
+		Forms:        forms.NewHandler(formsRepo, siteRepo, mailer),
+		Analytics:    analytics.NewHandler(analyticsRepo, siteRepo),
 		Products:     products.NewHandler(productRepo, siteRepo),
 		Blog:         blog.NewHandler(blogRepo, siteRepo),
 		Snippets:     snippets.NewHandler(snippetRepo),

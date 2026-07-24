@@ -67,6 +67,25 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		)
 	}
 
+	// Public form submission — no JWT (visitor situs anonymous). Anti-spam:
+	// (1) rate limit 10/menit per IP, (2) honeypot field "_hp" di handler.
+	// Kalau form_id tidak valid → 404 (tidak leak enumeration).
+	if deps.Forms != nil {
+		app.Post("/public/forms/:id/submit",
+			RateLimitIP(formSubmitPerWindow, formSubmitWindow),
+			deps.Forms.Submit,
+		)
+	}
+
+	// Public analytics beacon — renderer POST hit setiap page render.
+	// Rate-limit per IP (200/menit) supaya bot spam tidak bloat counter.
+	if deps.Analytics != nil {
+		app.Post("/public/analytics/pageview",
+			RateLimitIP(analyticsPerWindow, analyticsWindow),
+			deps.Analytics.RecordView,
+		)
+	}
+
 	// Public read endpoints (renderer). 30s TTL matches renderer's ISR
 	// revalidate window — anything published is visible within 30s without
 	// requiring the dashboard to issue a cache purge.

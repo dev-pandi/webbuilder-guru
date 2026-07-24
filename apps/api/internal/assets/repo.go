@@ -71,6 +71,31 @@ func (r *Repo) ListBySitePage(ctx context.Context, siteID uuid.UUID, like string
 	return out, total, rows.Err()
 }
 
+// GetByID lookup asset by id — ownership check di caller (handler cek via
+// sites.Repo). Return storage key untuk cleanup di storage layer.
+func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Asset, error) {
+	var a Asset
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, site_id, kind, url, size, mime, created_at
+		  FROM assets WHERE id = $1
+	`, id).Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// Delete hapus asset row. Storage cleanup (file di disk / S3) tanggung jawab
+// caller — repo cuma urus DB. Return rowsAffected supaya caller bisa detect
+// "sudah dihapus" case (idempotent).
+func (r *Repo) Delete(ctx context.Context, id uuid.UUID) (int64, error) {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM assets WHERE id = $1`, id)
+	if err != nil {
+		return 0, err
+	}
+	return ct.RowsAffected(), nil
+}
+
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Asset, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, site_id, kind, url, size, mime, created_at

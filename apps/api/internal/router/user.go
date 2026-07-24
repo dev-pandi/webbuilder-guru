@@ -87,6 +87,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		uploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
 		authed.Get("/sites/:id/assets", deps.Assets.ListBySite)
 		authed.Post("/sites/:id/assets", uploadLimit, deps.Assets.Upload)
+		// Delete di path top-level (bukan nested site) supaya URL predictable
+		// tanpa harus fetch asset dulu untuk tau site_id-nya.
+		authed.Delete("/assets/:id", mutateLimit, deps.Assets.Delete)
 	}
 
 	// Domains
@@ -154,4 +157,20 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Patch("/blog-posts/:id", mutateLimit, deps.Blog.Update)
 	authed.Post("/blog-posts/:id/publish", mutateLimit, deps.Blog.Publish)
 	authed.Delete("/blog-posts/:id", mutateLimit, deps.Blog.Delete)
+
+	// Analytics summary — read-only, no rate limit. Public beacon di global.go.
+	if deps.Analytics != nil {
+		authed.Get("/sites/:id/analytics", deps.Analytics.GetSummary)
+	}
+
+	// Forms — CRUD form definitions + submissions inbox. Public submit endpoint
+	// terpisah di /public/forms/:id/submit (di router/global.go).
+	if deps.Forms != nil {
+		authed.Get("/sites/:id/forms", deps.Forms.ListBySite)
+		authed.Post("/sites/:id/forms", mutateLimit, deps.Forms.CreateForSite)
+		authed.Patch("/forms/:id", mutateLimit, deps.Forms.Update)
+		authed.Delete("/forms/:id", mutateLimit, deps.Forms.Delete)
+		authed.Get("/forms/:id/submissions", deps.Forms.ListSubmissions)
+		authed.Delete("/form-submissions/:id", mutateLimit, deps.Forms.DeleteSubmission)
+	}
 }
