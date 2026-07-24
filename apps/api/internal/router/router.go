@@ -14,6 +14,7 @@ import (
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
+	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
@@ -66,6 +67,11 @@ type Deps struct {
 	DomainPurchase *domain_purchase.Handler
 
 	Admin *admin.Handler
+
+	// Cloudflare admin CRUD. Handler nil = fitur disabled (kalau perlu
+	// dimatikan, cukup jangan build handler-nya di main). Router mount
+	// nil-safe di admin.go.
+	Cloudflare *cloudflare.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

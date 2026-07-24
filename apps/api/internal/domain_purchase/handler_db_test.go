@@ -69,8 +69,8 @@ func newHandlerForTest(t *testing.T, baseURL string) *Handler {
 		t.Fatalf("registrar.New: %v", err)
 	}
 	repo := NewRepo(testPool)
-	// authRepo + webhookSecret tidak dipakai di reconcile path — kirim nil / kosong.
-	return NewHandler(repo, c, nil, "")
+	// authRepo + cloudflare + platformIPs + webhookSecret tidak dipakai di reconcile path.
+	return NewHandler(repo, c, nil, nil, nil, "")
 }
 
 // TestHandler_Reconcile_PaginatesUntilExhausted — 250 item, perPage=100 default,

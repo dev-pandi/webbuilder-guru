@@ -15,6 +15,7 @@ import (
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
+	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
 	"github.com/webbuilder/api/internal/domain_purchase"
@@ -115,6 +116,7 @@ func main() {
 	snippetRepo := snippets.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
 	purchaseRepo := domain_purchase.NewRepo(pool)
+	cloudflareRepo := cloudflare.NewRepo(pool)
 
 	if err := seed.Run(ctx, seed.Deps{
 		Pool:      pool,
@@ -252,8 +254,8 @@ func main() {
 		// upload diteruskan langsung ke registrar via AttachDocument handler.
 		// Single source of truth = registrar.
 		purchaseHandler = domain_purchase.NewHandler(
-			purchaseRepo, registrarClient, authRepo,
-			cfg.RegistrarWebhookSecret,
+			purchaseRepo, registrarClient, authRepo, cloudflareRepo,
+			cfg.PlatformIPs, cfg.RegistrarWebhookSecret,
 		)
 		if cfg.RegistrarWebhookSecret == "" {
 			slog.Warn("registrar webhook: REGISTRAR_WEBHOOK_SECRET kosong — endpoint akan 503 sampai di-set")
@@ -313,6 +315,7 @@ func main() {
 		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
 		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo, cfg.RendererDefaultHost),
 		Admin:        admin.NewHandler(adminRepo),
+		Cloudflare:   cloudflare.NewHandler(cloudflareRepo),
 		Products:     products.NewHandler(productRepo, siteRepo),
 		Blog:         blog.NewHandler(blogRepo, siteRepo),
 		Snippets:     snippets.NewHandler(snippetRepo),

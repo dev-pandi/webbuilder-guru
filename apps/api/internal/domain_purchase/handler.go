@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/registrar"
@@ -48,11 +49,24 @@ type Handler struct {
 	repo          *Repo
 	registrar     *registrar.Client
 	users         *auth.Repo
+	cloudflare    *cloudflare.Repo // nil = auto-attach ke Cloudflare skipped
+	platformIPs   []string         // dipakai jadi content A record CF auto-attach
 	webhookSecret string
 }
 
-func NewHandler(repo *Repo, r *registrar.Client, users *auth.Repo, webhookSecret string) *Handler {
-	return &Handler{repo: repo, registrar: r, users: users, webhookSecret: webhookSecret}
+// NewHandler — cloudflareRepo + platformIPs optional untuk auto-attach.
+// Kalau salah satu nil/empty, auto-attach ke Cloudflare skipped tanpa error
+// (log warn saja). platformIPs biasanya dari cfg.PlatformIPs.
+func NewHandler(
+	repo *Repo, r *registrar.Client, users *auth.Repo,
+	cloudflareRepo *cloudflare.Repo, platformIPs []string,
+	webhookSecret string,
+) *Handler {
+	return &Handler{
+		repo: repo, registrar: r, users: users, cloudflare: cloudflareRepo,
+		platformIPs:   platformIPs,
+		webhookSecret: webhookSecret,
+	}
 }
 
 // ------------- Requests / responses -------------
@@ -1225,15 +1239,108 @@ func (h *Handler) Webhook(c *fiber.Ctx) error {
 	}
 	if changed && p.Status == StatusActive {
 		slog.Info("domain purchase: became active", "job_id", p.JobID, "domain", p.Domain)
-		// Side-effect opsional: bisa create sites.domains row otomatis di
-		// sini kalau site_id sudah di-attach. Untuk MVP, biar frontend yang
-		// prompt user untuk lanjut ke template picker.
+		// Auto-attach ke Cloudflare — best-effort. Fail tidak block webhook
+		// (domain sudah live di registry, cuma tidak lewat CF). Log error +
+		// admin bisa retry manual dari /admin/registrar nanti kalau perlu.
+		//
+		// Skip kalau:
+		//   - cloudflare repo nil (fitur disabled — main tidak wire)
+		//   - registrar client nil (tidak bisa push NS)
+		//   - tidak ada config default (admin belum setup)
+		//   - kind bukan register (renew tidak butuh setup CF ulang)
+		if job, err := h.repo.GetByJobIDAny(c.Context(), p.JobID); err == nil &&
+			job != nil && job.Kind == KindRegister {
+			h.tryAttachToCloudflare(c.Context(), p.Domain)
+		}
 	}
 	metrics.Default.CounterInc(metricWebhooksReceived,
 		"Webhook receiver hits by outcome",
 		map[string]string{"result": "processed"},
 	)
 	return c.SendStatus(fiber.StatusOK)
+}
+
+// tryAttachToCloudflare = best-effort auto-attach domain baru ke Cloudflare:
+//  1. Ambil config CF default (skip kalau belum di-setup admin).
+//  2. Create zone di CF → dapat NS assignment + zone_id.
+//  3. Create A record `@` → PLATFORM_IPS[0] (proxied=true, lewat CF edge).
+//  4. Create CNAME `www` → root domain (proxied=true).
+//  5. Push NS itu ke registrar via UpdateNameservers.
+//
+// Semua error di-log tapi TIDAK propagate — domain sudah live di registry,
+// CF attach hanya optimization. DNS record failure (mis. duplicate) di-treat
+// warn tapi flow lanjut (zone tetap valid, admin bisa fix DNS manual).
+//
+// Kalau PLATFORM_IPS kosong, skip create DNS records (zone tetap dibuat +
+// NS di-push, tapi user harus setup DNS record manual di CF dashboard).
+func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
+	if h.cloudflare == nil || h.registrar == nil || domain == "" {
+		return
+	}
+	cfg, err := h.cloudflare.GetDefault(ctx)
+	if err != nil {
+		if !errors.Is(err, cloudflare.ErrNotFound) {
+			slog.Warn("cloudflare attach: default lookup failed", "error", err, "domain", domain)
+		}
+		metrics.Default.CounterInc("cloudflare_attach_total",
+			"Auto-attach ke Cloudflare per outcome",
+			map[string]string{"result": "skipped_no_config"},
+		)
+		return
+	}
+
+	client := cloudflare.NewClient(*cfg)
+	zone, err := client.CreateZone(ctx, domain)
+	if err != nil {
+		slog.Warn("cloudflare attach: create zone failed",
+			"error", err, "domain", domain, "cf_config", cfg.Name)
+		metrics.Default.CounterInc("cloudflare_attach_total",
+			"Auto-attach ke Cloudflare per outcome",
+			map[string]string{"result": "zone_failed"},
+		)
+		return
+	}
+
+	// -------- DNS records --------
+	// A record `@` → platform IP + CNAME `www` → root. Skip kalau PLATFORM_IPS
+	// belum di-config (admin bisa setup manual di CF dashboard).
+	if len(h.platformIPs) > 0 {
+		platformIP := h.platformIPs[0]
+		if _, err := client.CreateDNSRecord(ctx, zone.ID, cloudflare.DNSRecordRequest{
+			Type: "A", Name: "@", Content: platformIP, Proxied: true,
+		}); err != nil && !cloudflare.IsCloudflareDuplicateRecord(err) {
+			slog.Warn("cloudflare attach: create A record failed",
+				"error", err, "domain", domain, "content", platformIP)
+			// Non-fatal — lanjut push NS. Admin bisa fix DNS manual di CF.
+		}
+		if _, err := client.CreateDNSRecord(ctx, zone.ID, cloudflare.DNSRecordRequest{
+			Type: "CNAME", Name: "www", Content: domain, Proxied: true,
+		}); err != nil && !cloudflare.IsCloudflareDuplicateRecord(err) {
+			slog.Warn("cloudflare attach: create CNAME www failed",
+				"error", err, "domain", domain)
+		}
+	} else {
+		slog.Warn("cloudflare attach: PLATFORM_IPS kosong, skip create DNS records — domain resolve tidak akan point ke platform sampai admin setup manual",
+			"domain", domain, "zone_id", zone.ID)
+	}
+
+	// -------- Push NS ke registrar --------
+	if _, err := h.registrar.UpdateNameservers(ctx, domain, zone.NameServers); err != nil {
+		slog.Warn("cloudflare attach: update NS at registrar failed",
+			"error", err, "domain", domain, "ns", zone.NameServers)
+		metrics.Default.CounterInc("cloudflare_attach_total",
+			"Auto-attach ke Cloudflare per outcome",
+			map[string]string{"result": "ns_push_failed"},
+		)
+		return
+	}
+
+	slog.Info("cloudflare attach: success",
+		"domain", domain, "zone_id", zone.ID, "ns", zone.NameServers)
+	metrics.Default.CounterInc("cloudflare_attach_total",
+		"Auto-attach ke Cloudflare per outcome",
+		map[string]string{"result": "success"},
+	)
 }
 
 // verifyHMAC constant-time compare untuk header `sha256=<hex>`.

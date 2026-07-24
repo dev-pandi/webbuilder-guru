@@ -33,6 +33,18 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/registrar/purchases", deps.DomainPurchase.AdminListPurchases)
 	}
 
+	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
+	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
+	if deps.Cloudflare != nil {
+		cf := g.Group("/cloudflare")
+		cf.Get("/", deps.Cloudflare.List)
+		cf.Post("/", deps.Cloudflare.Create)
+		cf.Patch("/:id", deps.Cloudflare.Update)
+		cf.Delete("/:id", deps.Cloudflare.Delete)
+		cf.Post("/:id/default", deps.Cloudflare.SetDefault)
+		cf.Post("/:id/verify", deps.Cloudflare.VerifyStored)
+	}
+
 	// pprof exposes detailed runtime data (heap profile can leak secrets in
 	// strings, CPU profile blocks the process). Always behind admin + opt-in
 	// via env so it's not on in default prod deployments.
