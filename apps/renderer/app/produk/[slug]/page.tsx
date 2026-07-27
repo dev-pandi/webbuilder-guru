@@ -44,6 +44,8 @@ export default async function ProductDetail({ params }: { params: { slug: string
               <img
                 src={product.image_url}
                 alt={product.name}
+                fetchPriority="high"
+                decoding="async"
                 className="aspect-square w-full rounded-xl border object-cover"
               />
             ) : (
@@ -57,6 +59,8 @@ export default async function ProductDetail({ params }: { params: { slug: string
                     key={i}
                     src={url}
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="aspect-square w-full rounded border object-cover"
                   />
                 ))}

@@ -305,6 +305,12 @@ func main() {
 
 	sitesHandler := sites.NewHandler(siteRepo)
 	sitesHandler.SetPurger(purger)
+	// Storage-file cleanup untuk asset saat site di-delete. DB row cascade
+	// otomatis lewat FK, tapi file bytes butuh cleanup eksplisit supaya
+	// tidak numpuk orphan di S3/local disk. Nil-safe kalau storage disabled.
+	if assetStorage != nil {
+		sitesHandler.SetAssetCleaner(assets.NewSiteCleaner(assetRepo, assetStorage))
+	}
 	pagesHandler := pages.NewHandler(pageRepo, siteRepo, issuer)
 	pagesHandler.SetPurger(purger)
 

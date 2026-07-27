@@ -50,11 +50,19 @@ const (
 	StatusActive              = "active"
 	StatusFailed              = "failed"
 	StatusExpired             = "expired"
+	// Cancelled = user batalkan checkout sebelum bayar (mis. close payment
+	// gateway tab), atau job di-cancel oleh admin. Terminal state — beda
+	// dari failed (yang implicit "sistem gagal") vs cancelled ("user
+	// pilihan"), supaya UI bisa kasih copy yang sesuai.
+	StatusCancelled = "cancelled"
 )
 
 // IsTerminal reports whether status won't change again (frontend can stop polling).
 func IsTerminal(status string) bool {
-	return status == StatusActive || status == StatusFailed || status == StatusExpired
+	return status == StatusActive ||
+		status == StatusFailed ||
+		status == StatusExpired ||
+		status == StatusCancelled
 }
 
 type Repo struct{ pool *pgxpool.Pool }

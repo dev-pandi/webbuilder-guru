@@ -114,13 +114,26 @@ function statusInfo(status: string, purchaseKind: string): StatusInfo {
         hint: "Batas waktu pembayaran habis. Silakan coba lagi.",
         kind: "bad",
       };
+    case "cancelled":
+      return {
+        label: "Dibatalkan",
+        hint: isRenew
+          ? "Perpanjangan dibatalkan. Domain Anda tidak terpengaruh."
+          : "Pendaftaran dibatalkan sebelum pembayaran. Silakan mulai pembelian baru.",
+        kind: "bad",
+      };
     default:
       return { label: status, hint: "", kind: "wait" };
   }
 }
 
 function isTerminal(status: string) {
-  return status === "active" || status === "failed" || status === "expired";
+  return (
+    status === "active" ||
+    status === "failed" ||
+    status === "expired" ||
+    status === "cancelled"
+  );
 }
 
 // friendlyRetryConflict — pattern-match error 409 dari POST /purchases/:id/retry
@@ -440,6 +453,17 @@ export default function PendingDomainPage() {
                   {/* Expired: window bayar habis. Tidak ada retry (butuh invoice
                       baru) — hanya "Mulai baru". */}
                   {purchase.status === "expired" && (
+                    <Button asChild className="mt-4 gap-2">
+                      <Link href={`/sites/new-with-domain?domain=${encodeURIComponent(purchase.domain)}`}>
+                        Mulai pembelian baru
+                        <ArrowRight className="size-4" />
+                      </Link>
+                    </Button>
+                  )}
+
+                  {/* Cancelled: user batalkan sebelum bayar. Sama seperti expired
+                      — tidak bisa retry job lama, harus create baru. */}
+                  {purchase.status === "cancelled" && (
                     <Button asChild className="mt-4 gap-2">
                       <Link href={`/sites/new-with-domain?domain=${encodeURIComponent(purchase.domain)}`}>
                         Mulai pembelian baru

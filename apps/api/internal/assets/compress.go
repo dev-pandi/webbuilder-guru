@@ -122,6 +122,30 @@ func Compress(r io.Reader, mime string, opt CompressOptions) (*CompressResult, e
 	return out, nil
 }
 
+// probeImageDimensions parse header saja pakai image.DecodeConfig — jauh
+// lebih murah dari full Decode (baca beberapa KB pertama untuk metadata).
+// Nil pointer kalau format tak dikenal atau file rusak — caller (renderer)
+// akan tetap emit <img> tanpa width/height attr (browser fallback normal).
+func probeImageDimensions(data []byte, mime string) (*int, *int) {
+	// Skip untuk format yang decoderconfig-nya tidak available atau tidak worth
+	// (mis. text/plain sneaked in). MIME kita udah whitelist di caller.
+	switch mime {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+		// fall through
+	default:
+		return nil, nil
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, nil
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, nil
+	}
+	w, h := cfg.Width, cfg.Height
+	return &w, &h
+}
+
 // resizeIfNeeded downscales the image so the longest edge is at most maxDim.
 // Returns the original image untouched if it's already small enough — caller
 // uses pointer identity to detect the noop.

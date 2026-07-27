@@ -48,6 +48,9 @@ const STATUS_LABEL: Record<string, { label: string; variant: "default" | "second
   pending_provisioning: { label: "Diproses registrar", variant: "secondary" as const },
   failed: { label: "Gagal", variant: "destructive" as const },
   expired: { label: "Kadaluwarsa", variant: "destructive" as const },
+  // Cancelled = user batalkan checkout sebelum bayar (mis. close payment
+  // gateway tab, atau job di-cancel via admin). Terminal — no action needed.
+  cancelled: { label: "Dibatalkan", variant: "secondary" as const },
 };
 
 export default function DomainsSettingsPage() {

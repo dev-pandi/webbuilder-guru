@@ -362,7 +362,7 @@ func renderBlock(b *strings.Builder, blk Block) {
 			if m, ok := it.(map[string]any); ok {
 				b.WriteString(`<div class="wb-product">`)
 				if img := str(m, "image"); img != "" {
-					fmt.Fprintf(b, `<img src="%s" alt="%s" loading="lazy" />`, escAttr(img), escAttr(str(m, "name")))
+					fmt.Fprintf(b, `<img src="%s" alt="%s" loading="lazy" decoding="async" />`, escAttr(img), escAttr(str(m, "name")))
 				} else {
 					b.WriteString(`<div class="wb-product-img-placeholder"></div>`)
 				}
@@ -893,7 +893,7 @@ func renderProductGridDynamic(b *strings.Builder, blk Block, prods []products.Pr
 	for _, pr := range prods[:n] {
 		fmt.Fprintf(b, `<a class="wb-product" href="/produk/%s/">`, esc(pr.Slug))
 		if pr.ImageURL != "" {
-			fmt.Fprintf(b, `<img src="%s" alt="%s" loading="lazy" />`, escAttr(pr.ImageURL), escAttr(pr.Name))
+			fmt.Fprintf(b, `<img src="%s" alt="%s" loading="lazy" decoding="async" />`, escAttr(pr.ImageURL), escAttr(pr.Name))
 		} else {
 			b.WriteString(`<div class="wb-product-img-placeholder"></div>`)
 		}
@@ -941,7 +941,7 @@ func renderProductHTML(site *sites.Site, pr products.Product) string {
 	// Image
 	body.WriteString(`<div>`)
 	if pr.ImageURL != "" {
-		fmt.Fprintf(&body, `<img src="%s" alt="%s" class="wb-detail-img" />`, escAttr(pr.ImageURL), escAttr(pr.Name))
+		fmt.Fprintf(&body, `<img src="%s" alt="%s" class="wb-detail-img" fetchpriority="high" decoding="async" />`, escAttr(pr.ImageURL), escAttr(pr.Name))
 	} else {
 		body.WriteString(`<div class="wb-detail-img-placeholder"></div>`)
 	}
@@ -951,7 +951,7 @@ func renderProductHTML(site *sites.Site, pr products.Product) string {
 	if len(gallery) > 0 {
 		body.WriteString(`<div class="wb-detail-gallery">`)
 		for _, url := range gallery {
-			fmt.Fprintf(&body, `<img src="%s" alt="" loading="lazy" />`, escAttr(url))
+			fmt.Fprintf(&body, `<img src="%s" alt="" loading="lazy" decoding="async" />`, escAttr(url))
 		}
 		body.WriteString(`</div>`)
 	}
@@ -985,7 +985,7 @@ func renderBlogPostHTML(site *sites.Site, post blog.Post) string {
 	body.WriteString(`<main class="wb-article">`)
 	body.WriteString(`<nav class="wb-breadcrumb"><a href="/">← Beranda</a></nav>`)
 	if post.CoverImageURL != "" {
-		fmt.Fprintf(&body, `<img src="%s" alt="%s" class="wb-article-cover" />`, escAttr(post.CoverImageURL), escAttr(post.Title))
+		fmt.Fprintf(&body, `<img src="%s" alt="%s" class="wb-article-cover" fetchpriority="high" decoding="async" />`, escAttr(post.CoverImageURL), escAttr(post.Title))
 	}
 	fmt.Fprintf(&body, `<h1 class="wb-article-title">%s</h1>`, esc(post.Title))
 	body.WriteString(`<div class="wb-article-meta">`)

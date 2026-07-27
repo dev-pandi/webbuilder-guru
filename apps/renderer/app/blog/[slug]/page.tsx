@@ -58,6 +58,8 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
           <img
             src={post.cover_image_url}
             alt={post.title}
+            fetchPriority="high"
+            decoding="async"
             className="mb-6 aspect-[2/1] w-full rounded-xl object-cover"
           />
         )}

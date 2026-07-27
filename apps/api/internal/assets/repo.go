@@ -9,12 +9,17 @@ import (
 )
 
 type Asset struct {
-	ID        uuid.UUID `json:"id"`
-	SiteID    uuid.UUID `json:"site_id"`
-	Kind      string    `json:"kind"`
-	URL       string    `json:"url"`
-	Size      int64     `json:"size"`
-	Mime      string    `json:"mime"`
+	ID     uuid.UUID `json:"id"`
+	SiteID uuid.UUID `json:"site_id"`
+	Kind   string    `json:"kind"`
+	URL    string    `json:"url"`
+	Size   int64     `json:"size"`
+	Mime   string    `json:"mime"`
+	// Width + Height pixel dimensions untuk image assets. Nullable — non-image
+	// atau failed decode = NULL. Renderer + editor pakai untuk `<img width=X
+	// height=Y>` supaya browser reserve layout slot (cegah CLS).
+	Width     *int      `json:"width,omitempty"`
+	Height    *int      `json:"height,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -22,12 +27,14 @@ type Repo struct{ pool *pgxpool.Pool }
 
 func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
 
-func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, kind, url, mime string, size int64) (*Asset, error) {
+// Create insert asset row. width/height nullable — pass nil untuk non-image
+// atau kalau decode dimensi gagal.
+func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, kind, url, mime string, size int64, width, height *int) (*Asset, error) {
 	var a Asset
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO assets (site_id, kind, url, size, mime) VALUES ($1,$2,$3,$4,$5)
-		RETURNING id, site_id, kind, url, size, mime, created_at
-	`, siteID, kind, url, size, mime).Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.CreatedAt)
+		INSERT INTO assets (site_id, kind, url, size, mime, width, height) VALUES ($1,$2,$3,$4,$5,$6,$7)
+		RETURNING id, site_id, kind, url, size, mime, width, height, created_at
+	`, siteID, kind, url, size, mime, width, height).Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.Width, &a.Height, &a.CreatedAt)
 	return &a, err
 }
 
@@ -51,7 +58,7 @@ func (r *Repo) ListBySitePage(ctx context.Context, siteID uuid.UUID, like string
 		return nil, 0, err
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, site_id, kind, url, size, mime, created_at
+		SELECT id, site_id, kind, url, size, mime, width, height, created_at
 		FROM assets WHERE site_id = $1 AND LOWER(mime) LIKE $2
 		ORDER BY created_at DESC
 		LIMIT $3 OFFSET $4
@@ -63,7 +70,7 @@ func (r *Repo) ListBySitePage(ctx context.Context, siteID uuid.UUID, like string
 	out := []Asset{}
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.Width, &a.Height, &a.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, a)
@@ -76,9 +83,9 @@ func (r *Repo) ListBySitePage(ctx context.Context, siteID uuid.UUID, like string
 func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Asset, error) {
 	var a Asset
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, kind, url, size, mime, created_at
+		SELECT id, site_id, kind, url, size, mime, width, height, created_at
 		  FROM assets WHERE id = $1
-	`, id).Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.CreatedAt)
+	`, id).Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.Width, &a.Height, &a.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +105,7 @@ func (r *Repo) Delete(ctx context.Context, id uuid.UUID) (int64, error) {
 
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Asset, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, site_id, kind, url, size, mime, created_at
+		SELECT id, site_id, kind, url, size, mime, width, height, created_at
 		FROM assets WHERE site_id = $1 ORDER BY created_at DESC
 	`, siteID)
 	if err != nil {
@@ -108,7 +115,7 @@ func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Asset, error
 	out := []Asset{}
 	for rows.Next() {
 		var a Asset
-		if err := rows.Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.SiteID, &a.Kind, &a.URL, &a.Size, &a.Mime, &a.Width, &a.Height, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

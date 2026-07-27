@@ -271,7 +271,13 @@ function BlockView({ block }: { block: Block }) {
               <div key={i} className="overflow-hidden rounded-xl border">
                 {it.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={it.image} alt={it.name} className="aspect-square w-full object-cover" />
+                  <img
+                    src={it.image}
+                    alt={it.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="aspect-square w-full object-cover"
+                  />
                 ) : (
                   <div className="aspect-square bg-slate-100" />
                 )}
@@ -460,6 +466,8 @@ function BlockView({ block }: { block: Block }) {
                   key={i}
                   src={it.image}
                   alt={it.name}
+                  loading="lazy"
+                  decoding="async"
                   className="h-8 opacity-60 grayscale transition-all hover:opacity-100 hover:grayscale-0"
                 />
               ) : (
@@ -728,6 +736,8 @@ function BlockView({ block }: { block: Block }) {
                 <img
                   src={String(p.image)}
                   alt=""
+                  fetchPriority="high"
+                  decoding="async"
                   className="w-full rounded-2xl border shadow-xl"
                 />
               ) : (
@@ -913,6 +923,8 @@ function BlockView({ block }: { block: Block }) {
                     <img
                       src={it.image}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="w-full rounded-2xl border shadow-lg"
                     />
                   ) : (
@@ -1031,6 +1043,10 @@ function BlockView({ block }: { block: Block }) {
                   <img
                     src={it.image}
                     alt={it.name}
+                    loading="lazy"
+                    decoding="async"
+                    width={128}
+                    height={128}
                     className="mx-auto size-32 rounded-full border-4 border-background object-cover shadow-lg"
                   />
                 ) : (
@@ -1164,8 +1180,9 @@ function BlockView({ block }: { block: Block }) {
                   <img
                     src={it.image}
                     alt={it.caption ?? ""}
-                    className="aspect-square w-full object-cover transition-transform duration-500 group-hover:scale-110"
                     loading="lazy"
+                    decoding="async"
+                    className="aspect-square w-full object-cover transition-transform duration-500 group-hover:scale-110"
                   />
                 ) : (
                   <div className="aspect-square bg-foreground/5" />
@@ -1377,6 +1394,10 @@ function BlockView({ block }: { block: Block }) {
                 <img
                   src={String(p.avatar)}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width={56}
+                  height={56}
                   className="size-14 rounded-full border-2 border-background object-cover shadow-md"
                 />
               ) : (
@@ -1807,8 +1828,9 @@ async function ProductGridDynamic({ block, siteId }: { block: Block; siteId: str
                 <img
                   src={pr.image_url}
                   alt={pr.name}
-                  className="aspect-square w-full object-cover"
                   loading="lazy"
+                  decoding="async"
+                  className="aspect-square w-full object-cover"
                 />
               ) : (
                 <div className="aspect-square bg-slate-100" />
@@ -1884,8 +1906,9 @@ async function BlogListDynamicAsync({ block, siteId }: { block: Block; siteId: s
               <img
                 src={post.cover_image_url}
                 alt={post.title}
-                className="mb-3 aspect-[3/1] w-full rounded-lg object-cover"
                 loading="lazy"
+                decoding="async"
+                className="mb-3 aspect-[3/1] w-full rounded-lg object-cover"
               />
             ) : null}
             <h3 className="text-xl font-semibold">{post.title}</h3>

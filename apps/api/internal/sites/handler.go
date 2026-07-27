@@ -23,15 +23,27 @@ type CachePurger interface {
 	PurgePage(ctx context.Context, siteID uuid.UUID, slug string)
 }
 
+// AssetCleaner — hapus semua file storage (S3/local disk) milik site.
+// DB row assets sudah cascade lewat FK, tapi FILE BYTES butuh cleanup
+// eksplisit. Dipanggil FIRE-AND-FORGET dari Delete handler sebelum row
+// site benar-benar hapus supaya URL asset masih bisa di-lookup dulu.
+type AssetCleaner interface {
+	CleanupSite(ctx context.Context, siteID uuid.UUID)
+}
+
 type Handler struct {
-	repo   *Repo
-	purger CachePurger // nil = purge no-op
+	repo         *Repo
+	purger       CachePurger  // nil = purge no-op
+	assetCleaner AssetCleaner // nil = skip storage cleanup (dev tanpa storage)
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
 
 // SetPurger inject cachepurge helper post-construction.
 func (h *Handler) SetPurger(p CachePurger) { h.purger = p }
+
+// SetAssetCleaner inject storage cleaner post-construction.
+func (h *Handler) SetAssetCleaner(c AssetCleaner) { h.assetCleaner = c }
 
 // slugRe = validasi kalau client kirim slug custom (opsional). Kalau tidak
 // kirim, backend auto-generate via Slugify(name). Slug tidak lagi jadi URL
@@ -225,6 +237,23 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
 		return httpx.BadRequest(c, "invalid id")
+	}
+	// Verify ownership dulu (repo.Delete juga guard, tapi kita perlu tahu
+	// ownership SEBELUM trigger cleanup — supaya user A tidak bisa trigger
+	// cleanup file user B via ID guessing walaupun DB delete akan fail).
+	if _, err := h.repo.GetOwned(c.Context(), id, uid); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "site not found")
+		}
+		return httpx.Internal(c, "site lookup failed")
+	}
+	// Cleanup storage FILES sebelum row cascade — kalau kita delete DB dulu,
+	// asset rows hilang dan URL tidak bisa di-lookup lagi. Fire-and-forget
+	// goroutine di dalam CleanupSite (implementasi assets pkg) — tidak
+	// block response. DB cascade (assets rows + forms + pages + dst.) tetap
+	// jalan lewat h.repo.Delete di bawah.
+	if h.assetCleaner != nil {
+		h.assetCleaner.CleanupSite(c.Context(), id)
 	}
 	if err := h.repo.Delete(c.Context(), id, uid); errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "site not found")

@@ -15,6 +15,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowRight,
+  Ban,
   CalendarClock,
   CheckCircle2,
   Clock,
@@ -52,6 +53,9 @@ const STATUS_MAP: Record<
   pending_provisioning: { label: "Diproses registrar", variant: "secondary", icon: Loader2 },
   failed: { label: "Gagal", variant: "destructive", icon: XCircle },
   expired: { label: "Kadaluwarsa", variant: "destructive", icon: XCircle },
+  // Cancelled = user batalkan checkout sebelum bayar. Terminal state, no
+  // action needed dari user.
+  cancelled: { label: "Dibatalkan", variant: "secondary", icon: Ban },
 };
 
 export default function DomainsPage() {

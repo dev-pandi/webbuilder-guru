@@ -3,6 +3,7 @@ package assets
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -146,6 +147,20 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 			)
 		}
 	}
+	// Kalau compress skip (misalnya h.compress=false atau format tidak di-encode
+	// ulang oleh Compress), tetap baca sekali untuk dimension probe. Cost:
+	// 1 io.ReadAll + image.DecodeConfig (parse header saja, tidak decode pixels).
+	if bodyBytes == nil {
+		raw, err := io.ReadAll(f)
+		if err != nil {
+			return httpx.Internal(c, "read failed")
+		}
+		bodyBytes = raw
+	}
+	// Dimension probe — cepat (header only via DecodeConfig). Nil kalau gagal
+	// decode (mis. GIF terlalu weird, format tak dikenal). Renderer akan
+	// fallback ke default layout tanpa width/height attr.
+	widthPtr, heightPtr := probeImageDimensions(bodyBytes, finalMIME)
 
 	key := fmt.Sprintf("%s/%d-%s%s", siteID.String(), time.Now().UnixNano(), uuid.NewString(), ext)
 
@@ -162,17 +177,14 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 		}
 	}
 
-	var url string
-	if bodyBytes != nil {
-		url, err = h.storage.Put(c.Context(), key, bytes.NewReader(bodyBytes), finalSize, finalMIME)
-	} else {
-		url, err = h.storage.Put(c.Context(), key, f, fh.Size, mime)
-	}
+	// bodyBytes selalu populated (compress branch atau io.ReadAll fallback di
+	// atas), jadi cukup satu code path Put.
+	url, err := h.storage.Put(c.Context(), key, bytes.NewReader(bodyBytes), finalSize, finalMIME)
 	if err != nil {
 		return httpx.Internal(c, "upload failed: "+err.Error())
 	}
 
-	asset, err := h.repo.Create(c.Context(), siteID, "image", url, finalMIME, finalSize)
+	asset, err := h.repo.Create(c.Context(), siteID, "image", url, finalMIME, finalSize, widthPtr, heightPtr)
 	if err != nil {
 		return httpx.Internal(c, "save failed")
 	}

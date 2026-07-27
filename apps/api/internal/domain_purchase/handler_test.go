@@ -18,6 +18,7 @@ func TestIsTerminal(t *testing.T) {
 		StatusActive:              true,
 		StatusFailed:              true,
 		StatusExpired:             true,
+		StatusCancelled:           true,
 		StatusPendingPayment:      false,
 		StatusPendingDocument:     false,
 		StatusPendingProvisioning: false,
