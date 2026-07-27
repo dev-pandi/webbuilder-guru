@@ -4,6 +4,7 @@ import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   closestCenter,
   useSensor,
   useSensors,
@@ -57,9 +58,13 @@ export function SortableBlockList({
   onDelete: (i: number) => void;
 }) {
   // Pointer sensor with small activation distance so a click still selects
-  // (not every mousedown turns into a drag).
+  // (not every mousedown turns into a drag). Touch sensor pakai delay 250ms
+  // supaya scroll native tetap smooth di mobile — long-press = mulai drag.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 

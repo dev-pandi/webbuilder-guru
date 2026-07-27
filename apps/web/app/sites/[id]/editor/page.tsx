@@ -14,6 +14,7 @@ import {
   Loader2,
   Map as MapIcon,
   Monitor,
+  MoreHorizontal,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -45,6 +46,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -80,6 +87,7 @@ import {
 import {
   DndContext,
   PointerSensor,
+  TouchSensor,
   closestCenter,
   useDroppable,
   useSensor,
@@ -180,6 +188,19 @@ export default function EditorPage() {
   // Defaults open; persisted to localStorage so the choice survives reloads.
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  // Detect viewport < lg (1024px) via matchMedia. Di mobile UI 3-column tidak
+  // muat; kita paksa single-column canvas + trigger dialog untuk palette +
+  // prop editor. Update reactive kalau user rotate device.
+  const [isMobile, setIsMobile] = useState(false);
+  const [propSheetOpen, setPropSheetOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
   // Mini-map shown by default; hidden via toolbar toggle (less noise for users
   // who don't want it). Persisted alongside sidebar state.
   const [miniMapVisible, setMiniMapVisible] = useState(true);
@@ -212,10 +233,12 @@ export default function EditorPage() {
   // be valid CSS. Underscores would only be correct as Tailwind class
   // shorthand, which gets transformed at build time.
   const gridCols = useMemo(() => {
+    // Mobile: single column (canvas only). Palette + prop editor via dialog.
+    if (isMobile) return "1fr";
     const L = leftCollapsed ? "0" : "240px";
     const R = rightCollapsed ? "0" : "320px";
     return `${L} 1fr ${R}`;
-  }, [leftCollapsed, rightCollapsed]);
+  }, [isMobile, leftCollapsed, rightCollapsed]);
 
   // Theme state — loaded from the site, applied as CSS vars on canvas.
   const [theme, setTheme] = useState<ThemeJson>(DEFAULT_THEME);
@@ -911,15 +934,131 @@ export default function EditorPage() {
 
   const previewWidth = device === "mobile" ? 375 : device === "tablet" ? 768 : "100%";
 
+  // renderPropEditorBody — dipakai dua tempat: aside kanan (desktop) dan
+  // bottom sheet Dialog (mobile). Ekstrak sebagai closure supaya bisa akses
+  // state (selectedPath, blocks, updateBlock, dst.) tanpa prop drilling.
+  function renderPropEditorBody() {
+    const anchor = selectedPath;
+    const target = anchor ? getAt(blocks, anchor) : undefined;
+    if (!anchor || !target) {
+      return (
+        <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center">
+          <div className="grid size-12 place-items-center rounded-xl bg-muted">
+            <Sparkles className="size-5 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium">Pilih block</p>
+          <p className="text-xs text-muted-foreground">
+            Klik block di sidebar atau di preview untuk mengedit propertinya.
+          </p>
+        </div>
+      );
+    }
+    const crumbs: Array<{ path: Path; label: string; emoji: string }> = [];
+    for (let d = 1; d <= anchor.length; d++) {
+      const sub = anchor.slice(0, d);
+      const b = getAt(blocks, sub);
+      if (!b) break;
+      const s = schemaFor(b.type);
+      crumbs.push({
+        path: sub,
+        label: s?.label ?? b.type,
+        emoji: s?.emoji ?? "🧩",
+      });
+    }
+    return (
+      <>
+        {crumbs.length > 1 && (
+          <nav
+            aria-label="Breadcrumb"
+            className="mb-2 flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground"
+          >
+            {crumbs.map((c, i) => {
+              const isLast = i === crumbs.length - 1;
+              return (
+                <span key={i} className="inline-flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPath(c.path);
+                      setSelectedPaths(new Set([pathKey(c.path)]));
+                    }}
+                    disabled={isLast}
+                    className={cn(
+                      "inline-flex items-center gap-0.5 rounded px-1 py-0.5",
+                      isLast
+                        ? "font-medium text-foreground"
+                        : "hover:bg-muted hover:text-foreground",
+                    )}
+                    title={`Pindah ke ${c.label}`}
+                  >
+                    <span className="text-[11px]">{c.emoji}</span>
+                    <span className="truncate">{c.label}</span>
+                  </button>
+                  {!isLast && <span className="mx-0.5 opacity-40">›</span>}
+                </span>
+              );
+            })}
+          </nav>
+        )}
+        <div className="mb-3 flex items-start gap-2">
+          <span className="text-xl">{schemaFor(target.type)?.emoji ?? "🧩"}</span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold">
+              {schemaFor(target.type)?.label ?? target.type}
+            </h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {schemaFor(target.type)?.description ?? "Edit properti di bawah"}
+            </p>
+          </div>
+          {anchor.length > 1 && (
+            <button
+              type="button"
+              onClick={() => {
+                const parent = anchor.slice(0, -1);
+                setSelectedPath(parent);
+                setSelectedPaths(new Set([pathKey(parent)]));
+              }}
+              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Pilih block induk (Esc)"
+            >
+              ↖
+            </button>
+          )}
+        </div>
+        <Separator className="mb-4" />
+        <PropEditor block={target} onChange={(next) => updateBlock(anchor, next)} />
+        {isContainer(target.type) && (
+          <>
+            <Separator className="my-4" />
+            <ChildrenEditor block={target} onChange={(next) => updateBlock(anchor, next)} />
+          </>
+        )}
+        <Separator className="my-4" />
+        <LayoutPanel
+          block={target}
+          onChange={(next) => updateBlock(anchor, next)}
+          device={device}
+          onDeviceChange={setDevice}
+        />
+      </>
+    );
+  }
+
   return (
-    <div className="flex h-[calc(100vh-140px)] flex-col gap-3">
+    <div
+      className={cn(
+        "flex h-[calc(100vh-140px)] flex-col gap-3",
+        // Mobile: pad bottom supaya FAB tidak nutupin canvas content
+        isMobile && "pb-16",
+      )}
+    >
       {/* ---------- Toolbar (full width — spans over aside area so nothing gets cut) ---------- */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            className="size-7"
+            className="hidden size-7 lg:inline-flex"
             onClick={() => setLeftCollapsed((v) => !v)}
             title={leftCollapsed ? "Tampilkan sidebar kiri" : "Sembunyikan sidebar kiri"}
           >
@@ -987,11 +1126,14 @@ export default function EditorPage() {
               <Redo2 className="size-3.5" />
             </Button>
           </div>
+          {/* Non-essential buttons — hide di mobile, ada di overflow menu.
+              md: threshold cocok karena mobile portrait sudah punya
+              breathing room mulai dari tablet. */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => setThemeOpen(true)}
-            className="relative gap-1.5"
+            className="relative hidden gap-1.5 md:inline-flex"
           >
             <Palette className="size-3.5" />
             <span className="hidden sm:inline">Tema</span>
@@ -1004,7 +1146,7 @@ export default function EditorPage() {
             size="sm"
             onClick={openPreview}
             disabled={!current}
-            className="gap-1.5"
+            className="hidden gap-1.5 md:inline-flex"
             title="Bagikan link pratinjau draft — berlaku 1 jam"
           >
             <Eye className="size-3.5" />
@@ -1015,7 +1157,7 @@ export default function EditorPage() {
             size="sm"
             onClick={() => setSettingsOpen(true)}
             disabled={!current}
-            className="gap-1.5"
+            className="hidden gap-1.5 md:inline-flex"
             title="Pengaturan halaman: judul, SEO, status"
           >
             <Settings2 className="size-3.5" />
@@ -1026,11 +1168,54 @@ export default function EditorPage() {
             size="sm"
             onClick={() => setHistoryOpen(true)}
             disabled={!current}
-            className="gap-1.5"
+            className="hidden gap-1.5 md:inline-flex"
           >
             <History className="size-3.5" />
             <span className="hidden sm:inline">Riwayat</span>
           </Button>
+
+          {/* Mobile-only overflow menu — akses Tema/Pratinjau/Pengaturan/
+              Riwayat via dropdown supaya toolbar tetap ringkas. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8 md:hidden"
+                title="Menu lain"
+                disabled={!current}
+              >
+                <MoreHorizontal className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setThemeOpen(true)}>
+                <Palette className="size-3.5" />
+                Tema
+                {themeDirty && (
+                  <span className="ml-auto size-1.5 rounded-full bg-amber-500" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={openPreview} disabled={!current}>
+                <Eye className="size-3.5" />
+                Pratinjau
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setSettingsOpen(true)}
+                disabled={!current}
+              >
+                <Settings2 className="size-3.5" />
+                Pengaturan halaman
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setHistoryOpen(true)}
+                disabled={!current}
+              >
+                <History className="size-3.5" />
+                Riwayat
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             onClick={() => save()}
@@ -1073,7 +1258,7 @@ export default function EditorPage() {
           <Button
             variant="ghost"
             size="icon"
-            className="size-7"
+            className="hidden size-7 lg:inline-flex"
             onClick={() => setRightCollapsed((v) => !v)}
             title={rightCollapsed ? "Tampilkan panel kanan" : "Sembunyikan panel kanan"}
           >
@@ -1096,6 +1281,9 @@ export default function EditorPage() {
         className={cn(
           "flex flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-all",
           leftCollapsed && "pointer-events-none border-transparent bg-transparent opacity-0",
+          // Mobile: sembunyikan aside kiri, canvas ambil full width. Trigger
+          // via palette dialog (FAB bawah).
+          isMobile && "hidden",
         )}
       >
         {/* Pages list */}
@@ -1327,130 +1515,64 @@ export default function EditorPage() {
         </div>
       </section>
 
-      {/* ---------- Sidebar kanan: Property editor ---------- */}
+      {/* ---------- Sidebar kanan: Property editor (desktop) ---------- */}
       <aside
         className={cn(
           "overflow-y-auto rounded-xl border bg-card p-4 shadow-sm transition-all",
           rightCollapsed && "pointer-events-none border-transparent bg-transparent p-0 opacity-0",
+          // Mobile: sembunyikan aside kanan, buka via bottom sheet saat user
+          // tap tombol "Edit" di FAB (visible saat ada block terpilih).
+          isMobile && "hidden",
         )}
       >
-        {(() => {
-          const anchor = selectedPath;
-          const target = anchor ? getAt(blocks, anchor) : undefined;
-          if (!anchor || !target) return null;
-          // Build breadcrumb — each ancestor path is clickable so users can
-          // navigate up the tree with one click. Root is not shown; only
-          // populated when we're nested at least one level.
-          const crumbs: Array<{ path: Path; label: string; emoji: string }> = [];
-          for (let d = 1; d <= anchor.length; d++) {
-            const sub = anchor.slice(0, d);
-            const b = getAt(blocks, sub);
-            if (!b) break;
-            const s = schemaFor(b.type);
-            crumbs.push({
-              path: sub,
-              label: s?.label ?? b.type,
-              emoji: s?.emoji ?? "🧩",
-            });
-          }
-          return (
-            <>
-              {crumbs.length > 1 && (
-                <nav
-                  aria-label="Breadcrumb"
-                  className="mb-2 flex flex-wrap items-center gap-0.5 text-[10px] text-muted-foreground"
-                >
-                  {crumbs.map((c, i) => {
-                    const isLast = i === crumbs.length - 1;
-                    return (
-                      <span key={i} className="inline-flex items-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedPath(c.path);
-                            setSelectedPaths(new Set([pathKey(c.path)]));
-                          }}
-                          disabled={isLast}
-                          className={cn(
-                            "inline-flex items-center gap-0.5 rounded px-1 py-0.5",
-                            isLast
-                              ? "font-medium text-foreground"
-                              : "hover:bg-muted hover:text-foreground",
-                          )}
-                          title={`Pindah ke ${c.label}`}
-                        >
-                          <span className="text-[11px]">{c.emoji}</span>
-                          <span className="truncate">{c.label}</span>
-                        </button>
-                        {!isLast && <span className="mx-0.5 opacity-40">›</span>}
-                      </span>
-                    );
-                  })}
-                </nav>
-              )}
-              <div className="mb-3 flex items-start gap-2">
-                <span className="text-xl">
-                  {schemaFor(target.type)?.emoji ?? "🧩"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-semibold">
-                    {schemaFor(target.type)?.label ?? target.type}
-                  </h3>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {schemaFor(target.type)?.description ?? "Edit properti di bawah"}
-                  </p>
-                </div>
-                {anchor.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const parent = anchor.slice(0, -1);
-                      setSelectedPath(parent);
-                      setSelectedPaths(new Set([pathKey(parent)]));
-                    }}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    title="Pilih block induk (Esc)"
-                  >
-                    ↖
-                  </button>
-                )}
-              </div>
-              <Separator className="mb-4" />
-              <PropEditor
-                block={target}
-                onChange={(next) => updateBlock(anchor, next)}
-              />
-              {isContainer(target.type) && (
-                <>
-                  <Separator className="my-4" />
-                  <ChildrenEditor
-                    block={target}
-                    onChange={(next) => updateBlock(anchor, next)}
-                  />
-                </>
-              )}
-              <Separator className="my-4" />
-              <LayoutPanel
-                block={target}
-                onChange={(next) => updateBlock(anchor, next)}
-                device={device}
-                onDeviceChange={setDevice}
-              />
-            </>
-          );
-        })() || (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <div className="grid size-12 place-items-center rounded-xl bg-muted">
-              <Sparkles className="size-5 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-medium">Pilih block</p>
-            <p className="text-xs text-muted-foreground">
-              Klik block di sidebar atau di preview untuk mengedit propertinya.
-            </p>
-          </div>
-        )}
+        {renderPropEditorBody()}
       </aside>
       </div>
+
+      {/* ---------- Mobile: FAB actions + bottom sheet prop editor ---------- */}
+      {isMobile && (
+        <>
+          <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center gap-2 px-4">
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              className="pointer-events-auto inline-flex h-11 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground shadow-lg transition-transform active:scale-95"
+              title="Tambah blok"
+            >
+              <Plus className="size-4" />
+              Tambah
+            </button>
+            {selectedPath && (
+              <button
+                type="button"
+                onClick={() => setPropSheetOpen(true)}
+                className="pointer-events-auto inline-flex h-11 items-center gap-1.5 rounded-full border bg-card px-4 text-sm font-medium shadow-lg transition-transform active:scale-95"
+                title="Edit block terpilih"
+              >
+                <Settings2 className="size-4" />
+                Edit
+              </button>
+            )}
+          </div>
+
+          <Dialog open={propSheetOpen} onOpenChange={setPropSheetOpen}>
+            <DialogContent
+              className={cn(
+                // Override default center-modal → bottom sheet slide-up
+                "!left-0 !right-0 !top-auto !bottom-0 !max-w-full !translate-x-0 !translate-y-0",
+                "max-h-[85vh] gap-0 rounded-b-none rounded-t-2xl p-0",
+              )}
+            >
+              <DialogHeader className="border-b bg-muted/40 px-4 py-3">
+                <DialogTitle className="text-sm">Edit Blok</DialogTitle>
+              </DialogHeader>
+              <div className="max-h-[calc(85vh-52px)] overflow-y-auto p-4">
+                {renderPropEditorBody()}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
 
       <ThemeDrawer
         open={themeOpen}
@@ -2105,7 +2227,10 @@ function Preview({
 }) {
   // Pointer sensor with an activation distance so clicks (select) don't get
   // hijacked by drag intent. 4px is enough to distinguish deliberate drag.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
 
   function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e;
