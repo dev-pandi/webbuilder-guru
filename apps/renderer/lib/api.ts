@@ -61,16 +61,47 @@ type ResponsivePatch = {
   bg?: string;
 };
 
-async function fetchJson<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number }> {
+async function fetchJson<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
   const res = await fetch(`${API}${path}`, { next: { revalidate: 30 } });
-  if (!res.ok) return { ok: false, status: res.status };
+  if (!res.ok) {
+    // Parse error envelope kalau ada supaya caller bisa branch berdasarkan
+    // business code (mis. site_not_published vs no_site_for_host).
+    let code: string | undefined;
+    try {
+      const err = await res.json();
+      if (err?.error?.code) code = String(err.error.code);
+    } catch {
+      // Body bukan JSON valid, biarkan code undefined.
+    }
+    return { ok: false, status: res.status, code };
+  }
   const body = await res.json();
   return { ok: true, data: body.data as T };
 }
 
-export async function getSiteByHost(host: string): Promise<Site | null> {
+// SiteLookup — hasil resolve host, dengan reason kalau site tidak return.
+// `reason` = "site_not_published" berarti site ada tapi status draft;
+// `reason` = "no_site_for_host" berarti host tidak ter-attach ke site mana pun.
+export type SiteLookup =
+  | { kind: "found"; site: Site }
+  | { kind: "not_found"; reason: "site_not_published" | "no_site_for_host" | "unknown" };
+
+export async function lookupSiteByHost(host: string): Promise<SiteLookup> {
   const r = await fetchJson<Site>(`/public/site-by-host?host=${encodeURIComponent(host)}`);
-  return r.ok ? r.data : null;
+  if (r.ok) return { kind: "found", site: r.data };
+  const reason =
+    r.code === "site_not_published"
+      ? "site_not_published"
+      : r.code === "no_site_for_host"
+      ? "no_site_for_host"
+      : "unknown";
+  return { kind: "not_found", reason };
+}
+
+// Backward-compat helper — caller yang cuma butuh Site atau null.
+export async function getSiteByHost(host: string): Promise<Site | null> {
+  const r = await lookupSiteByHost(host);
+  return r.kind === "found" ? r.site : null;
 }
 
 export async function getPage(siteId: string, slug: string): Promise<Page | null> {

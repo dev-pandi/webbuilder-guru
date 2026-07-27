@@ -159,19 +159,63 @@ func (r *Repo) Delete(ctx context.Context, id, userID uuid.UUID) error {
 }
 
 // GetByHost looks up a published site by associated domain hostname.
+//
+// Dual lookup — dua tabel bisa link domain ke situs:
+//  1. `domains` — legacy BYO flow (user hubungkan domain yang dibeli di
+//     registrar lain, verify via A record). Status = 'verified'.
+//  2. `domain_purchases` — flow utama sekarang: domain dibeli via PANDI
+//     wizard, auto-attach ke site setelah checkout. Status = 'active'.
+//
+// Kalau salah satu match, return site. Site harus status = 'published' —
+// draft tidak muncul di renderer.
 func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
 		SELECT `+sitePrefixedCols("s")+`
 		FROM sites s
-		JOIN domains d ON d.site_id = s.id
-		WHERE d.hostname = $1 AND d.status = 'verified' AND s.status = 'published'
+		WHERE s.status = 'published'
+		  AND (
+			EXISTS (
+				SELECT 1 FROM domains d
+				 WHERE d.site_id = s.id
+				   AND d.hostname = $1
+				   AND d.status = 'verified'
+			)
+			OR EXISTS (
+				SELECT 1 FROM domain_purchases dp
+				 WHERE dp.site_id = s.id
+				   AND dp.domain = $1
+				   AND dp.status = 'active'
+			)
+		  )
 		LIMIT 1
 	`, host).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &s, err
+}
+
+// HasSiteForHost returns true kalau ada situs (published atau draft) yang
+// link ke host ini — dipakai renderer untuk membedakan pesan:
+//   - HasSite=false → domain belum di-attach ke situs mana pun
+//   - HasSite=true tapi GetByHost tidak return → site ada tapi belum publish
+// Backend: dual-check di domains + domain_purchases, tanpa filter status.
+func (r *Repo) HasSiteForHost(ctx context.Context, host string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM sites s
+			 WHERE EXISTS (
+				SELECT 1 FROM domains d
+				 WHERE d.site_id = s.id AND d.hostname = $1
+			) OR EXISTS (
+				SELECT 1 FROM domain_purchases dp
+				 WHERE dp.site_id = s.id AND dp.domain = $1
+			)
+		)
+	`, host).Scan(&exists)
+	return exists, err
 }
 
 // sitePrefixedCols returns siteCols with a table alias for JOIN queries.

@@ -28,9 +28,15 @@ func NewHandler(s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo) *
 }
 
 // GET /public/site-by-host?host=<hostname>
-// Resolves site by custom verified domain. Free-subdomain fallback
-// (<slug>.<rendererDefaultHost>) sudah dihapus — konsep "1 domain = 1 situs"
-// tidak lagi menyediakan URL platform gratis.
+// Resolves site by custom verified domain (baik BYO `domains` maupun PANDI
+// `domain_purchases`). Free-subdomain fallback sudah dihapus — konsep
+// "1 domain = 1 situs" tidak lagi menyediakan URL platform gratis.
+//
+// Response 404 punya body `{ error: { code, message } }` dengan code:
+//   - `site_not_published` — ada site yang link ke domain ini tapi
+//     status=draft. Renderer bisa tampilkan hint "publikasikan dulu".
+//   - `no_site_for_host` — tidak ada site link sama sekali (host tidak
+//     dikenal / typo / belum di-attach).
 func (h *Handler) SiteByHost(c *fiber.Ctx) error {
 	host := strings.ToLower(strings.TrimSpace(c.Query("host")))
 	if host == "" {
@@ -41,7 +47,18 @@ func (h *Handler) SiteByHost(c *fiber.Ctx) error {
 	} else if !errors.Is(err, sites.ErrNotFound) {
 		return httpx.Internal(c, "lookup failed")
 	}
-	return httpx.NotFound(c, "no site published for this host")
+	// Bedakan "site draft" vs "host tidak dikenal" supaya renderer bisa
+	// kasih user pesan yang tepat.
+	hasSite, err := h.sites.HasSiteForHost(c.Context(), host)
+	if err != nil {
+		return httpx.Internal(c, "lookup failed")
+	}
+	if hasSite {
+		return httpx.Err(c, 404, "site_not_published",
+			"Situs sudah dihubungkan tapi belum diterbitkan.")
+	}
+	return httpx.Err(c, 404, "no_site_for_host",
+		"Host ini belum terhubung ke situs mana pun.")
 }
 
 // GET /public/sites/:id/pages/:slug   (slug "_home" returns the home page)

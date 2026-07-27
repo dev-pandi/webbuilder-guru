@@ -67,11 +67,20 @@ export function PreviewShareDialog({
   const [now, setNow] = useState(Date.now());
   const [copied, setCopied] = useState(false);
 
-  // Renderer host — env-configurable per deployment (dashboard host ≠ renderer
-  // host di production). Fallback ke window.origin cocok untuk dev local.
-  const rendererBase =
-    process.env.NEXT_PUBLIC_RENDERER_BASE ??
-    (typeof window !== "undefined" ? window.location.origin : "");
+  // Renderer host — env-configurable per deployment karena dashboard host ≠
+  // renderer host. Fallback logic (kalau env kosong):
+  //   1. `app.xxx` → `xxx` (Caddy convention di web builder: app.localhost
+  //      untuk dashboard, localhost untuk renderer)
+  //   2. Sisanya = window.origin (single-host dev setup)
+  // Kalau tebakan salah, `misconfigured` di-set true → banner peringatan
+  // supaya user tahu link tidak akan work sampai env diperbaiki.
+  const rendererBase = resolveRendererBase();
+  // Kalau env kosong DAN hostname bukan pola Caddy `app.xxx`, kita tidak
+  // tahu renderer di mana → fallback ke dashboard origin akan 404. Warn user.
+  const misconfigured =
+    !process.env.NEXT_PUBLIC_RENDERER_BASE &&
+    typeof window !== "undefined" &&
+    !window.location.hostname.startsWith("app.");
   const previewURL = token ? `${rendererBase}/_preview/${token}` : "";
 
   async function generate() {
@@ -233,6 +242,24 @@ export function PreviewShareDialog({
                 terlanjur bocor (token lama tetap valid sampai expire).
               </p>
             </div>
+
+            {misconfigured && (
+              <div className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+                <ShieldAlert className="size-4 shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    URL preview mungkin salah — dashboard host dipakai sebagai
+                    renderer host.
+                  </p>
+                  <p className="mt-1 opacity-80">
+                    Set <code>NEXT_PUBLIC_RENDERER_BASE</code> di{" "}
+                    <code>apps/web/.env.local</code> ke URL renderer (mis.{" "}
+                    <code>http://localhost</code> untuk Caddy dev, atau{" "}
+                    <code>http://localhost:3001</code> untuk npm dev langsung).
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -264,4 +291,23 @@ export function PreviewShareDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+// resolveRendererBase — deteksi renderer origin dari env atau tebakan cerdas.
+//
+// Prioritas:
+//  1. `NEXT_PUBLIC_RENDERER_BASE` — canonical, wajib di production
+//  2. Kalau dashboard host punya prefix `app.`, buang → tebakan Caddy default
+//     (app.localhost → localhost)
+//  3. Fallback: dashboard host apa adanya (single-host dev, akan 404)
+function resolveRendererBase(): string {
+  const env = process.env.NEXT_PUBLIC_RENDERER_BASE;
+  if (env) return env.replace(/\/$/, "");
+  if (typeof window === "undefined") return "";
+  const { origin, hostname, protocol, port } = window.location;
+  if (hostname.startsWith("app.")) {
+    const rendererHost = hostname.slice("app.".length);
+    return `${protocol}//${rendererHost}${port ? ":" + port : ""}`;
+  }
+  return origin;
 }
