@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -123,6 +124,136 @@ func (c *Client) CreateDNSRecord(ctx context.Context, zoneID string, req DNSReco
 		return nil, fmt.Errorf("cloudflare dns api %d: %s", resp.StatusCode, snip(raw))
 	}
 	return &out.Result, nil
+}
+
+// GetZoneByDomain lookup zone by exact domain name. Cloudflare filter via
+// `?name=<domain>` — response array (empty kalau tidak ada). Cukup untuk
+// UI DNS editor yang perlu resolve zone_id sebelum operasi record.
+//
+// Docs: https://developers.cloudflare.com/api/operations/zones-get
+func (c *Client) GetZoneByDomain(ctx context.Context, domain string) (*ZoneData, error) {
+	q := url.Values{}
+	q.Set("name", domain)
+	q.Set("account.id", c.cfg.AccountID)
+	q.Set("per_page", "1")
+
+	raw, status, err := c.do(ctx, http.MethodGet, "/zones?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	var out ZoneListResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("cloudflare: decode zones: %w (body: %s)", err, snip(raw))
+	}
+	if !out.Success || status >= 300 {
+		return nil, apiErr(status, out.Errors, raw)
+	}
+	if len(out.Result) == 0 {
+		return nil, ErrZoneNotFound
+	}
+	return &out.Result[0], nil
+}
+
+// ListDNSRecords fetch semua record di zone. Cloudflare default per_page=100
+// yang cukup untuk MVP; kalau user punya >100 record, pakai pagination.
+// Untuk sekarang set per_page tinggi (max 5000 per docs) untuk hindari
+// pagination client-side.
+//
+// Docs: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-list-dns-records
+func (c *Client) ListDNSRecords(ctx context.Context, zoneID string) ([]DNSRecordData, error) {
+	raw, status, err := c.do(ctx, http.MethodGet, "/zones/"+zoneID+"/dns_records?per_page=500", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out DNSRecordListResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("cloudflare: decode dns list: %w (body: %s)", err, snip(raw))
+	}
+	if !out.Success || status >= 300 {
+		return nil, apiErr(status, out.Errors, raw)
+	}
+	return out.Result, nil
+}
+
+// UpdateDNSRecord PATCH single record. Cloudflare accept PATCH untuk partial
+// update; kita kirim full payload karena semantic form UI (user edit semua
+// field sekaligus). Server tetap validate.
+//
+// Docs: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-patch-dns-record
+func (c *Client) UpdateDNSRecord(ctx context.Context, zoneID, recordID string, req DNSRecordRequest) (*DNSRecordData, error) {
+	if req.TTL == 0 {
+		req.TTL = 1
+	}
+	body, _ := json.Marshal(req)
+	raw, status, err := c.do(ctx, http.MethodPatch,
+		"/zones/"+zoneID+"/dns_records/"+recordID, body)
+	if err != nil {
+		return nil, err
+	}
+	var out DNSRecordResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("cloudflare: decode dns: %w (body: %s)", err, snip(raw))
+	}
+	if !out.Success || status >= 300 {
+		return nil, apiErr(status, out.Errors, raw)
+	}
+	return &out.Result, nil
+}
+
+// DeleteDNSRecord hapus record permanen.
+//
+// Docs: https://developers.cloudflare.com/api/operations/dns-records-for-a-zone-delete-dns-record
+func (c *Client) DeleteDNSRecord(ctx context.Context, zoneID, recordID string) error {
+	raw, status, err := c.do(ctx, http.MethodDelete,
+		"/zones/"+zoneID+"/dns_records/"+recordID, nil)
+	if err != nil {
+		return err
+	}
+	if status >= 300 {
+		var out DNSRecordResponse
+		_ = json.Unmarshal(raw, &out)
+		return apiErr(status, out.Errors, raw)
+	}
+	return nil
+}
+
+// ErrZoneNotFound signal domain tidak terdaftar di Cloudflare akun ini —
+// caller boleh return 404/friendly message ke user (mis. "domain belum
+// aktif di Cloudflare, tunggu provisioning selesai").
+var ErrZoneNotFound = errors.New("cloudflare: zone not found")
+
+// do adalah low-level helper — dipakai method baru supaya tidak duplicate
+// setup header + read body. Method existing (CreateZone, CreateDNSRecord)
+// tetap inline untuk minimalisasi diff.
+func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, baseURL+path, reader)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.cfg.APIToken)
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("cloudflare: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return raw, resp.StatusCode, nil
+}
+
+func apiErr(status int, errs []Error, raw []byte) error {
+	if len(errs) > 0 {
+		return fmt.Errorf("cloudflare api %d: %s (code %d)",
+			status, errs[0].Message, errs[0].Code)
+	}
+	return fmt.Errorf("cloudflare api %d: %s", status, snip(raw))
 }
 
 // IsCloudflareDuplicateRecord cek error code 81057 (record sudah ada) — safe

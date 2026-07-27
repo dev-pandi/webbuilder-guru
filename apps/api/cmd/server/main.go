@@ -258,7 +258,7 @@ func main() {
 		// upload diteruskan langsung ke registrar via AttachDocument handler.
 		// Single source of truth = registrar.
 		purchaseHandler = domain_purchase.NewHandler(
-			purchaseRepo, registrarClient, authRepo, cloudflareRepo,
+			purchaseRepo, registrarClient, authRepo, siteRepo, cloudflareRepo,
 			cfg.PlatformIPs, cfg.RegistrarWebhookSecret,
 		)
 		if cfg.RegistrarWebhookSecret == "" {
@@ -335,6 +335,11 @@ func main() {
 			JPEGQuality:  cfg.ImageJPEGQuality,
 		})
 	}
+
+	// Scheduled publish worker — scan pages tabel tiap 60 detik untuk auto
+	// publish draft yang scheduled_publish_at-nya sudah lewat. Interval hemat
+	// DB (partial index) tapi tetap responsive (rata-rata delay 30s dari jadwal).
+	go pages.NewScheduler(pageRepo, 60*time.Second).Run(ctx)
 
 	app := router.New(deps)
 

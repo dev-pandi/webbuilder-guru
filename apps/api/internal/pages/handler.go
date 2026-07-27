@@ -347,6 +347,71 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 	return httpx.OK(c, p)
 }
 
+// Schedule sets scheduled_publish_at. Body: { "at": "<RFC3339>" }. Timestamp
+// harus di future (>= now + 30 detik untuk kasih margin worker cycle).
+// Manual publish otomatis clear jadwal (di repo).
+func (h *Handler) Schedule(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	var req struct {
+		At string `json:"at"`
+	}
+	if err := c.BodyParser(&req); err != nil || strings.TrimSpace(req.At) == "" {
+		return httpx.BadRequest(c, "field `at` (RFC3339) wajib")
+	}
+	at, err := time.Parse(time.RFC3339, req.At)
+	if err != nil {
+		return httpx.BadRequest(c, "format `at` harus RFC3339 (contoh: 2026-08-15T14:00:00+07:00)")
+	}
+	// Margin 30 detik supaya kalau user set "sekarang" tidak race dengan
+	// worker cycle. Kalau mau immediate, pakai /publish endpoint.
+	if at.Before(time.Now().Add(30 * time.Second)) {
+		return httpx.BadRequest(c, "waktu jadwal harus minimal 30 detik dari sekarang")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	p, err := h.pages.Schedule(c.Context(), id, at)
+	if err != nil {
+		return httpx.Internal(c, "schedule failed")
+	}
+	return httpx.OK(c, p)
+}
+
+// Unschedule clears scheduled_publish_at tanpa ubah publish state.
+func (h *Handler) Unschedule(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	existing, err := h.pages.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "page not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+		return httpx.NotFound(c, "page not found")
+	}
+	p, err := h.pages.Unschedule(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "unschedule failed")
+	}
+	return httpx.OK(c, p)
+}
+
 // Unpublish removes the live snapshot. Page survives as draft.
 func (h *Handler) Unpublish(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)

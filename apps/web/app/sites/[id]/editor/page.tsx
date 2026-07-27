@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
+  CalendarClock,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -58,6 +59,7 @@ import { SortableBlockList, makeKeys, reorderWithKeys } from "./SortableBlockLis
 import { CanvasBlockToolbar } from "./CanvasOverlay";
 import { EditableText } from "./EditableText";
 import { PageSettingsDialog } from "./PageSettingsDialog";
+import { PreviewShareDialog } from "./PreviewShareDialog";
 import { MiniMap } from "./MiniMap";
 import { ChildrenEditor } from "./ChildrenEditor";
 import {
@@ -114,6 +116,9 @@ type Page = {
   // button enabled state.
   published_tree?: { blocks?: BlockData[] } | null;
   published_at?: string | null;
+  // scheduled_publish_at — kalau ada, background worker auto-publish saat
+  // waktu tercapai. UI toolbar tampilkan badge kuning + hint countdown.
+  scheduled_publish_at?: string | null;
 };
 
 type Site = {
@@ -169,6 +174,7 @@ export default function EditorPage() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Sidebar collapse — fullscreen canvas for users who need a wider preview.
   // Defaults open; persisted to localStorage so the choice survives reloads.
@@ -703,32 +709,19 @@ export default function EditorPage() {
   }, [current, blocks, originalBlocks]);
 
   // -------- Preview link --------
-  // Generate a signed HMAC token + open the renderer's /_preview/<token> route
-  // in a new tab. Token TTL 1h — server-side enforced. If the draft has dirty
-  // changes we save first so the preview reflects what the user just edited.
-  async function openPreview() {
+  // Open share dialog — dialog handles token generation + copy/share + expiry.
+  // Save-first kalau draft dirty supaya reviewer lihat state terakhir editor.
+  function openPreview() {
     if (!current) return;
+    setPreviewOpen(true);
+  }
+
+  // Dipanggil PreviewShareDialog sebelum POST /preview-token supaya token
+  // yang di-generate merefleksikan draft terbaru (blocks yang belum di-save
+  // tidak muncul di preview kalau kita skip save).
+  async function savePreviewIfDirty() {
     if (blocksDirty) {
-      try {
-        await save({ silent: true });
-      } catch {
-        return;
-      }
-    }
-    try {
-      const res = await api<{ token: string; path: string }>(
-        `/api/v1/pages/${current.id}/preview-token`,
-        { method: "POST" },
-      );
-      const rendererBase =
-        process.env.NEXT_PUBLIC_RENDERER_BASE ?? window.location.origin;
-      // path returned is "/_preview/<token>" but the API API base is dashboard;
-      // we want the renderer host. Strip API prefix if any and prepend
-      // configured renderer base.
-      const previewPath = `/_preview/${res.token}`;
-      window.open(`${rendererBase}${previewPath}`, "_blank", "noopener");
-    } catch (e) {
-      toast.error((e as Error).message);
+      await save({ silent: true });
     }
   }
 
@@ -1012,7 +1005,7 @@ export default function EditorPage() {
             onClick={openPreview}
             disabled={!current}
             className="gap-1.5"
-            title="Pratinjau draft di tab baru — link berlaku 1 jam"
+            title="Bagikan link pratinjau draft — berlaku 1 jam"
           >
             <Eye className="size-3.5" />
             <span className="hidden sm:inline">Pratinjau</span>
@@ -1051,6 +1044,19 @@ export default function EditorPage() {
               <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-card" />
             )}
           </Button>
+          {current?.scheduled_publish_at && (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+              title={`Terjadwal untuk publikasi: ${new Date(current.scheduled_publish_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}. Klik untuk kelola jadwal.`}
+            >
+              <CalendarClock className="size-3.5" />
+              <span className="hidden sm:inline">
+                {formatScheduleShort(current.scheduled_publish_at)}
+              </span>
+            </button>
+          )}
           <Button
             onClick={publish}
             disabled={publishing || !current || (!hasUnpublishedChanges && !blocksDirty)}
@@ -1501,6 +1507,13 @@ export default function EditorPage() {
             ),
           );
         }}
+      />
+
+      <PreviewShareDialog
+        pageId={current?.id ?? null}
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        onBeforeGenerate={savePreviewIfDirty}
       />
     </div>
   );
@@ -2006,6 +2019,25 @@ marked.use({ renderer: { html: () => "" } });
 function renderMarkdownInline(md: string): string {
   if (!md) return "";
   return marked.parse(md, { async: false }) as string;
+}
+
+// formatScheduleShort — label pendek untuk badge toolbar. Kalau < 24 jam
+// tampilkan "jam 14:30", kalau > 24 jam tampilkan "15 Ags 14:30". Tujuannya
+// user cepat scan tanpa parse tanggal panjang.
+function formatScheduleShort(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Terjadwal";
+  const diffMs = d.getTime() - Date.now();
+  const inLessThan24h = diffMs > 0 && diffMs < 24 * 60 * 60 * 1000;
+  if (inLessThan24h) {
+    return `Jam ${d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  return d.toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {

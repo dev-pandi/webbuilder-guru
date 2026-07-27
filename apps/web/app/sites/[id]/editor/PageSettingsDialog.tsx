@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, Globe, Loader2, Search, Settings2, Trash2 } from "lucide-react";
+import { CalendarClock, ExternalLink, Globe, Loader2, Search, Settings2, Trash2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,9 @@ export type PageSettings = {
   seo?: SEOData | null;
   is_home?: boolean;
   published_at?: string | null;
+  // scheduled_publish_at — kalau di-set, background worker akan auto-publish
+  // di waktu tersebut. Manual publish membersihkan field ini.
+  scheduled_publish_at?: string | null;
 };
 
 export type SEOData = {
@@ -58,6 +61,10 @@ export function PageSettingsDialog({
   const [seo, setSeo] = useState<SEOData>({});
   const [saving, setSaving] = useState(false);
   const [actioning, setActioning] = useState(false);
+  // Draft input datetime-local (format "YYYY-MM-DDTHH:mm"). Kosong = user
+  // belum pilih. Convert ke RFC3339 dengan timezone lokal saat submit.
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduling, setScheduling] = useState(false);
 
   // Sync state from the incoming page each time the dialog opens — closing
   // and re-opening should reset any local edits to the persisted truth.
@@ -66,6 +73,7 @@ export function PageSettingsDialog({
     setTitle(page.title);
     setSlug(page.slug);
     setSeo(page.seo ?? {});
+    setScheduleAt("");
   }, [open, page]);
 
   if (!page) return null;
@@ -118,6 +126,69 @@ export function PageSettingsDialog({
       setActioning(false);
     }
   }
+
+  async function schedule() {
+    if (!page || !scheduleAt) return;
+    // datetime-local mengembalikan "YYYY-MM-DDTHH:mm" tanpa timezone. new Date()
+    // interpret as local time; toISOString() convert ke UTC RFC3339 — backend
+    // parse dengan time.RFC3339. Frontend menampilkan kembali dalam zona lokal
+    // via toLocaleString.
+    const at = new Date(scheduleAt);
+    if (Number.isNaN(at.getTime())) {
+      toast.error("Format waktu tidak valid");
+      return;
+    }
+    if (at.getTime() <= Date.now() + 30_000) {
+      toast.error("Waktu jadwal harus minimal 30 detik dari sekarang");
+      return;
+    }
+    setScheduling(true);
+    try {
+      const updated = await api<PageSettings>(
+        `/api/v1/pages/${page.id}/schedule`,
+        {
+          method: "POST",
+          body: JSON.stringify({ at: at.toISOString() }),
+        },
+      );
+      onUpdated(updated);
+      setScheduleAt("");
+      toast.success(
+        `Terjadwal untuk publikasi ${at.toLocaleString("id-ID", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })}`,
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  async function unschedule() {
+    if (!page) return;
+    setScheduling(true);
+    try {
+      const updated = await api<PageSettings>(
+        `/api/v1/pages/${page.id}/unschedule`,
+        { method: "POST" },
+      );
+      onUpdated(updated);
+      toast.success("Jadwal publikasi dibatalkan");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setScheduling(false);
+    }
+  }
+
+  // Min value for datetime-local input — sekarang + 1 menit, format lokal.
+  const minScheduleAt = (() => {
+    const d = new Date(Date.now() + 60_000);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  })();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -301,6 +372,80 @@ export function PageSettingsDialog({
                 </>
               )}
             </div>
+          </section>
+
+          <Separator />
+
+          {/* --- Terbitkan Otomatis --- */}
+          <section className="space-y-3">
+            <SectionLabel icon={<CalendarClock className="size-3.5" />}>
+              Terbitkan Otomatis
+            </SectionLabel>
+
+            {page.scheduled_publish_at ? (
+              <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50/60 px-3 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+                <div className="flex items-start gap-2">
+                  <CalendarClock className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-300" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                      Terjadwal untuk publikasi
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-amber-800 dark:text-amber-200">
+                      {new Date(page.scheduled_publish_at).toLocaleString("id-ID", {
+                        dateStyle: "full",
+                        timeStyle: "short",
+                      })}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={unschedule}
+                  disabled={scheduling}
+                >
+                  {scheduling ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <XCircle className="size-3.5" />
+                  )}
+                  Batalkan Jadwal
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2 rounded-md border bg-muted/20 px-3 py-3">
+                <p className="text-[11px] text-muted-foreground">
+                  Jadwalkan draft untuk auto-publish di waktu tertentu.
+                  Cocok untuk artikel embargo atau promo yang harus live jam
+                  tertentu. Manual <strong>Terbitkan</strong> akan otomatis
+                  membatalkan jadwal.
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    min={minScheduleAt}
+                    onChange={(e) => setScheduleAt(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={schedule}
+                    disabled={!scheduleAt || scheduling}
+                    className="gap-1.5 sm:shrink-0"
+                  >
+                    {scheduling ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <CalendarClock className="size-3.5" />
+                    )}
+                    Jadwalkan
+                  </Button>
+                </div>
+              </div>
+            )}
           </section>
         </div>
 

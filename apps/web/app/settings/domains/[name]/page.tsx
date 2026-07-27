@@ -17,6 +17,8 @@ import {
   ChevronLeft,
   Loader2,
   AlertCircle,
+  ArrowRight,
+  Cloud,
   Info,
   Server,
   RefreshCw,
@@ -186,6 +188,9 @@ export default function DomainDetailPage() {
               initial={ns}
               onUpdated={(next) => setNs(next)}
             />
+
+            {/* DNS editor entry */}
+            <DnsPanelLink domain={domain} />
           </>
         )
       )}
@@ -437,4 +442,40 @@ function formatDate(iso?: string): string {
   } catch {
     return iso;
   }
+}
+
+// -------------- DNS Panel Link --------------
+//
+// Entry point ke sub-route DNS editor. Sengaja tidak fetch record di sini —
+// halaman detail sudah cukup padat; user klik untuk masuk ke halaman
+// dedicated (bisa deep-link + bookmark).
+
+function DnsPanelLink({ domain }: { domain: string }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Cloud className="size-4 text-orange-500" />
+          DNS Records
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <p className="text-sm text-muted-foreground">
+              Kelola DNS record via Cloudflare — tambah A, CNAME, MX, TXT
+              untuk arahkan subdomain, terima email, atau verifikasi layanan
+              pihak ketiga.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm" className="gap-1.5 shrink-0">
+            <Link href={`/settings/domains/${encodeURIComponent(domain)}/dns`}>
+              Kelola DNS
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

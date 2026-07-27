@@ -53,25 +53,51 @@ type Error struct {
 // dapat semua benefit CF tanpa config tambahan.
 //
 // TTL 1 = "auto" (Cloudflare pilih sendiri, biasanya 300s).
+//
+// Priority hanya berlaku untuk MX record — omitempty supaya tidak kirim
+// field yang tidak relevan untuk type lain.
 type DNSRecordRequest struct {
-	Type    string `json:"type"`    // "A" | "CNAME" | "AAAA" dst.
-	Name    string `json:"name"`    // "@" untuk root, "www", "*", dst.
-	Content string `json:"content"` // IP untuk A, hostname untuk CNAME
-	TTL     int    `json:"ttl"`     // 1 = auto
-	Proxied bool   `json:"proxied"`
+	Type     string `json:"type"`               // "A" | "AAAA" | "CNAME" | "TXT" | "MX" | "NS" | "SRV" | "CAA"
+	Name     string `json:"name"`               // "@" untuk root, "www", "*", "sub.foo", dst.
+	Content  string `json:"content"`            // IP untuk A/AAAA, hostname untuk CNAME/MX/NS, text untuk TXT
+	TTL      int    `json:"ttl"`                // 1 = auto, or seconds (60..86400)
+	Proxied  bool   `json:"proxied"`            // hanya berlaku untuk A/AAAA/CNAME
+	Priority *int   `json:"priority,omitempty"` // MX only
+	Comment  string `json:"comment,omitempty"`  // optional note dari user (Cloudflare simpan max 100 char)
 }
 
-// DNSRecordResponse = envelope response.
+// DNSRecordResponse = envelope response (single record).
 type DNSRecordResponse struct {
 	Success bool          `json:"success"`
 	Errors  []Error       `json:"errors,omitempty"`
 	Result  DNSRecordData `json:"result"`
 }
 
+// DNSRecordListResponse = envelope response paginated list.
+type DNSRecordListResponse struct {
+	Success bool            `json:"success"`
+	Errors  []Error         `json:"errors,omitempty"`
+	Result  []DNSRecordData `json:"result"`
+}
+
 type DNSRecordData struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Content string `json:"content"`
-	Proxied bool   `json:"proxied"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Content  string `json:"content"`
+	TTL      int    `json:"ttl"`
+	Proxied  bool   `json:"proxied"`
+	Priority *int   `json:"priority,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+	// ZoneName populated Cloudflare untuk convenience; kita passthrough.
+	ZoneName   string `json:"zone_name,omitempty"`
+	Proxiable  bool   `json:"proxiable,omitempty"` // true kalau type support proxy (A/AAAA/CNAME)
+	ModifiedOn string `json:"modified_on,omitempty"`
+}
+
+// ZoneListResponse = envelope untuk GET /zones?name=...
+type ZoneListResponse struct {
+	Success bool       `json:"success"`
+	Errors  []Error    `json:"errors,omitempty"`
+	Result  []ZoneData `json:"result"`
 }

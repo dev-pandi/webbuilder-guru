@@ -41,6 +41,11 @@ type Page struct {
 	// `PublishedTree` (with fallback to draft for pages never published).
 	PublishedTree json.RawMessage `json:"published_tree,omitempty"`
 	PublishedAt   *time.Time      `json:"published_at,omitempty"`
+
+	// ScheduledPublishAt — kalau set, background worker akan publish otomatis
+	// saat waktu tercapai. Manual publish membersihkan field ini. Nil = tidak
+	// terjadwal.
+	ScheduledPublishAt *time.Time `json:"scheduled_publish_at,omitempty"`
 }
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -58,7 +63,7 @@ func (r *Repo) CountBySite(ctx context.Context, siteID uuid.UUID) (int, error) {
 
 func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE site_id = $1
 		ORDER BY is_home DESC, slug ASC
 	`, siteID)
@@ -69,7 +74,7 @@ func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error)
 	out := []Page{}
 	for rows.Next() {
 		var p Page
-		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -80,9 +85,9 @@ func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error)
 func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE id = $1
-	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
+	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -92,9 +97,9 @@ func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Page, error) {
 func (r *Repo) GetBySiteAndSlug(ctx context.Context, siteID uuid.UUID, slug string) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE site_id = $1 AND slug = $2
-	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
+	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -104,9 +109,9 @@ func (r *Repo) GetBySiteAndSlug(ctx context.Context, siteID uuid.UUID, slug stri
 func (r *Repo) GetHomeOfSite(ctx context.Context, siteID uuid.UUID) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE site_id = $1 AND is_home = true LIMIT 1
-	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
+	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -134,9 +139,9 @@ func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, slug, title string,
 	err = tx.QueryRow(ctx, `
 		INSERT INTO pages (site_id, slug, title, tree_json, seo_json, is_home)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 	`, siteID, slug, title, tree, seo, isHome).Scan(
-		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt,
 	)
 	if pgErrCode(err) == "23505" {
 		return nil, ErrSlugTaken
@@ -163,9 +168,9 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, se
 	if tree != nil || title != nil || seo != nil {
 		var prev Page
 		err := tx.QueryRow(ctx, `
-			SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+			SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 			FROM pages WHERE id = $1
-		`, id).Scan(&prev.ID, &prev.SiteID, &prev.Slug, &prev.Title, &prev.Tree, &prev.SEO, &prev.IsHome, &prev.Version, &prev.CreatedAt, &prev.UpdatedAt, &prev.PublishedTree, &prev.PublishedAt)
+		`, id).Scan(&prev.ID, &prev.SiteID, &prev.Slug, &prev.Title, &prev.Tree, &prev.SEO, &prev.IsHome, &prev.Version, &prev.CreatedAt, &prev.UpdatedAt, &prev.PublishedTree, &prev.PublishedAt, &prev.ScheduledPublishAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -204,9 +209,9 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, title *string, tree, se
 			version    = version + 1,
 			updated_at = now()
 		WHERE id = $1
-		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 	`, id, title, tree, seo, isHome, slug).Scan(
-		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -286,7 +291,7 @@ func (r *Repo) Restore(ctx context.Context, versionID uuid.UUID, createdBy *uuid
 	// snapshot current first
 	var current Page
 	err = tx.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE id = $1
 	`, v.PageID).Scan(&current.ID, &current.SiteID, &current.Slug, &current.Title, &current.Tree, &current.SEO, &current.IsHome, &current.Version, &current.CreatedAt, &current.UpdatedAt, &current.PublishedTree, &current.PublishedAt)
 	if err != nil {
@@ -309,9 +314,9 @@ func (r *Repo) Restore(ctx context.Context, versionID uuid.UUID, createdBy *uuid
 		    version    = version + 1,
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 	`, v.PageID, v.Title, v.Tree, v.SEO).Scan(
-		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt,
 	)
 	if err != nil {
 		return nil, err
@@ -378,22 +383,93 @@ func (r *Repo) Duplicate(ctx context.Context, id uuid.UUID) (*Page, error) {
 // Publish copies the current draft (tree_json) into published_tree_json and
 // sets published_at = now(). Returns the refreshed Page so the editor can
 // surface the new live timestamp immediately.
+//
+// Membersihkan scheduled_publish_at: manual publish otomatis batalkan jadwal
+// yang tertunda supaya worker tidak "publish ulang" beberapa menit kemudian.
 func (r *Repo) Publish(ctx context.Context, id uuid.UUID) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
 		UPDATE pages
-		   SET published_tree_json = tree_json,
-		       published_at = now()
+		   SET published_tree_json  = tree_json,
+		       published_at         = now(),
+		       scheduled_publish_at = NULL
 		 WHERE id = $1
-		 RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		 RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 	`, id).Scan(
 		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
-		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt,
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &p, err
+}
+
+// Schedule sets scheduled_publish_at ke waktu future. Value harus > now di
+// caller (handler validate); repo tidak enforce. Return refreshed Page.
+func (r *Repo) Schedule(ctx context.Context, id uuid.UUID, at time.Time) (*Page, error) {
+	var p Page
+	err := r.pool.QueryRow(ctx, `
+		UPDATE pages
+		   SET scheduled_publish_at = $2
+		 WHERE id = $1
+		 RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
+	`, id, at).Scan(
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
+}
+
+// Unschedule clears the pending schedule tanpa mengubah publish state.
+func (r *Repo) Unschedule(ctx context.Context, id uuid.UUID) (*Page, error) {
+	var p Page
+	err := r.pool.QueryRow(ctx, `
+		UPDATE pages
+		   SET scheduled_publish_at = NULL
+		 WHERE id = $1
+		 RETURNING id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
+	`, id).Scan(
+		&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
+}
+
+// ListDueForPublish return baris pages yang scheduled_publish_at <= now.
+// Dipanggil background worker tiap ~60 detik. Batas max supaya worker tidak
+// stuck di batch besar kalau tabel penuh backlog (mis. hasil migrasi salah
+// yang bikin banyak jadwal barengan). Sisanya akan di-pickup iterasi berikut.
+func (r *Repo) ListDueForPublish(ctx context.Context, now time.Time, max int) ([]uuid.UUID, error) {
+	if max <= 0 || max > 500 {
+		max = 100
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id FROM pages
+		 WHERE scheduled_publish_at IS NOT NULL
+		   AND scheduled_publish_at <= $1
+		 ORDER BY scheduled_publish_at ASC
+		 LIMIT $2
+	`, now, max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // Unpublish clears the published snapshot so the page disappears from the
@@ -416,7 +492,7 @@ func (r *Repo) Unpublish(ctx context.Context, id uuid.UUID) error {
 // they exist only in the editor's draft view.
 func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages
 		WHERE site_id = $1 AND published_tree_json IS NOT NULL
 		ORDER BY is_home DESC, slug ASC
@@ -429,7 +505,7 @@ func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, 
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
-			&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt); err != nil {
+			&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -443,11 +519,11 @@ func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, 
 func (r *Repo) GetBySiteAndSlugPublic(ctx context.Context, siteID uuid.UUID, slug string) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at
+		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages
 		WHERE site_id = $1 AND slug = $2 AND published_tree_json IS NOT NULL
 	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
-		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt)
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

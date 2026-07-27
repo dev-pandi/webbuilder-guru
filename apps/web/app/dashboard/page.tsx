@@ -89,6 +89,10 @@ export default function DashboardPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loadingSites, setLoadingSites] = useState(true);
   const [pendingPurchases, setPendingPurchases] = useState<DomainPurchase[]>([]);
+  // Domain gagal yang butuh perhatian user — retry payment / lengkapi dokumen.
+  // Dedupe agar tidak double-nag: kalau ada juga row pending/active untuk
+  // domain sama (user sudah recover), sembunyikan yang failed.
+  const [failedPurchases, setFailedPurchases] = useState<DomainPurchase[]>([]);
   // Domain aktif yang expire ≤ 30 hari — banner prominent supaya user tidak
   // ketinggalan renewal (kalau miss, site down + support ticket).
   const [expiringPurchases, setExpiringPurchases] = useState<DomainPurchase[]>([]);
@@ -138,6 +142,25 @@ export default function DashboardPage() {
         if (cancelled) return;
         const items = list ?? [];
         setPendingPurchases(items.filter((p) => ACTIONABLE_STATUSES.has(p.status)));
+        // Failed jobs — dedupe supaya tidak nag domain yang sudah user recover
+        // (retry sukses → row active + row failed lama). Skip failed kalau ada
+        // row pending/active untuk domain sama.
+        const inProgress = new Set<string>();
+        for (const p of items) {
+          if (p.status === "active" || ACTIONABLE_STATUSES.has(p.status)) {
+            inProgress.add(p.domain);
+          }
+        }
+        const seenFailed = new Set<string>();
+        const failed: DomainPurchase[] = [];
+        for (const p of items) {
+          if (p.status !== "failed") continue;
+          if (inProgress.has(p.domain)) continue;
+          if (seenFailed.has(p.domain)) continue;
+          seenFailed.add(p.domain);
+          failed.push(p);
+        }
+        setFailedPurchases(failed);
         // Expiry check per DOMAIN, bukan per-row: setelah renew, register-row
         // punya expires_at lama tapi renew-row punya expires_at baru. Ambil
         // yang terbaru per domain supaya user tidak salah panik.
@@ -279,6 +302,48 @@ export default function DashboardPage() {
                   </Badge>
                 </div>
                 <ArrowRight className="size-4 text-muted-foreground" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Domain gagal — butuh action user (retry payment / restart flow).
+          Sudah di-dedupe: kalau ada row pending/active untuk domain sama,
+          card ini tidak muncul (user sudah recover). Deep-link ke pending
+          page yang punya tombol Retry / detail failure reason. */}
+      {failedPurchases.length > 0 && (
+        <div className="rounded-xl border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/30">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-red-900 dark:text-red-200">
+              <AlertCircle className="size-4" />
+              Domain gagal — perlu perhatian
+            </div>
+            <Link
+              href="/settings/domains"
+              className="text-xs font-medium text-red-900 underline underline-offset-4 hover:text-red-700 dark:text-red-200"
+            >
+              Lihat semua domain
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {failedPurchases.map((p) => (
+              <Link
+                key={p.job_id}
+                href={`/sites/pending/${p.job_id}`}
+                className="flex items-center justify-between rounded-lg border bg-background px-3 py-2.5 text-sm transition-colors hover:border-red-400"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <Globe2 className="size-4 shrink-0 text-muted-foreground" />
+                  <code className="truncate font-medium">{p.domain}</code>
+                  <Badge variant="destructive" className="text-xs">
+                    {p.kind === "renew" ? "Renew gagal" : "Pendaftaran gagal"}
+                  </Badge>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5 text-red-700 dark:text-red-300">
+                  <span className="text-xs font-medium">Coba lagi</span>
+                  <ArrowRight className="size-4" />
+                </div>
               </Link>
             ))}
           </div>

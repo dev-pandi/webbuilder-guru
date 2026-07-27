@@ -173,6 +173,17 @@ export default function PendingDomainPage() {
       });
   }, [router]);
 
+  // Adaptive polling: pending_payment butuh feedback cepat supaya payment_url
+  // segera muncul → 2s. Provisioning EPP CREATE bisa lambat (network +
+  // registry) → 5s. Default 3s. Kalau status berubah, useEffect re-run dengan
+  // interval baru (dependency).
+  const pollInterval =
+    purchase?.status === "pending_payment"
+      ? 2000
+      : purchase?.status === "pending_provisioning"
+      ? 5000
+      : 3000;
+
   // Polling loop.
   useEffect(() => {
     if (!ready || !jobId) return;
@@ -202,20 +213,24 @@ export default function PendingDomainPage() {
     }
     fetchOnce();
 
+    // Adaptive polling: pending_payment butuh feedback cepat supaya
+    // payment_url segera muncul → 2s. Provisioning EPP CREATE bisa lambat
+    // (network + registry) → 5s cukup untuk hemat request. Default 3s.
+    // Interval di-reset saat status berubah (useEffect dep di bawah).
     const iv = setInterval(() => {
       const cur = purchaseRef.current;
       if (cur && isTerminal(cur.status)) return; // ideally cleared, but idempotent
       // Kalau job tidak ada, no point polling lagi — biar interval idle.
       if (notFoundRef.current) return;
       fetchOnce();
-    }, 3000);
+    }, pollInterval);
     return () => {
       cancelled = true;
       controller.abort();
       clearInterval(iv);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, jobId]);
+  }, [ready, jobId, pollInterval]);
 
   // Small ref so setInterval can peek latest state without dependency loop.
   const purchaseRef = useRef<Purchase | null>(null);

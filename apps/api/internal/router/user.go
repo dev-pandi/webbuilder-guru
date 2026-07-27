@@ -79,6 +79,8 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/pages/:id/restore/:versionId", mutateLimit, deps.Pages.RestoreVersion)
 	authed.Post("/pages/:id/publish", mutateLimit, deps.Pages.Publish)
 	authed.Post("/pages/:id/unpublish", mutateLimit, deps.Pages.Unpublish)
+	authed.Post("/pages/:id/schedule", mutateLimit, deps.Pages.Schedule)
+	authed.Post("/pages/:id/unschedule", mutateLimit, deps.Pages.Unschedule)
 	authed.Post("/pages/:id/preview-token", mutateLimit, deps.Pages.PreviewToken)
 	authed.Delete("/pages/:id", mutateLimit, deps.Pages.Delete)
 
@@ -110,6 +112,12 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
 		authed.Get("/domains/:name/whois", deps.DomainPurchase.Whois)
+		// DNS editor — proxy ke Cloudflare, scoped domain ownership. Fitur
+		// disable-graceful kalau CF config absent (503 dari handler).
+		authed.Get("/domains/:name/dns", deps.DomainPurchase.ListDNSRecords)
+		authed.Post("/domains/:name/dns", mutateLimit, deps.DomainPurchase.CreateDNSRecord)
+		authed.Patch("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.UpdateDNSRecord)
+		authed.Delete("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.DeleteDNSRecord)
 		authed.Get("/domains/purchases", deps.DomainPurchase.List)
 		// Sinkronkan status semua job user dari registrar ground truth. User-triggered
 		// via tombol di /settings/domains — fix drift kalau webhook drop.

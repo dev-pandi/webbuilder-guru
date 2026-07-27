@@ -23,6 +23,7 @@ import (
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/registrar"
+	"github.com/webbuilder/api/internal/sites"
 )
 
 // Metric names — kept as constants supaya konsisten dgn dashboard Prometheus
@@ -49,6 +50,7 @@ type Handler struct {
 	repo          *Repo
 	registrar     *registrar.Client
 	users         *auth.Repo
+	sites         *sites.Repo      // dipakai Attach untuk verify site ownership
 	cloudflare    *cloudflare.Repo // nil = auto-attach ke Cloudflare skipped
 	platformIPs   []string         // dipakai jadi content A record CF auto-attach
 	webhookSecret string
@@ -58,12 +60,12 @@ type Handler struct {
 // Kalau salah satu nil/empty, auto-attach ke Cloudflare skipped tanpa error
 // (log warn saja). platformIPs biasanya dari cfg.PlatformIPs.
 func NewHandler(
-	repo *Repo, r *registrar.Client, users *auth.Repo,
+	repo *Repo, r *registrar.Client, users *auth.Repo, sitesRepo *sites.Repo,
 	cloudflareRepo *cloudflare.Repo, platformIPs []string,
 	webhookSecret string,
 ) *Handler {
 	return &Handler{
-		repo: repo, registrar: r, users: users, cloudflare: cloudflareRepo,
+		repo: repo, registrar: r, users: users, sites: sitesRepo, cloudflare: cloudflareRepo,
 		platformIPs:   platformIPs,
 		webhookSecret: webhookSecret,
 	}
@@ -229,12 +231,14 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	// handling (client.go). Web builder tidak enforce upfront supaya TLD
 	// non-.id (yang majority) tidak kena syarat NIK.
 
-	// Idempotency key per request. Frontend seharusnya kirim key sendiri
-	// (dari UUID checkout), tapi kalau tidak, kita generate di sini —
-	// artinya double-click akan bikin 2 job (acceptable trade-off untuk MVP).
-	idem := c.Get("Idempotency-Key")
+	// Idempotency key WAJIB dari header. Frontend generate UUID sekali per
+	// checkout attempt (useMemo) — kalau missing, hard reject supaya tidak
+	// bikin 2 job saat double-click / network retry. Backend TIDAK auto-fill
+	// key (dulu iya, tapi bikin double-charge risk kalau frontend miss header).
+	idem := strings.TrimSpace(c.Get("Idempotency-Key"))
 	if idem == "" {
-		idem = uuid.New().String()
+		return httpx.Err(c, fiber.StatusBadRequest, "idempotency_key_required",
+			"Header Idempotency-Key wajib diisi untuk cegah double-charge.")
 	}
 
 	registrarReq := registrar.RegisterRequest{
@@ -291,6 +295,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		JobID:      resp.JobID,
 		Domain:     req.Domain,
 		Status:     resp.Status,
+		Kind:       KindRegister,
 		PaymentURL: resp.PaymentURL,
 	}})
 }
@@ -418,6 +423,195 @@ func (h *Handler) UpdateNameservers(c *fiber.Ctx) error {
 	return httpx.OK(c, info)
 }
 
+// dnsPrecheck — helper untuk DNS handlers. Verify:
+//  1. Cloudflare config tersedia (kalau tidak, 503 "cf_disabled")
+//  2. Domain milik user yang login (via GetLatestActiveByDomain — same lock
+//     yang dipakai renew + nameserver flow)
+//  3. Zone terdaftar di CF akun kita (mungkin belum kalau auto-attach fail)
+//
+// Return zone_id + client siap pakai, atau error yang sudah ter-write ke
+// response (caller cukup return err).
+func (h *Handler) dnsPrecheck(c *fiber.Ctx, name string) (string, *cloudflare.Client, error) {
+	if h.cloudflare == nil {
+		return "", nil, httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_disabled",
+			"Fitur DNS belum aktif — admin perlu setup Cloudflare config.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return "", nil, httpx.Unauthorized(c, "no claims")
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return "", nil, httpx.BadRequest(c, "name required")
+	}
+	if _, err := h.repo.GetLatestActiveByDomain(c.Context(), name, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return "", nil, httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return "", nil, httpx.Internal(c, "ownership check failed")
+	}
+	cfg, err := h.cloudflare.GetDefault(c.Context())
+	if err != nil {
+		if errors.Is(err, cloudflare.ErrNotFound) {
+			return "", nil, httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_no_config",
+				"Cloudflare default config belum di-set. Hubungi admin.")
+		}
+		return "", nil, httpx.Internal(c, "cloudflare config lookup failed")
+	}
+	client := cloudflare.NewClient(*cfg)
+	zone, err := client.GetZoneByDomain(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, cloudflare.ErrZoneNotFound) {
+			return "", nil, httpx.Err(c, fiber.StatusNotFound, "zone_not_found",
+				"Zone Cloudflare untuk domain ini belum tersedia — biasanya muncul beberapa menit setelah pembelian selesai.")
+		}
+		return "", nil, httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return zone.ID, client, nil
+}
+
+// ListDNSRecords — GET /api/v1/domains/:name/dns
+//
+// Return semua DNS record di zone Cloudflare untuk domain ini. Payload
+// dikirim apa adanya dari CF (id, type, name, content, ttl, proxied,
+// priority, comment) — frontend bebas render tabel + filter.
+func (h *Handler) ListDNSRecords(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheck(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	records, err := client.ListDNSRecords(c.Context(), zoneID)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"records": records, "zone_id": zoneID})
+}
+
+// dnsRecordReq = payload create/update dari frontend. Field mirror
+// cloudflare.DNSRecordRequest tapi kita re-declare supaya bisa validate +
+// friendly error message sebelum forward.
+type dnsRecordReq struct {
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Content  string `json:"content"`
+	TTL      int    `json:"ttl"`
+	Proxied  bool   `json:"proxied"`
+	Priority *int   `json:"priority,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+}
+
+// validDNSTypes whitelist supaya user tidak forward type aneh yang bikin
+// CF error 400. Cover 99% use case UMKM (verifikasi email, custom subdomain,
+// mail routing).
+var validDNSTypes = map[string]bool{
+	"A": true, "AAAA": true, "CNAME": true, "TXT": true,
+	"MX": true, "NS": true, "SRV": true, "CAA": true,
+}
+
+func (r *dnsRecordReq) validate() error {
+	r.Type = strings.ToUpper(strings.TrimSpace(r.Type))
+	r.Name = strings.TrimSpace(r.Name)
+	r.Content = strings.TrimSpace(r.Content)
+	if !validDNSTypes[r.Type] {
+		return errors.New("type harus salah satu: A, AAAA, CNAME, TXT, MX, NS, SRV, CAA")
+	}
+	if r.Name == "" {
+		return errors.New("name wajib (@ untuk root, atau subdomain seperti 'www')")
+	}
+	if r.Content == "" {
+		return errors.New("content wajib")
+	}
+	// Proxied hanya berlaku A/AAAA/CNAME. CF ignore untuk type lain, tapi kita
+	// force false supaya payload konsisten.
+	if r.Type != "A" && r.Type != "AAAA" && r.Type != "CNAME" {
+		r.Proxied = false
+	}
+	if r.Type == "MX" && r.Priority == nil {
+		return errors.New("priority wajib untuk record MX")
+	}
+	// TTL: 1 = auto, else 60..86400
+	if r.TTL != 1 && (r.TTL < 60 || r.TTL > 86400) {
+		if r.TTL == 0 {
+			r.TTL = 1
+		} else {
+			return errors.New("TTL harus 1 (auto) atau antara 60 dan 86400 detik")
+		}
+	}
+	if len(r.Comment) > 100 {
+		return errors.New("comment maksimal 100 karakter")
+	}
+	return nil
+}
+
+// CreateDNSRecord — POST /api/v1/domains/:name/dns
+// Body: dnsRecordReq
+func (h *Handler) CreateDNSRecord(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheck(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	var req dnsRecordReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	if err := req.validate(); err != nil {
+		return httpx.BadRequest(c, err.Error())
+	}
+	rec, err := client.CreateDNSRecord(c.Context(), zoneID, cloudflare.DNSRecordRequest{
+		Type: req.Type, Name: req.Name, Content: req.Content,
+		TTL: req.TTL, Proxied: req.Proxied, Priority: req.Priority,
+		Comment: req.Comment,
+	})
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return httpx.Created(c, rec)
+}
+
+// UpdateDNSRecord — PATCH /api/v1/domains/:name/dns/:record_id
+func (h *Handler) UpdateDNSRecord(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheck(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	recordID := strings.TrimSpace(c.Params("record_id"))
+	if recordID == "" {
+		return httpx.BadRequest(c, "record_id required")
+	}
+	var req dnsRecordReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	if err := req.validate(); err != nil {
+		return httpx.BadRequest(c, err.Error())
+	}
+	rec, err := client.UpdateDNSRecord(c.Context(), zoneID, recordID, cloudflare.DNSRecordRequest{
+		Type: req.Type, Name: req.Name, Content: req.Content,
+		TTL: req.TTL, Proxied: req.Proxied, Priority: req.Priority,
+		Comment: req.Comment,
+	})
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return httpx.OK(c, rec)
+}
+
+// DeleteDNSRecord — DELETE /api/v1/domains/:name/dns/:record_id
+func (h *Handler) DeleteDNSRecord(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheck(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	recordID := strings.TrimSpace(c.Params("record_id"))
+	if recordID == "" {
+		return httpx.BadRequest(c, "record_id required")
+	}
+	if err := client.DeleteDNSRecord(c.Context(), zoneID, recordID); err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"ok": true})
+}
+
 // Whois — GET /api/v1/domains/:name/whois
 //
 // Return WHOIS info dari registrar. Ownership required — kita tidak expose
@@ -507,9 +701,10 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		return httpx.Internal(c, "domain lookup failed")
 	}
 
-	idem := c.Get("Idempotency-Key")
+	idem := strings.TrimSpace(c.Get("Idempotency-Key"))
 	if idem == "" {
-		idem = uuid.New().String()
+		return httpx.Err(c, fiber.StatusBadRequest, "idempotency_key_required",
+			"Header Idempotency-Key wajib diisi untuk cegah double-charge.")
 	}
 
 	resp, err := h.registrar.RenewDomain(c.Context(), req.Domain, registrar.RenewRequest{
@@ -547,6 +742,7 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		JobID:      resp.JobID,
 		Domain:     req.Domain,
 		Status:     resp.Status,
+		Kind:       KindRenew,
 		PaymentURL: resp.PaymentURL,
 	}})
 }
@@ -788,10 +984,19 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site_id")
 	}
-	// Ownership dari purchase sudah dijamin oleh GetByJobID di bawah;
-	// ownership site harus dicek caller (site.user_id == user.id).
-	// Simplification: repo.AttachSite pakai WHERE user_id = ... di kolom
-	// domain_purchases, jadi user yang bukan owner otomatis dapat ErrNotFound.
+	// Two-layer ownership check:
+	//   1. Site milik user yang login — cegah user A attach domain-nya ke
+	//      site_id user B (walaupun butuh tebak UUID, defence in depth).
+	//   2. Purchase milik user yang login — di-enforce di repo.AttachSite via
+	//      WHERE user_id di kolom domain_purchases.
+	if h.sites != nil {
+		if _, err := h.sites.GetOwned(c.Context(), siteID, cl.UserID); err != nil {
+			if errors.Is(err, sites.ErrNotFound) {
+				return httpx.NotFound(c, "site tidak ditemukan")
+			}
+			return httpx.Internal(c, "site lookup failed")
+		}
+	}
 	if err := h.repo.AttachSite(c.Context(), jobID, cl.UserID, siteID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return httpx.NotFound(c, "job tidak ditemukan atau sudah di-attach")
@@ -1235,7 +1440,9 @@ type webhookPayload struct {
 //   X-Registrar-Timestamp: <unix>
 //
 // Bandingkan `hmac_sha256(webhookSecret, raw_body)` dengan signature. Reject
-// kalau timestamp lebih tua dari 5 menit (replay defense).
+// kalau timestamp lebih tua dari 60 detik (tight replay window — webhook
+// realistik <10 detik dari registrar; retry akan re-sign dengan timestamp
+// fresh, jadi 60s beri buffer untuk network jitter).
 func (h *Handler) Webhook(c *fiber.Ctx) error {
 	if h.webhookSecret == "" {
 		// Fail-closed: kalau operator lupa set secret, jangan terima apapun.
@@ -1254,15 +1461,15 @@ func (h *Handler) Webhook(c *fiber.Ctx) error {
 		)
 		return httpx.Err(c, fiber.StatusUnauthorized, "invalid_signature", "signature mismatch")
 	}
-	// Replay protection.
+	// Replay protection — tight window (60s) sesuai audit hardening.
 	if ts, _ := strconv.ParseInt(c.Get("X-Registrar-Timestamp"), 10, 64); ts > 0 {
-		if time.Since(time.Unix(ts, 0)).Abs() > 5*time.Minute {
+		if time.Since(time.Unix(ts, 0)).Abs() > 60*time.Second {
 			metrics.Default.CounterInc(metricWebhooksReceived,
 				"Webhook receiver hits by outcome",
 				map[string]string{"result": "stale_timestamp"},
 			)
 			return httpx.Err(c, fiber.StatusUnauthorized, "stale_timestamp",
-				"webhook timestamp > 5m — reject to mitigate replay")
+				"webhook timestamp > 60s — reject to mitigate replay")
 		}
 	}
 
