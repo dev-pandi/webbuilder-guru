@@ -74,7 +74,7 @@ func (r *Repo) ListBySite(ctx context.Context, siteID uuid.UUID) ([]Page, error)
 	out := []Page{}
 	for rows.Next() {
 		var p Page
-		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -87,7 +87,7 @@ func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Page, error) {
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE id = $1
-	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
+	`, id).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -99,7 +99,7 @@ func (r *Repo) GetBySiteAndSlug(ctx context.Context, siteID uuid.UUID, slug stri
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE site_id = $1 AND slug = $2
-	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
+	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -111,7 +111,7 @@ func (r *Repo) GetHomeOfSite(ctx context.Context, siteID uuid.UUID) (*Page, erro
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE site_id = $1 AND is_home = true LIMIT 1
-	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
+	`, siteID).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO, &p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -505,7 +505,7 @@ func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, 
 	for rows.Next() {
 		var p Page
 		if err := rows.Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
-			&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt); err != nil {
+			&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -523,7 +523,7 @@ func (r *Repo) GetBySiteAndSlugPublic(ctx context.Context, siteID uuid.UUID, slu
 		FROM pages
 		WHERE site_id = $1 AND slug = $2 AND published_tree_json IS NOT NULL
 	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
-		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt, &p.ScheduledPublishAt)
+		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

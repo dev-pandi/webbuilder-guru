@@ -3,6 +3,7 @@ package pages
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,6 +55,7 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	}
 	out, err := h.pages.ListBySite(c.Context(), siteID)
 	if err != nil {
+		slog.Warn("pages: list failed", "site_id", siteID.String(), "err", err)
 		return httpx.Internal(c, "list failed")
 	}
 	return httpx.OK(c, out)
