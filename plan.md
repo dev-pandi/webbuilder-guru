@@ -295,6 +295,40 @@ Backend Fiber kita jadi proxy antara UI user dan registrar-api reseller
 endpoints. Konsumen registrar-api = server web builder (server-to-server),
 bukan browser user langsung.
 
+### 📌 Changelog integrasi (per update backend 2026-07-27)
+
+Yang HARUS di-adjust di web builder karena backend berubah:
+
+1. **Endpoint baru — cancel job pre-payment**
+   `POST /reseller/domain/register/:job_id/cancel` (guard: hanya `pending_payment`).
+   - Tambah button "Cancel" di UI reseller yang show pending_payment jobs.
+   - Client SDK: expose `CancelResellerJob(ctx, jobID)` di `internal/registrar/`.
+
+2. **Job status baru — `canceled` + `expired`**
+   Reducer / state machine yang render job status HARUS handle 2 nilai baru:
+   - `canceled` — manual cancel via endpoint #1
+   - `expired` — auto via `InvoiceExpiredCron` 24 jam post-create
+   Sebelumnya cuma tahu: `pending_payment`, `pending_document`, `pending_provisioning`, `active`, `failed`.
+
+3. **Webhook payload — 2 status baru masuk enum**
+   Handler webhook `X-Registrar-Signature` yang case-switch on status harus
+   tambah case `canceled` + `expired`. Payload shape sama.
+
+4. **Renew webhook sekarang fire** (sebelumnya bug)
+   Renew job sekarang trigger webhook untuk transition `pending_provisioning`
+   → `active`/`failed`. Pastikan handler tidak error/duplicate untuk `kind=renew`.
+
+5. **Retry sekarang terima `pending_provisioning`** (bukan hanya `failed`)
+   UI bisa show tombol Retry untuk job stuck di `pending_provisioning` (mis. > 15 menit
+   sejak last update). Berguna kalau worker crash + task archived asynq.
+
+Backend fix internal (tidak butuh frontend change):
+- CreateDomain worker nil panic guard
+- Contact.go inverted create logic
+- DomainRenew row insert di renew handler
+- EPP response nil guards di semua handler + worker
+- Idempotent retry via `InfoDomain` ownership check
+
 ### 14.1 Setup awal
 
 1. Admin registrar-api create account untuk web builder company:
@@ -558,6 +592,7 @@ Beberapa fitur di registrar-api yang perlu di-expose di UI web builder:
 | GET  | `/reseller/domain/register/:job_id/status` | Polling status |
 | POST | `/reseller/domain/register/:job_id/documents` | Upload KTP post-payment |
 | POST | `/reseller/domain/register/:job_id/retry` | Retry EPP fail |
+| POST | `/reseller/domain/register/:job_id/cancel` | Cancel job pre-payment (guard: pending_payment) |
 | GET  | `/reseller/documents` | List dokumen (filter external_user_id) |
 | POST | `/reseller/documents` | Upload dokumen (tag external_user_id) |
 | GET  | `/reseller/domain/list` | List domain milik reseller |
