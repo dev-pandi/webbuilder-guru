@@ -25,13 +25,23 @@ type Site struct {
 	QuotaMaxStorageBytes int64           `json:"quota_max_storage_bytes"`
 	QuotaMaxProducts     int             `json:"quota_max_products"`
 	QuotaMaxBlogPosts    int             `json:"quota_max_blog_posts"`
-	CreatedAt            time.Time       `json:"created_at"`
-	UpdatedAt            time.Time       `json:"updated_at"`
+	// Custom code injection — raw HTML/JS user, di-render apa adanya oleh
+	// renderer + exporter. Kosong = tidak inject. Ukuran dijaga di handler
+	// (MaxCustomCodeBytes) supaya tidak abuse storage / render payload.
+	CustomHeadCode    string    `json:"custom_head_code"`
+	CustomBodyEndCode string    `json:"custom_body_end_code"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
+
+// MaxCustomCodeBytes = batas atas per field (~16KB). Cukup untuk analytics/
+// chat widget snippet, cegah user tempel payload gigabytes.
+const MaxCustomCodeBytes = 16 * 1024
 
 // siteCols is the SELECT column list, kept in sync with scanArgs.
 const siteCols = `id, user_id, slug, name, template_id, theme_json, status,
     quota_max_pages, quota_max_storage_bytes, quota_max_products, quota_max_blog_posts,
+    custom_head_code, custom_body_end_code,
     created_at, updated_at`
 
 type Repo struct{ pool *pgxpool.Pool }
@@ -79,6 +89,7 @@ func scanArgs(s *Site) []any {
 	return []any{
 		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status,
 		&s.QuotaMaxPages, &s.QuotaMaxStorageBytes, &s.QuotaMaxProducts, &s.QuotaMaxBlogPosts,
+		&s.CustomHeadCode, &s.CustomBodyEndCode,
 		&s.CreatedAt, &s.UpdatedAt,
 	}
 }
@@ -130,17 +141,30 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Site, error) {
 	return &s, err
 }
 
-func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, name *string, theme json.RawMessage, status *string) (*Site, error) {
+// UpdateFields — patch semua field yang bisa di-set user. Pointer=nil skip
+// (COALESCE), sedangkan string kosong = "clear" untuk custom code. Ini beda
+// dari name/status yang tidak boleh kosong.
+type UpdateFields struct {
+	Name              *string
+	Theme             json.RawMessage
+	Status            *string
+	CustomHeadCode    *string
+	CustomBodyEndCode *string
+}
+
+func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, f UpdateFields) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
 		UPDATE sites SET
-			name       = COALESCE($3, name),
-			theme_json = COALESCE($4, theme_json),
-			status     = COALESCE($5, status),
-			updated_at = now()
+			name                 = COALESCE($3, name),
+			theme_json           = COALESCE($4, theme_json),
+			status               = COALESCE($5, status),
+			custom_head_code     = COALESCE($6, custom_head_code),
+			custom_body_end_code = COALESCE($7, custom_body_end_code),
+			updated_at           = now()
 		WHERE id = $1 AND user_id = $2
 		RETURNING `+siteCols+`
-	`, id, userID, name, theme, status).Scan(scanArgs(&s)...)
+	`, id, userID, f.Name, f.Theme, f.Status, f.CustomHeadCode, f.CustomBodyEndCode).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -223,6 +247,7 @@ func sitePrefixedCols(alias string) string {
 	cols := []string{
 		"id", "user_id", "slug", "name", "template_id", "theme_json", "status",
 		"quota_max_pages", "quota_max_storage_bytes", "quota_max_products", "quota_max_blog_posts",
+		"custom_head_code", "custom_body_end_code",
 		"created_at", "updated_at",
 	}
 	out := ""

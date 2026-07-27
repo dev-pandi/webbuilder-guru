@@ -20,6 +20,7 @@ type Scheduler struct {
 	repo     *Repo
 	interval time.Duration
 	max      int // max jadwal di-process per tick supaya worker tidak stuck
+	purger   CachePurger // optional — nil = purge no-op
 }
 
 func NewScheduler(repo *Repo, interval time.Duration) *Scheduler {
@@ -28,6 +29,9 @@ func NewScheduler(repo *Repo, interval time.Duration) *Scheduler {
 	}
 	return &Scheduler{repo: repo, interval: interval, max: 50}
 }
+
+// SetPurger inject cachepurge post-construction (sama pattern dengan Handler).
+func (s *Scheduler) SetPurger(p CachePurger) { s.purger = p }
 
 // Run blocks until ctx cancelled. Panggil `go scheduler.Run(ctx)` dari main.
 // Panggil sekali di startup (setelah repo siap), sync tidak di-fire pertama —
@@ -62,7 +66,8 @@ func (s *Scheduler) tickOnce(ctx context.Context) {
 	}
 	slog.Info("pages scheduler: publishing due pages", "count", len(ids))
 	for _, id := range ids {
-		if _, err := s.repo.Publish(ctx, id); err != nil {
+		p, err := s.repo.Publish(ctx, id)
+		if err != nil {
 			slog.Error("pages scheduler: publish failed",
 				"page_id", id.String(), "err", err)
 			metrics.Default.CounterInc("pages_scheduled_published_total",
@@ -70,6 +75,9 @@ func (s *Scheduler) tickOnce(ctx context.Context) {
 				map[string]string{"result": "error"},
 			)
 			continue
+		}
+		if s.purger != nil {
+			s.purger.PurgePage(ctx, p.SiteID, p.Slug)
 		}
 		metrics.Default.CounterInc("pages_scheduled_published_total",
 			"Auto-published pages by scheduler outcome",

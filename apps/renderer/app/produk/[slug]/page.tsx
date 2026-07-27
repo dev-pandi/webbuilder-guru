@@ -4,6 +4,7 @@ import { formatPrice, getProduct, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { buildProduct, wrap } from "@/lib/schema";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
+import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default async function ProductDetail({ params }: { params: { slug: string
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: productLD }} />
+      <SiteHeadCode site={site} />
       <PageViewBeacon siteId={site.id} pageSlug={`/produk/${params.slug}`} />
       <main className="mx-auto max-w-5xl px-6 py-12">
         <nav className="mb-6 text-sm opacity-70">
@@ -83,6 +85,7 @@ export default async function ProductDetail({ params }: { params: { slug: string
           </div>
         </div>
       </main>
+      <SiteBodyEndCode site={site} />
     </>
   );
 }

@@ -1,6 +1,7 @@
 package sites
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -12,11 +13,25 @@ import (
 	"github.com/webbuilder/api/internal/httpx"
 )
 
+// CachePurger — interface minimal untuk dep injection cache purge.
+// Sengaja di-declare di sini (bukan di cachepurge package) supaya sites
+// tidak import cachepurge → menghindari import cycle (cachepurge →
+// domain_purchase → sites). Konsumer inject concrete *cachepurge.Purger
+// via SetPurger; interface memenuhi kontrak yang dibutuhkan.
+type CachePurger interface {
+	PurgeSite(ctx context.Context, siteID uuid.UUID)
+	PurgePage(ctx context.Context, siteID uuid.UUID, slug string)
+}
+
 type Handler struct {
-	repo *Repo
+	repo   *Repo
+	purger CachePurger // nil = purge no-op
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
+
+// SetPurger inject cachepurge helper post-construction.
+func (h *Handler) SetPurger(p CachePurger) { h.purger = p }
 
 // slugRe = validasi kalau client kirim slug custom (opsional). Kalau tidak
 // kirim, backend auto-generate via Slugify(name). Slug tidak lagi jadi URL
@@ -33,9 +48,11 @@ type createReq struct {
 }
 
 type updateReq struct {
-	Name   *string         `json:"name"`
-	Theme  json.RawMessage `json:"theme"`
-	Status *string         `json:"status"`
+	Name              *string         `json:"name"`
+	Theme             json.RawMessage `json:"theme"`
+	Status            *string         `json:"status"`
+	CustomHeadCode    *string         `json:"custom_head_code"`
+	CustomBodyEndCode *string         `json:"custom_body_end_code"`
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
@@ -181,7 +198,19 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 			return httpx.BadRequest(c, "invalid status")
 		}
 	}
-	s, err := h.repo.Update(c.Context(), id, uid, req.Name, req.Theme, req.Status)
+	if req.CustomHeadCode != nil && len(*req.CustomHeadCode) > MaxCustomCodeBytes {
+		return httpx.BadRequest(c, "custom head code melebihi 16 KB")
+	}
+	if req.CustomBodyEndCode != nil && len(*req.CustomBodyEndCode) > MaxCustomCodeBytes {
+		return httpx.BadRequest(c, "custom body-end code melebihi 16 KB")
+	}
+	s, err := h.repo.Update(c.Context(), id, uid, UpdateFields{
+		Name:              req.Name,
+		Theme:             req.Theme,
+		Status:            req.Status,
+		CustomHeadCode:    req.CustomHeadCode,
+		CustomBodyEndCode: req.CustomBodyEndCode,
+	})
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -212,12 +241,18 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "invalid id")
 	}
 	st := "published"
-	s, err := h.repo.Update(c.Context(), id, uid, nil, nil, &st)
+	s, err := h.repo.Update(c.Context(), id, uid, UpdateFields{Status: &st})
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "site not found")
 	}
 	if err != nil {
 		return httpx.Internal(c, "publish failed")
+	}
+	// Site publish = potensi banyak URL berubah (semua page live sekaligus).
+	// Fire-and-forget purge_everything untuk zone terkait, biar edge cache
+	// invalidate massal daripada per URL.
+	if h.purger != nil {
+		h.purger.PurgeSite(c.Context(), id)
 	}
 	return httpx.OK(c, s)
 }

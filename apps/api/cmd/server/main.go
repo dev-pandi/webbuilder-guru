@@ -15,6 +15,7 @@ import (
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
+	"github.com/webbuilder/api/internal/cachepurge"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
@@ -297,6 +298,16 @@ func main() {
 		slog.Info("google oauth: disabled (set GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URL to enable)")
 	}
 
+	// Cache purger — hubungkan domain lookup + Cloudflare purge. Nil-safe:
+	// kalau CF repo / purchases nil, purger jadi no-op. Publish handler tetap
+	// jalan tanpa error.
+	purger := cachepurge.New(cloudflareRepo, purchaseRepo)
+
+	sitesHandler := sites.NewHandler(siteRepo)
+	sitesHandler.SetPurger(purger)
+	pagesHandler := pages.NewHandler(pageRepo, siteRepo, issuer)
+	pagesHandler.SetPurger(purger)
+
 	deps := router.Deps{
 		Cfg:          cfg,
 		Pool:         pool,
@@ -305,8 +316,8 @@ func main() {
 		AuthGoogle:     googleHandler,
 		Registrar:      registrarClient,
 		DomainPurchase: purchaseHandler,
-		Sites:        sites.NewHandler(siteRepo),
-		Pages:        pages.NewHandler(pageRepo, siteRepo, issuer),
+		Sites:        sitesHandler,
+		Pages:        pagesHandler,
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
 		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo, purchaseRepo),
 		Export: exports.NewHandler(&exports.Builder{
@@ -339,7 +350,9 @@ func main() {
 	// Scheduled publish worker — scan pages tabel tiap 60 detik untuk auto
 	// publish draft yang scheduled_publish_at-nya sudah lewat. Interval hemat
 	// DB (partial index) tapi tetap responsive (rata-rata delay 30s dari jadwal).
-	go pages.NewScheduler(pageRepo, 60*time.Second).Run(ctx)
+	scheduler := pages.NewScheduler(pageRepo, 60*time.Second)
+	scheduler.SetPurger(purger)
+	go scheduler.Run(ctx)
 
 	app := router.New(deps)
 

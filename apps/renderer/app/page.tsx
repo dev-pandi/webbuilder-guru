@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
+import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { getPage, lookupSiteByHost, type SiteLookup } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
@@ -19,7 +20,9 @@ export default async function HomeRender() {
     <>
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
+      <SiteHeadCode site={site} />
       <RenderBlocks blocks={blocks} siteId={site.id} />
+      <SiteBodyEndCode site={site} />
     </>
   );
 }

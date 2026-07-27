@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -16,15 +17,27 @@ import (
 	"github.com/webbuilder/api/internal/sites"
 )
 
+// CachePurger — interface minimal untuk cache purge post-publish. Declare
+// di sini (bukan import cachepurge) supaya tidak nyangkut import cycle.
+type CachePurger interface {
+	PurgeSite(ctx context.Context, siteID uuid.UUID)
+	PurgePage(ctx context.Context, siteID uuid.UUID, slug string)
+}
+
 type Handler struct {
 	pages  *Repo
 	sites  *sites.Repo
 	issuer *auth.TokenIssuer // optional — only needed for preview tokens
+	purger CachePurger       // optional — nil = purge no-op (dev tanpa CF)
 }
 
 func NewHandler(pages *Repo, sitesRepo *sites.Repo, issuer *auth.TokenIssuer) *Handler {
 	return &Handler{pages: pages, sites: sitesRepo, issuer: issuer}
 }
+
+// SetPurger inject cachepurge helper post-construction supaya signature
+// NewHandler tidak berubah (backward-compat + gampang untuk test).
+func (h *Handler) SetPurger(p CachePurger) { h.purger = p }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9\-/]{0,60}[a-z0-9])?$`)
 
@@ -346,6 +359,11 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "publish failed")
 	}
+	// Best-effort CDN cache purge — fire-and-forget goroutine. Kalau CF tidak
+	// dikonfigurasi atau site belum punya domain aktif, no-op silent.
+	if h.purger != nil {
+		h.purger.PurgePage(c.Context(), existing.SiteID, p.Slug)
+	}
 	return httpx.OK(c, p)
 }
 
@@ -433,6 +451,10 @@ func (h *Handler) Unpublish(c *fiber.Ctx) error {
 	}
 	if err := h.pages.Unpublish(c.Context(), id); err != nil {
 		return httpx.Internal(c, "unpublish failed")
+	}
+	// Purge cache supaya edge tidak serve halaman lama setelah user unpublish.
+	if h.purger != nil {
+		h.purger.PurgePage(c.Context(), existing.SiteID, existing.Slug)
 	}
 	return httpx.OK(c, fiber.Map{"ok": true})
 }

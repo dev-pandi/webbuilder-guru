@@ -1025,6 +1025,8 @@ func descFromText(s string, max int) string {
 }
 
 // wrapHTML returns a full document with shared <head> + provided body fragment.
+// Inject custom head + body-end code dari site kalau ada — di-treat raw, sama
+// dengan renderer (owner responsibility).
 func wrapHTML(site *sites.Site, title, desc, body string) string {
 	var head strings.Builder
 	fmt.Fprintf(&head, `<meta charset="utf-8" />`)
@@ -1036,10 +1038,16 @@ func wrapHTML(site *sites.Site, title, desc, body string) string {
 	}
 	fmt.Fprintf(&head, `<meta property="og:title" content="%s" />`, escAttr(title))
 	head.WriteString(`<link rel="stylesheet" href="/assets/css/styles.css" />`)
-	_ = site
+	if site != nil && strings.TrimSpace(site.CustomHeadCode) != "" {
+		head.WriteString(site.CustomHeadCode)
+	}
+	bodyEnd := ""
+	if site != nil && strings.TrimSpace(site.CustomBodyEndCode) != "" {
+		bodyEnd = site.CustomBodyEndCode
+	}
 	return fmt.Sprintf(`<!doctype html>
 <html lang="id">
 <head>%s</head>
-<body>%s</body>
-</html>`, head.String(), body)
+<body>%s%s</body>
+</html>`, head.String(), body, bodyEnd)
 }

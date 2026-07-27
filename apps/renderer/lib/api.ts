@@ -6,6 +6,11 @@ export type Site = {
   name: string;
   status: string;
   theme: ThemeJson | null;
+  // Raw HTML/JS user, di-inject persis di </head> dan </body>. Renderer
+  // MEMBACA field ini via dangerouslySetInnerHTML — sengaja tidak sanitize
+  // karena kasus penggunaan (GTM, Meta Pixel) butuh raw script tags.
+  custom_head_code?: string;
+  custom_body_end_code?: string;
 };
 
 export type ThemeJson = {

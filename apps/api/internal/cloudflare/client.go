@@ -222,6 +222,40 @@ func (c *Client) DeleteDNSRecord(ctx context.Context, zoneID, recordID string) e
 // aktif di Cloudflare, tunggu provisioning selesai").
 var ErrZoneNotFound = errors.New("cloudflare: zone not found")
 
+// PurgeCache invalidates CDN edge cache untuk zone. Dua mode:
+//   - urls non-empty: purge by URL (max 30 per request per docs)
+//   - urls kosong: purge_everything (semua asset di zone)
+//
+// Dipanggil setelah user publish page/site supaya perubahan langsung
+// terlihat tanpa tunggu edge TTL. Fire-and-forget dari caller — kalau
+// fail, cache tetap expire natural (worst-case delay = TTL).
+//
+// Docs: https://developers.cloudflare.com/api/operations/zone-purge
+func (c *Client) PurgeCache(ctx context.Context, zoneID string, urls []string) error {
+	var payload map[string]any
+	if len(urls) == 0 {
+		payload = map[string]any{"purge_everything": true}
+	} else {
+		// CF limit 30 URL per call. Truncate silent kalau caller lebih —
+		// purge_everything mode lebih baik kalau lebih dari 30 URL.
+		if len(urls) > 30 {
+			urls = urls[:30]
+		}
+		payload = map[string]any{"files": urls}
+	}
+	body, _ := json.Marshal(payload)
+	raw, status, err := c.do(ctx, http.MethodPost, "/zones/"+zoneID+"/purge_cache", body)
+	if err != nil {
+		return err
+	}
+	if status >= 300 {
+		var out DNSRecordResponse // reuse envelope shape (success + errors)
+		_ = json.Unmarshal(raw, &out)
+		return apiErr(status, out.Errors, raw)
+	}
+	return nil
+}
+
 // do adalah low-level helper — dipakai method baru supaya tidak duplicate
 // setup header + read body. Method existing (CreateZone, CreateDNSRecord)
 // tetap inline untuk minimalisasi diff.

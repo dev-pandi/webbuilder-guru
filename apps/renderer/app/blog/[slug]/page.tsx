@@ -5,6 +5,7 @@ import { getBlogPost, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { buildArticle, wrap } from "@/lib/schema";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
+import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,7 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: articleLD }} />
+      <SiteHeadCode site={site} />
       <PageViewBeacon siteId={site.id} pageSlug={`/blog/${params.slug}`} />
       <main className="mx-auto max-w-3xl px-6 py-12">
         <nav className="mb-6 text-sm opacity-70">
@@ -91,6 +93,7 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </main>
+      <SiteBodyEndCode site={site} />
     </>
   );
 }

@@ -136,6 +136,24 @@ func (r *Repo) GetLatestActiveByDomain(ctx context.Context, domain string, userI
 	return &p, err
 }
 
+// ActiveDomainForSite return nama domain aktif yang ter-attach ke site.
+// Dipakai cache-purge post-publish untuk resolve URL yang perlu di-invalidate.
+// Return "" (bukan error) kalau site belum ada domain — caller bisa skip
+// purge tanpa alarm. `kind='register'` filter penting: renew job tidak
+// nambah entity domain, cuma extend expiry.
+func (r *Repo) ActiveDomainForSite(ctx context.Context, siteID uuid.UUID) (string, error) {
+	var domain string
+	err := r.pool.QueryRow(ctx, `
+		SELECT domain FROM domain_purchases
+		 WHERE site_id = $1 AND kind = 'register' AND status = 'active'
+		 ORDER BY created_at DESC LIMIT 1
+	`, siteID).Scan(&domain)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return domain, err
+}
+
 // GetByJobIDAny lookup TANPA ownership check — dipakai HANYA oleh webhook
 // receiver (yang sudah authenticated via HMAC secret, bukan user JWT).
 func (r *Repo) GetByJobIDAny(ctx context.Context, jobID string) (*Purchase, error) {

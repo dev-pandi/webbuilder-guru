@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
+import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { getPage, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
@@ -31,8 +32,10 @@ export default async function CatchAll({ params }: { params: { slug: string[] } 
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: wrap(schemas) }}
       />
+      <SiteHeadCode site={site} />
       <RenderBlocks blocks={blocks} siteId={site.id} />
       <PageViewBeacon siteId={site.id} pageSlug={page.is_home ? "" : slug} />
+      <SiteBodyEndCode site={site} />
     </>
   );
 }
