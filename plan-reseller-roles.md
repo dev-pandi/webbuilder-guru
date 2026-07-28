@@ -89,6 +89,9 @@ Target: unlock B2B channel + reseller marketplace tanpa mengubah pengalaman end-
 | Setelah handoff, edit access reseller/agent | Retained kalau opt-in | Retained kalau opt-in | Retained kalau opt-in | Owner |
 | Lihat billing invoice | ✅ semua | ✅ own + all clients | ✅ own | ✅ own |
 | Delete site | ✅ | ⚠️ confirm (client owns) | ⚠️ confirm | ✅ |
+| **Wallet — view balance** | ✅ semua | ✅ own | ✅ parent reseller's | ❌ (no wallet concept) |
+| **Wallet — top-up** | ❌ (admin credit langsung) | ✅ | ❌ | ❌ |
+| **Wallet — debit via register** | — | ✅ | ✅ (debit parent) | ❌ (client pakai gateway) |
 
 **Note "retained kalau opt-in"**: Client bisa toggle "Izinkan reseller/agent akses" di settings. Default `true` selama 30 hari post-handoff (grace period untuk support), lalu auto-false.
 
@@ -218,6 +221,8 @@ CREATE INDEX idx_site_members_user_id ON site_members(user_id);
 ---
 
 ## 5. Key user flows
+
+> **Prinsip flow existing (client self-purchase) TIDAK BERUBAH.** Client bisa terus beli domain sendiri via `/sites/new-with-domain` dengan Midtrans/Paylabs — no impact ke experience mereka. Section ini menambahkan flow BARU untuk reseller/agent yang **selain itu** (bukan menggantikan).
 
 ### 5.1 Reseller signup + approval
 
@@ -396,10 +401,12 @@ Anda mengelola situs {client.name}. Perubahan langsung visible ke client.
 
 ### Endpoint dimodifikasi
 
-- `POST /api/v1/domains/purchase` — accept optional `on_behalf_of_user_id` header/body (validated: caller must be reseller/agent + user must be assigned)
+- `POST /api/v1/domains/purchase` — accept optional `on_behalf_of_user_id` header/body (validated: caller must be reseller/agent + user must be assigned) **DAN** optional `payment_method="wallet"` (kalau reseller/agent — trigger wallet debit di registrar, lihat section 15.5)
 - `POST /api/v1/sites` — accept optional `on_behalf_of_user_id`, insert `site_members` entry
 - `GET /api/v1/sites` — filter by role: admin sees all, reseller sees own + clients', agent sees own + assigned, client sees only owned (via site_members)
 - `GET /api/v1/auth/me` — return `role` + `parent_reseller_id` + `reseller_display_name`
+
+> **Wallet endpoints** (6 route baru): lihat section 15.4 — proxy passthrough ke registrar-api's reseller wallet endpoints.
 
 ### Middleware baru
 
@@ -440,31 +447,59 @@ Tambah `activity_logs` untuk trace:
 
 ---
 
-## 9. Billing model (2 opsi)
+## 9. Billing model
 
-### Opsi A — Reseller sebagai intermediary (rekomendasi)
+**Prinsip utama:**
+- **Client (end-user) TETAP** bisa beli domain sendiri via wizard existing (`/sites/new-with-domain`) — Midtrans/Paylabs, invoice ke client. **TIDAK ADA PERUBAHAN** untuk flow ini.
+- **Reseller/Agent** punya opsi tambahan untuk register domain atas nama client. 3 opsi payment source:
 
-```
-Web builder (PANDI) ─────invoice───→ Reseller ─────invoice───→ Client
-                       (wholesale)                (retail + markup)
-```
-
-- Reseller punya `reseller_tier` yang tentukan wholesale price
-- Reseller kelola invoice ke client sendiri (di luar sistem web-builder)
-- Web-builder cuma track cost basis: total spent by reseller/agent
-- Client account tidak lihat harga sama sekali
-
-### Opsi B — Pass-through billing
+### Opsi 1 — Wallet debit (rekomendasi MVP, uses registrar wallet)
 
 ```
-Web builder ────────invoice per transaction───→ Reseller
-              (reseller bayar, client tidak lihat invoice)
+Reseller top-up wallet 1x (mis. 10jt via Midtrans)
+    ↓
+Wallet balance = 10jt
+    ↓
+Register domain untuk client → debit wallet (instant, no gateway)
+Register domain lagi         → debit wallet
+Register domain lagi         → debit wallet
+    ↓
+Balance turun sampai reseller top-up lagi
 ```
 
-- Sederhana untuk MVP
-- Client tidak punya visibility ke pembayaran domain (perpanjangan next year jadi ambigu)
+- **Backend registrar sudah support** — `payment_method: "wallet"` sudah live (registrar plan_wallet.md M1-M6 done)
+- Zero payment gateway overhead per transaksi (hemat fee Midtrans ~1-2% per trx)
+- Cocok untuk volume tinggi (batch registrasi ratusan domain/hari)
+- Client TIDAK bayar apapun — cost basis di reseller
+- Detail integration di **section 15**
 
-**Recommendation MVP:** Opsi B untuk simplicity. Migrasi ke A saat marketplace matang.
+### Opsi 2 — Payment gateway per transaction (pass-through, backward-compat)
+
+```
+Reseller register domain untuk client
+    ↓
+Web-builder API → registrar → Midtrans/Paylabs invoice
+    ↓
+Reseller bayar via gateway (pakai kartu bisnis / bank transfer)
+    ↓
+Payment sukses → domain provisioned
+```
+
+- Sama seperti flow client self-purchase, cuma `on_behalf_of=<client_id>`
+- Cocok untuk reseller volume rendah / test transaksi pertama
+- Invoice ke reseller (bukan client)
+
+### Opsi 3 — Client bayar sendiri (deferred link — future, defer dari MVP)
+
+Reseller register via API tapi payment_url di-forward ke client via email. Client set password + bayar dalam satu form. Complex atomicity — skip untuk MVP.
+
+### Rekomendasi MVP
+
+- **Default: Opsi 1 (Wallet)** — enable begitu reseller onboarding selesai (bootstrap balance via bank transfer/Midtrans top-up)
+- **Fallback: Opsi 2** — buat reseller yang belum top-up wallet (first-time trial)
+- **Opsi 3**: skip → future release kalau ada demand
+
+Section 15 punya detail complete integration wallet flow.
 
 ---
 
@@ -581,3 +616,300 @@ Reseller portal via subdomain terpisah.
   - Shopify Partners program (reseller model)
   - WordPress.com Business plan (agency mode)
   - Squarespace Circle (reseller with commission)
+
+---
+
+## 15. Wallet integration (registrar-api wallet)
+
+Section ini describe integrasi dengan **reseller wallet** yang sudah live di registrar-api (referensi: [`/Users/pandi-rofai/Project/Golang/registrar-api/plan_wallet.md`](../../Golang/registrar-api/plan_wallet.md), status M1-M6 done).
+
+### 15.1 Konsep
+
+Reseller punya **1 wallet** di registrar-api dengan `balance` (IDR). Top-up 1x jumlah besar, lalu debit inline setiap register/renew. Zero payment gateway per transaksi.
+
+**Analogi**: seperti kartu prabayar — reseller isi saldo di depan, lalu tap-tap tiap kali register domain. Payment gateway (Midtrans/Paylabs) HANYA dipakai untuk top-up, bukan per-register.
+
+### 15.2 Prasyarat integrasi
+
+- Registrar-api sudah punya endpoint wallet (M1-M6 done — lihat plan_wallet.md)
+- Web-builder API sebagai **transparent proxy** (pattern sama dengan `/documents`, `/domains`)
+- Reseller JWT ke registrar sudah setup (via `REGISTRAR_RESELLER_EMAIL/PASSWORD` di env)
+
+### 15.3 Boundary web-builder vs registrar-api
+
+| Concern | Registrar-api | Web-builder |
+|---|---|---|
+| Wallet balance storage | ✅ authoritative (`reseller_wallets` table) | ❌ tidak simpan lokal |
+| Ledger | ✅ append-only `reseller_wallet_ledger` | ❌ display via proxy |
+| Top-up processing (Midtrans/Paylabs callback) | ✅ handle di registrar side | ❌ pass-through webhook forward |
+| Debit on register/renew | ✅ atomic `FOR UPDATE` di registrar | ❌ trigger via payment_method=wallet |
+| Manual transfer proof (bank upload) | ✅ table + admin approve | proxy passthrough (multipart) |
+| Bank tujuan list | ✅ `wallet_topup_banks` CRUD di registrar | proxy read-only |
+| Reseller-facing UI | ❌ (registrar tidak punya UI reseller-facing) | ✅ full UI di `/reseller/wallet/*` |
+| Admin approval UI (manual proof) | ✅ registrar admin panel existing | ❌ (admin PANDI, bukan reseller-scoped) |
+
+### 15.4 Web-builder endpoint tambahan (proxy)
+
+Semua proxy — no local DB write. Body/response passthrough dari registrar dengan sedikit adaptation (mis. inject `external_user_id` dari JWT).
+
+| Method | Path | Role | Deskripsi |
+|---|---|---|---|
+| GET | `/api/v1/reseller/wallet` | reseller/agent | Balance + last 20 ledger — proxy `/reseller/wallet` |
+| GET | `/api/v1/reseller/wallet/ledger` | reseller/agent | Paginated ledger — proxy |
+| POST | `/api/v1/reseller/wallet/topup` | reseller | Initiate top-up (midtrans/paylabs/manual_transfer) |
+| GET | `/api/v1/reseller/wallet/topup/:id/status` | reseller | Polling status |
+| POST | `/api/v1/reseller/wallet/topup/:id/proof` | reseller | Upload bukti manual transfer (multipart) |
+| GET | `/api/v1/reseller/wallet/topup/banks` | reseller | List rekening tujuan aktif |
+
+**Agent access**: view-only (`GET /wallet`, `GET /ledger`) — tidak bisa top-up (reseller-only). Debit via register-for-client tetap pakai wallet reseller induk.
+
+**Admin (PANDI internal) endpoints**: TIDAK di-expose di web-builder — admin manual review manual-transfer via registrar admin panel langsung. Alternatif: reseller wait acknowledgment via webhook.
+
+### 15.5 Register domain via wallet — flow update
+
+Extend section 5.3 flow (from flow-reseller-register-domain.md). Perubahan:
+
+**Wizard step 4 (Payment):**
+
+```
+─── STEP 4: Payment source ────────────────────────────
+(•) Debit Wallet — Saldo Rp 5.450.000
+    Sisa setelah transaksi: Rp 5.395.000
+    ✓ Instant (tanpa payment gateway)
+
+( ) Payment Gateway
+    Bayar Rp 55.000 via Midtrans/Paylabs sekarang
+    Cocok kalau balance wallet tidak cukup
+
+[ Batal ]                       [ Lanjutkan Beli ]
+```
+
+**Kalau `wallet` dipilih:**
+
+1. Frontend POST `/api/v1/reseller/clients` dengan `domain.payment_method="wallet"`
+2. Web-builder API call registrar `POST /reseller/domain/register` dengan `payment_method: "wallet"`
+3. Registrar backend:
+   - `SELECT ... FOR UPDATE` reseller wallet
+   - Check balance vs total (dengan promo kalau ada)
+   - Kalau cukup: debit atomic + insert ledger + create job (langsung `pending_provisioning`, skip `pending_payment`)
+   - Kalau kurang: return 402 dengan breakdown `{ balance, required, shortfall }`
+4. Web-builder API return 202 dengan job_id — TIDAK ADA `payment_url` (wallet flow bypass gateway)
+5. Frontend redirect ke `/sites/pending/<job_id>` yang polling status → langsung `pending_provisioning` → `active`
+
+**Kalau `payment_method` = gateway (midtrans/paylabs):**
+
+Flow sama dengan section 5.3 existing — payment_url returned, reseller bayar sendiri.
+
+**402 Insufficient balance handling di UI:**
+
+Kalau backend return 402:
+```json
+{
+  "error": {
+    "code": "wallet_insufficient",
+    "message": "Saldo wallet tidak cukup",
+    "details": {
+      "balance": 45000,
+      "required": 55000,
+      "shortfall": 10000
+    }
+  }
+}
+```
+
+Frontend show dialog:
+```
+Saldo Wallet Tidak Cukup
+
+Saldo saat ini: Rp 45.000
+Yang dibutuhkan: Rp 55.000
+Kurang:         Rp 10.000
+
+[ Top-up Wallet ]   [ Bayar Gateway Sekali Ini ]   [ Batal ]
+```
+
+- **Top-up Wallet** → redirect `/reseller/wallet?topup=1&suggested_amount=100000` (isi minimum yang cukup + buffer)
+- **Bayar Gateway** → resubmit form dengan `payment_method="midtrans"` (atau paylabs)
+
+### 15.6 Auto-refund kalau EPP fail
+
+**Kondisi**: reseller bayar via wallet → domain gagal di-EPP-register (mis. domain not available di registry meskipun availability check lolos).
+
+Registrar-api sudah handle otomatis:
+- Insert ledger `credit_refund_epp_fail` amount +total
+- Update wallet balance += total
+- Fire webhook `wallet_refund` ke web-builder
+
+Web-builder terima webhook → forward notification ke reseller dashboard:
+```
+✓ Refund Rp 55.000 masuk wallet
+  Alasan: EPP CREATE gagal untuk example.co.id (domain not available)
+  Saldo sekarang: Rp 5.450.000
+```
+
+Selain refund, `domain_purchases` row di web-builder juga di-update `status='failed'` supaya UI kartu domain gagal muncul.
+
+### 15.7 UI additions
+
+**Route baru:** `/reseller/wallet` — dashboard wallet reseller
+
+```
+┌───────────────────────────────────────────────────────┐
+│  Wallet                                                │
+│                                                        │
+│  Saldo saat ini                                        │
+│  ╔══════════════════════════════╗                     │
+│  ║  Rp 5.450.000                ║  [ Top-up ]         │
+│  ╚══════════════════════════════╝                     │
+│                                                        │
+│  Transaksi Terakhir                                    │
+│  ┌────────────────────────────────────────────────┐   │
+│  │ 2026-07-28  Debit  bahagia.co.id     -55.000  │   │
+│  │ 2026-07-27  Debit  toko.web.id       -50.000  │   │
+│  │ 2026-07-25  Top-up Midtrans      +10.000.000  │   │
+│  │ 2026-07-24  Refund  gagal.id (EPP)    +55.000 │   │
+│  │ ... [Lihat semua] ──────────────────────────→  │   │
+│  └────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────────────────┘
+```
+
+**Route baru:** `/reseller/wallet/topup` — top-up flow
+
+```
+┌───────────────────────────────────────────────────────┐
+│  Top-up Wallet                                         │
+│                                                        │
+│  Nominal (IDR)     [_______________]                   │
+│                    Min Rp 100.000, Max Rp 100.000.000  │
+│                                                        │
+│  Metode Pembayaran                                     │
+│  (•) Midtrans     — kartu / e-wallet / bank transfer   │
+│  ( ) Paylabs      — QRIS / virtual account             │
+│  ( ) Manual Transfer — upload bukti transfer bank     │
+│                                                        │
+│  [Kalau manual selected:]                              │
+│    Pilih Bank Tujuan                                   │
+│    (•) BCA        — 1234567890 (PT Pandi Nama Domain)  │
+│    ( ) Mandiri    — 9876543210                         │
+│                                                        │
+│  [ Batal ]                       [ Lanjutkan ]         │
+└───────────────────────────────────────────────────────┘
+```
+
+**Route baru:** `/reseller/wallet/topup/<topup_id>` — status halaman (analog `/sites/pending/[jobId]`)
+
+Untuk manual transfer, halaman ini punya upload proof form + status timeline:
+
+```
+Status: Menunggu Bukti Transfer
+
+Timeline:
+  ✓ 15:30 - Top-up diinisiasi (Rp 10.000.000)
+  ○ 15:31 - Menunggu upload bukti transfer
+  ○ ---   - Menunggu verifikasi admin
+  ○ ---   - Saldo terkredit
+
+[ Upload Bukti Transfer ]
+
+Rekening Tujuan:
+  BCA - 1234567890
+  a/n PT Pandi Nama Domain
+  Nominal: Rp 10.000.000
+  Reference: TOP-XYZ-789 (WAJIB di berita transfer)
+```
+
+Setelah upload → status `pending_verification` → menunggu admin approve.
+
+**Wizard integration:** `/reseller/clients/new` step Payment — tambah opsi "Debit Wallet" (default kalau saldo cukup).
+
+### 15.8 Backend changes web-builder
+
+**File baru:**
+- `apps/api/internal/registrar/wallet.go` — client methods `GetWallet`, `ListLedger`, `TopupInit`, `TopupStatus`, `UploadTopupProof`, `ListBanks`
+- `apps/api/internal/registrar/types.go` — types `Wallet`, `WalletLedgerEntry`, `TopupJob`, `TopupProofRequest`, `TopupBank`
+- `apps/api/internal/wallet/handler.go` — proxy handlers (reseller-scoped)
+- `apps/api/internal/router/user.go` — 6 route baru di `authed.Group("/reseller/wallet")` dengan `RequireResellerOrAgent` middleware
+
+**Files modified:**
+- `apps/api/internal/domain_purchase/handler.go` — extend `Purchase` handler: kalau caller role reseller/agent + body `payment_method="wallet"`, pass ke registrar; kalau 402 propagate error dengan `details` breakdown supaya UI bisa render dialog
+- `apps/api/internal/domain_purchase/handler.go` — webhook handler: parse baru event kind `wallet_topup` (untuk update dashboard reseller) + `wallet_refund` (untuk notify + link `domain_purchases.status`)
+
+**No new DB table di web-builder** — wallet state di registrar side. Web-builder cuma cache display (via API call) + trigger events.
+
+### 15.9 Data flow ringkas
+
+```
+Reseller (web-builder UI)
+    ↓ POST /reseller/wallet/topup { amount: 10jt, method: midtrans }
+Web-builder API (proxy)
+    ↓ POST /v1/api/user/reseller/wallet/topup
+Registrar-api
+    ↓ Create topup_job + invoice + payment_url
+    ← { topup_id, payment_url }
+Web-builder API
+    ← { topup_id, payment_url }
+Reseller browser
+    → Redirect ke payment_url (Midtrans)
+    → Bayar
+    → Midtrans callback ke registrar
+Registrar-api
+    ↓ WithTx: update invoice paid + insert ledger + update wallet balance
+    ↓ Enqueue webhook `wallet_topup` status=credited
+Registrar → Web-builder API
+    → POST /webhooks/registrar/domain-status (kind: wallet_topup)
+Web-builder API
+    ↓ Verify HMAC + parse event
+    ↓ Update reseller notification cache
+    → (optional) push notification via WebSocket
+Reseller UI (polling atau realtime)
+    ← Balance updated Rp 15jt
+```
+
+### 15.10 Security considerations
+
+- **Wallet endpoints wajib `role in (reseller, agent)`** — client tidak boleh access (mereka pakai wizard existing tanpa wallet concept)
+- **Top-up initiate reseller only** (bukan agent) — cegah agent nakal drain wallet reseller induk lewat top-up-refund cycle (edge case tapi worth guarding)
+- **Debit via register-for-client**: wallet yang di-debit = wallet reseller induk (kalau agent trigger, backend resolve `parent_reseller_id`)
+- **Rate limit top-up**: 5/hari per reseller (cegah accidental double-submit yang bikin uang stuck di gateway)
+- **Manual transfer proof upload**: MIME whitelist (image/png, image/jpeg, application/pdf), size max 5 MiB (validate di web-builder juga sebelum forward — cegah bloat traffic ke registrar)
+
+### 15.11 Milestone tambahan
+
+Sisipan ke section 10 (Migration strategy). Wallet integration setelah Phase 3 (Purchase on-behalf-of) supaya bisa langsung dipakai.
+
+| Phase | Scope | Effort |
+|---|---|---|
+| 3.5 | Wallet proxy client + endpoint handlers | 4-6 jam |
+| 3.6 | Reseller wallet UI (dashboard + ledger + topup) | 8-12 jam |
+| 3.7 | Payment method selector di wizard + 402 dialog | 4-6 jam |
+| 3.8 | Webhook handling (wallet_topup, wallet_refund) + notification | 4-6 jam |
+| **Subtotal wallet** | | **~20-30 jam (~3-4 hari)** |
+
+Update total estimasi section 11: **~90-130 jam (~3-4 minggu focused work)**.
+
+### 15.12 Testing checklist
+
+- [ ] Reseller GET /wallet → return balance dari registrar (proxy passthrough)
+- [ ] Reseller GET /wallet/ledger paginated
+- [ ] Reseller POST /wallet/topup midtrans → payment_url returned, redirect works
+- [ ] Reseller POST /wallet/topup manual_transfer → bank instructions returned, proof upload works
+- [ ] Reseller GET /wallet/topup/banks → list of active banks
+- [ ] Agent GET /wallet → SAME reseller induk balance (parent_reseller_id resolution)
+- [ ] Agent POST /wallet/topup → 403 (agent tidak boleh top-up)
+- [ ] Client POST /wallet/topup → 403 (bukan reseller)
+- [ ] Register-for-client dengan wallet + balance cukup → domain provisioned, wallet debited (verify via GET /wallet)
+- [ ] Register-for-client dengan wallet + balance kurang → 402 with details.shortfall
+- [ ] Register-for-client → domain fail EPP → wallet auto-refund + notification
+- [ ] Concurrent register untuk 1 reseller wallet: 10 goroutines dengan balance untuk 10 register → exactly 10 sukses (thanks to `FOR UPDATE` di registrar)
+- [ ] Webhook wallet_topup credited → dashboard update balance
+- [ ] Webhook wallet_refund → dashboard notification
+
+### 15.13 Open questions terkait wallet
+
+1. **Bootstrap balance untuk reseller baru?** — Kasih Rp 100rb gratis untuk 1-2 test register? Atau wajib top-up dulu?
+2. **Alert saldo rendah?** — Threshold Rp 500rb → email + dashboard banner "Wallet hampir habis, top-up sekarang"?
+3. **Agent minimum balance?** — Reseller bisa set "agent hanya bisa register kalau wallet ≥ Rp X" supaya tidak bloat pending queue?
+4. **Wallet expiry?** — Kalau reseller inactive 12 bulan, balance auto-refund ke rekening awal? Legal implication.
+5. **Ledger export?** — Reseller butuh export CSV untuk pembukuan? (Butuh endpoint export terpisah di registrar)
+
+Semua open questions ini di-defer ke pasca-MVP.
