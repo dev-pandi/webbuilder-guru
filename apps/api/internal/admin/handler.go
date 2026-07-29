@@ -11,6 +11,7 @@ import (
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/reseller"
+	"github.com/webbuilder/api/internal/templates"
 )
 
 type Handler struct {
@@ -19,6 +20,7 @@ type Handler struct {
 	audit     *audit.Repo            // nil = audit disabled (silent no-op)
 	reseller  *reseller.Repo         // nil = detail counts kosong
 	purchases *domain_purchase.Repo  // nil = domain tab kosong
+	templates *templates.Repo        // nil = template CRUD 503
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }

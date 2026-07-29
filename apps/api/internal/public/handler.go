@@ -1,6 +1,7 @@
 package public
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -12,20 +13,26 @@ import (
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/sites"
+	"github.com/webbuilder/api/internal/templates"
 )
 
 // Public read-only endpoints consumed by the renderer.
 
 type Handler struct {
-	sites    *sites.Repo
-	pages    *pages.Repo
-	products *products.Repo
-	blog     *blog.Repo
+	sites     *sites.Repo
+	pages     *pages.Repo
+	products  *products.Repo
+	blog      *blog.Repo
+	templates *templates.Repo // nil = template-preview endpoint 503
 }
 
 func NewHandler(s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo) *Handler {
 	return &Handler{sites: s, pages: p, products: pr, blog: b}
 }
+
+// SetTemplates — inject template repo pasca-construction (avoid circular
+// dep di NewHandler signature). Nil-safe.
+func (h *Handler) SetTemplates(r *templates.Repo) { h.templates = r }
 
 // GET /public/site-by-host?host=<hostname>
 // Resolves site by custom verified domain (baik BYO `domains` maupun PANDI
@@ -181,4 +188,92 @@ func (h *Handler) BlogPostBySlug(c *fiber.Ctx) error {
 		return httpx.NotFound(c, "post not found")
 	}
 	return httpx.OK(c, p)
+}
+
+// TemplatePreviewPage — 1 halaman di dalam template preview response. Shape
+// selaras dengan `pages` element di templates.pages_json + apa yang renderer
+// butuhkan (subset dari sites/pages endpoint yang biasa).
+type TemplatePreviewPage struct {
+	Slug   string          `json:"slug"`
+	Title  string          `json:"title"`
+	IsHome bool            `json:"is_home"`
+	Tree   json.RawMessage `json:"tree"`
+	SEO    json.RawMessage `json:"seo"`
+}
+
+// TemplatePreviewResponse — envelope untuk renderer template-preview route.
+// Cover full render context: identity + theme (untuk CSS var + font link) +
+// semua pages supaya navigation antar-page di preview jalan tanpa refetch.
+type TemplatePreviewResponse struct {
+	ID          string                `json:"id"`
+	Slug        string                `json:"slug"`
+	Name        string                `json:"name"`
+	Description string                `json:"description"`
+	Category    string                `json:"category"`
+	Variant     string                `json:"variant"`
+	Theme       json.RawMessage       `json:"theme"`
+	Pages       []TemplatePreviewPage `json:"pages"`
+}
+
+// TemplatePreview — GET /public/template-preview/:slug
+//
+// Public endpoint (no auth) — dipakai renderer di route
+// `/_template-preview/:slug` untuk render HTML live seperti site production.
+// Hanya template dengan status='published' yang accessible; draft/archived
+// return 404 supaya WIP tidak bocor ke crawler.
+//
+// Response include semua pages (tidak filter is_home saja) supaya renderer
+// bisa navigate antar-page tanpa fetch ulang.
+func (h *Handler) TemplatePreview(c *fiber.Ctx) error {
+	if h.templates == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "templates_disabled",
+			"Template repo belum di-wire.")
+	}
+	slug := strings.ToLower(strings.TrimSpace(c.Params("slug")))
+	if slug == "" {
+		return httpx.BadRequest(c, "slug required")
+	}
+	t, err := h.templates.GetBySlug(c.Context(), slug)
+	if errors.Is(err, templates.ErrNotFound) {
+		return httpx.NotFound(c, "template tidak ditemukan")
+	}
+	if err != nil {
+		return httpx.Internal(c, "lookup failed")
+	}
+	// Draft + archived → 404 supaya draft admin tidak leak. (Nanti Phase 4
+	// tambah token-based preview untuk admin lihat draft-nya.)
+	if t.Status != templates.StatusPublished {
+		return httpx.NotFound(c, "template belum published")
+	}
+
+	// Parse pages_json → slice untuk shape yang stabil (renderer bergantung).
+	var pages []TemplatePreviewPage
+	if len(t.Pages) > 0 {
+		if err := json.Unmarshal(t.Pages, &pages); err != nil {
+			return httpx.Internal(c, "pages_json malformed: "+err.Error())
+		}
+	}
+	// Ensure tree + seo tidak nil di setiap page (renderer parse pakai `??`).
+	for i := range pages {
+		if len(pages[i].Tree) == 0 {
+			pages[i].Tree = json.RawMessage(`{}`)
+		}
+		if len(pages[i].SEO) == 0 {
+			pages[i].SEO = json.RawMessage(`{}`)
+		}
+	}
+	theme := t.Theme
+	if len(theme) == 0 {
+		theme = json.RawMessage(`{}`)
+	}
+	return httpx.OK(c, TemplatePreviewResponse{
+		ID:          t.ID.String(),
+		Slug:        t.Slug,
+		Name:        t.Name,
+		Description: t.Description,
+		Category:    t.Category,
+		Variant:     t.Variant,
+		Theme:       theme,
+		Pages:       pages,
+	})
 }

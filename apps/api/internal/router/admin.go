@@ -55,6 +55,17 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/email-log", deps.EmailLog.List)
 	}
 
+	// Templates CRUD — Phase 1 admin template management (plan-admin-templates.md).
+	// Nil-safe via handler.templates check (SetTemplates di main.go).
+	g.Get("/templates", deps.Admin.ListTemplates)
+	g.Get("/templates/:id", deps.Admin.GetTemplate)
+	g.Post("/templates", deps.Admin.CreateTemplate)
+	g.Patch("/templates/:id", deps.Admin.UpdateTemplate)
+	g.Post("/templates/:id/publish", deps.Admin.PublishTemplate)
+	g.Post("/templates/:id/archive", deps.Admin.ArchiveTemplate)
+	g.Post("/templates/:id/duplicate", deps.Admin.DuplicateTemplate)
+	g.Delete("/templates/:id", deps.Admin.DeleteTemplate)
+
 	// Pricing platform (Phase 3.10) — admin CRUD retail + wholesale per TLD.
 	if deps.Pricing != nil {
 		g.Get("/pricing/platform", deps.Pricing.AdminListPlatform)

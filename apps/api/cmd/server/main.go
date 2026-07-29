@@ -331,6 +331,12 @@ func main() {
 	// Reseller + purchases repo di-inject setelah dibuat (Phase 7 detail page).
 	adminHandler := admin.NewHandler(adminRepo)
 	adminHandler.SetAuthRepo(authRepo)
+	adminHandler.SetTemplates(templateRepo)
+
+	// Public handler — template preview endpoint butuh templates repo,
+	// inject lewat SetTemplates (nil-safe).
+	publicHandler := public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo)
+	publicHandler.SetTemplates(templateRepo)
 	if purchaseRepo != nil {
 		adminHandler.SetPurchases(purchaseRepo)
 	}
@@ -398,7 +404,7 @@ func main() {
 		}),
 		Usage:        usage.NewHandler(usageRepo, siteRepo),
 		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
-		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo),
+		Public:       publicHandler,
 		Admin:        adminHandler,
 		Cloudflare:   cloudflare.NewHandler(cloudflareRepo),
 		Forms:        forms.NewHandler(formsRepo, siteRepo, mailer),

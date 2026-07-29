@@ -107,6 +107,10 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	pub.Get("/sites/:id/blog-posts", deps.Public.ListBlogPosts)
 	pub.Get("/sites/:id/blog-posts/:slug", deps.Public.BlogPostBySlug)
 
+	// Template live preview — dipakai renderer route /_template-preview/:slug
+	// + wizard client modal iframe. Hanya status='published' yang accessible.
+	pub.Get("/template-preview/:slug", deps.Public.TemplatePreview)
+
 	// Preview-by-token — anonymous draft access for sharing unpublished pages
 	// with reviewers. Token validates owner intent; no DB row needed. Sits
 	// inside the cached `pub` group so the same 30s revalidation applies.

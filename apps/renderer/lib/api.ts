@@ -216,3 +216,53 @@ export function formatPrice(price: number, currency: string): string {
   if (currency === "IDR") return `Rp ${price.toLocaleString("id-ID")}`;
   return `${currency} ${price.toLocaleString("id-ID")}`;
 }
+
+// -------- Template live preview (plan-admin-templates.md Phase 2) --------
+
+export type TemplatePreviewPage = {
+  slug: string;
+  title: string;
+  is_home: boolean;
+  tree: { blocks?: Block[] } | null;
+  seo: {
+    title?: string;
+    description?: string;
+    ogImage?: string;
+    canonical?: string;
+    noindex?: boolean;
+  } | null;
+};
+
+export type TemplatePreview = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  variant: string;
+  theme: ThemeJson | null;
+  pages: TemplatePreviewPage[];
+};
+
+// getTemplatePreview — fetch template lengkap dengan semua pages + theme,
+// dipakai renderer route `/_template-preview/:slug` untuk render HTML live.
+// Kalau template belum published atau slug tidak ada → null (renderer 404).
+export async function getTemplatePreview(slug: string): Promise<TemplatePreview | null> {
+  if (!slug) return null;
+  const r = await fetchJson<TemplatePreview>(
+    `/public/template-preview/${encodeURIComponent(slug)}`,
+  );
+  return r.ok ? r.data : null;
+}
+
+// findTemplatePage — helper untuk cari page berdasarkan slug (atau home page
+// kalau slug kosong). Return null kalau tidak ketemu.
+export function findTemplatePage(
+  tpl: TemplatePreview,
+  pageSlug: string,
+): TemplatePreviewPage | null {
+  if (!pageSlug || pageSlug === "_home") {
+    return tpl.pages.find((p) => p.is_home) ?? tpl.pages[0] ?? null;
+  }
+  return tpl.pages.find((p) => p.slug === pageSlug) ?? null;
+}
