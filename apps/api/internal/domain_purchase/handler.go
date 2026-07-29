@@ -1420,17 +1420,18 @@ func (h *Handler) ListInvoices(c *fiber.Ctx) error {
 	if perPage <= 0 || perPage > 100 {
 		perPage = 20
 	}
-	// Reseller/agent: scope tidak filter external_user_id — mereka lihat SEMUA
-	// invoice under reseller JWT (termasuk on-behalf-of purchase). Client:
-	// filter by external_user_id = self (default web-builder behavior).
-	externalUserID := cl.UserID.String()
-	if u, err := h.users.GetByID(c.Context(), cl.UserID); err == nil &&
-		u != nil && auth.IsResellerLike(u.Role) {
-		externalUserID = ""
-	}
+	// SECURITY: SELALU filter by external_user_id = caller.UserID. Web-builder
+	// pakai 1 JWT registrar shared antar semua reseller (single tenant), jadi
+	// tanpa external_user_id, registrar akan return SEMUA invoice cross-tenant
+	// — reseller A bisa lihat invoice reseller B. Hard-scope ke caller UUID.
+	//
+	// Konsekuensi: reseller/agent hanya lihat invoice self-purchase di sini.
+	// Untuk invoice on-behalf-of (tagged dengan external_user_id = client),
+	// pakai `/api/v1/reseller/purchases` (source of truth lokal, filter by
+	// `purchased_by` di domain_purchases table).
 	res, err := h.registrar.ListInvoices(
 		c.Context(),
-		externalUserID,
+		cl.UserID.String(),
 		c.Query("status"),
 		c.Query("search"),
 		page, perPage,

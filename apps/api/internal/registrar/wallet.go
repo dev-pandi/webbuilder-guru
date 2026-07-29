@@ -109,15 +109,49 @@ func (c *Client) ListTopupBanks(ctx context.Context) ([]TopupBank, error) {
 	return env.Data, nil
 }
 
+// TopupProofFields — metadata bukti transfer manual yang WAJIB diisi reseller.
+// TransferAmount harus == amount top-up (registrar reject kalau mismatch).
+// TransferDate opsional (format YYYY-MM-DD kalau di-set).
+type TopupProofFields struct {
+	BankName       string
+	AccountNumber  string
+	AccountHolder  string
+	TransferAmount float64
+	TransferDate   string // YYYY-MM-DD, boleh kosong
+}
+
 // UploadTopupProof — POST /v1/api/user/reseller/wallet/topup/:topup_id/proof
-// (multipart/form-data). Reseller upload bukti transfer manual. File
-// di-forward langsung ke registrar (tidak disimpan di web-builder).
+// (multipart/form-data). Reseller upload bukti transfer manual + metadata
+// pengirim. File di-forward langsung ke registrar (tidak disimpan di web
+// builder).
 //
-// Registrar validasi MIME (image/jpeg, image/png, application/pdf) + max 5 MiB.
+// Registrar validasi:
+//   - MIME (image/jpeg, image/png, application/pdf) + max 5 MiB
+//   - 4 field wajib: bank_name, account_number, account_holder, transfer_amount
+//   - transfer_amount == topup.amount (mismatch → 400)
+//   - status topup ∈ {awaiting_proof, rejected} (state lain → 409)
+//
 // Pattern mirror UploadDocumentForJob — retry aman diserahkan ke caller.
-func (c *Client) UploadTopupProof(ctx context.Context, topupID, filename, contentType string, file io.Reader) (*TopupStatus, error) {
+func (c *Client) UploadTopupProof(ctx context.Context, topupID, filename, contentType string, file io.Reader, fields TopupProofFields) (*TopupStatus, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
+
+	// Text fields dulu — pattern standard multipart, urutan tidak strict tapi
+	// konvensi nya field metadata sebelum file part.
+	textFields := map[string]string{
+		"bank_name":       fields.BankName,
+		"account_number":  fields.AccountNumber,
+		"account_holder":  fields.AccountHolder,
+		"transfer_amount": strconv.FormatFloat(fields.TransferAmount, 'f', -1, 64),
+	}
+	if fields.TransferDate != "" {
+		textFields["transfer_date"] = fields.TransferDate
+	}
+	for k, v := range textFields {
+		if err := mw.WriteField(k, v); err != nil {
+			return nil, fmt.Errorf("multipart write field %s: %w", k, err)
+		}
+	}
 
 	partHeader := map[string][]string{
 		"Content-Disposition": {fmt.Sprintf(`form-data; name="file"; filename=%q`, filename)},

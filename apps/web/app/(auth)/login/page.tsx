@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ArrowRight, Globe2 } from "lucide-react";
-import { api, setTokens } from "@/lib/api";
+import { api, clearTokens, getAccessToken, setTokens } from "@/lib/api";
+import { defaultRouteForRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +44,22 @@ export default function LoginPage() {
     }
     const next = params.get("next");
     if (next) setNextPath(next);
-  }, []);
+
+    // Kalau user sudah login (token valid), skip login form + redirect ke
+    // portal sesuai role. Kalau token expired/invalid, clearTokens supaya
+    // form tetap accessible. Ada ?error= = jangan redirect (user perlu lihat
+    // pesan gagal login Google).
+    if (errCode) return;
+    if (!getAccessToken()) return;
+    api<{ role: string }>("/api/v1/auth/me")
+      .then((me) => {
+        const target = next || defaultRouteForRole(me.role);
+        router.replace(target);
+      })
+      .catch(() => {
+        clearTokens();
+      });
+  }, [router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,10 +80,7 @@ export default function LoginPage() {
       }
       try {
         const me = await api<{ role: string }>("/api/v1/auth/me");
-        if (me.role === "admin") router.push("/admin");
-        else if (me.role === "reseller") router.push("/reseller/dashboard");
-        else if (me.role === "agent") router.push("/agent/dashboard");
-        else router.push("/dashboard");
+        router.push(defaultRouteForRole(me.role));
       } catch {
         router.push("/dashboard");
       }

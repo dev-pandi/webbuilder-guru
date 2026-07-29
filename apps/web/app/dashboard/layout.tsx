@@ -43,7 +43,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       return;
     }
     api<Me>("/api/v1/auth/me")
-      .then(setMe)
+      .then((u) => {
+        // Reseller/agent punya portal terpisah dengan sidebar sendiri.
+        // Kalau mereka nyasar ke /dashboard (client-style), redirect balik ke
+        // portalnya supaya menu tetap terlihat. Admin dibiarkan (bisa navigate
+        // ke mana saja untuk troubleshoot).
+        if (u.role === "reseller") {
+          router.replace("/reseller/dashboard");
+          return;
+        }
+        if (u.role === "agent") {
+          router.replace("/agent/dashboard");
+          return;
+        }
+        setMe(u);
+      })
       .catch(() => {
         clearTokens();
         router.replace("/login");

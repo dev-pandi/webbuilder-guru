@@ -294,6 +294,23 @@ func (h *Handler) UploadProof(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "topup_id required")
 	}
 
+	// Metadata pengirim + jumlah transfer — WAJIB (registrar validate lagi
+	// nanti; kita reject early di sini supaya feedback cepat).
+	bankName := strings.TrimSpace(c.FormValue("bank_name"))
+	accountNumber := strings.TrimSpace(c.FormValue("account_number"))
+	accountHolder := strings.TrimSpace(c.FormValue("account_holder"))
+	transferAmountStr := strings.TrimSpace(c.FormValue("transfer_amount"))
+	transferDate := strings.TrimSpace(c.FormValue("transfer_date")) // opsional
+
+	if bankName == "" || accountNumber == "" || accountHolder == "" || transferAmountStr == "" {
+		return httpx.BadRequest(c,
+			"field bank_name, account_number, account_holder, transfer_amount wajib")
+	}
+	transferAmount, err := strconv.ParseFloat(transferAmountStr, 64)
+	if err != nil || transferAmount <= 0 {
+		return httpx.BadRequest(c, "transfer_amount harus angka > 0")
+	}
+
 	fh, err := c.FormFile("file")
 	if err != nil {
 		return httpx.BadRequest(c, "field 'file' wajib (multipart)")
@@ -326,7 +343,16 @@ func (h *Handler) UploadProof(c *fiber.Ctx) error {
 	}
 	defer src.Close()
 
-	st, err := h.registrar.UploadTopupProof(c.Context(), topupID, fh.Filename, mime, src)
+	st, err := h.registrar.UploadTopupProof(
+		c.Context(), topupID, fh.Filename, mime, src,
+		registrar.TopupProofFields{
+			BankName:       bankName,
+			AccountNumber:  accountNumber,
+			AccountHolder:  accountHolder,
+			TransferAmount: transferAmount,
+			TransferDate:   transferDate,
+		},
+	)
 	if err != nil {
 		return proxyErr(c, "upload_proof_failed", err)
 	}
