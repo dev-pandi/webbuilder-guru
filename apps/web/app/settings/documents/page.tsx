@@ -1,14 +1,9 @@
 "use client";
 
-// Halaman "Dokumen" — kelola library dokumen (KTP/NPWP) yang dipakai saat
-// registrasi domain yang butuh verifikasi identitas. Dokumen di-upload
-// sekali di sini → bisa di-pre-attach saat checkout domain (skip step
-// upload post-payment).
-//
-// Semua flow passthrough ke registrar via /api/v1/documents — web builder
-// TIDAK simpan file (single source of truth = registrar).
+// /settings/documents — library KTP/NPWP untuk domain yang butuh verifikasi.
+// DocumentsCard di-share dengan reseller/agent portal.
 
-import { DocumentsCard } from "./_documents-card";
+import { DocumentsCard } from "@/components/documents/DocumentsCard";
 
 export default function DocumentsSettingsPage() {
   return (

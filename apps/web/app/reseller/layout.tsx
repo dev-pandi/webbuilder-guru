@@ -11,10 +11,13 @@ import {
   Briefcase,
   ChevronLeft,
   Code2,
+  Files,
+  Globe2,
   LogOut,
   Receipt,
   Settings,
   Users,
+  UserSquare2,
   UsersRound,
   Wallet,
 } from "lucide-react";
@@ -34,9 +37,12 @@ const NAV = [
   { href: "/reseller/dashboard", label: "Dashboard", icon: Briefcase },
   { href: "/reseller/clients", label: "Klien", icon: Users },
   { href: "/reseller/team", label: "Tim (Agent)", icon: UsersRound },
+  { href: "/reseller/domains", label: "Domain", icon: Globe2 },
   { href: "/reseller/wallet", label: "Wallet", icon: Wallet },
   { href: "/reseller/pricing", label: "Harga Jual", icon: Code2 },
   { href: "/reseller/invoices", label: "Invoice", icon: Receipt },
+  { href: "/reseller/documents", label: "Dokumen", icon: Files },
+  { href: "/reseller/collaborators", label: "Kolaborator", icon: UserSquare2 },
   { href: "/reseller/settings", label: "Pengaturan", icon: Settings },
 ] as const;
 
