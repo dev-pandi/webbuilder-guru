@@ -82,24 +82,38 @@ type meResp struct {
 	State       string `json:"state"`
 	PostalCode  string `json:"postal_code"`
 	Nik         string `json:"nik"` // wajib untuk beli domain .id
+
+	// Reseller/agent fields — kosong string / null kalau bukan role terkait.
+	// Frontend pakai untuk redirect post-login + tampilkan konteks reseller.
+	ParentResellerID    *string `json:"parent_reseller_id,omitempty"`
+	ResellerDisplayName string  `json:"reseller_display_name"`
+	ResellerStatus      string  `json:"reseller_status"`
+	ResellerTier        string  `json:"reseller_tier"`
 }
 
 func toMeResp(u *User) meResp {
 	out := meResp{
-		ID:          u.ID.String(),
-		Email:       u.Email,
-		Name:        u.Name,
-		Role:        u.Role,
-		PhoneNumber: u.PhoneNumber,
-		Address:     u.Address,
-		City:        u.City,
-		State:       u.State,
-		PostalCode:  u.PostalCode,
-		Nik:         u.Nik,
+		ID:                  u.ID.String(),
+		Email:               u.Email,
+		Name:                u.Name,
+		Role:                u.Role,
+		PhoneNumber:         u.PhoneNumber,
+		Address:             u.Address,
+		City:                u.City,
+		State:               u.State,
+		PostalCode:          u.PostalCode,
+		Nik:                 u.Nik,
+		ResellerDisplayName: u.ResellerDisplayName,
+		ResellerStatus:      u.ResellerStatus,
+		ResellerTier:        u.ResellerTier,
 	}
 	if u.EmailVerifiedAt != nil {
 		s := u.EmailVerifiedAt.UTC().Format(time.RFC3339)
 		out.EmailVerifiedAt = &s
+	}
+	if u.ParentResellerID != nil {
+		s := u.ParentResellerID.String()
+		out.ParentResellerID = &s
 	}
 	return out
 }
@@ -185,6 +199,11 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 	ok, err := VerifyPassword(req.Password, u.PasswordHash)
 	if err != nil || !ok {
 		return httpx.Unauthorized(c, "invalid credentials")
+	}
+	// Block login untuk reseller yang belum di-approve (pending) atau di-suspend.
+	// Message specific supaya user tahu harus tunggu / contact admin.
+	if lockErr := AllowLoginForRole(u); lockErr != nil {
+		return httpx.Err(c, fiber.StatusForbidden, "role_locked", lockErr.Error())
 	}
 	return h.issueTokens(c, u, fiber.StatusOK)
 }

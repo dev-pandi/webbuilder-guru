@@ -18,7 +18,7 @@ type User struct {
 	Email           string
 	PasswordHash    string // may be empty when the user only has an OAuth login
 	Name            string
-	Role            string
+	Role            string // RoleAdmin | RoleReseller | RoleAgent | RoleClient
 	CreatedAt       time.Time
 	EmailVerifiedAt *time.Time
 	OAuthGoogleSub  *string // NULL for password-only users
@@ -34,16 +34,32 @@ type User struct {
 	// NIK (Nomor Induk Kependudukan). Wajib untuk registrasi domain .id
 	// (Kemenkominfo regulation). Kosong = user belum bisa beli .id domain.
 	Nik string
+
+	// Reseller/agent — plan-reseller-roles.md section 4.1.
+	// Semua nullable/default "" — existing user aman, TIDAK butuh backfill.
+	//
+	// ParentResellerID   = FK ke reseller induk (WAJIB kalau Role='agent',
+	//                      nil untuk role lain).
+	// ResellerDisplayName = nama bisnis reseller ("PT XYZ") — muncul di
+	//                      email invite ke client. Kosong = pakai Name.
+	// ResellerStatus     = '' (default), 'pending_approval', 'active',
+	//                      'suspended'. Hanya diisi untuk Role='reseller'.
+	// ResellerTier       = pricing tier future ('basic'/'gold'/'platinum').
+	ParentResellerID    *uuid.UUID
+	ResellerDisplayName string
+	ResellerStatus      string
+	ResellerTier        string
 }
 
 // scanUserCols is the projection every SELECT below uses. Kept in sync with
 // the SELECT statements so a schema-column reorder only needs one edit.
-const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik`
+const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik, parent_reseller_id, reseller_display_name, reseller_status, reseller_tier`
 
 func scanUser(u *User) []any {
 	return []any{
 		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt, &u.OAuthGoogleSub,
 		&u.PhoneNumber, &u.Address, &u.City, &u.State, &u.PostalCode, &u.Nik,
+		&u.ParentResellerID, &u.ResellerDisplayName, &u.ResellerStatus, &u.ResellerTier,
 	}
 }
 

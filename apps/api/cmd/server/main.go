@@ -314,6 +314,10 @@ func main() {
 	pagesHandler := pages.NewHandler(pageRepo, siteRepo, issuer)
 	pagesHandler.SetPurger(purger)
 
+	// Admin handler + inject authRepo untuk reseller management (Phase 1).
+	adminHandler := admin.NewHandler(adminRepo)
+	adminHandler.SetAuthRepo(authRepo)
+
 	deps := router.Deps{
 		Cfg:          cfg,
 		Pool:         pool,
@@ -335,7 +339,7 @@ func main() {
 		Usage:        usage.NewHandler(usageRepo, siteRepo),
 		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
 		Public:       public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo),
-		Admin:        admin.NewHandler(adminRepo),
+		Admin:        adminHandler,
 		Cloudflare:   cloudflare.NewHandler(cloudflareRepo),
 		Forms:        forms.NewHandler(formsRepo, siteRepo, mailer),
 		Analytics:    analytics.NewHandler(analyticsRepo, siteRepo),

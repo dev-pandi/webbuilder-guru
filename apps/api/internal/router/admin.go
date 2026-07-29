@@ -24,6 +24,13 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Patch("/sites/:id/quota", deps.Admin.UpdateSiteQuota)
 	g.Delete("/sites/:id", deps.Admin.DeleteSite)
 
+	// Reseller management — approve/suspend applications.
+	// Handler cek `authRepo == nil` → return 503 kalau feature belum di-wire.
+	g.Get("/resellers", deps.Admin.ListResellers)
+	g.Get("/resellers/:id", deps.Admin.GetReseller)
+	g.Post("/resellers/:id/approve", deps.Admin.ApproveReseller)
+	g.Post("/resellers/:id/suspend", deps.Admin.SuspendReseller)
+
 	// Registrar webhook config — reseller-scoped di registrar, tapi dari sisi
 	// web builder ini pengaturan operator (bukan per-user). Hanya di-mount
 	// kalau DomainPurchase handler aktif (nil-safe = registrar disabled).

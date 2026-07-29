@@ -499,7 +499,7 @@ Reseller register via API tapi payment_url di-forward ke client via email. Clien
 - **Fallback: Opsi 2** — buat reseller yang belum top-up wallet (first-time trial)
 - **Opsi 3**: skip → future release kalau ada demand
 
-Section 15 punya detail complete integration wallet flow.
+Section 15 punya detail complete integration wallet flow. **Detail pricing model 3-tier (siapa bayar berapa) di section 16.**
 
 ---
 
@@ -913,3 +913,415 @@ Update total estimasi section 11: **~90-130 jam (~3-4 minggu focused work)**.
 5. **Ledger export?** — Reseller butuh export CSV untuk pembukuan? (Butuh endpoint export terpisah di registrar)
 
 Semua open questions ini di-defer ke pasca-MVP.
+
+---
+
+## 16. Pricing model 3-tier (transparent)
+
+Konfirmasi keputusan produk (2026-07-28):
+1. Web-builder markup untuk client self-purchase
+2. Reseller punya price list sendiri untuk agent + client
+3. Transparent — reseller lihat wholesale, agent lihat reseller price
+4. Hard stop kalau wallet kurang
+5. Client transparent — lihat siapa yang bayar
+
+### 16.1 Arsitektur 3-tier
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│  Layer 1 — PLATFORM PRICE (admin PANDI set)                        │
+│  Table: platform_prices                                            │
+│  ├── retail_price    → client self-purchase (bayar segini)         │
+│  └── wholesale       → cost basis platform (from registrar API)    │
+│                                                                     │
+│  Contoh .co.id:                                                     │
+│    retail    = Rp 100.000  (untuk client self-purchase)            │
+│    wholesale = Rp 55.000   (cost dari registrar-api)               │
+│    → Platform margin dari self-purchase: Rp 45.000                 │
+└───────────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────────┐
+│  Layer 2 — RESELLER PRICE LIST (per-reseller, reseller set)        │
+│  Table: reseller_price_lists                                       │
+│  ├── agent_price   → reseller "jual" ke agent segini               │
+│  └── client_price  → reseller "jual" ke client segini              │
+│                                                                     │
+│  Contoh PT XYZ .co.id:                                              │
+│    agent_price  = Rp 75.000   (agent bayar reseller segini)        │
+│    client_price = Rp 200.000  (reseller direct-charge client)      │
+│    → Reseller margin dari agent: Rp 75.000 - Rp 55.000 = 20.000    │
+│    → Reseller margin dari client: Rp 200.000 - Rp 55.000 = 145.000 │
+└───────────────────────────────────────────────────────────────────┘
+                              ↓
+┌───────────────────────────────────────────────────────────────────┐
+│  Layer 3 — AGENT PRICE (per-agent, agent set — bebas markup)       │
+│  TIDAK di-track di sistem (settle di luar sistem sesuai kontrak)   │
+│                                                                     │
+│  Contoh Agent Budi .co.id:                                          │
+│    Kulakan dari PT XYZ = Rp 75.000                                 │
+│    Jual ke client       = Rp 250.000                               │
+│    → Agent margin       = Rp 175.000                               │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### 16.2 Contoh alur uang komplit
+
+**Skenario: Agent Budi (di bawah PT XYZ) register `toko.co.id` untuk Bu Ani**
+
+```
+Step 1: PT XYZ top-up wallet Rp 10.000.000 via Midtrans
+  Rekening PT XYZ bisnis → Midtrans → Platform bank account
+  Wallet balance = Rp 10.000.000
+
+Step 2: Agent Budi register toko.co.id via /agent/clients/new (payment=wallet)
+  Wallet PT XYZ debit: -Rp 55.000 (wholesale flat)
+  Balance jadi Rp 9.945.000
+  Backend registrar-api EPP CREATE → domain aktif
+
+Step 3: Agent Budi lihat di dashboard "Kulakan dari PT XYZ: Rp 75.000"
+        (dari reseller_price_lists.agent_price untuk co.id)
+
+Step 4: Bu Ani lihat di dashboard client "Dibayarkan oleh PT XYZ via Agent Budi"
+        (transparent — tapi TIDAK lihat angka Rp)
+
+Step 5: SETTLEMENT (di luar sistem — sesuai kontrak bisnis):
+  Bu Ani transfer Rp 250.000 → Budi (agent markup + jasa maintenance)
+  Budi transfer Rp 75.000    → PT XYZ (sesuai agent_price co.id)
+  PT XYZ profit di sistem   = Rp 75.000 - Rp 55.000 = Rp 20.000
+  Budi profit                = Rp 250.000 - Rp 75.000 = Rp 175.000
+  Bu Ani cost                = Rp 250.000/tahun (all-in: domain + setup + support)
+```
+
+**Skenario: Client Cici self-purchase `myshop.co.id` via wizard**
+
+```
+Step 1: Cici pilih domain, pilih Midtrans → bayar Rp 100.000 (retail platform)
+Step 2: Platform receive → forward Rp 55.000 wholesale ke registrar (via gateway)
+Step 3: Domain aktif, invoice ke Cici, platform margin Rp 45.000
+```
+
+Model existing — TIDAK BERUBAH.
+
+### 16.3 Schema DB tambahan
+
+**Konfirmasi keputusan #1**: Split register vs renew price (4 kolom per tabel). Sesuai standard industri (PANDI, GoDaddy, Namecheap) di mana register vs renew umumnya beda harga.
+
+Selain schema di section 4, tambah 2 table pricing:
+
+```sql
+-- Migration 0024: platform_prices
+-- Retail + wholesale harga split register vs renew (industry standard).
+-- Retail = yang dibayar client self-purchase via wizard.
+-- Wholesale = cost dari registrar-api (informational, sync dari GetDomainPrice).
+CREATE TABLE platform_prices (
+    id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tld                      TEXT NOT NULL UNIQUE,
+        -- Case-insensitive: 'co.id', 'id', 'com', 'net', dst.
+        -- Enforce lowercase di app layer supaya UNIQUE index bekerja.
+    retail_register_price    INT NOT NULL,
+    retail_renew_price       INT NOT NULL,
+    wholesale_register_price INT,
+    wholesale_renew_price    INT,
+        -- Nullable — kalau NULL, backend fetch actual price dari registrar
+        -- per query (real-time). Isi manual kalau mau audit trail per-tanggal.
+    currency                 TEXT NOT NULL DEFAULT 'IDR',
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by               UUID REFERENCES users(id) ON DELETE SET NULL
+        -- Admin yang last-updated. Untuk audit trail.
+);
+CREATE INDEX idx_platform_prices_tld ON platform_prices(tld);
+```
+
+```sql
+-- Migration 0025: reseller_price_lists
+-- 4 kolom price: register vs renew × agent vs client.
+-- Kombinasi memungkinkan strategi:
+--   - Register murah untuk lead (agent_register_price rendah)
+--   - Renew margin tinggi (client_renew_price naik seiring inflasi)
+CREATE TABLE reseller_price_lists (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reseller_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tld                   TEXT NOT NULL,
+    agent_register_price  INT NOT NULL,   -- kulakan agent untuk register domain baru
+    agent_renew_price     INT NOT NULL,   -- kulakan agent untuk renew
+    client_register_price INT NOT NULL,   -- reseller direct-charge client (register)
+    client_renew_price    INT NOT NULL,   -- reseller direct-charge client (renew)
+    currency              TEXT NOT NULL DEFAULT 'IDR',
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (reseller_id, tld)
+);
+CREATE INDEX idx_reseller_price_lists_reseller_id ON reseller_price_lists(reseller_id);
+```
+
+**Fallback logic** kalau reseller belum set price list untuk TLD tertentu:
+- Backend return default:
+  - `agent_register_price = client_register_price = platform_prices.retail_register_price`
+  - `agent_renew_price = client_renew_price = platform_prices.retail_renew_price`
+- UI show badge "belum di-set — pakai default platform"
+- Reseller diminta set price list saat onboarding (wizard walk-through)
+
+**Sync wholesale dari registrar-api:**
+
+Registrar existing endpoint `GetDomainPrice` sudah return `register + renew + transfer` field terpisah. Web-builder bisa sync harian via cron:
+
+```go
+// cron: /apps/api/internal/pricing/sync.go (baru)
+// Run daily 00:00 WIB
+for _, tld := range knownTLDs {
+    priceInfo, _ := registrar.GetDomainPrice(ctx, "example."+tld)
+    _ = platformPrices.SyncWholesale(ctx, tld,
+        priceInfo.Register, priceInfo.Renew,
+    )
+}
+```
+
+Admin bisa manual override kalau butuh (mis. lock harga selama campaign).
+
+### 16.4 API surface untuk pricing
+
+| Method | Path | Role | Deskripsi |
+|---|---|---|---|
+| GET | `/api/v1/platform/prices` | anon | List retail price semua TLD (public — dipakai wizard client) |
+| GET | `/api/v1/platform/prices/:tld` | anon | Detail 1 TLD |
+| POST | `/api/v1/admin/platform/prices` | admin | Upsert platform price |
+| DELETE | `/api/v1/admin/platform/prices/:tld` | admin | Remove (revert ke wholesale-only) |
+| GET | `/api/v1/reseller/prices` | reseller | Own price list (all TLDs) |
+| POST | `/api/v1/reseller/prices` | reseller | Upsert (bulk atau per-TLD) |
+| DELETE | `/api/v1/reseller/prices/:tld` | reseller | Remove (fallback ke default) |
+| GET | `/api/v1/agent/prices` | agent | View reseller's agent_price (read-only) |
+
+### 16.5 UI mockup pricing management
+
+**Admin — `/admin/pricing`:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Platform Pricing (Client Self-Purchase)                  │
+│                                                            │
+│  TLD       Retail          Wholesale     Margin           │
+│  .co.id    Rp 100.000      Rp 55.000     Rp 45.000  [Edit]│
+│  .id       Rp 350.000      Rp 250.000    Rp 100.000 [Edit]│
+│  .com      Rp 200.000      Rp 150.000    Rp 50.000  [Edit]│
+│                                                            │
+│  [ + Tambah TLD ]                                          │
+│                                                            │
+│  ℹ️ Wholesale sync manual — update kalau registrar        │
+│    ubah harga. Kosongkan = pakai actual per query.        │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Reseller — `/reseller/pricing`:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Harga Jual Anda                                          │
+│                                                            │
+│  ℹ️ Set 2 harga per-TLD:                                  │
+│    - Agent Price: yang agent bayar ke Anda saat register │
+│    - Client Price: yang client bayar (kalau Anda direct) │
+│                                                            │
+│  ── Aktif ──                                              │
+│  TLD    Wholesale  Agent Price  Client Price   Margin     │
+│  .co.id Rp 55.000  Rp 75.000    Rp 200.000    Agent: 20k │
+│                                                Client: 145k│
+│                                              [Edit] [Del] │
+│  .id    Rp 250.000 Rp 350.000   Rp 500.000    ...  [Edit]│
+│                                                            │
+│  ── Belum di-set (pakai default platform) ──              │
+│  .com   Rp 150.000 (default Rp 200.000)      [Set Harga] │
+│                                                            │
+│  [ + Tambah TLD ]                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Agent — `/agent/pricing`:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Harga Kulakan dari PT XYZ (Reseller Induk)               │
+│                                                            │
+│  TLD    Kulakan (Anda bayar reseller)                     │
+│  .co.id Rp 75.000                                          │
+│  .id    Rp 350.000                                         │
+│  .com   Rp 200.000                                         │
+│                                                            │
+│  ℹ️ Ini harga referensi. Anda bebas markup ke client      │
+│    sendiri sesuai kontrak Anda.                           │
+│                                                            │
+│  ℹ️ Register domain → wallet PT XYZ di-debit wholesale    │
+│    Anda "berutang" ke PT XYZ = kulakan × jumlah trx.      │
+│    Settlement langsung ke PT XYZ (tidak lewat platform).  │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Client dashboard (post-handoff) — tampilan pricing transparency:**
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  🤝  Dikelola oleh PT Ceria Digital (via Agent Budi)     │
+│                                                            │
+│  Domain: bahagia.co.id                                     │
+│  Status: Aktif · Perpanjangan berikutnya 25 Jul 2027      │
+│                                                            │
+│  💰 Estimasi perpanjangan tahun depan:                    │
+│    Rp 250.000 (via Agent Budi)                            │
+│                                                            │
+│  ⚙️  [Cabut akses reseller]  [Transfer ownership ke saya]│
+└──────────────────────────────────────────────────────────┘
+```
+
+Note: Angka "Rp 250.000" bukan dari sistem (agent markup di luar sistem). Client input sendiri saat handoff, atau di-quote agent via chat. Sistem cuma tampilkan yang di-set reseller (`client_price` = Rp 200.000) sebagai baseline.
+
+**Wizard `/reseller/clients/new` — step Payment (transparent):**
+
+```
+─── STEP 4: Payment ─────────────────────────────────────
+Domain: bahagia.co.id (1 tahun)
+
+Harga:
+  Kulakan platform (wholesale): Rp 55.000     ← yang di-debit wallet
+  Harga jual Anda ke client:    Rp 200.000    ← reference (client tidak lihat)
+
+Payment source:
+(•) Debit Wallet — Saldo Rp 5.450.000 → sisa Rp 5.395.000
+    ✓ Instant, no gateway
+
+( ) Payment Gateway — bayar Rp 55.000 via Midtrans sekarang
+
+[ Batal ]                       [ Register Domain ]
+```
+
+### 16.6 Hard stop behavior (keputusan #4)
+
+Kalau wallet insufficient saat register-for-client:
+
+**Backend response 402:**
+```json
+{
+  "error": {
+    "code": "wallet_insufficient",
+    "message": "Saldo wallet tidak cukup untuk register domain ini.",
+    "details": {
+      "balance": 45000,
+      "required": 55000,
+      "shortfall": 10000,
+      "suggested_topup": 100000
+    }
+  }
+}
+```
+
+**Frontend dialog:**
+```
+┌──────────────────────────────────────────────────────────┐
+│  ⚠️  Saldo Wallet Tidak Cukup                             │
+│                                                            │
+│  Saldo saat ini:  Rp 45.000                               │
+│  Yang dibutuhkan: Rp 55.000                               │
+│  Kekurangan:      Rp 10.000                               │
+│                                                            │
+│  Pilih tindakan:                                           │
+│                                                            │
+│  [ Top-up Wallet Rp 100.000 ]  ← redirect ke /wallet/topup│
+│  [ Bayar Gateway Sekali Ini ]  ← fallback gateway         │
+│  [ Batal ]                                                 │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Suggested topup** = `max(100_000, required × 5)` — kasih buffer 5 kali biar reseller tidak balik lagi top-up untuk trx berikutnya.
+
+Tidak ada auto-fallback silent — user harus explicit klik "Bayar Gateway".
+
+### 16.7 Client transparency (keputusan #5)
+
+Client dashboard menampilkan:
+- **Siapa yang manage** (reseller display name + agent name kalau ada)
+- **Estimasi biaya perpanjangan** (dari `reseller_price_lists.client_renew_price` sebagai baseline — bukan actual agent markup)
+- **Tombol contact reseller** (WhatsApp / email link — dari `reseller.phone_number`, `reseller.email`)
+- **Cabut akses** — sudah ada, dari section 5.5
+
+**Konfirmasi keputusan #3:** Transfer ownership formal **DI-HOLD DARI MVP**.
+
+Alasan hold:
+- **Ownership sudah di client sejak awal** (section 5.3 flow: `sites.user_id = client` dari step 1). Cabut akses = reseller/agent lose access, itu saja. TIDAK ada "transfer" secara teknis karena ownership tidak pernah pindah.
+- Reseller-client kontrak bisnis (retainer/service fee tahunan) = di **luar sistem**. Kalau reseller mau charge Rp X per tahun untuk maintain akses, itu urusan mereka via WhatsApp/email/invoice sendiri.
+- Feature transfer formal = complexity tinggi untuk value marginal. Real-world dispute bisa di-handle admin platform (moderator role) via ticket manual, bukan feature otomatis.
+- Kalau reseller-client dispute serius (client feel scammed, reseller feel undervalued), platform sebagai neutral party bisa mediate lewat email/support.
+
+**Disclaimer di client dashboard:**
+> Sistem tidak charge fee untuk cabut akses. Reseller-client bisa punya perjanjian bisnis di luar sistem (retainer service). Kalau ada dispute soal biaya setup / support, contact admin platform via email support.
+
+**Kapan reconsider tambah Opsi Transfer (post-MVP triggers):**
+- Volume dispute > 5/bulan di real production
+- Reseller minta explicit "revenue protection" saat client leave
+- Regulasi consumer protection required formal transfer flow
+
+Kalau tambah kelak: butuh `transfer_fees` table + payment split logic + reseller approve/decline flow + audit trail. Estimasi ~30-40 jam separate phase.
+
+### 16.8 Milestone tambahan pricing
+
+Sisipkan ke section 10 (migration strategy), setelah Phase 3.8 (wallet):
+
+| Phase | Scope | Effort |
+|---|---|---|
+| 3.9 | Migration `platform_prices` + `reseller_price_lists` + seed default | 3-4 jam |
+| 3.10 | Admin `/admin/pricing` UI + API | 6-8 jam |
+| 3.11 | Reseller `/reseller/pricing` UI + API + fallback logic | 8-10 jam |
+| 3.12 | Agent `/agent/pricing` read-only view | 3-4 jam |
+| 3.13 | Client transparency banner di dashboard | 4-6 jam |
+| 3.14 | Wizard pricing display (wholesale + reseller/agent markup ref) | 4-6 jam |
+| **Subtotal pricing** | | **~28-38 jam (~4-5 hari)** |
+
+Update total estimasi section 11: **~120-170 jam (~4-5 minggu focused work)**.
+
+### 16.9 Testing checklist
+
+- [ ] Admin CRUD platform_prices → visible di client wizard (retail_register + retail_renew muncul side-by-side)
+- [ ] Client wizard tanpa reseller involvement → charged `retail_register_price` untuk pertama kali, `retail_renew_price` saat perpanjang
+- [ ] Reseller CRUD price list → 4 kolom (agent_register, agent_renew, client_register, client_renew) tersimpan
+- [ ] Reseller register via wallet → debit `wholesale_register_price` (bukan agent/client price)
+- [ ] Reseller renew via wallet → debit `wholesale_renew_price` (kalau berbeda)
+- [ ] Agent view /agent/pricing → tampil reseller `agent_register_price` + `agent_renew_price` (read-only)
+- [ ] Agent register/renew via wallet → debit wholesale ke wallet reseller induk (bukan agent price — settlement di luar sistem)
+- [ ] Client dashboard post-handoff → tampil reseller_display_name + `client_renew_price` sebagai estimasi perpanjangan
+- [ ] Wallet insufficient → 402 dengan breakdown + suggested_topup
+- [ ] Reseller belum set price list untuk TLD → fallback ke `platform_prices.retail_register/renew`
+- [ ] Cross-tenant: reseller B tidak lihat price list reseller A
+- [ ] Agent tidak bisa edit reseller price list (403)
+- [ ] Wholesale sync cron → daily sync dari registrar-api `GetDomainPrice`, admin lihat di /admin/pricing
+- [ ] Wholesale-level promo (dari registrar) → auto-cascade: reseller wallet debit dengan diskon, agent kulakan tetap
+- [ ] Cabut akses → reseller/agent lose access langsung, client tetap owner (bukan "transfer")
+
+### 16.10 Open questions
+
+**Resolved (keputusan 2026-07-29):**
+- ✅ **Register vs renew pricing** → Split schema (4 kolom per table). Schema 16.3 sudah reflect ini.
+- ✅ **Promo code layer** → Wholesale-level auto-cascade. Registrar-api existing `resolvePromo` handle di tier ini — semua downstream (reseller wallet, agent kulakan) auto-benefit. Web-builder MVP tidak bikin promo layer sendiri.
+- ✅ **Transfer ownership formal** → Hold dari MVP. Reliance pada "cabut akses" (existing) + kontrak bisnis di luar sistem. Section 16.7 sudah reflect ini.
+
+**Masih pending (defer pasca-MVP):**
+1. **Reseller override wholesale sync** — Kalau platform naikkan wholesale (mis. .co.id jadi Rp 60rb), apakah agent_register_price/client_register_price auto-recalculate? **Rekomendasi:** manual — reseller aware. Nanti butuh notif "wholesale berubah, review price list Anda".
+2. **Bulk price update** — reseller bisa "naikkan semua agent_price 10%"? Nice UX tapi complex — defer.
+3. **Price history / audit** — track perubahan pricing untuk dispute resolution? Butuh table `price_history`.
+4. **Multi-currency** — untuk future international expansion. MVP IDR only.
+5. **Retail-level promo untuk client self-purchase** — Kalau butuh campaign khusus (mis. Ramadhan 25% off self-purchase saja, tidak affect reseller wallet), butuh table `platform_promos` dengan field `applies_to='retail'`. Extension dari registrar-api wholesale promo. Defer.
+
+**Update section 16.3 untuk keputusan #6:**
+
+Tabel `platform_prices` + `reseller_price_lists` seharusnya punya 4 kolom price (bukan 2):
+
+```sql
+-- Platform
+retail_register_price
+retail_renew_price
+wholesale_register_price
+wholesale_renew_price
+
+-- Reseller
+agent_register_price
+agent_renew_price
+client_register_price
+client_renew_price
+```
+
+Ini bikin schema lebih panjang tapi accurate. Frontend show 2 kolom (register + renew) side-by-side.

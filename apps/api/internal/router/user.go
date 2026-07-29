@@ -31,6 +31,11 @@ func MountUser(app *fiber.App, deps Deps) {
 	v1.Post("/auth/email/verify",
 		RateLimitIP(emailVerifyPerWindow, emailVerifyWindow), deps.Auth.ConfirmEmailVerification)
 
+	// Reseller signup — anonymous. Rate-limit sama dengan register (cegah
+	// bulk-account abuse). Admin approve nanti sebelum bisa login.
+	v1.Post("/auth/reseller/apply",
+		RateLimitIP(registerPerWindow, registerWindow), deps.Auth.ResellerApply)
+
 	// Google OAuth — GET (browser redirect). Rate-limit /authorize per IP so a
 	// bot can't spam state cookies. Callback is naturally rate-limited by
 	// Google itself (needs a valid code round-trip).

@@ -55,7 +55,22 @@ export default function LoginPage() {
         { method: "POST", body: JSON.stringify({ email, password }), auth: false },
       );
       setTokens(data.access_token, data.refresh_token);
-      router.push(nextPath || "/dashboard");
+      // Redirect berdasarkan role — reseller/agent punya portal terpisah.
+      // Kalau ada `?next=` (mis. deep link), respect itu — kecuali `next` mengarah
+      // ke portal yang tidak match role user (edge case, biarkan role gate handle).
+      if (nextPath) {
+        router.push(nextPath);
+        return;
+      }
+      try {
+        const me = await api<{ role: string }>("/api/v1/auth/me");
+        if (me.role === "admin") router.push("/admin");
+        else if (me.role === "reseller") router.push("/reseller/dashboard");
+        else if (me.role === "agent") router.push("/agent/dashboard");
+        else router.push("/dashboard");
+      } catch {
+        router.push("/dashboard");
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -190,6 +205,15 @@ export default function LoginPage() {
               className="font-medium text-foreground underline underline-offset-4 hover:text-primary transition-colors"
             >
               Daftar gratis
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            Agency atau reseller?{" "}
+            <Link
+              href="/daftar-reseller"
+              className="font-medium text-primary underline underline-offset-4"
+            >
+              Daftar sebagai reseller
             </Link>
           </p>
         </div>

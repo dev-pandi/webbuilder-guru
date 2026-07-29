@@ -10,10 +10,16 @@ import (
 )
 
 type Handler struct {
-	repo *Repo
+	repo     *Repo
+	authRepo *auth.Repo // dipakai reseller management (list/approve/suspend)
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
+
+// SetAuthRepo inject auth repo untuk reseller management. Optional — kalau
+// nil, endpoint reseller-management return 503 (feature disabled). Simplifies
+// backward-compat + gradual rollout Phase 1.
+func (h *Handler) SetAuthRepo(r *auth.Repo) { h.authRepo = r }
 
 // ---------- Users ----------
 
