@@ -13,11 +13,19 @@ export function ProfileBlock({
   me,
   profileComplete,
   missingProfile,
+  forClientID,
 }: {
   me: Me | null;
   profileComplete: boolean;
   missingProfile: Array<keyof Me>;
+  // Kalau di-set = mode on-behalf-of; edit link ke halaman klien (bukan
+  // /settings/profile milik reseller) supaya tidak salah edit profil sendiri.
+  forClientID?: string;
 }) {
+  const editHref = forClientID ? "/reseller/clients" : "/settings/profile";
+  const subtitle = forClientID
+    ? "Data klien untuk WHOIS + invoice"
+    : "Dipakai untuk WHOIS + invoice";
   return (
     <div className="rounded-xl border bg-gradient-to-br from-muted/40 to-muted/10 p-4 sm:p-5">
       <div className="flex items-center justify-between gap-2">
@@ -26,15 +34,15 @@ export function ProfileBlock({
             <User className="size-4 text-primary" />
           </div>
           <div>
-            <div className="text-sm font-semibold">Data Kontak</div>
-            <div className="text-[11px] text-muted-foreground">
-              Dipakai untuk WHOIS + invoice
+            <div className="text-sm font-semibold">
+              {forClientID ? "Data Kontak Klien" : "Data Kontak"}
             </div>
+            <div className="text-[11px] text-muted-foreground">{subtitle}</div>
           </div>
         </div>
         <Button variant="outline" size="sm" asChild className="gap-1.5">
-          <Link href="/settings/profile">
-            Edit
+          <Link href={editHref}>
+            {forClientID ? "Kelola" : "Edit"}
             <ExternalLink className="size-3" />
           </Link>
         </Button>

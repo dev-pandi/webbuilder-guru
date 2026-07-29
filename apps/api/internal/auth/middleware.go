@@ -52,3 +52,47 @@ func RequireAdmin() fiber.Handler {
 		return c.Next()
 	}
 }
+
+// RequireReseller enforces role=reseller (status check dilakukan handler
+// karena butuh DB lookup). Dipakai /api/v1/reseller/* routes.
+func RequireReseller() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		cl := ClaimsFrom(c)
+		if cl == nil {
+			return httpx.Unauthorized(c, "missing claims")
+		}
+		if cl.Role != RoleReseller {
+			return httpx.Forbidden(c, "reseller only")
+		}
+		return c.Next()
+	}
+}
+
+// RequireAgent enforces role=agent. Dipakai /api/v1/agent/* routes.
+func RequireAgent() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		cl := ClaimsFrom(c)
+		if cl == nil {
+			return httpx.Unauthorized(c, "missing claims")
+		}
+		if cl.Role != RoleAgent {
+			return httpx.Forbidden(c, "agent only")
+		}
+		return c.Next()
+	}
+}
+
+// RequireResellerOrAgent — kedua-duanya boleh (dipakai endpoint yang bisa
+// di-invoke oleh reseller induk atau agent-nya, mis. create client).
+func RequireResellerOrAgent() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		cl := ClaimsFrom(c)
+		if cl == nil {
+			return httpx.Unauthorized(c, "missing claims")
+		}
+		if cl.Role != RoleReseller && cl.Role != RoleAgent {
+			return httpx.Forbidden(c, "reseller/agent only")
+		}
+		return c.Next()
+	}
+}

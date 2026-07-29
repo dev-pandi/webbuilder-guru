@@ -302,3 +302,120 @@ type WebhookConfigRequest struct {
 	URL            string `json:"webhook_url"`
 	ExternalPrefix string `json:"external_prefix,omitempty"`
 }
+
+// --- Wallet (Phase 3.5+) ---
+
+// Wallet = shape dari GET /reseller/wallet. Balance dalam major units (IDR).
+// RecentLedger = 20 entry terakhir supaya dashboard punya preview tanpa
+// second-fetch ke ledger endpoint.
+type Wallet struct {
+	Balance      float64             `json:"balance"`
+	Currency     string              `json:"currency"`
+	RecentLedger []WalletLedgerEntry `json:"recent_ledger"`
+}
+
+// WalletLedgerEntry = 1 baris ledger reseller. Kind enum:
+//   - topup                — credit dari top-up sukses
+//   - debit_register       — debit saat register domain
+//   - debit_renew          — debit saat renew domain
+//   - credit_refund_epp    — refund otomatis kalau EPP fail
+//   - credit_refund_admin  — refund manual admin
+//   - debit_admin          — debit manual admin (correction)
+type WalletLedgerEntry struct {
+	ID            uint64  `json:"id"`
+	Kind          string  `json:"kind"`
+	Amount        float64 `json:"amount"`
+	BalanceAfter  float64 `json:"balance_after"`
+	ReferenceType string  `json:"reference_type,omitempty"`
+	ReferenceID   int64   `json:"reference_id,omitempty"`
+	Description   string  `json:"description,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+}
+
+// WalletLedgerListResponse — paginated ledger. `Pagination` shape any supaya
+// tahan drift kalau registrar tweak field.
+type WalletLedgerListResponse struct {
+	Items      []WalletLedgerEntry `json:"items"`
+	Pagination any                 `json:"pagination,omitempty"`
+}
+
+// TopupRequest — body POST /reseller/wallet/topup. `PaymentMethod` salah satu
+// {midtrans, paylabs, manual_transfer}. `BankID` hanya relevan untuk
+// manual_transfer (opsional, kalau kosong registrar pakai default bank).
+type TopupRequest struct {
+	Amount         float64 `json:"amount"`
+	PaymentMethod  string  `json:"payment_method"`
+	IdempotencyKey string  `json:"idempotency_key"`
+	ReturnURL      string  `json:"return_url,omitempty"`
+	BankID         uint64  `json:"bank_id,omitempty"`
+}
+
+// TopupResponse — response POST /wallet/topup. `PaymentURL` di-set untuk
+// gateway flow (midtrans/paylabs). `BankInstructions` non-nil untuk
+// manual_transfer flow (reseller pakai instruksi ini untuk transfer).
+type TopupResponse struct {
+	TopupID          string            `json:"topup_id"`
+	InvoiceID        string            `json:"invoice_id,omitempty"`
+	Amount           float64           `json:"amount"`
+	PaymentMethod    string            `json:"payment_method"`
+	PaymentURL       string            `json:"payment_url,omitempty"`
+	Status           string            `json:"status"`
+	BankInstructions *BankInstructions `json:"bank_instructions,omitempty"`
+}
+
+// BankInstructions — instruksi transfer manual (mode manual_transfer).
+// ReferenceCode WAJIB dipakai reseller di berita transfer supaya admin match.
+type BankInstructions struct {
+	BankID        uint64 `json:"bank_id,omitempty"`
+	BankName      string `json:"bank_name"`
+	AccountNumber string `json:"account_number"`
+	AccountHolder string `json:"account_holder"`
+	Branch        string `json:"branch,omitempty"`
+	ReferenceCode string `json:"reference_code"`
+	Note          string `json:"note,omitempty"`
+}
+
+// TopupStatus — response GET /wallet/topup/:id/status.
+// Status values: pending_payment, awaiting_proof, pending_verification,
+// credited, failed, expired, rejected.
+type TopupStatus struct {
+	TopupID       string  `json:"topup_id"`
+	Amount        float64 `json:"amount"`
+	Status        string  `json:"status"`
+	PaymentMethod string  `json:"payment_method"`
+	PaymentURL    string  `json:"payment_url,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
+	CreditedAt    string  `json:"credited_at,omitempty"`
+}
+
+// TopupListItem — 1 row dari GET /wallet/topup?status=... . Superset dari
+// TopupStatus + timestamp created + expires (untuk gateway flow).
+type TopupListItem struct {
+	TopupID       string  `json:"topup_id"`
+	Amount        float64 `json:"amount"`
+	Status        string  `json:"status"`
+	PaymentMethod string  `json:"payment_method"`
+	PaymentURL    string  `json:"payment_url,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	CreditedAt    string  `json:"credited_at,omitempty"`
+	ExpiresAt     string  `json:"expires_at,omitempty"`
+}
+
+// TopupListResponse — paginated. Registrar tidak wrap `items` di envelope
+// tambahan; shape sudah top-level di response body-data.
+type TopupListResponse struct {
+	Items      []TopupListItem `json:"items"`
+	Pagination any             `json:"pagination,omitempty"`
+}
+
+// TopupBank — 1 rekening tujuan (untuk manual_transfer picker).
+type TopupBank struct {
+	ID            uint64 `json:"id"`
+	BankName      string `json:"bank_name"`
+	BankCode      string `json:"bank_code,omitempty"`
+	AccountNumber string `json:"account_number"`
+	AccountHolder string `json:"account_holder"`
+	Branch        string `json:"branch,omitempty"`
+	Notes         string `json:"notes,omitempty"`
+}

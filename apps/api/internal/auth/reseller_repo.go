@@ -183,3 +183,46 @@ func itoa(n int) string {
 
 // Guard time import.
 var _ = time.Now
+
+// ClientPlaceholder — payload untuk create client user oleh reseller/agent
+// (Phase 2). User baru: password_hash='', email_verified_at=NULL, role='client'.
+// User set password later via /invite/<token>.
+type ClientPlaceholder struct {
+	Email       string
+	Name        string
+	PhoneNumber string
+	Address     string
+	City        string
+	State       string
+	PostalCode  string
+	Nik         string
+}
+
+// CreateClientPlaceholder insert row user role='client' dengan password kosong.
+// Dipakai reseller/agent flow di mana client belum set password sendiri.
+func (r *Repo) CreateClientPlaceholder(ctx context.Context, p ClientPlaceholder) (*User, error) {
+	var u User
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO users
+			(email, password_hash, name, role,
+			 phone_number, address, city, state, postal_code, nik)
+		VALUES
+			($1, '', $2, 'client', $3, $4, $5, $6, $7, $8)
+		RETURNING `+scanUserCols,
+		strings.ToLower(strings.TrimSpace(p.Email)),
+		strings.TrimSpace(p.Name),
+		strings.TrimSpace(p.PhoneNumber),
+		strings.TrimSpace(p.Address),
+		strings.TrimSpace(p.City),
+		strings.TrimSpace(p.State),
+		strings.TrimSpace(p.PostalCode),
+		strings.TrimSpace(p.Nik),
+	).Scan(scanUser(&u)...)
+	if err != nil {
+		if pgErrCode(err) == "23505" {
+			return nil, ErrEmailTaken
+		}
+		return nil, err
+	}
+	return &u, nil
+}

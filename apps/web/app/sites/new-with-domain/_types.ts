@@ -73,4 +73,4 @@ export type DocumentCategory = {
   parent_id?: number;
 };
 
-export type PaymentMethod = "midtrans" | "paylabs";
+export type PaymentMethod = "midtrans" | "paylabs" | "wallet";

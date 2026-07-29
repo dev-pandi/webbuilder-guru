@@ -36,6 +36,12 @@ func MountUser(app *fiber.App, deps Deps) {
 	v1.Post("/auth/reseller/apply",
 		RateLimitIP(registerPerWindow, registerWindow), deps.Auth.ResellerApply)
 
+	// Invitation accept — anonymous (auth via token). Dipakai agent/client
+	// terima invite dari reseller/agent → set password → auto-login.
+	v1.Get("/invitations/:token", deps.Auth.GetInvitation)
+	v1.Post("/invitations/:token/accept",
+		RateLimitIP(registerPerWindow, registerWindow), deps.Auth.AcceptInvitation)
+
 	// Google OAuth — GET (browser redirect). Rate-limit /authorize per IP so a
 	// bot can't spam state cookies. Callback is naturally rate-limited by
 	// Google itself (needs a valid code round-trip).
@@ -188,5 +194,54 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Delete("/forms/:id", mutateLimit, deps.Forms.Delete)
 		authed.Get("/forms/:id/submissions", deps.Forms.ListSubmissions)
 		authed.Delete("/form-submissions/:id", mutateLimit, deps.Forms.DeleteSubmission)
+	}
+
+	// Reseller portal endpoints — Phase 2.
+	// Nil-safe kalau handler belum di-wire di main.
+	if deps.Reseller != nil {
+		// Reseller-only (invite agent + list agent)
+		resellerG := v1.Group("/reseller", auth.Required(deps.Issuer), auth.RequireReseller())
+		resellerG.Post("/agents/invite", mutateLimit, deps.Reseller.InviteAgent)
+		resellerG.Get("/agents", deps.Reseller.ListAgents)
+
+		// Reseller ATAU agent boleh (invite client + list clients).
+		roaG := v1.Group("/", auth.Required(deps.Issuer), auth.RequireResellerOrAgent())
+		roaG.Post("/reseller/clients", mutateLimit, deps.Reseller.CreateClient)
+		roaG.Get("/reseller/clients", deps.Reseller.ListClients)
+		roaG.Get("/reseller/clients/:client_id", deps.Reseller.GetClient)
+
+		// Agent-only mirror endpoint (list assigned clients dari agent's POV).
+		agentG := v1.Group("/agent", auth.Required(deps.Issuer), auth.RequireAgent())
+		agentG.Get("/clients", deps.Reseller.ListClients)
+		agentG.Get("/clients/:client_id", deps.Reseller.GetClient)
+
+		// Phase 3 — list domain purchase yang di-trigger on-behalf-of client.
+		// Enrich dengan client info supaya frontend tinggal render tabel.
+		if deps.DomainPurchase != nil {
+			roaG.Get("/reseller/purchases", deps.DomainPurchase.ListOnBehalfOf)
+			agentG.Get("/purchases", deps.DomainPurchase.ListOnBehalfOf)
+		}
+
+		// Phase 3.5 — reseller wallet proxy. Read-only endpoint dibuka untuk
+		// reseller/agent kedua-duanya (view balance induk); write endpoint
+		// (top-up, upload proof) reseller-only — di-enforce di handler.
+		if deps.Wallet != nil {
+			walletUploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
+			// Reads (reseller + agent boleh)
+			roaG.Get("/reseller/wallet", deps.Wallet.GetWallet)
+			roaG.Get("/reseller/wallet/ledger", deps.Wallet.GetLedger)
+			roaG.Get("/reseller/wallet/topup", deps.Wallet.ListMyTopups)
+			roaG.Get("/reseller/wallet/topup/banks", deps.Wallet.ListBanks)
+			roaG.Get("/reseller/wallet/topup/:topup_id/status", deps.Wallet.GetTopupStatus)
+			// Writes (reseller-only enforce di handler; middleware tetap
+			// RequireResellerOrAgent supaya JWT valid untuk error message).
+			roaG.Post("/reseller/wallet/topup", mutateLimit, deps.Wallet.InitTopup)
+			roaG.Post("/reseller/wallet/topup/:topup_id/proof", walletUploadLimit, deps.Wallet.UploadProof)
+			// Mirror endpoints untuk agent (biar frontend agent portal
+			// consistent path shape).
+			agentG.Get("/wallet", deps.Wallet.GetWallet)
+			agentG.Get("/wallet/ledger", deps.Wallet.GetLedger)
+			agentG.Get("/wallet/topup", deps.Wallet.ListMyTopups)
+		}
 	}
 }

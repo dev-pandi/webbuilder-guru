@@ -35,6 +35,15 @@ const (
 	metricReconcileUpdated  = "domain_purchase_reconcile_updated_total"
 )
 
+// AssignmentChecker — dependency untuk on-behalf-of verify. Interface, bukan
+// concrete import ke reseller package, untuk cegah import cycle (reseller
+// nanti mungkin butuh Purchase repo juga).
+type AssignmentChecker interface {
+	// HasActiveAssignment return nil kalau managerID mengelola clientID.
+	// Return error non-nil kalau tidak ada assignment / sudah revoked.
+	HasActiveAssignment(ctx context.Context, managerID, clientID uuid.UUID) error
+}
+
 // Handler menjembatani frontend web builder ↔ registrar-api.
 //
 // User-facing endpoints (JWT):
@@ -54,7 +63,12 @@ type Handler struct {
 	cloudflare    *cloudflare.Repo // nil = auto-attach ke Cloudflare skipped
 	platformIPs   []string         // dipakai jadi content A record CF auto-attach
 	webhookSecret string
+	assignments   AssignmentChecker // nil = on-behalf-of disabled (Phase 3)
 }
+
+// SetAssignmentChecker — wire-up dari main.go setelah reseller repo dibuat.
+// Kalau nil, purchase handler otomatis reject on_behalf_of_user_id.
+func (h *Handler) SetAssignmentChecker(a AssignmentChecker) { h.assignments = a }
 
 // NewHandler — cloudflareRepo + platformIPs optional untuk auto-attach.
 // Kalau salah satu nil/empty, auto-attach ke Cloudflare skipped tanpa error
@@ -122,6 +136,10 @@ type purchaseReq struct {
 	ReturnURL     string   `json:"return_url"`
 	PromoCode     string   `json:"promo_code,omitempty"`   // forwarded ke registrar
 	DocumentIDs   []uint64 `json:"document_ids,omitempty"` // pre-attach docs
+	// OnBehalfOfUserID — kalau di-set, reseller/agent beli domain untuk client.
+	// user_id purchase = client_id, purchased_by = caller. Contact object diisi
+	// dari profil client (bukan reseller). Reseller/agent role required.
+	OnBehalfOfUserID string `json:"on_behalf_of_user_id,omitempty"`
 }
 
 type purchaseResp struct {
@@ -211,19 +229,71 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	if req.Domain == "" || req.Years < 1 || req.Years > 10 {
 		return httpx.BadRequest(c, "domain + years (1-10) wajib")
 	}
-	if req.PaymentMethod != "midtrans" && req.PaymentMethod != "paylabs" {
-		return httpx.BadRequest(c, "payment_method harus 'midtrans' atau 'paylabs'")
+	// Wallet payment method — hanya reseller/agent (Phase 3.5). Cek role setelah
+	// caller di-load.
+	switch req.PaymentMethod {
+	case "midtrans", "paylabs", "wallet":
+	default:
+		return httpx.BadRequest(c, "payment_method harus 'midtrans', 'paylabs', atau 'wallet'")
 	}
 
-	// Ambil profil user — WAJIB lengkap sebelum bisa beli domain karena
-	// registrar butuh nama+HP+alamat+kota+kode pos+NIK untuk contact object.
-	user, err := h.users.GetByID(c.Context(), cl.UserID)
+	// Ambil profil caller (owner + purchaser default). Untuk on-behalf-of,
+	// contact object nanti di-swap ke profil client — tapi caller tetap harus
+	// existing user yang valid.
+	caller, err := h.users.GetByID(c.Context(), cl.UserID)
 	if err != nil {
 		return httpx.Internal(c, "user lookup failed")
 	}
-	if missing := missingProfileFields(user); len(missing) > 0 {
+
+	// Wallet payment method restriction: hanya reseller/agent aktif (wallet
+	// belongs ke reseller induk). Client tidak punya wallet concept.
+	if req.PaymentMethod == "wallet" && !auth.IsResellerLike(caller.Role) {
+		return httpx.Forbidden(c, "payment_method 'wallet' hanya untuk reseller/agent")
+	}
+
+	// Default: self-purchase. Owner = caller, purchased_by = NULL.
+	owner := caller
+	var purchasedBy *uuid.UUID
+
+	// On-behalf-of branch — verify role + assignment, load client profile.
+	if strings.TrimSpace(req.OnBehalfOfUserID) != "" {
+		if !auth.CanRegisterForClient(caller) {
+			return httpx.Forbidden(c, "hanya reseller/agent aktif yang boleh beli untuk klien")
+		}
+		if h.assignments == nil {
+			return httpx.Err(c, fiber.StatusServiceUnavailable, "assignments_disabled",
+				"Fitur beli atas nama klien belum dikonfigurasi di server.")
+		}
+		clientID, err := uuid.Parse(req.OnBehalfOfUserID)
+		if err != nil {
+			return httpx.BadRequest(c, "on_behalf_of_user_id bukan UUID valid")
+		}
+		if clientID == caller.ID {
+			return httpx.BadRequest(c, "on_behalf_of_user_id tidak boleh sama dengan caller")
+		}
+		if err := h.assignments.HasActiveAssignment(c.Context(), caller.ID, clientID); err != nil {
+			return httpx.Forbidden(c, "Anda tidak mengelola klien ini")
+		}
+		clientUser, err := h.users.GetByID(c.Context(), clientID)
+		if err != nil {
+			return httpx.Internal(c, "client lookup failed")
+		}
+		owner = clientUser
+		id := caller.ID
+		purchasedBy = &id
+	}
+
+	// Contact object diambil dari profile owner (client untuk on-behalf-of).
+	// Kalau incomplete, minta lengkapi dulu — pesan kontekstual siapa yang perlu.
+	if missing := missingProfileFields(owner); len(missing) > 0 {
+		who := "profil Anda"
+		path := "/settings/profile"
+		if purchasedBy != nil {
+			who = "profil klien"
+			path = "/reseller/clients"
+		}
 		return httpx.Err(c, fiber.StatusBadRequest, "profile_incomplete",
-			"Lengkapi profil dulu di /settings/profile — field kosong: "+strings.Join(missing, ", "))
+			"Lengkapi "+who+" dulu di "+path+" — field kosong: "+strings.Join(missing, ", "))
 	}
 	// NIK selalu opsional di sisi kita. Kalau ternyata zone butuh (mis. .id
 	// per regulasi Kemenkominfo), registrar akan reject → error di-map ke
@@ -244,34 +314,43 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	registrarReq := registrar.RegisterRequest{
 		Domain:         req.Domain,
 		Years:          req.Years,
-		ExternalUserID: user.ID.String(),
+		ExternalUserID: owner.ID.String(),
 		IdempotencyKey: idem,
 		PaymentMethod:  req.PaymentMethod,
 		ReturnURL:      req.ReturnURL,
 		PromoCode:      strings.TrimSpace(req.PromoCode),
 		DocumentIDs:    req.DocumentIDs,
 		Contact: registrar.Contact{
-			Name:        user.Name,
-			Email:       user.Email,
-			Phone:       user.PhoneNumber,
-			Address:     user.Address,
-			City:        user.City,
-			State:       user.State,
-			PostalCode:  user.PostalCode,
+			Name:        owner.Name,
+			Email:       owner.Email,
+			Phone:       owner.PhoneNumber,
+			Address:     owner.Address,
+			City:        owner.City,
+			State:       owner.State,
+			PostalCode:  owner.PostalCode,
 			CountryCode: "ID",
-			Nik:         user.Nik,
+			Nik:         owner.Nik,
 		},
 	}
 
 	resp, err := h.registrar.RegisterDomain(c.Context(), registrarReq)
 	if err != nil {
+		// 402 = wallet_insufficient (Phase 3.5). Propagate status + code +
+		// message dari registrar apa adanya — frontend butuh untuk render
+		// dialog dengan breakdown balance/required/shortfall.
+		var apiErr *registrar.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == fiber.StatusPaymentRequired {
+			return httpx.Err(c, fiber.StatusPaymentRequired, "wallet_insufficient", apiErr.Msg)
+		}
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
 
 	// Simpan job lokal — biar frontend polling tanpa hit registrar setiap kali,
-	// dan supaya webhook bisa lookup ownership.
+	// dan supaya webhook bisa lookup ownership. Untuk on-behalf-of:
+	// user_id = client (owner), purchased_by = reseller/agent (actor).
 	local := &Purchase{
-		UserID:         user.ID,
+		UserID:         owner.ID,
+		PurchasedBy:    purchasedBy,
 		RegistrarJobID: resp.JobID,
 		Domain:         req.Domain,
 		Years:          req.Years,
@@ -312,7 +391,9 @@ func (h *Handler) Status(c *fiber.Ctx) error {
 	if jobID == "" {
 		return httpx.BadRequest(c, "job_id required")
 	}
-	local, err := h.repo.GetByJobID(c.Context(), jobID, cl.UserID)
+	// Actor-inclusive lookup: reseller/agent yang beli on-behalf-of tetap boleh
+	// poll walaupun user_id purchase = client_id.
+	local, err := h.repo.GetByJobIDForActor(c.Context(), jobID, cl.UserID)
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "job tidak ditemukan")
 	}
@@ -334,7 +415,7 @@ func (h *Handler) Status(c *fiber.Ctx) error {
 				slog.Warn("domain purchase: update status failed", "error", err)
 			}
 			// Re-load supaya response konsisten.
-			if reloaded, err := h.repo.GetByJobID(c.Context(), jobID, cl.UserID); err == nil {
+			if reloaded, err := h.repo.GetByJobIDForActor(c.Context(), jobID, cl.UserID); err == nil {
 				local = reloaded
 			}
 		}
@@ -770,7 +851,8 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "job_id required")
 	}
 	// Ownership check dulu — biar tidak leak keberadaan job orang lain.
-	if _, err := h.repo.GetByJobID(c.Context(), jobID, cl.UserID); err != nil {
+	// Actor-inclusive: reseller/agent boleh retry job yang mereka purchase.
+	if _, err := h.repo.GetByJobIDForActor(c.Context(), jobID, cl.UserID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return httpx.NotFound(c, "job tidak ditemukan")
 		}
@@ -807,6 +889,54 @@ func (h *Handler) List(c *fiber.Ctx) error {
 	out := make([]purchaseResp, 0, len(items))
 	for i := range items {
 		out = append(out, toResp(&items[i]))
+	}
+	return httpx.OK(c, out)
+}
+
+// ListOnBehalfOf — reseller/agent lihat purchase yang mereka trigger untuk
+// client (bukan self-purchase). Enrich dengan client email + name supaya UI
+// bisa langsung display "domain X untuk klien Y" tanpa second fetch.
+//
+// Middleware RequireResellerOrAgent sudah enforce role; kita tinggal filter
+// purchased_by = caller.
+func (h *Handler) ListOnBehalfOf(c *fiber.Ctx) error {
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	items, err := h.repo.ListByPurchaser(c.Context(), cl.UserID, limit)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	// Enrich per-row dengan client info. Cache users lookup dalam satu request
+	// untuk hindari N+1 saat banyak purchase untuk klien yang sama.
+	type row struct {
+		purchaseResp
+		ClientID    string `json:"client_id"`
+		ClientName  string `json:"client_name"`
+		ClientEmail string `json:"client_email"`
+	}
+	out := make([]row, 0, len(items))
+	cache := map[uuid.UUID]*auth.User{}
+	for i := range items {
+		p := &items[i]
+		u, ok := cache[p.UserID]
+		if !ok {
+			if lookup, err := h.users.GetByID(c.Context(), p.UserID); err == nil {
+				cache[p.UserID] = lookup
+				u = lookup
+			}
+		}
+		r := row{purchaseResp: toResp(p), ClientID: p.UserID.String()}
+		if u != nil {
+			r.ClientName = u.Name
+			r.ClientEmail = u.Email
+		}
+		out = append(out, r)
 	}
 	return httpx.OK(c, out)
 }
@@ -1040,8 +1170,10 @@ func (h *Handler) AttachDocument(c *fiber.Ctx) error {
 	}
 
 	// Ownership: job harus milik user (biar user A tidak bisa attach dokumen
-	// ke job user B).
-	job, err := h.repo.GetByJobID(c.Context(), jobID, cl.UserID)
+	// ke job user B). Actor-inclusive: reseller/agent yang beli on-behalf-of
+	// boleh upload dokumen klien (KTP/NPWP) — dokumen di-forward ke registrar,
+	// tidak disimpan di web builder.
+	job, err := h.repo.GetByJobIDForActor(c.Context(), jobID, cl.UserID)
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "job tidak ditemukan")
 	}

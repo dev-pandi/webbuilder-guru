@@ -4,11 +4,46 @@
 // data (client / agent / domain). Phase 2-3 nanti populate real stats.
 
 import Link from "next/link";
-import { ArrowRight, PlusCircle, UserPlus, Users, Wallet } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  Clock,
+  Globe2,
+  Loader2,
+  PlusCircle,
+  UserPlus,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { api } from "@/lib/api";
+
+type PurchaseRow = {
+  job_id: string;
+  domain: string;
+  status: string;
+  kind: string;
+  client_id: string;
+  client_name: string;
+  client_email: string;
+};
+
+type WalletSnapshot = { balance: number; currency: string };
 
 export default function ResellerDashboardPage() {
+  const [purchases, setPurchases] = useState<PurchaseRow[] | null>(null);
+  const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
+  useEffect(() => {
+    api<PurchaseRow[]>("/api/v1/reseller/purchases?limit=10")
+      .then((r) => setPurchases(r ?? []))
+      .catch(() => setPurchases([]));
+    api<WalletSnapshot>("/api/v1/reseller/wallet")
+      .then((w) => setWallet(w))
+      .catch(() => setWallet({ balance: 0, currency: "IDR" }));
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -23,7 +58,12 @@ export default function ResellerDashboardPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatTile icon={Users} label="Klien" value="0" />
         <StatTile icon={UserPlus} label="Agent" value="0" />
-        <StatTile icon={Wallet} label="Saldo Wallet" value="Rp 0" />
+        <StatTile
+          icon={Wallet}
+          label="Saldo Wallet"
+          value={wallet ? formatIDR(wallet.balance) : "…"}
+          href="/reseller/wallet"
+        />
       </div>
 
       {/* Quick actions */}
@@ -31,22 +71,21 @@ export default function ResellerDashboardPage() {
         <CardContent className="grid gap-3 p-5 sm:grid-cols-2">
           <QuickAction
             title="Daftarkan Klien Baru"
-            desc="Beli domain + buat situs atas nama klien."
+            desc="Tambah klien lalu beli domain atas nama mereka."
             icon={PlusCircle}
-            href="/reseller/clients/new"
-            disabled
-            note="Aktif setelah Phase 3 (Purchase on-behalf-of)"
+            href="/reseller/clients"
           />
           <QuickAction
             title="Undang Agent"
             desc="Tambahkan agent freelancer ke tim Anda."
             icon={UserPlus}
-            href="/reseller/team/invite"
-            disabled
-            note="Aktif setelah Phase 2 (Invitation flow)"
+            href="/reseller/team"
           />
         </CardContent>
       </Card>
+
+      {/* On-behalf-of purchases — Phase 3 */}
+      <PurchasesCard rows={purchases} />
 
       {/* Getting started checklist */}
       <Card>
@@ -65,17 +104,79 @@ export default function ResellerDashboardPage() {
   );
 }
 
+function PurchasesCard({ rows }: { rows: PurchaseRow[] | null }) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Globe2 className="size-4 text-primary" />
+          <h3 className="text-sm font-semibold">Domain yang saya proses</h3>
+        </div>
+        {rows === null ? (
+          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Memuat…
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">
+            Belum ada domain yang Anda beli atas nama klien. Buka daftar klien
+            → tombol{" "}
+            <span className="font-medium text-foreground">Beli Domain</span>.
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {rows.map((r) => (
+              <li key={r.job_id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium font-mono">{r.domain}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    untuk {r.client_name || r.client_email}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={r.status} />
+                  <Button size="sm" variant="ghost" asChild className="gap-1">
+                    <Link href={`/sites/pending/${r.job_id}`}>
+                      Buka
+                      <ArrowRight className="size-3" />
+                    </Link>
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === "active") return <Badge variant="success" className="text-[10px]">Aktif</Badge>;
+  if (status === "failed") return <Badge variant="destructive" className="text-[10px]">Gagal</Badge>;
+  if (status === "cancelled") return <Badge variant="secondary" className="text-[10px]">Batal</Badge>;
+  if (status === "expired") return <Badge variant="secondary" className="text-[10px]">Kadaluarsa</Badge>;
+  return (
+    <Badge variant="warning" className="gap-1 text-[10px]">
+      <Clock className="size-2.5" />
+      Proses
+    </Badge>
+  );
+}
+
 function StatTile({
   icon: Icon,
   label,
   value,
+  href,
 }: {
   icon: React.ElementType;
   label: string;
   value: string;
+  href?: string;
 }) {
-  return (
-    <Card>
+  const body = (
+    <Card className={href ? "transition-colors hover:border-primary" : undefined}>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2 text-muted-foreground">
@@ -87,6 +188,15 @@ function StatTile({
       </CardContent>
     </Card>
   );
+  return href ? <Link href={href}>{body}</Link> : body;
+}
+
+function formatIDR(amount: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function QuickAction({

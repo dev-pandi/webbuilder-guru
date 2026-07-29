@@ -21,7 +21,10 @@ import (
 // (site sudah exist dari register sebelumnya) — SiteID selalu nil.
 type Purchase struct {
 	ID             uuid.UUID
-	UserID         uuid.UUID
+	UserID         uuid.UUID // owner domain (client kalau on-behalf-of)
+	// PurchasedBy = actor yang trigger register/renew (reseller atau agent).
+	// nil = self-purchase (client beli sendiri, back-compat rows lama).
+	PurchasedBy    *uuid.UUID
 	SiteID         *uuid.UUID
 	RegistrarJobID string
 	Domain         string
@@ -74,11 +77,11 @@ var (
 	ErrJobTaken = errors.New("registrar_job_id already exists")
 )
 
-const cols = `id, user_id, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at, created_at, updated_at`
+const cols = `id, user_id, purchased_by, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at, created_at, updated_at`
 
 func scan(row pgx.Row, p *Purchase) error {
 	return row.Scan(
-		&p.ID, &p.UserID, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
+		&p.ID, &p.UserID, &p.PurchasedBy, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
 		&p.Status, &p.Reason, &p.PaymentMethod, &p.PaymentURL,
 		&p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -93,13 +96,13 @@ func (r *Repo) Create(ctx context.Context, p *Purchase) error {
 	}
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO domain_purchases
-		(user_id, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		(user_id, purchased_by, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING `+cols,
-		p.UserID, p.SiteID, p.RegistrarJobID, p.Domain, p.Years, p.Kind,
+		p.UserID, p.PurchasedBy, p.SiteID, p.RegistrarJobID, p.Domain, p.Years, p.Kind,
 		p.Status, p.Reason, p.PaymentMethod, p.PaymentURL, p.ExpiresAt,
 	).Scan(
-		&p.ID, &p.UserID, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
+		&p.ID, &p.UserID, &p.PurchasedBy, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
 		&p.Status, &p.Reason, &p.PaymentMethod, &p.PaymentURL,
 		&p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt,
 	)
@@ -123,6 +126,48 @@ func (r *Repo) GetByJobID(ctx context.Context, jobID string, userID uuid.UUID) (
 		return nil, ErrNotFound
 	}
 	return &p, err
+}
+
+// GetByJobIDForActor — lookup dengan ownership yang inklusif ke actor.
+// Boleh diakses kalau callerID adalah owner (user_id) ATAU purchaser
+// (purchased_by). Dipakai flow on-behalf-of: reseller/agent yang beli untuk
+// client tetap boleh poll status + upload dokumen.
+func (r *Repo) GetByJobIDForActor(ctx context.Context, jobID string, callerID uuid.UUID) (*Purchase, error) {
+	var p Purchase
+	err := scan(r.pool.QueryRow(ctx,
+		`SELECT `+cols+` FROM domain_purchases
+		  WHERE registrar_job_id = $1 AND (user_id = $2 OR purchased_by = $2)`,
+		jobID, callerID,
+	), &p)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
+}
+
+// ListByPurchaser — semua purchase yang di-trigger oleh caller ini (reseller/
+// agent). Terpisah dari ListByUser supaya dashboard reseller bisa lihat
+// portfolio klien tanpa mixed dengan self-owned domain.
+func (r *Repo) ListByPurchaser(ctx context.Context, purchaserID uuid.UUID, limit int) ([]Purchase, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+cols+` FROM domain_purchases
+		  WHERE purchased_by = $1 AND user_id <> $1
+		  ORDER BY created_at DESC LIMIT $2`,
+		purchaserID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Purchase
+	for rows.Next() {
+		var p Purchase
+		if err := scan(rows, &p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // GetLatestActiveByDomain cari purchase yang statusnya active + kind=register
@@ -336,7 +381,7 @@ func (r *Repo) AdminList(ctx context.Context, f AdminListFilter) ([]AdminPurchas
 	for rows.Next() {
 		var a AdminPurchase
 		if err := rows.Scan(
-			&a.ID, &a.UserID, &a.SiteID, &a.RegistrarJobID, &a.Domain, &a.Years, &a.Kind,
+			&a.ID, &a.UserID, &a.PurchasedBy, &a.SiteID, &a.RegistrarJobID, &a.Domain, &a.Years, &a.Kind,
 			&a.Status, &a.Reason, &a.PaymentMethod, &a.PaymentURL,
 			&a.ExpiresAt, &a.CreatedAt, &a.UpdatedAt,
 			&a.UserEmail, &a.UserName,

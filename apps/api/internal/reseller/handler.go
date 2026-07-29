@@ -1,0 +1,397 @@
+package reseller
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+
+	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/mail"
+)
+
+// Handler bundles repo + auth repo + mailer supaya endpoint reseller portal
+// bisa akses user + invitation table plus kirim email.
+type Handler struct {
+	repo       *Repo
+	authRepo   *auth.Repo
+	mailer     mail.Sender
+	appBaseURL string // dipakai bangun URL invite
+}
+
+func NewHandler(r *Repo, authRepo *auth.Repo, mailer mail.Sender, appBaseURL string) *Handler {
+	return &Handler{
+		repo:       r,
+		authRepo:   authRepo,
+		mailer:     mailer,
+		appBaseURL: strings.TrimRight(appBaseURL, "/"),
+	}
+}
+
+// resellerContext — helper extract caller yang valid reseller aktif atau
+// agent aktif. Return error kalau bukan.
+type callerCtx struct {
+	User             *auth.User
+	IsReseller       bool
+	IsAgent          bool
+	EffectiveReseller uuid.UUID // untuk agent, ini parent_reseller_id; untuk reseller, ini self ID
+}
+
+func (h *Handler) resolveCaller(c *fiber.Ctx) (*callerCtx, error) {
+	uid := auth.UserIDFrom(c)
+	if uid == uuid.Nil {
+		return nil, errors.New("unauthenticated")
+	}
+	u, err := h.authRepo.GetByID(c.Context(), uid)
+	if err != nil {
+		return nil, err
+	}
+	ctx := &callerCtx{User: u}
+	switch u.Role {
+	case auth.RoleReseller:
+		if u.ResellerStatus != auth.ResellerStatusActive {
+			return nil, errors.New("reseller belum aktif")
+		}
+		ctx.IsReseller = true
+		ctx.EffectiveReseller = u.ID
+	case auth.RoleAgent:
+		if u.ParentResellerID == nil {
+			return nil, errors.New("agent tidak punya reseller induk")
+		}
+		ctx.IsAgent = true
+		ctx.EffectiveReseller = *u.ParentResellerID
+	default:
+		return nil, errors.New("role tidak diizinkan")
+	}
+	return ctx, nil
+}
+
+// ---------------- Invite Agent ----------------
+//
+// Reseller kirim invite email → agent klik link → /invite/<token>
+// → set password → agent user baru terbentuk (role='agent',
+// parent_reseller_id=reseller).
+
+type inviteAgentReq struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+// InviteAgent — POST /api/v1/reseller/agents/invite (reseller only).
+func (h *Handler) InviteAgent(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	if !caller.IsReseller {
+		return httpx.Forbidden(c, "hanya reseller yang boleh invite agent")
+	}
+	var req inviteAgentReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Name = strings.TrimSpace(req.Name)
+	if !strings.Contains(req.Email, "@") {
+		return httpx.BadRequest(c, "email tidak valid")
+	}
+	// Guard: email sudah pernah jadi user? Reject supaya tidak konflik role.
+	if existing, _ := h.authRepo.GetByEmail(c.Context(), req.Email); existing != nil {
+		return httpx.Conflict(c, "email sudah terdaftar sebagai user")
+	}
+
+	raw, _, err := h.authRepo.CreateInvitation(
+		c.Context(), req.Email, auth.RoleAgent, caller.User.ID, nil, 7*24*time.Hour,
+	)
+	if err != nil {
+		return httpx.Internal(c, "create invitation failed")
+	}
+
+	// Fire-and-forget email
+	go h.sendInviteEmail(caller.User, req.Email, req.Name, auth.RoleAgent, raw)
+
+	return httpx.Created(c, fiber.Map{
+		"email":       req.Email,
+		"invite_sent": true,
+		"expires_in":  "7 hari",
+	})
+}
+
+// ---------------- List Agents ----------------
+
+// ListAgents — GET /api/v1/reseller/agents (reseller only).
+func (h *Handler) ListAgents(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	if !caller.IsReseller {
+		return httpx.Forbidden(c, "hanya reseller")
+	}
+	agents, err := h.repo.ListAgentsByReseller(c.Context(), caller.User.ID)
+	if err != nil {
+		return httpx.Internal(c, "list agents failed")
+	}
+	// Pending invitations (belum accept — belum ada user row).
+	pending, _ := h.authRepo.ListPendingInvitationsByInviter(c.Context(), caller.User.ID, auth.RoleAgent)
+
+	type agentResp struct {
+		ID              string  `json:"id,omitempty"` // kosong kalau pending invite
+		Email           string  `json:"email"`
+		Name            string  `json:"name,omitempty"`
+		Status          string  `json:"status"` // 'active' | 'pending_invite'
+		CreatedAt       string  `json:"created_at"`
+		EmailVerifiedAt *string `json:"email_verified_at,omitempty"`
+	}
+	out := make([]agentResp, 0, len(agents)+len(pending))
+	for _, a := range agents {
+		r := agentResp{
+			ID:        a.ID.String(),
+			Email:     a.Email,
+			Name:      a.Name,
+			Status:    "active",
+			CreatedAt: a.CreatedAt.Format(time.RFC3339),
+		}
+		if a.EmailVerifiedAt != nil {
+			s := a.EmailVerifiedAt.Format(time.RFC3339)
+			r.EmailVerifiedAt = &s
+		}
+		out = append(out, r)
+	}
+	for _, inv := range pending {
+		out = append(out, agentResp{
+			Email:     inv.Email,
+			Status:    "pending_invite",
+			CreatedAt: inv.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return httpx.OK(c, out)
+}
+
+// ---------------- Create Client ----------------
+//
+// Phase 2 scope: reseller/agent bikin user client baru + assignment.
+// Tidak trigger domain purchase (Phase 3 nanti). Client dapat email invite
+// untuk set password + login.
+
+type createClientReq struct {
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	PhoneNumber string `json:"phone_number,omitempty"`
+	Address     string `json:"address,omitempty"`
+	City        string `json:"city,omitempty"`
+	State       string `json:"state,omitempty"`
+	PostalCode  string `json:"postal_code,omitempty"`
+	Nik         string `json:"nik,omitempty"`
+}
+
+// CreateClient — POST /api/v1/reseller/clients (reseller atau agent).
+//
+// Untuk agent: manager_id=agent, assignment ke agent. Reseller induk
+// tidak otomatis dapat assignment (kalau reseller mau see, harus lookup
+// agents-nya). MVP: reseller aja yang boleh direct-invite, agent nanti
+// Phase 2.5.
+//
+// Actually per plan section 3 permission matrix, agent boleh create client
+// baru (asigned to self). Jadi endpoint dukung both.
+func (h *Handler) CreateClient(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	var req createClientReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Name = strings.TrimSpace(req.Name)
+	if !strings.Contains(req.Email, "@") {
+		return httpx.BadRequest(c, "email tidak valid")
+	}
+	if req.Name == "" {
+		return httpx.BadRequest(c, "nama wajib diisi")
+	}
+
+	// Cek email exists.
+	existing, _ := h.authRepo.GetByEmail(c.Context(), req.Email)
+	var clientID uuid.UUID
+	if existing != nil {
+		// Existing user — kalau bukan client, reject.
+		if existing.Role != auth.RoleClient {
+			return httpx.Conflict(c, "email sudah terdaftar sebagai "+existing.Role+", tidak bisa jadi client")
+		}
+		// Kalau existing client sudah di-manage reseller LAIN, reject.
+		otherAssign, _ := h.repo.FindActiveAssignmentByClient(c.Context(), existing.ID)
+		if otherAssign != nil && otherAssign.ManagerID != caller.User.ID {
+			return httpx.Conflict(c, "email sudah dikelola oleh manager lain")
+		}
+		clientID = existing.ID
+	} else {
+		// Bikin user baru (password kosong, email tidak verified, tunggu invite).
+		u, err := h.authRepo.CreateClientPlaceholder(c.Context(), auth.ClientPlaceholder{
+			Email:       req.Email,
+			Name:        req.Name,
+			PhoneNumber: req.PhoneNumber,
+			Address:     req.Address,
+			City:        req.City,
+			State:       req.State,
+			PostalCode:  req.PostalCode,
+			Nik:         req.Nik,
+		})
+		if err != nil {
+			if errors.Is(err, auth.ErrEmailTaken) {
+				return httpx.Conflict(c, "email sudah terdaftar")
+			}
+			return httpx.Internal(c, "create client failed")
+		}
+		clientID = u.ID
+	}
+
+	// Create assignment.
+	assignment, err := h.repo.CreateAssignment(c.Context(), caller.User.ID, clientID, caller.User.Role)
+	if err != nil {
+		if errors.Is(err, ErrAlreadyAssigned) {
+			return httpx.Conflict(c, "client ini sudah di-assign ke Anda")
+		}
+		return httpx.Internal(c, "create assignment failed")
+	}
+
+	// Kirim invite email supaya client bisa set password + login.
+	// Kalau existing user (sudah pernah signup), skip password reset (mereka
+	// pakai password existing). Kalau baru → butuh set password.
+	if existing == nil {
+		raw, _, invErr := h.authRepo.CreateInvitation(
+			c.Context(), req.Email, auth.RoleClient, caller.User.ID, &clientID, 7*24*time.Hour,
+		)
+		if invErr == nil {
+			go h.sendInviteEmail(caller.User, req.Email, req.Name, auth.RoleClient, raw)
+		} else {
+			slog.Warn("reseller: create client invitation failed", "err", invErr)
+		}
+	}
+
+	return httpx.Created(c, fiber.Map{
+		"client_id":     clientID.String(),
+		"assignment_id": assignment.ID.String(),
+		"is_new_user":   existing == nil,
+		"invite_sent":   existing == nil,
+	})
+}
+
+// ---------------- List Clients ----------------
+
+// ListClients — GET /api/v1/reseller/clients ATAU /api/v1/agent/clients.
+// Reseller lihat semua yang dia manage (direct + agent-nya... untuk MVP
+// cukup direct saja). Agent lihat yang dia manage.
+func (h *Handler) ListClients(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	items, err := h.repo.ListClientsByManager(c.Context(), caller.User.ID)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	type clientResp struct {
+		ClientID      string `json:"client_id"`
+		AssignmentID  string `json:"assignment_id"`
+		Email         string `json:"email"`
+		Name          string `json:"name"`
+		AccessStatus  string `json:"access_status"`
+		EmailVerified bool   `json:"email_verified"`
+		CreatedAt     string `json:"created_at"`
+	}
+	out := make([]clientResp, 0, len(items))
+	for _, r := range items {
+		out = append(out, clientResp{
+			ClientID:      r.Assignment.ClientID.String(),
+			AssignmentID:  r.Assignment.ID.String(),
+			Email:         r.Email,
+			Name:          r.Name,
+			AccessStatus:  r.Assignment.AccessStatus,
+			EmailVerified: r.EmailVerified,
+			CreatedAt:     r.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return httpx.OK(c, out)
+}
+
+// ---------------- Get Client Profile ----------------
+
+// GetClient — GET /api/v1/reseller/clients/:client_id ATAU /api/v1/agent/clients/:client_id.
+// Return profil client (subset field yang dibutuhkan wizard: nama, email,
+// alamat, HP, kota, kode pos, NIK). Ownership check via assignment lookup —
+// caller HARUS punya active assignment ke client_id. Cegah URL guessing.
+func (h *Handler) GetClient(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	clientID, err := uuid.Parse(c.Params("client_id"))
+	if err != nil {
+		return httpx.BadRequest(c, "client_id bukan UUID valid")
+	}
+	if _, err := h.repo.FindActiveAssignmentBetween(c.Context(), caller.User.ID, clientID); err != nil {
+		return httpx.NotFound(c, "klien tidak ditemukan atau bukan asuhan Anda")
+	}
+	u, err := h.authRepo.GetByID(c.Context(), clientID)
+	if err != nil {
+		return httpx.Internal(c, "lookup failed")
+	}
+	return httpx.OK(c, fiber.Map{
+		"id":           u.ID.String(),
+		"email":        u.Email,
+		"name":         u.Name,
+		"phone_number": u.PhoneNumber,
+		"address":      u.Address,
+		"city":         u.City,
+		"state":        u.State,
+		"postal_code":  u.PostalCode,
+		"nik":          u.Nik,
+		"role":         u.Role,
+	})
+}
+
+// ---------------- Email helper ----------------
+
+// sendInviteEmail — fire-and-forget invite email. Fail-silent kalau mailer
+// tidak configured atau send fail — log warn saja.
+func (h *Handler) sendInviteEmail(inviter *auth.User, toEmail, toName, role, rawToken string) {
+	if h.mailer == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	link := h.appBaseURL + "/invite/" + rawToken
+	businessName := inviter.ResellerDisplayName
+	if businessName == "" {
+		businessName = inviter.Name
+	}
+	var subject, body string
+	if role == auth.RoleAgent {
+		subject = "Undangan bergabung sebagai Agent di " + businessName
+		body = "Halo " + toName + ",\n\n" +
+			businessName + " mengundang Anda untuk bergabung sebagai agent di platform Web Builder.\n\n" +
+			"Sebagai agent, Anda dapat mendaftarkan domain + membangun situs untuk klien " + businessName + ".\n\n" +
+			"Klik link berikut untuk set password + aktifkan akun (berlaku 7 hari):\n\n" +
+			link + "\n\n" +
+			"Kalau Anda tidak mengharapkan undangan ini, abaikan email ini.\n\n" +
+			"Best regards,\nTim Web Builder"
+	} else {
+		subject = "Akun Web Builder Anda siap"
+		body = "Halo " + toName + ",\n\n" +
+			businessName + " sudah menyiapkan akun Web Builder untuk Anda.\n\n" +
+			"Klik link berikut untuk set password + aktifkan akun (berlaku 7 hari):\n\n" +
+			link + "\n\n" +
+			"Kalau Anda tidak mengharapkan undangan ini, abaikan email ini.\n\n" +
+			"Best regards,\nTim Web Builder"
+	}
+	if err := h.mailer.Send(ctx, mail.Message{To: toEmail, Subject: subject, Body: body}); err != nil {
+		slog.Warn("reseller: invite email failed", "to", toEmail, "err", err)
+	}
+}

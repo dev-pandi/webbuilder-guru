@@ -26,10 +26,12 @@ import (
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
+	"github.com/webbuilder/api/internal/reseller"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
+	"github.com/webbuilder/api/internal/wallet"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -82,6 +84,15 @@ type Deps struct {
 	// Analytics — page view counter. Public POST (renderer beacon) + authed
 	// GET (dashboard summary). Nil-safe.
 	Analytics *analytics.Handler
+
+	// Reseller — Phase 2 handler untuk invite agent + create client + list.
+	// Mount di /api/v1/reseller/* (reseller only) dan /api/v1/agent/* (agent
+	// only). Nil kalau feature belum di-wire.
+	Reseller *reseller.Handler
+
+	// Wallet — Phase 3.5 proxy ke registrar reseller wallet. Nil kalau
+	// registrar disabled (client wrapper nil).
+	Wallet *wallet.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

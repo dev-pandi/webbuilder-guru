@@ -33,12 +33,14 @@ import (
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
+	"github.com/webbuilder/api/internal/reseller"
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/seed"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
+	"github.com/webbuilder/api/internal/wallet"
 )
 
 func main() {
@@ -318,6 +320,24 @@ func main() {
 	adminHandler := admin.NewHandler(adminRepo)
 	adminHandler.SetAuthRepo(authRepo)
 
+	// Reseller portal handler — Phase 2.
+	resellerRepo := reseller.NewRepo(pool)
+	resellerHandler := reseller.NewHandler(resellerRepo, authRepo, mailer, cfg.AppBaseURL)
+
+	// Wire reseller assignment checker ke domain purchase handler (Phase 3
+	// on-behalf-of). Kalau purchaseHandler nil (registrar disabled),
+	// SetAssignmentChecker jadi no-op.
+	if purchaseHandler != nil {
+		purchaseHandler.SetAssignmentChecker(resellerRepo)
+	}
+
+	// Wallet proxy handler — Phase 3.5. Nil kalau registrar disabled
+	// (no client), otherwise wire penuh.
+	var walletHandler *wallet.Handler
+	if registrarClient != nil {
+		walletHandler = wallet.NewHandler(registrarClient, authRepo)
+	}
+
 	deps := router.Deps{
 		Cfg:          cfg,
 		Pool:         pool,
@@ -346,6 +366,8 @@ func main() {
 		Products:     products.NewHandler(productRepo, siteRepo),
 		Blog:         blog.NewHandler(blogRepo, siteRepo),
 		Snippets:     snippets.NewHandler(snippetRepo),
+		Reseller:     resellerHandler,
+		Wallet:       walletHandler,
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,
 	}

@@ -30,9 +30,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Globe2, Loader2, Sparkles } from "lucide-react";
+import { ChevronLeft, Globe2, Loader2, Sparkles, UserCircle } from "lucide-react";
 import { toast } from "sonner";
-import { api, getAccessToken, clearTokens } from "@/lib/api";
+import { api, getAccessToken, clearTokens, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 import type { CheckEntry, CheckResp, Me, PaymentMethod, PurchaseResp } from "./_types";
@@ -47,6 +47,10 @@ export function NewWithDomainContent() {
   // Prefill dari ?domain=... — dipakai saat user datang dari halaman terminal
   // failed/expired ("Mulai pembelian baru") supaya tidak perlu ngetik ulang.
   const prefillDomain = (searchParams.get("domain") ?? "").toLowerCase().trim();
+  // ?for_client=<uuid> → mode "beli untuk klien" (Phase 3 on-behalf-of).
+  // Kalau di-set, wizard fetch profil client (bukan self) + pass
+  // on_behalf_of_user_id ke API purchase.
+  const forClientID = (searchParams.get("for_client") ?? "").trim();
 
   // Auth gate + profile fetch. `me` di-refresh saat window regains focus
   // supaya user yang edit profil di tab lain (atau /settings/profile) langsung
@@ -54,18 +58,57 @@ export function NewWithDomainContent() {
   // lengkap" warning padahal sudah diisi.
   const [ready, setReady] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
+  // callerRole dipakai UI copy ("Untuk klien X") + guard.
+  const [callerRole, setCallerRole] = useState<string>("");
+  // Wallet balance untuk reseller/agent (opsi payment_method=wallet).
+  // null = tidak show wallet option (client role atau fetch gagal).
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
   useEffect(() => {
     if (!getAccessToken()) {
       router.replace("/login");
       return;
     }
-    const fetchMe = () =>
-      api<Me>("/api/v1/auth/me")
-        .then(setMe)
-        .catch(() => {
+    // Selalu ambil caller info dulu — untuk mode for-client, kita fetch
+    // client profile di endpoint terpisah (assignment-scoped). Untuk mode
+    // self-purchase, /me sudah cukup.
+    const fetchMe = async () => {
+      try {
+        const self = await api<Me & { role?: string }>("/api/v1/auth/me");
+        setCallerRole(self.role || "");
+        // Wallet — reseller/agent kedua-duanya bisa view balance (agent lihat
+        // wallet reseller induk). Client tidak.
+        if (self.role === "reseller" || self.role === "agent") {
+          const path = self.role === "agent" ? "/api/v1/agent/wallet" : "/api/v1/reseller/wallet";
+          api<{ balance: number }>(path)
+            .then((w) => setWalletBalance(w.balance))
+            .catch(() => setWalletBalance(0));
+        } else {
+          setWalletBalance(null);
+        }
+        if (forClientID) {
+          // Fetch client profile — endpoint scope by assignment (reseller/agent).
+          // Fall back error handled below (invalid id / no assignment).
+          const isAgent = self.role === "agent";
+          const path = isAgent
+            ? `/api/v1/agent/clients/${forClientID}`
+            : `/api/v1/reseller/clients/${forClientID}`;
+          const client = await api<Me>(path);
+          setMe(client);
+        } else {
+          setMe(self);
+        }
+      } catch (e) {
+        // Kalau /me gagal → session invalid. Kalau client profile gagal
+        // (403/404) → tampilkan pesan tapi jangan force logout.
+        if (!forClientID) {
           clearTokens();
           router.replace("/login");
-        });
+        } else {
+          toast.error((e as Error).message || "Gagal ambil data klien");
+          router.replace("/reseller/clients");
+        }
+      }
+    };
     fetchMe().finally(() => setReady(true));
 
     // Re-fetch saat tab kembali fokus atau document visible lagi.
@@ -78,7 +121,7 @@ export function NewWithDomainContent() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [router]);
+  }, [router, forClientID]);
 
   // Wizard state.
   const [domain, setDomain] = useState(prefillDomain);
@@ -172,6 +215,9 @@ export function NewWithDomainContent() {
           // Pre-attach docs kalau user pilih dari picker — kosong = skip
           // (post-payment upload flow di /sites/pending/[jobId]).
           document_ids: documentIds.length > 0 ? documentIds : undefined,
+          // On-behalf-of: kalau wizard di-load dengan ?for_client=<id>,
+          // backend set user_id purchase = client, purchased_by = caller.
+          on_behalf_of_user_id: forClientID || undefined,
           // Static return page — pengambil job terbaru user lalu redirect ke
           // /sites/pending/<job_id>. Kita nggak tahu job_id di sini karena
           // baru dapat dari response, sedangkan payment session butuh URL
@@ -182,6 +228,15 @@ export function NewWithDomainContent() {
       toast.success("Job pembelian dibuat");
       router.push(`/sites/pending/${res.job_id}`);
     } catch (e) {
+      // 402 wallet_insufficient — pesan spesifik + arahkan top-up.
+      if (e instanceof ApiError && e.status === 402) {
+        setErr(
+          `Saldo wallet tidak cukup. ${e.message} — Klik "Top-up Wallet" untuk isi saldo, atau pilih metode pembayaran lain.`,
+        );
+        toast.error("Saldo wallet tidak cukup");
+        setPurchasing(false);
+        return;
+      }
       setErr(friendlyError((e as Error).message, selected.zone?.name));
       setPurchasing(false);
     }
@@ -197,15 +252,23 @@ export function NewWithDomainContent() {
     );
   }
 
+  const isForClient = forClientID !== "";
+  const backHref = isForClient
+    ? callerRole === "agent"
+      ? "/agent/clients"
+      : "/reseller/clients"
+    : "/dashboard";
+  const backLabel = isForClient ? "Daftar Klien" : "Dashboard";
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
       {/* Top bar */}
       <header className="border-b bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-6 py-3">
           <Button variant="ghost" size="sm" asChild className="gap-1.5">
-            <Link href="/dashboard">
+            <Link href={backHref}>
               <ChevronLeft className="size-4" />
-              <span className="hidden sm:inline">Dashboard</span>
+              <span className="hidden sm:inline">{backLabel}</span>
             </Link>
           </Button>
           <Stepper current={currentStep} />
@@ -214,7 +277,7 @@ export function NewWithDomainContent() {
 
       <main className="mx-auto max-w-3xl space-y-6 px-6 py-8 sm:py-12">
         {/* Hero */}
-        <Hero />
+        {isForClient ? <ForClientBanner me={me} /> : <Hero />}
 
         <SearchSection
           domain={domain}
@@ -244,9 +307,30 @@ export function NewWithDomainContent() {
             setDocumentIds={setDocumentIds}
             purchasing={purchasing}
             onPurchase={onPurchase}
+            forClientID={forClientID || undefined}
+            walletBalance={walletBalance}
           />
         )}
       </main>
+    </div>
+  );
+}
+
+function ForClientBanner({ me }: { me: Me | null }) {
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 p-5">
+      <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary shadow-sm">
+        <UserCircle className="size-3" />
+        Beli untuk Klien
+      </div>
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+        Daftarkan domain atas nama{" "}
+        <span className="text-primary">{me?.name || "klien"}</span>
+      </h1>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        Kontak WHOIS + invoice pakai data klien. Domain akan muncul di dashboard
+        klien setelah pembayaran selesai.
+      </p>
     </div>
   );
 }

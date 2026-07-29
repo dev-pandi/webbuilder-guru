@@ -5,7 +5,7 @@
 // Modernisasi: subsection dengan header kecil, total card gradient, CTA
 // besar full-width di mobile.
 
-import { ArrowRight, CheckCircle2, Loader2, Tag } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2, Tag, Wallet as WalletIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,9 @@ import { DocumentPicker } from "./_document-picker";
 
 const YEARS_OPTIONS = [1, 2, 3, 5, 10];
 
-const PAYMENT_OPTIONS: Array<{ value: PaymentMethod; label: string; hint: string }> = [
+// PAYMENT_OPTIONS default (midtrans + paylabs). Wallet ditambah dinamis kalau
+// caller reseller/agent (via `walletBalance` prop non-null).
+const GATEWAY_OPTIONS: Array<{ value: PaymentMethod; label: string; hint: string }> = [
   { value: "midtrans", label: "Midtrans", hint: "Kartu / VA / e-wallet" },
   { value: "paylabs", label: "Paylabs", hint: "Kartu / e-wallet" },
 ];
@@ -38,17 +40,39 @@ export function ConfirmSection(props: {
   setDocumentIds: (ids: number[]) => void;
   purchasing: boolean;
   onPurchase: () => void;
+  // Phase 3 on-behalf-of: kalau set, ProfileBlock tampilkan copy "klien".
+  forClientID?: string;
+  // Phase 3.5 wallet — kalau caller reseller/agent, `walletBalance` di-set
+  // (bisa 0). null = mode client (tanpa opsi wallet).
+  walletBalance?: number | null;
 }) {
   const {
     selected, me, profileComplete, missingProfile,
     years, setYears, paymentMethod, setPaymentMethod,
     promoCode, setPromoCode, documentIds, setDocumentIds,
-    purchasing, onPurchase,
+    purchasing, onPurchase, forClientID, walletBalance,
   } = props;
 
   const total = selected.price ? selected.price.register * years : 0;
   const currency = selected.price?.currency ?? "IDR";
   const showKtpHint = selected.zone?.require_document && !selected.zone.nik_auto_approved;
+
+  const walletEnabled = walletBalance != null;
+  const balanceEnough = walletEnabled && (walletBalance ?? 0) >= total;
+  const paymentOptions: Array<{ value: PaymentMethod; label: string; hint: string; icon?: React.ElementType; warn?: string }> = walletEnabled
+    ? [
+        {
+          value: "wallet",
+          label: "Wallet",
+          hint: balanceEnough
+            ? `Saldo: ${formatIDR(walletBalance ?? 0, "IDR")} — instan tanpa gateway`
+            : `Saldo kurang (${formatIDR(walletBalance ?? 0, "IDR")}) — top-up dulu`,
+          icon: WalletIcon,
+          warn: balanceEnough ? undefined : "insufficient",
+        },
+        ...GATEWAY_OPTIONS,
+      ]
+    : GATEWAY_OPTIONS;
 
   return (
     <Card className="overflow-hidden border-2 shadow-sm">
@@ -68,6 +92,7 @@ export function ConfirmSection(props: {
           me={me}
           profileComplete={profileComplete}
           missingProfile={missingProfile}
+          forClientID={forClientID}
         />
 
         {/* Zone butuh dokumen (mis. .id) — tampilkan picker inline supaya
@@ -111,28 +136,50 @@ export function ConfirmSection(props: {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
               Metode pembayaran
             </Label>
-            <div className="grid grid-cols-2 gap-2">
-              {PAYMENT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setPaymentMethod(opt.value)}
-                  className={
-                    "flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-colors " +
-                    (paymentMethod === opt.value
-                      ? "border-primary bg-primary/5 ring-1 ring-primary"
-                      : "border-border bg-background hover:border-primary/50")
-                  }
-                >
-                  <div className="flex w-full items-center justify-between">
-                    <span className="text-sm font-semibold">{opt.label}</span>
-                    {paymentMethod === opt.value && (
-                      <CheckCircle2 className="size-4 text-primary" />
+            <div className={walletEnabled ? "grid gap-2" : "grid grid-cols-2 gap-2"}>
+              {paymentOptions.map((opt) => {
+                const Icon = opt.icon;
+                const disabled = opt.warn === "insufficient" && !balanceEnough;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => !disabled && setPaymentMethod(opt.value)}
+                    className={
+                      "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors " +
+                      (paymentMethod === opt.value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : disabled
+                          ? "cursor-not-allowed border-dashed opacity-60"
+                          : "border-border bg-background hover:border-primary/50")
+                    }
+                    disabled={disabled}
+                  >
+                    {Icon && (
+                      <div
+                        className={
+                          paymentMethod === opt.value
+                            ? "flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+                            : "flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                        }
+                      >
+                        <Icon className="size-4" />
+                      </div>
                     )}
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">{opt.hint}</span>
-                </button>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold">{opt.label}</span>
+                        {paymentMethod === opt.value && (
+                          <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                        )}
+                      </div>
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                        {opt.hint}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
