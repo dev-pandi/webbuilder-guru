@@ -1,17 +1,20 @@
 package admin
 
 import (
+	"context"
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/httpx"
 )
 
 type Handler struct {
 	repo     *Repo
-	authRepo *auth.Repo // dipakai reseller management (list/approve/suspend)
+	authRepo *auth.Repo    // dipakai reseller management (list/approve/suspend)
+	audit    *audit.Repo   // nil = audit disabled (silent no-op)
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
@@ -20,6 +23,28 @@ func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
 // nil, endpoint reseller-management return 503 (feature disabled). Simplifies
 // backward-compat + gradual rollout Phase 1.
 func (h *Handler) SetAuthRepo(r *auth.Repo) { h.authRepo = r }
+
+// SetAudit inject audit repo untuk record admin actions (Phase 7). Nil = no-op.
+func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
+
+// logAudit — helper fire-and-forget. Kalau audit nil, no-op. Kalau gagal
+// insert, sudah di-warn di repo.Log — kita tidak block admin action.
+func (h *Handler) logAudit(ctx context.Context, actor uuid.UUID, event, targetType, targetID string, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	var actorID *uuid.UUID
+	if actor != uuid.Nil {
+		actorID = &actor
+	}
+	_ = h.audit.Log(ctx, audit.Params{
+		ActorID:    actorID,
+		Event:      event,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Metadata:   meta,
+	})
+}
 
 // ---------- Users ----------
 
@@ -54,6 +79,13 @@ func (h *Handler) UpdateUserRole(c *fiber.Ctx) error {
 		}
 		return httpx.Internal(c, "update role failed")
 	}
+	evt := audit.EventAdminUserPromoted
+	if req.Role != "admin" {
+		evt = audit.EventAdminUserDemoted
+	}
+	h.logAudit(c.Context(), auth.UserIDFrom(c), evt, "user", id.String(), map[string]any{
+		"new_role": req.Role,
+	})
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 
@@ -72,6 +104,7 @@ func (h *Handler) DeleteUser(c *fiber.Ctx) error {
 		}
 		return httpx.Internal(c, "delete failed")
 	}
+	h.logAudit(c.Context(), auth.UserIDFrom(c), audit.EventAdminUserDeleted, "user", id.String(), nil)
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 
@@ -141,6 +174,7 @@ func (h *Handler) DeleteSite(c *fiber.Ctx) error {
 		}
 		return httpx.Internal(c, "delete failed")
 	}
+	h.logAudit(c.Context(), auth.UserIDFrom(c), audit.EventAdminSiteDeleted, "site", id.String(), nil)
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 

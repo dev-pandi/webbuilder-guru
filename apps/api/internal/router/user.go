@@ -123,11 +123,13 @@ func MountUser(app *fiber.App, deps Deps) {
 	// Domain purchase (proxy ke registrar-api). Nil-safe kalau feature disabled.
 	if deps.DomainPurchase != nil {
 		authed.Post("/domains/check", mutateLimit, deps.DomainPurchase.Check)
-		authed.Post("/domains/purchase", mutateLimit, deps.DomainPurchase.Purchase)
+		// Purchase + renew guarded dengan limit lebih ketat (money-moving ops).
+		purchaseLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
+		authed.Post("/domains/purchase", purchaseLimit, deps.DomainPurchase.Purchase)
 		// Renew existing domain — bikin job baru dengan kind=renew di job tracker
 		// lokal + di registrar. Response shape sama dengan purchase supaya
 		// frontend re-use pending page.
-		authed.Post("/domains/renew", mutateLimit, deps.DomainPurchase.Renew)
+		authed.Post("/domains/renew", purchaseLimit, deps.DomainPurchase.Renew)
 		// Domain management (nameservers + whois) — semua verify ownership.
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
@@ -212,6 +214,8 @@ func MountUser(app *fiber.App, deps Deps) {
 		resellerG := v1.Group("/reseller", auth.Required(deps.Issuer), auth.RequireReseller())
 		resellerG.Post("/agents/invite", mutateLimit, deps.Reseller.InviteAgent)
 		resellerG.Get("/agents", deps.Reseller.ListAgents)
+		// Phase 6 — stats aggregate dashboard reseller.
+		resellerG.Get("/stats", deps.Reseller.GetStats)
 
 		// Reseller ATAU agent boleh (invite client + list clients).
 		roaG := v1.Group("/", auth.Required(deps.Issuer), auth.RequireResellerOrAgent())
@@ -223,11 +227,13 @@ func MountUser(app *fiber.App, deps Deps) {
 		agentG := v1.Group("/agent", auth.Required(deps.Issuer), auth.RequireAgent())
 		agentG.Get("/clients", deps.Reseller.ListClients)
 		agentG.Get("/clients/:client_id", deps.Reseller.GetClient)
+		agentG.Get("/stats", deps.Reseller.GetStats)
 
 		// Phase 3 — list domain purchase yang di-trigger on-behalf-of client.
 		// Enrich dengan client info supaya frontend tinggal render tabel.
 		if deps.DomainPurchase != nil {
 			roaG.Get("/reseller/purchases", deps.DomainPurchase.ListOnBehalfOf)
+			roaG.Get("/reseller/purchases.csv", deps.DomainPurchase.ExportOnBehalfOfCSV)
 			agentG.Get("/purchases", deps.DomainPurchase.ListOnBehalfOf)
 		}
 
@@ -236,6 +242,7 @@ func MountUser(app *fiber.App, deps Deps) {
 		// (top-up, upload proof) reseller-only — di-enforce di handler.
 		if deps.Wallet != nil {
 			walletUploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
+			topupLimit := RateLimitUser(walletTopupPerWindow, walletTopupWindow)
 			// Reads (reseller + agent boleh)
 			roaG.Get("/reseller/wallet", deps.Wallet.GetWallet)
 			roaG.Get("/reseller/wallet/ledger", deps.Wallet.GetLedger)
@@ -244,7 +251,7 @@ func MountUser(app *fiber.App, deps Deps) {
 			roaG.Get("/reseller/wallet/topup/:topup_id/status", deps.Wallet.GetTopupStatus)
 			// Writes (reseller-only enforce di handler; middleware tetap
 			// RequireResellerOrAgent supaya JWT valid untuk error message).
-			roaG.Post("/reseller/wallet/topup", mutateLimit, deps.Wallet.InitTopup)
+			roaG.Post("/reseller/wallet/topup", topupLimit, deps.Wallet.InitTopup)
 			roaG.Post("/reseller/wallet/topup/:topup_id/proof", walletUploadLimit, deps.Wallet.UploadProof)
 			// Mirror endpoints untuk agent (biar frontend agent portal
 			// consistent path shape).

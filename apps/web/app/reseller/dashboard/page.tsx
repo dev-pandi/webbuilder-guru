@@ -32,9 +32,19 @@ type PurchaseRow = {
 
 type WalletSnapshot = { balance: number; currency: string };
 
+type Stats = {
+  clients: number;
+  agents: number;
+  active_domains: number;
+  expiring_30_days: number;
+  expiring_90_days: number;
+  pending_jobs: number;
+};
+
 export default function ResellerDashboardPage() {
   const [purchases, setPurchases] = useState<PurchaseRow[] | null>(null);
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   useEffect(() => {
     api<PurchaseRow[]>("/api/v1/reseller/purchases?limit=10")
       .then((r) => setPurchases(r ?? []))
@@ -42,6 +52,9 @@ export default function ResellerDashboardPage() {
     api<WalletSnapshot>("/api/v1/reseller/wallet")
       .then((w) => setWallet(w))
       .catch(() => setWallet({ balance: 0, currency: "IDR" }));
+    api<Stats>("/api/v1/reseller/stats")
+      .then(setStats)
+      .catch(() => setStats(null));
   }, []);
 
   return (
@@ -54,10 +67,30 @@ export default function ResellerDashboardPage() {
         </p>
       </div>
 
-      {/* Empty state stat tiles — Phase 3+ populate real numbers */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatTile icon={Users} label="Klien" value="0" />
-        <StatTile icon={UserPlus} label="Agent" value="0" />
+      {/* Stat tiles — populated dari /reseller/stats (Phase 6). */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          icon={Users}
+          label="Klien"
+          value={stats ? String(stats.clients) : "…"}
+          href="/reseller/clients"
+        />
+        <StatTile
+          icon={UserPlus}
+          label="Agent"
+          value={stats ? String(stats.agents) : "…"}
+          href="/reseller/team"
+        />
+        <StatTile
+          icon={Globe2}
+          label="Domain aktif"
+          value={stats ? String(stats.active_domains) : "…"}
+          sub={
+            stats && stats.expiring_30_days > 0
+              ? `${stats.expiring_30_days} expire ≤ 30 hari`
+              : undefined
+          }
+        />
         <StatTile
           icon={Wallet}
           label="Saldo Wallet"
@@ -105,12 +138,47 @@ export default function ResellerDashboardPage() {
 }
 
 function PurchasesCard({ rows }: { rows: PurchaseRow[] | null }) {
+  async function downloadCSV() {
+    // CSV endpoint di backend butuh auth header, jadi fetch + blob download
+    // (bukan href langsung — <a> tag tidak kirim Authorization).
+    const token = localStorage.getItem("wb_access_token");
+    const base = process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost";
+    try {
+      const res = await fetch(`${base}/api/v1/reseller/purchases.csv`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "reseller-domains.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Gagal export CSV: " + (e as Error).message);
+    }
+  }
+
   return (
     <Card>
       <CardContent className="p-5">
-        <div className="mb-3 flex items-center gap-2">
-          <Globe2 className="size-4 text-primary" />
-          <h3 className="text-sm font-semibold">Domain yang saya proses</h3>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Globe2 className="size-4 text-primary" />
+            <h3 className="text-sm font-semibold">Domain yang saya proses</h3>
+          </div>
+          {rows && rows.length > 0 && (
+            <button
+              type="button"
+              onClick={downloadCSV}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
         {rows === null ? (
           <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
@@ -169,11 +237,13 @@ function StatTile({
   label,
   value,
   href,
+  sub,
 }: {
   icon: React.ElementType;
   label: string;
   value: string;
   href?: string;
+  sub?: string;
 }) {
   const body = (
     <Card className={href ? "transition-colors hover:border-primary" : undefined}>
@@ -185,6 +255,7 @@ function StatTile({
           <p className="text-sm text-muted-foreground">{label}</p>
         </div>
         <p className="mt-3 text-2xl font-bold tracking-tight">{value}</p>
+        {sub && <p className="mt-0.5 text-[11px] text-amber-600">{sub}</p>}
       </CardContent>
     </Card>
   );

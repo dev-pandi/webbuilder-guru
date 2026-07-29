@@ -19,6 +19,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/registrar"
@@ -36,10 +37,32 @@ type AssignmentChecker interface {
 type Handler struct {
 	registrar *registrar.Client
 	users     *auth.Repo
+	audit     *audit.Repo // nil = audit disabled
 }
 
 func NewHandler(r *registrar.Client, users *auth.Repo) *Handler {
 	return &Handler{registrar: r, users: users}
+}
+
+// SetAudit inject audit repo (Phase 7). Nil = no-op.
+func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
+
+// logAudit fire-and-forget helper.
+func (h *Handler) logAudit(ctx context.Context, actor uuid.UUID, event, targetType, targetID string, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	var actorID *uuid.UUID
+	if actor != uuid.Nil {
+		actorID = &actor
+	}
+	_ = h.audit.Log(ctx, audit.Params{
+		ActorID:    actorID,
+		Event:      event,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Metadata:   meta,
+	})
 }
 
 // resolveActor — pastikan caller reseller aktif ATAU agent dengan parent
@@ -182,6 +205,10 @@ func (h *Handler) InitTopup(c *fiber.Ctx) error {
 	if err != nil {
 		return proxyErr(c, "topup_failed", err)
 	}
+	h.logAudit(c.Context(), a.User.ID, audit.EventWalletTopupInit, "topup", resp.TopupID, map[string]any{
+		"amount":         req.Amount,
+		"payment_method": req.PaymentMethod,
+	})
 	return httpx.OK(c, resp)
 }
 
@@ -303,6 +330,10 @@ func (h *Handler) UploadProof(c *fiber.Ctx) error {
 	if err != nil {
 		return proxyErr(c, "upload_proof_failed", err)
 	}
+	h.logAudit(c.Context(), a.User.ID, audit.EventWalletProofUploaded, "topup", topupID, map[string]any{
+		"filename": fh.Filename,
+		"size":     fh.Size,
+	})
 	return httpx.OK(c, st)
 }
 

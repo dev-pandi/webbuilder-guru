@@ -10,10 +10,27 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/mail"
 )
+
+// StatsProvider — dep untuk aggregate stats endpoint (Phase 6). Interface,
+// bukan concrete import ke domain_purchase, supaya reseller package tetap
+// lean + testable.
+type StatsProvider interface {
+	GetResellerStats(ctx context.Context, actorIDs []uuid.UUID) (*DomainStats, error)
+}
+
+// DomainStats — mirror struct domain_purchase.ResellerStats supaya interface
+// tidak leak concrete type dari package tetangga.
+type DomainStats struct {
+	ActiveDomains  int64
+	Expiring30Days int64
+	Expiring90Days int64
+	PendingJobs    int64
+}
 
 // Handler bundles repo + auth repo + mailer supaya endpoint reseller portal
 // bisa akses user + invitation table plus kirim email.
@@ -22,6 +39,8 @@ type Handler struct {
 	authRepo   *auth.Repo
 	mailer     mail.Sender
 	appBaseURL string // dipakai bangun URL invite
+	stats      StatsProvider // nil = stats endpoint 503
+	audit      *audit.Repo   // nil = audit disabled (silent)
 }
 
 func NewHandler(r *Repo, authRepo *auth.Repo, mailer mail.Sender, appBaseURL string) *Handler {
@@ -31,6 +50,32 @@ func NewHandler(r *Repo, authRepo *auth.Repo, mailer mail.Sender, appBaseURL str
 		mailer:     mailer,
 		appBaseURL: strings.TrimRight(appBaseURL, "/"),
 	}
+}
+
+// SetStatsProvider — wire domain_purchase repo pasca-construction, hindari
+// import cycle (main.go injects setelah kedua handler dibuat).
+func (h *Handler) SetStatsProvider(p StatsProvider) { h.stats = p }
+
+// SetAudit inject audit repo untuk record invite/create events (Phase 7).
+// Nil = no-op.
+func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
+
+// logAudit — fire-and-forget helper, safe kalau audit nil.
+func (h *Handler) logAudit(ctx context.Context, actor uuid.UUID, event, targetType, targetID string, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	var actorID *uuid.UUID
+	if actor != uuid.Nil {
+		actorID = &actor
+	}
+	_ = h.audit.Log(ctx, audit.Params{
+		ActorID:    actorID,
+		Event:      event,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Metadata:   meta,
+	})
 }
 
 // resellerContext — helper extract caller yang valid reseller aktif atau
@@ -115,6 +160,9 @@ func (h *Handler) InviteAgent(c *fiber.Ctx) error {
 	// Fire-and-forget email
 	go h.sendInviteEmail(caller.User, req.Email, req.Name, auth.RoleAgent, raw)
 
+	h.logAudit(c.Context(), caller.User.ID, audit.EventAgentInvited, "email", req.Email, map[string]any{
+		"invited_name": req.Name,
+	})
 	return httpx.Created(c, fiber.Map{
 		"email":       req.Email,
 		"invite_sent": true,
@@ -275,6 +323,11 @@ func (h *Handler) CreateClient(c *fiber.Ctx) error {
 		}
 	}
 
+	h.logAudit(c.Context(), caller.User.ID, audit.EventClientInvited, "user", clientID.String(), map[string]any{
+		"email":       req.Email,
+		"name":        req.Name,
+		"is_new_user": existing == nil,
+	})
 	return httpx.Created(c, fiber.Map{
 		"client_id":     clientID.String(),
 		"assignment_id": assignment.ID.String(),
@@ -354,6 +407,55 @@ func (h *Handler) GetClient(c *fiber.Ctx) error {
 		"postal_code":  u.PostalCode,
 		"nik":          u.Nik,
 		"role":         u.Role,
+	})
+}
+
+// ---------------- Stats (Phase 6) ----------------
+
+// GetStats — GET /api/v1/reseller/stats
+// Aggregate untuk dashboard reseller: total client + agent + domain aktif +
+// expiring soon. Agent lihat stats reseller induk (pool sama).
+func (h *Handler) GetStats(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	resellerID := caller.EffectiveReseller
+
+	// Aggregate parallel-safe (query independen, tidak share transaction).
+	// Best-effort — kalau salah satu fail, return 500 supaya UI retry.
+	clientCount, err := h.repo.CountClientsForReseller(c.Context(), resellerID)
+	if err != nil {
+		return httpx.Internal(c, "client count failed")
+	}
+	agentCount, err := h.repo.CountAgentsForReseller(c.Context(), resellerID)
+	if err != nil {
+		return httpx.Internal(c, "agent count failed")
+	}
+
+	// Domain stats — actor IDs = reseller + agent-nya. Purchase yang di-trigger
+	// oleh siapapun di tim ini dihitung.
+	actorIDs, err := h.repo.ListActorIDs(c.Context(), resellerID)
+	if err != nil {
+		return httpx.Internal(c, "actor ids failed")
+	}
+	var domainStats *DomainStats
+	if h.stats != nil {
+		domainStats, err = h.stats.GetResellerStats(c.Context(), actorIDs)
+		if err != nil {
+			return httpx.Internal(c, "domain stats failed")
+		}
+	} else {
+		domainStats = &DomainStats{}
+	}
+
+	return httpx.OK(c, fiber.Map{
+		"clients":          clientCount,
+		"agents":           agentCount,
+		"active_domains":   domainStats.ActiveDomains,
+		"expiring_30_days": domainStats.Expiring30Days,
+		"expiring_90_days": domainStats.Expiring90Days,
+		"pending_jobs":     domainStats.PendingJobs,
 	})
 }
 

@@ -22,10 +22,16 @@ type PurchaseRow = {
 };
 
 type WalletSnapshot = { balance: number; currency: string };
+type Stats = {
+  clients: number;
+  active_domains: number;
+  expiring_30_days: number;
+};
 
 export default function AgentDashboardPage() {
   const [purchases, setPurchases] = useState<PurchaseRow[] | null>(null);
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   useEffect(() => {
     api<PurchaseRow[]>("/api/v1/agent/purchases?limit=10")
       .then((r) => setPurchases(r ?? []))
@@ -33,6 +39,9 @@ export default function AgentDashboardPage() {
     api<WalletSnapshot>("/api/v1/agent/wallet")
       .then((w) => setWallet(w))
       .catch(() => setWallet({ balance: 0, currency: "IDR" }));
+    api<Stats>("/api/v1/agent/stats")
+      .then(setStats)
+      .catch(() => setStats(null));
   }, []);
 
   return (
@@ -45,8 +54,17 @@ export default function AgentDashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <StatTile icon={Users} label="Klien saya" value="0" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile
+          icon={Users}
+          label="Klien tim"
+          value={stats ? String(stats.clients) : "…"}
+        />
+        <StatTile
+          icon={Globe2}
+          label="Domain aktif"
+          value={stats ? String(stats.active_domains) : "…"}
+        />
         <StatTile
           icon={Wallet}
           label="Wallet reseller induk"

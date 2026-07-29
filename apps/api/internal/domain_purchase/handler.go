@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/httpx"
@@ -64,6 +66,28 @@ type Handler struct {
 	platformIPs   []string         // dipakai jadi content A record CF auto-attach
 	webhookSecret string
 	assignments   AssignmentChecker // nil = on-behalf-of disabled (Phase 3)
+	audit         *audit.Repo       // nil = audit disabled
+}
+
+// SetAudit inject audit repo untuk record purchase / retry / renew (Phase 7).
+func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
+
+// logAudit fire-and-forget helper — pattern sama dengan admin/reseller handler.
+func (h *Handler) logAudit(ctx context.Context, actor uuid.UUID, event, targetType, targetID string, meta map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	var actorID *uuid.UUID
+	if actor != uuid.Nil {
+		actorID = &actor
+	}
+	_ = h.audit.Log(ctx, audit.Params{
+		ActorID:    actorID,
+		Event:      event,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Metadata:   meta,
+	})
 }
 
 // SetAssignmentChecker — wire-up dari main.go setelah reseller repo dibuat.
@@ -370,6 +394,18 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		map[string]string{"kind": KindRegister},
 	)
 
+	// Audit: purchase.created (self) atau purchase.on_behalf_of (reseller/agent).
+	auditEvt := EventPurchaseCreated
+	if purchasedBy != nil {
+		auditEvt = EventPurchaseOnBehalfOf
+	}
+	h.logAudit(c.Context(), cl.UserID, auditEvt, "job", resp.JobID, map[string]any{
+		"domain":         req.Domain,
+		"years":          req.Years,
+		"payment_method": req.PaymentMethod,
+		"owner_user_id":  owner.ID.String(),
+	})
+
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseResp{
 		JobID:      resp.JobID,
 		Domain:     req.Domain,
@@ -378,6 +414,13 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		PaymentURL: resp.PaymentURL,
 	}})
 }
+
+// Audit event constants — dipakai lokal supaya tidak import cycle string
+// literal ke package audit. Match dengan audit.EventDomain* di paket sana.
+const (
+	EventPurchaseCreated    = audit.EventDomainPurchased
+	EventPurchaseOnBehalfOf = audit.EventDomainPurchasedOBO
+)
 
 // Status — dipakai frontend polling. Kalau status lokal masih pending +
 // belum ada payment_url, hit registrar (mungkin sudah generate). Kalau sudah
@@ -819,6 +862,12 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		map[string]string{"kind": KindRenew},
 	)
 
+	h.logAudit(c.Context(), cl.UserID, audit.EventDomainRenewed, "job", resp.JobID, map[string]any{
+		"domain":         req.Domain,
+		"years":          req.Years,
+		"payment_method": req.PaymentMethod,
+	})
+
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseResp{
 		JobID:      resp.JobID,
 		Domain:     req.Domain,
@@ -870,6 +919,9 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 			slog.Warn("retry: local status sync failed", "job_id", jobID, "error", err)
 		}
 	}
+	h.logAudit(c.Context(), cl.UserID, audit.EventDomainRetried, "job", jobID, map[string]any{
+		"status_after": resp.Status,
+	})
 	return httpx.OK(c, resp)
 }
 
@@ -891,6 +943,70 @@ func (h *Handler) List(c *fiber.Ctx) error {
 		out = append(out, toResp(&items[i]))
 	}
 	return httpx.OK(c, out)
+}
+
+// ExportOnBehalfOfCSV — GET /api/v1/reseller/purchases.csv (Phase 6).
+// Streaming CSV dari portfolio domain reseller. Include kolom client info
+// supaya bisa dipakai accounting/reconciliation di spreadsheet.
+//
+// Format: satu row per purchase, kolom sesuai header di line pertama.
+// TIDAK paginated — asumsi reseller punya <10k domain (kalau makin besar,
+// admin bisa expose paged CSV di route berbeda).
+func (h *Handler) ExportOnBehalfOfCSV(c *fiber.Ctx) error {
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	// Batch 1000 — realistis untuk reseller MVP; kalau butuh lebih, page later.
+	items, err := h.repo.ListByPurchaser(c.Context(), cl.UserID, 10000)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	// Enrich client info (email + name) via cache — sama pattern dengan
+	// ListOnBehalfOf.
+	cache := map[uuid.UUID]*auth.User{}
+	lookup := func(id uuid.UUID) *auth.User {
+		if u, ok := cache[id]; ok {
+			return u
+		}
+		u, err := h.users.GetByID(c.Context(), id)
+		if err == nil && u != nil {
+			cache[id] = u
+			return u
+		}
+		return nil
+	}
+
+	c.Set("Content-Type", "text/csv; charset=utf-8")
+	c.Set("Content-Disposition", `attachment; filename="reseller-domains.csv"`)
+
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write([]string{
+		"domain", "kind", "status", "years", "expires_at",
+		"client_id", "client_email", "client_name",
+		"payment_method", "created_at",
+	})
+	for i := range items {
+		p := &items[i]
+		u := lookup(p.UserID)
+		email, name := "", ""
+		if u != nil {
+			email, name = u.Email, u.Name
+		}
+		exp := ""
+		if p.ExpiresAt != nil {
+			exp = p.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		_ = w.Write([]string{
+			p.Domain, p.Kind, p.Status,
+			strconv.Itoa(p.Years), exp,
+			p.UserID.String(), email, name,
+			p.PaymentMethod, p.CreatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	w.Flush()
+	return c.Send(buf.Bytes())
 }
 
 // ListOnBehalfOf — reseller/agent lihat purchase yang mereka trigger untuk
@@ -1304,9 +1420,17 @@ func (h *Handler) ListInvoices(c *fiber.Ctx) error {
 	if perPage <= 0 || perPage > 100 {
 		perPage = 20
 	}
+	// Reseller/agent: scope tidak filter external_user_id — mereka lihat SEMUA
+	// invoice under reseller JWT (termasuk on-behalf-of purchase). Client:
+	// filter by external_user_id = self (default web-builder behavior).
+	externalUserID := cl.UserID.String()
+	if u, err := h.users.GetByID(c.Context(), cl.UserID); err == nil &&
+		u != nil && auth.IsResellerLike(u.Role) {
+		externalUserID = ""
+	}
 	res, err := h.registrar.ListInvoices(
 		c.Context(),
-		cl.UserID.String(),
+		externalUserID,
 		c.Query("status"),
 		c.Query("search"),
 		page, perPage,

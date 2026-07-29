@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 )
@@ -138,6 +139,16 @@ func (h *Handler) setResellerStatus(c *fiber.Ctx, status string) error {
 	if err != nil {
 		return httpx.Internal(c, "status update failed")
 	}
+	// Audit: capture admin action (approve / suspend). Actor = current admin.
+	evt := audit.EventResellerApproved
+	if status == auth.ResellerStatusSuspended {
+		evt = audit.EventResellerSuspended
+	}
+	h.logAudit(c.Context(), auth.UserIDFrom(c), evt, "user", u.ID.String(), map[string]any{
+		"email":         u.Email,
+		"display_name":  u.ResellerDisplayName,
+		"status_before": status, // status target adalah status akhir
+	})
 	// TODO Phase 2+: kirim email notification ke reseller (approved/suspended)
 	return httpx.OK(c, toResellerListItem(u))
 }

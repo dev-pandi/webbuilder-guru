@@ -145,6 +145,41 @@ func (r *Repo) GetByJobIDForActor(ctx context.Context, jobID string, callerID uu
 	return &p, err
 }
 
+// ResellerStats — aggregate untuk dashboard reseller (Phase 6). Semua field
+// scoped ke domain yang di-purchase-by resellerID + agent-agent di bawahnya.
+type ResellerStats struct {
+	ActiveDomains  int64 // status='active' & kind='register' (unique domain)
+	Expiring30Days int64 // active & expires_at ≤ now+30d
+	Expiring90Days int64 // active & expires_at ≤ now+90d (superset of 30d)
+	PendingJobs    int64 // any non-terminal (pending_payment / provisioning / dst.)
+}
+
+// GetResellerStats — hitung aggregate dari domain_purchases where
+// purchased_by IN (reseller + agents). Caller resolve agent list dulu supaya
+// query sederhana. Untuk MVP, hanya butuh purchased_by IN ($set).
+func (r *Repo) GetResellerStats(ctx context.Context, actorIDs []uuid.UUID) (*ResellerStats, error) {
+	if len(actorIDs) == 0 {
+		return &ResellerStats{}, nil
+	}
+	var s ResellerStats
+	// Single query, banyak count via FILTER (Postgres) supaya cukup 1 round-trip.
+	err := r.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'active' AND kind = 'register')                        AS active_domains,
+			COUNT(*) FILTER (WHERE status = 'active' AND expires_at IS NOT NULL
+			                      AND expires_at <= now() + interval '30 days')                    AS expiring_30d,
+			COUNT(*) FILTER (WHERE status = 'active' AND expires_at IS NOT NULL
+			                      AND expires_at <= now() + interval '90 days')                    AS expiring_90d,
+			COUNT(*) FILTER (WHERE status IN ('pending_payment','pending_document','pending_provisioning')) AS pending_jobs
+		  FROM domain_purchases
+		 WHERE purchased_by = ANY($1)
+	`, actorIDs).Scan(&s.ActiveDomains, &s.Expiring30Days, &s.Expiring90Days, &s.PendingJobs)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // ListByPurchaser — semua purchase yang di-trigger oleh caller ini (reseller/
 // agent). Terpisah dari ListByUser supaya dashboard reseller bisa lihat
 // portfolio klien tanpa mixed dengan self-owned domain.

@@ -12,6 +12,7 @@ import (
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/analytics"
 	"github.com/webbuilder/api/internal/assets"
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
@@ -93,6 +94,9 @@ type Deps struct {
 	// Wallet — Phase 3.5 proxy ke registrar reseller wallet. Nil kalau
 	// registrar disabled (client wrapper nil).
 	Wallet *wallet.Handler
+
+	// Audit — Phase 7 admin audit log viewer. Nil-safe.
+	Audit *audit.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

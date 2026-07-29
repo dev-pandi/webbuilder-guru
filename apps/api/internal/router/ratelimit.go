@@ -41,6 +41,14 @@ const (
 	mutationPerWindow = 300              // 300 writes
 	mutationWindow    = 60 * time.Second // per minute per user (generous burst)
 
+	// Money-moving ops (Phase 7) — tight per-user budgets untuk cegah spam
+	// spending. Reseller yang legit tidak butuh > 20 purchase/jam; kalau butuh,
+	// admin bisa raise via env override (out of scope MVP).
+	walletTopupPerWindow = 5                // 5 top-up
+	walletTopupWindow    = 24 * time.Hour   // per hari per reseller (plan 15.10)
+	purchasePerWindow    = 20               // 20 register/renew
+	purchaseWindow       = 60 * time.Minute // per jam per user
+
 	// Registrar webhook receiver — per-IP defence in depth. HMAC-authed sudah
 	// filter payload valid, tapi tanpa rate-limit attacker bisa hammer endpoint
 	// dengan payload garbage yang gagal verify (CPU cycle terpakai per request).

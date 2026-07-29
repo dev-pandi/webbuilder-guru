@@ -8,11 +8,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/analytics"
 	"github.com/webbuilder/api/internal/assets"
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/cachepurge"
@@ -331,11 +333,31 @@ func main() {
 		purchaseHandler.SetAssignmentChecker(resellerRepo)
 	}
 
+	// Wire stats provider ke reseller handler (Phase 6). Adapter closure
+	// hindari import cycle: reseller.StatsProvider interface butuh
+	// *reseller.DomainStats, tapi purchaseRepo return *domain_purchase.ResellerStats.
+	if purchaseRepo != nil {
+		resellerHandler.SetStatsProvider(resellerStatsAdapter{repo: purchaseRepo})
+	}
+
 	// Wallet proxy handler — Phase 3.5. Nil kalau registrar disabled
 	// (no client), otherwise wire penuh.
 	var walletHandler *wallet.Handler
 	if registrarClient != nil {
 		walletHandler = wallet.NewHandler(registrarClient, authRepo)
+	}
+
+	// Audit log — Phase 7 append-only event trail. Repo di-inject ke handler
+	// yang perlu record (auth reseller approve, invitation, purchase, dst.).
+	auditRepo := audit.NewRepo(pool)
+	auditHandler := audit.NewHandler(auditRepo)
+	adminHandler.SetAudit(auditRepo)
+	resellerHandler.SetAudit(auditRepo)
+	if purchaseHandler != nil {
+		purchaseHandler.SetAudit(auditRepo)
+	}
+	if walletHandler != nil {
+		walletHandler.SetAudit(auditRepo)
 	}
 
 	deps := router.Deps{
@@ -368,6 +390,7 @@ func main() {
 		Snippets:     snippets.NewHandler(snippetRepo),
 		Reseller:     resellerHandler,
 		Wallet:       walletHandler,
+		Audit:        auditHandler,
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,
 	}
@@ -411,4 +434,23 @@ func main() {
 	// Cancel background goroutines (verify email, password reset dispatchers).
 	cancel()
 	slog.Info("shutdown: complete")
+}
+
+// resellerStatsAdapter — adapter type supaya reseller.Handler bisa panggil
+// domain_purchase.Repo.GetResellerStats tanpa import cycle. Konversi
+// *domain_purchase.ResellerStats → *reseller.DomainStats (shape identik,
+// nama sengaja beda untuk cegah leak concrete type di interface).
+type resellerStatsAdapter struct{ repo *domain_purchase.Repo }
+
+func (a resellerStatsAdapter) GetResellerStats(ctx context.Context, actorIDs []uuid.UUID) (*reseller.DomainStats, error) {
+	s, err := a.repo.GetResellerStats(ctx, actorIDs)
+	if err != nil || s == nil {
+		return nil, err
+	}
+	return &reseller.DomainStats{
+		ActiveDomains:  s.ActiveDomains,
+		Expiring30Days: s.Expiring30Days,
+		Expiring90Days: s.Expiring90Days,
+		PendingJobs:    s.PendingJobs,
+	}, nil
 }

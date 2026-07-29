@@ -40,6 +40,11 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/registrar/purchases", deps.DomainPurchase.AdminListPurchases)
 	}
 
+	// Audit log — read-only viewer (Phase 7). Nil-safe.
+	if deps.Audit != nil {
+		g.Get("/audit-log", deps.Audit.List)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {
