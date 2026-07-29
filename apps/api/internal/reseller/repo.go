@@ -145,7 +145,7 @@ func (r *Repo) ListClientsByManager(ctx context.Context, managerID uuid.UUID) ([
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ClientRow
+	out := []ClientRow{}
 	for rows.Next() {
 		var r ClientRow
 		if err := rows.Scan(
@@ -174,7 +174,7 @@ func (r *Repo) ListAgentsByReseller(ctx context.Context, resellerID uuid.UUID) (
 		return nil, err
 	}
 	defer rows.Close()
-	var out []AgentRow
+	out := []AgentRow{}
 	for rows.Next() {
 		var a AgentRow
 		if err := rows.Scan(&a.ID, &a.Email, &a.Name, &a.CreatedAt, &a.EmailVerifiedAt); err != nil {
@@ -207,6 +207,41 @@ func (r *Repo) ListActorIDs(ctx context.Context, resellerID uuid.UUID) ([]uuid.U
 			return out, err
 		}
 		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ListClientsForReseller — semua client yang di-manage reseller ATAU
+// agent-agent di bawahnya (superset dari ListClientsByManager). Dipakai
+// admin detail page untuk lihat full portfolio klien 1 reseller.
+func (r *Repo) ListClientsForReseller(ctx context.Context, resellerID uuid.UUID) ([]ClientRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT ca.id, ca.manager_id, ca.client_id, ca.manager_role, ca.access_status,
+		       ca.created_at, ca.handed_off_at, ca.revoked_at,
+		       u.email, u.name, u.created_at, u.email_verified_at IS NOT NULL
+		  FROM client_assignments ca
+		  JOIN users u ON u.id = ca.client_id
+		  LEFT JOIN users mgr ON mgr.id = ca.manager_id
+		 WHERE ca.access_status != 'revoked'
+		   AND (ca.manager_id = $1 OR mgr.parent_reseller_id = $1)
+		 ORDER BY ca.created_at DESC
+	`, resellerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ClientRow{}
+	for rows.Next() {
+		var r ClientRow
+		if err := rows.Scan(
+			&r.Assignment.ID, &r.Assignment.ManagerID, &r.Assignment.ClientID,
+			&r.Assignment.ManagerRole, &r.Assignment.AccessStatus,
+			&r.Assignment.CreatedAt, &r.Assignment.HandedOffAt, &r.Assignment.RevokedAt,
+			&r.Email, &r.Name, &r.CreatedAt, &r.EmailVerified,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

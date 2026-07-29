@@ -207,34 +207,39 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Delete("/form-submissions/:id", mutateLimit, deps.Forms.DeleteSubmission)
 	}
 
-	// Reseller portal endpoints — Phase 2.
+	// Reseller portal endpoints — Phase 2+.
 	// Nil-safe kalau handler belum di-wire di main.
+	//
+	// PENTING: Fiber Group(prefix, mw) internally = Use(prefix, mw). Grup dengan
+	// prefix "/" bocorkan middleware ke SEMUA endpoint di bawah v1 (termasuk
+	// /admin/*). Karena itu di sini pakai `authed` untuk auth.Required (yang
+	// sudah scoped "/" tapi harmless karena auth.Required idempotent + fast),
+	// dan role check di-attach PER-ROUTE via handler slice, bukan Group.
 	if deps.Reseller != nil {
-		// Reseller-only (invite agent + list agent)
-		resellerG := v1.Group("/reseller", auth.Required(deps.Issuer), auth.RequireReseller())
-		resellerG.Post("/agents/invite", mutateLimit, deps.Reseller.InviteAgent)
-		resellerG.Get("/agents", deps.Reseller.ListAgents)
-		// Phase 6 — stats aggregate dashboard reseller.
-		resellerG.Get("/stats", deps.Reseller.GetStats)
+		roleReseller := auth.RequireReseller()
+		roleAgent := auth.RequireAgent()
+		roleResellerOrAgent := auth.RequireResellerOrAgent()
 
-		// Reseller ATAU agent boleh (invite client + list clients).
-		roaG := v1.Group("/", auth.Required(deps.Issuer), auth.RequireResellerOrAgent())
-		roaG.Post("/reseller/clients", mutateLimit, deps.Reseller.CreateClient)
-		roaG.Get("/reseller/clients", deps.Reseller.ListClients)
-		roaG.Get("/reseller/clients/:client_id", deps.Reseller.GetClient)
+		// Reseller-only (invite agent + list agent + stats + pricing write).
+		authed.Post("/reseller/agents/invite", roleReseller, mutateLimit, deps.Reseller.InviteAgent)
+		authed.Get("/reseller/agents", roleReseller, deps.Reseller.ListAgents)
+		authed.Get("/reseller/stats", roleReseller, deps.Reseller.GetStats)
 
-		// Agent-only mirror endpoint (list assigned clients dari agent's POV).
-		agentG := v1.Group("/agent", auth.Required(deps.Issuer), auth.RequireAgent())
-		agentG.Get("/clients", deps.Reseller.ListClients)
-		agentG.Get("/clients/:client_id", deps.Reseller.GetClient)
-		agentG.Get("/stats", deps.Reseller.GetStats)
+		// Reseller ATAU agent boleh (invite/list client).
+		authed.Post("/reseller/clients", roleResellerOrAgent, mutateLimit, deps.Reseller.CreateClient)
+		authed.Get("/reseller/clients", roleResellerOrAgent, deps.Reseller.ListClients)
+		authed.Get("/reseller/clients/:client_id", roleResellerOrAgent, deps.Reseller.GetClient)
+
+		// Agent-only mirror (list assigned clients dari POV agent).
+		authed.Get("/agent/clients", roleAgent, deps.Reseller.ListClients)
+		authed.Get("/agent/clients/:client_id", roleAgent, deps.Reseller.GetClient)
+		authed.Get("/agent/stats", roleAgent, deps.Reseller.GetStats)
 
 		// Phase 3 — list domain purchase yang di-trigger on-behalf-of client.
-		// Enrich dengan client info supaya frontend tinggal render tabel.
 		if deps.DomainPurchase != nil {
-			roaG.Get("/reseller/purchases", deps.DomainPurchase.ListOnBehalfOf)
-			roaG.Get("/reseller/purchases.csv", deps.DomainPurchase.ExportOnBehalfOfCSV)
-			agentG.Get("/purchases", deps.DomainPurchase.ListOnBehalfOf)
+			authed.Get("/reseller/purchases", roleResellerOrAgent, deps.DomainPurchase.ListOnBehalfOf)
+			authed.Get("/reseller/purchases.csv", roleResellerOrAgent, deps.DomainPurchase.ExportOnBehalfOfCSV)
+			authed.Get("/agent/purchases", roleAgent, deps.DomainPurchase.ListOnBehalfOf)
 		}
 
 		// Phase 3.5 — reseller wallet proxy. Read-only endpoint dibuka untuk
@@ -244,30 +249,26 @@ func MountUser(app *fiber.App, deps Deps) {
 			walletUploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
 			topupLimit := RateLimitUser(walletTopupPerWindow, walletTopupWindow)
 			// Reads (reseller + agent boleh)
-			roaG.Get("/reseller/wallet", deps.Wallet.GetWallet)
-			roaG.Get("/reseller/wallet/ledger", deps.Wallet.GetLedger)
-			roaG.Get("/reseller/wallet/topup", deps.Wallet.ListMyTopups)
-			roaG.Get("/reseller/wallet/topup/banks", deps.Wallet.ListBanks)
-			roaG.Get("/reseller/wallet/topup/:topup_id/status", deps.Wallet.GetTopupStatus)
-			// Writes (reseller-only enforce di handler; middleware tetap
-			// RequireResellerOrAgent supaya JWT valid untuk error message).
-			roaG.Post("/reseller/wallet/topup", topupLimit, deps.Wallet.InitTopup)
-			roaG.Post("/reseller/wallet/topup/:topup_id/proof", walletUploadLimit, deps.Wallet.UploadProof)
-			// Mirror endpoints untuk agent (biar frontend agent portal
-			// consistent path shape).
-			agentG.Get("/wallet", deps.Wallet.GetWallet)
-			agentG.Get("/wallet/ledger", deps.Wallet.GetLedger)
-			agentG.Get("/wallet/topup", deps.Wallet.ListMyTopups)
+			authed.Get("/reseller/wallet", roleResellerOrAgent, deps.Wallet.GetWallet)
+			authed.Get("/reseller/wallet/ledger", roleResellerOrAgent, deps.Wallet.GetLedger)
+			authed.Get("/reseller/wallet/topup", roleResellerOrAgent, deps.Wallet.ListMyTopups)
+			authed.Get("/reseller/wallet/topup/banks", roleResellerOrAgent, deps.Wallet.ListBanks)
+			authed.Get("/reseller/wallet/topup/:topup_id/status", roleResellerOrAgent, deps.Wallet.GetTopupStatus)
+			// Writes (reseller-only via handler-side check).
+			authed.Post("/reseller/wallet/topup", roleResellerOrAgent, topupLimit, deps.Wallet.InitTopup)
+			authed.Post("/reseller/wallet/topup/:topup_id/proof", roleResellerOrAgent, walletUploadLimit, deps.Wallet.UploadProof)
+			// Mirror path shape untuk agent portal.
+			authed.Get("/agent/wallet", roleAgent, deps.Wallet.GetWallet)
+			authed.Get("/agent/wallet/ledger", roleAgent, deps.Wallet.GetLedger)
+			authed.Get("/agent/wallet/topup", roleAgent, deps.Wallet.ListMyTopups)
 		}
 
-		// Pricing (Phase 3.11-3.12):
-		//   - Reseller CRUD price list per-TLD (write reseller-only, di-enforce di handler)
-		//   - Agent view-only (share endpoint, handler filter response)
+		// Pricing (Phase 3.11-3.12).
 		if deps.Pricing != nil {
-			roaG.Get("/reseller/pricing", deps.Pricing.ResellerList)
-			resellerG.Post("/pricing", mutateLimit, deps.Pricing.ResellerUpsert)
-			resellerG.Delete("/pricing/:id", mutateLimit, deps.Pricing.ResellerDelete)
-			agentG.Get("/pricing", deps.Pricing.ResellerList)
+			authed.Get("/reseller/pricing", roleResellerOrAgent, deps.Pricing.ResellerList)
+			authed.Post("/reseller/pricing", roleReseller, mutateLimit, deps.Pricing.ResellerUpsert)
+			authed.Delete("/reseller/pricing/:id", roleReseller, mutateLimit, deps.Pricing.ResellerDelete)
+			authed.Get("/agent/pricing", roleAgent, deps.Pricing.ResellerList)
 		}
 	}
 

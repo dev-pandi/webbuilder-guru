@@ -72,7 +72,7 @@ func (r *Repo) ListPlatform(ctx context.Context) ([]PlatformPrice, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []PlatformPrice
+	out := []PlatformPrice{}
 	for rows.Next() {
 		var p PlatformPrice
 		if err := rows.Scan(
@@ -182,7 +182,7 @@ func (r *Repo) ListByReseller(ctx context.Context, resellerID uuid.UUID) ([]Rese
 		return nil, err
 	}
 	defer rows.Close()
-	var out []ResellerPrice
+	out := []ResellerPrice{}
 	for rows.Next() {
 		var p ResellerPrice
 		if err := rows.Scan(

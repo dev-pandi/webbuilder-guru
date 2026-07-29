@@ -19,6 +19,7 @@ import {
   ShieldOff,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -77,11 +78,31 @@ export default function AdminResellersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [filter, setFilter] = useState("pending"); // default: paling perlu action
+  // Default: "all" supaya admin lihat gambar utuh. Kalau ada pending, chip
+  // "Pending" akan tampil dot indicator supaya admin tetap tahu ada aksi.
+  const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [actioningID, setActioningID] = useState<string | null>(null);
+  // Pending count — refresh saat mount + setelah approve/suspend supaya
+  // indicator dot on "Pending" chip selalu akurat.
+  const [pendingCount, setPendingCount] = useState(0);
+
+  async function refreshPendingCount() {
+    try {
+      const res = await api<Paginated<Reseller>>(
+        "/api/v1/admin/resellers?status=pending_approval&page_size=1",
+      );
+      setPendingCount(res.total ?? 0);
+    } catch {
+      // silent — dot hanya informatif, tidak block flow
+    }
+  }
+
+  useEffect(() => {
+    refreshPendingCount();
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -135,6 +156,8 @@ export default function AdminResellersPage() {
       );
       setItems((rs) => rs.map((r) => (r.id === id ? updated : r)));
       toast.success(action === "approve" ? "Reseller di-approve" : "Reseller di-suspend");
+      // Sync badge indicator setelah status berubah.
+      refreshPendingCount();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -162,12 +185,13 @@ export default function AdminResellersPage() {
           {FILTERS.map((f) => {
             const Icon = f.icon;
             const active = filter === f.key;
+            const showPendingDot = f.key === "pending" && pendingCount > 0;
             return (
               <button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-all",
+                  "relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-all",
                   active
                     ? "border-primary bg-primary text-primary-foreground shadow-sm"
                     : "border-border bg-background text-muted-foreground hover:border-foreground/20 hover:text-foreground",
@@ -175,6 +199,28 @@ export default function AdminResellersPage() {
               >
                 <Icon className="size-3.5" />
                 {f.label}
+                {showPendingDot && (
+                  <>
+                    {/* Count badge inline supaya admin tau exact jumlah */}
+                    <span
+                      className={cn(
+                        "inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold",
+                        active
+                          ? "bg-primary-foreground text-primary"
+                          : "bg-amber-500 text-white",
+                      )}
+                    >
+                      {pendingCount}
+                    </span>
+                    {/* Ping animation untuk grab attention saat chip belum aktif */}
+                    {!active && (
+                      <span className="absolute -top-1 -right-1 flex size-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-75" />
+                        <span className="relative inline-flex size-2.5 rounded-full bg-amber-500" />
+                      </span>
+                    )}
+                  </>
+                )}
               </button>
             );
           })}
@@ -279,6 +325,9 @@ export default function AdminResellersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="outline" asChild className="gap-1.5">
+                            <Link href={`/admin/resellers/${r.id}`}>Detail</Link>
+                          </Button>
                           {isPending && (
                             <Button
                               size="sm"

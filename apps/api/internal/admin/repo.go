@@ -83,6 +83,106 @@ func (r *Repo) ListUsersPage(ctx context.Context, like, sort string, limit, offs
 	return out, total, rows.Err()
 }
 
+// UserDetail — payload lengkap 1 user untuk admin detail page.
+// Superset dari UserRow: tambah profile (phone/address/dst.) + counts.
+type UserDetail struct {
+	UserRow
+	PhoneNumber         string     `json:"phone_number,omitempty"`
+	Address             string     `json:"address,omitempty"`
+	City                string     `json:"city,omitempty"`
+	State               string     `json:"state,omitempty"`
+	PostalCode          string     `json:"postal_code,omitempty"`
+	Nik                 string     `json:"nik,omitempty"`
+	EmailVerifiedAt     *time.Time `json:"email_verified_at,omitempty"`
+	// Reseller/agent context (kalau applicable).
+	ParentResellerID    *string    `json:"parent_reseller_id,omitempty"`
+	ResellerDisplayName string     `json:"reseller_display_name,omitempty"`
+	ResellerStatus      string     `json:"reseller_status,omitempty"`
+	ResellerTier        string     `json:"reseller_tier,omitempty"`
+	// OAuth linking (kalau login via Google).
+	HasPasswordLogin bool `json:"has_password_login"`
+	HasGoogleLogin   bool `json:"has_google_login"`
+	// Counts agregat.
+	PublishedSites int `json:"published_sites"`
+	DomainCount    int `json:"domain_count"`
+}
+
+// GetUserDetail — full profile + counts untuk admin detail page.
+func (r *Repo) GetUserDetail(ctx context.Context, id uuid.UUID) (*UserDetail, error) {
+	var d UserDetail
+	var hasPassword, hasGoogle bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT u.id, u.email, u.name, u.role, u.created_at,
+		       COALESCE(u.phone_number, ''), COALESCE(u.address, ''),
+		       COALESCE(u.city, ''), COALESCE(u.state, ''),
+		       COALESCE(u.postal_code, ''), COALESCE(u.nik, ''),
+		       u.email_verified_at,
+		       u.parent_reseller_id, COALESCE(u.reseller_display_name, ''),
+		       COALESCE(u.reseller_status, ''), COALESCE(u.reseller_tier, ''),
+		       (u.password_hash IS NOT NULL AND u.password_hash <> '') AS has_password,
+		       (u.oauth_google_sub IS NOT NULL AND u.oauth_google_sub <> '') AS has_google,
+		       COALESCE((SELECT COUNT(*) FROM sites s WHERE s.user_id = u.id), 0) AS site_count,
+		       COALESCE((SELECT COUNT(*) FROM sites s WHERE s.user_id = u.id AND s.status = 'published'), 0) AS published,
+		       COALESCE((SELECT COUNT(*) FROM domain_purchases dp WHERE dp.user_id = u.id AND dp.status = 'active'), 0) AS domain_count
+		  FROM users u
+		 WHERE u.id = $1
+	`, id).Scan(
+		&d.ID, &d.Email, &d.Name, &d.Role, &d.CreatedAt,
+		&d.PhoneNumber, &d.Address,
+		&d.City, &d.State,
+		&d.PostalCode, &d.Nik,
+		&d.EmailVerifiedAt,
+		&d.ParentResellerID, &d.ResellerDisplayName,
+		&d.ResellerStatus, &d.ResellerTier,
+		&hasPassword, &hasGoogle,
+		&d.SiteCount,
+		&d.PublishedSites,
+		&d.DomainCount,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.HasPasswordLogin = hasPassword
+	d.HasGoogleLogin = hasGoogle
+	return &d, nil
+}
+
+// UserSiteRow — site 1 user untuk admin detail page.
+type UserSiteRow struct {
+	ID        uuid.UUID `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ListUserSites — daftar sites yang di-own user tsb.
+func (r *Repo) ListUserSites(ctx context.Context, userID uuid.UUID) ([]UserSiteRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, slug, name, status, created_at, updated_at
+		  FROM sites
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []UserSiteRow{}
+	for rows.Next() {
+		var s UserSiteRow
+		if err := rows.Scan(&s.ID, &s.Slug, &s.Name, &s.Status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repo) UpdateUserRole(ctx context.Context, id uuid.UUID, role string) error {
 	ct, err := r.pool.Exec(ctx, `UPDATE users SET role = $1, updated_at = now() WHERE id = $2`, role, id)
 	if err != nil {

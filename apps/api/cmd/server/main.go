@@ -320,12 +320,17 @@ func main() {
 	pagesHandler.SetPurger(purger)
 
 	// Admin handler + inject authRepo untuk reseller management (Phase 1).
+	// Reseller + purchases repo di-inject setelah dibuat (Phase 7 detail page).
 	adminHandler := admin.NewHandler(adminRepo)
 	adminHandler.SetAuthRepo(authRepo)
+	if purchaseRepo != nil {
+		adminHandler.SetPurchases(purchaseRepo)
+	}
 
 	// Reseller portal handler — Phase 2.
 	resellerRepo := reseller.NewRepo(pool)
 	resellerHandler := reseller.NewHandler(resellerRepo, authRepo, mailer, cfg.AppBaseURL)
+	adminHandler.SetReseller(resellerRepo)
 
 	// Wire reseller assignment checker ke domain purchase handler (Phase 3
 	// on-behalf-of). Kalau purchaseHandler nil (registrar disabled),

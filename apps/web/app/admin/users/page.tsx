@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Users,
@@ -258,23 +259,26 @@ export default function AdminUsersPage() {
                       key={u.id}
                       className={`transition-colors ${isActing || loading ? "opacity-60" : ""}`}
                     >
-                      {/* User column */}
+                      {/* User column — clickable ke detail page */}
                       <TableCell className="pl-5 py-3">
-                        <div className="flex items-center gap-3">
+                        <Link
+                          href={`/admin/users/${u.id}`}
+                          className="flex items-center gap-3 rounded-md transition-colors hover:opacity-90"
+                        >
                           <div
                             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${avatarColor(u.id)}`}
                           >
                             {getInitials(u.name, u.email)}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium leading-tight">
+                            <p className="truncate text-sm font-medium leading-tight hover:text-primary">
                               {u.name || <span className="text-muted-foreground italic">Tanpa nama</span>}
                             </p>
                             <p className="truncate font-mono text-xs text-muted-foreground">
                               {u.email}
                             </p>
                           </div>
-                        </div>
+                        </Link>
                       </TableCell>
 
                       {/* Role */}
@@ -312,6 +316,14 @@ export default function AdminUsersPage() {
                       {/* Actions */}
                       <TableCell className="pr-5 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                            className="h-8 gap-1.5 text-xs"
+                          >
+                            <Link href={`/admin/users/${u.id}`}>Detail</Link>
+                          </Button>
                           {isActing ? (
                             <Loader2 className="size-4 animate-spin text-muted-foreground" />
                           ) : u.role === "admin" ? (

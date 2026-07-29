@@ -17,6 +17,8 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Get("/stats", deps.Admin.Stats)
 
 	g.Get("/users", deps.Admin.ListUsers)
+	g.Get("/users/:id", deps.Admin.GetUser)
+	g.Get("/users/:id/sites", deps.Admin.ListUserSites)
 	g.Patch("/users/:id/role", deps.Admin.UpdateUserRole)
 	g.Delete("/users/:id", deps.Admin.DeleteUser)
 
@@ -24,10 +26,13 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Patch("/sites/:id/quota", deps.Admin.UpdateSiteQuota)
 	g.Delete("/sites/:id", deps.Admin.DeleteSite)
 
-	// Reseller management — approve/suspend applications.
+	// Reseller management — approve/suspend applications + tabbed detail view.
 	// Handler cek `authRepo == nil` → return 503 kalau feature belum di-wire.
 	g.Get("/resellers", deps.Admin.ListResellers)
 	g.Get("/resellers/:id", deps.Admin.GetReseller)
+	g.Get("/resellers/:id/clients", deps.Admin.ListResellerClients)
+	g.Get("/resellers/:id/agents", deps.Admin.ListResellerAgents)
+	g.Get("/resellers/:id/domains", deps.Admin.ListResellerDomains)
 	g.Post("/resellers/:id/approve", deps.Admin.ApproveReseller)
 	g.Post("/resellers/:id/suspend", deps.Admin.SuspendReseller)
 

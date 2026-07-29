@@ -197,7 +197,7 @@ func (r *Repo) List(ctx context.Context, f ListFilter) ([]ListWithActor, int, er
 		return nil, 0, err
 	}
 	defer rows.Close()
-	var out []ListWithActor
+	out := []ListWithActor{}
 	for rows.Next() {
 		var a ListWithActor
 		var targetType, targetID, ip, ua *string

@@ -148,7 +148,7 @@ func (r *Repo) ListMembersForSite(ctx context.Context, siteID uuid.UUID) ([]Memb
 		return nil, err
 	}
 	defer rows.Close()
-	var out []MemberWithProfile
+	out := []MemberWithProfile{}
 	for rows.Next() {
 		var m MemberWithProfile
 		if err := rows.Scan(
@@ -182,7 +182,9 @@ func (r *Repo) ListSitesAccessibleTo(ctx context.Context, userID uuid.UUID, allo
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SiteWithRole
+	// Init empty slice (bukan nil) supaya JSON output `[]` bukan `null` —
+	// frontend `sites.length` bergantung ini.
+	out := []SiteWithRole{}
 	for rows.Next() {
 		var s SiteWithRole
 		if err := rows.Scan(append(scanArgs(&s.Site), &s.Role)...); err != nil {
@@ -232,7 +234,7 @@ func (r *Repo) ListCollaboratorsOwnedBy(ctx context.Context, ownerID uuid.UUID) 
 		return nil, err
 	}
 	defer rows.Close()
-	var out []CollaboratorAccess
+	out := []CollaboratorAccess{}
 	for rows.Next() {
 		var a CollaboratorAccess
 		if err := rows.Scan(

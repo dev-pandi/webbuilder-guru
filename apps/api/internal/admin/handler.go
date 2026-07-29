@@ -6,15 +6,19 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/audit"
+	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/reseller"
 )
 
 type Handler struct {
-	repo     *Repo
-	authRepo *auth.Repo    // dipakai reseller management (list/approve/suspend)
-	audit    *audit.Repo   // nil = audit disabled (silent no-op)
+	repo      *Repo
+	authRepo  *auth.Repo             // dipakai reseller management (list/approve/suspend)
+	audit     *audit.Repo            // nil = audit disabled (silent no-op)
+	reseller  *reseller.Repo         // nil = detail counts kosong
+	purchases *domain_purchase.Repo  // nil = domain tab kosong
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
@@ -26,6 +30,12 @@ func (h *Handler) SetAuthRepo(r *auth.Repo) { h.authRepo = r }
 
 // SetAudit inject audit repo untuk record admin actions (Phase 7). Nil = no-op.
 func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
+
+// SetReseller inject reseller repo untuk detail-page endpoints. Nil-safe.
+func (h *Handler) SetReseller(r *reseller.Repo) { h.reseller = r }
+
+// SetPurchases inject domain purchase repo untuk domain tab di detail page.
+func (h *Handler) SetPurchases(p *domain_purchase.Repo) { h.purchases = p }
 
 // logAudit — helper fire-and-forget. Kalau audit nil, no-op. Kalau gagal
 // insert, sudah di-warn di repo.Log — kita tidak block admin action.
@@ -59,6 +69,37 @@ func (h *Handler) ListUsers(c *fiber.Ctx) error {
 
 type updateRoleReq struct {
 	Role string `json:"role"`
+}
+
+// GetUser — GET /api/v1/admin/users/:id
+// Full user detail + counts. Password hash + oauth sub NOT returned.
+func (h *Handler) GetUser(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	u, err := h.repo.GetUserDetail(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "user tidak ditemukan")
+	}
+	if err != nil {
+		return httpx.Internal(c, "lookup failed")
+	}
+	return httpx.OK(c, u)
+}
+
+// ListUserSites — GET /api/v1/admin/users/:id/sites
+// Daftar situs yang di-own user tsb. Untuk tab "Situs" di detail page.
+func (h *Handler) ListUserSites(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	items, err := h.repo.ListUserSites(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, items)
 }
 
 func (h *Handler) UpdateUserRole(c *fiber.Ctx) error {

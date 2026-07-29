@@ -180,6 +180,35 @@ func (r *Repo) GetResellerStats(ctx context.Context, actorIDs []uuid.UUID) (*Res
 	return &s, nil
 }
 
+// ListByPurchasers — semua purchase yang di-trigger oleh salah satu actor
+// dalam set (reseller + agent-agentnya). Dipakai admin detail page untuk
+// lihat portfolio domain 1 reseller. Berbeda dari ListByPurchaser: TIDAK
+// exclude self-purchase karena admin butuh gambaran full.
+func (r *Repo) ListByPurchasers(ctx context.Context, actorIDs []uuid.UUID, limit int) ([]Purchase, error) {
+	if len(actorIDs) == 0 {
+		return []Purchase{}, nil
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+cols+` FROM domain_purchases
+		  WHERE purchased_by = ANY($1)
+		  ORDER BY created_at DESC LIMIT $2`,
+		actorIDs, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Purchase{}
+	for rows.Next() {
+		var p Purchase
+		if err := scan(rows, &p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // ListByPurchaser — semua purchase yang di-trigger oleh caller ini (reseller/
 // agent). Terpisah dari ListByUser supaya dashboard reseller bisa lihat
 // portfolio klien tanpa mixed dengan self-owned domain.

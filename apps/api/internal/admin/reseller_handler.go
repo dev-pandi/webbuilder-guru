@@ -88,8 +88,28 @@ func (h *Handler) ListResellers(c *fiber.Ctx) error {
 	return httpx.OK(c, httpx.MakePaginated(out, httpx.Pagination{Page: page, PageSize: pageSize}, total))
 }
 
+// resellerDetail — payload lengkap untuk admin panel detail page.
+// Extends resellerListItem dengan profil lengkap + counts agregat + timeline.
+// Password hash tetap TIDAK di-return.
+type resellerDetail struct {
+	resellerListItem
+	Address    string  `json:"address,omitempty"`
+	State      string  `json:"state,omitempty"`
+	PostalCode string  `json:"postal_code,omitempty"`
+	Nik        string  `json:"nik,omitempty"`
+	// Counts agregat — dipakai stat tile di detail page.
+	Counts *resellerDetailCounts `json:"counts,omitempty"`
+}
+
+type resellerDetailCounts struct {
+	Clients        int64 `json:"clients"`
+	Agents         int64 `json:"agents"`
+	ActiveDomains  int64 `json:"active_domains"`
+	PendingDomains int64 `json:"pending_domains"`
+}
+
 // GetReseller — GET /api/v1/admin/resellers/:id
-// Return detail 1 reseller (semua field basic + status).
+// Return detail lengkap 1 reseller + count agregat (klien, agent, domain).
 func (h *Handler) GetReseller(c *fiber.Ctx) error {
 	if h.authRepo == nil {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "reseller_disabled",
@@ -106,7 +126,90 @@ func (h *Handler) GetReseller(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "lookup failed")
 	}
-	return httpx.OK(c, toResellerListItem(u))
+	// Base slim payload + profile fields.
+	detail := resellerDetail{
+		resellerListItem: toResellerListItem(u),
+		Address:          u.Address,
+		State:            u.State,
+		PostalCode:       u.PostalCode,
+		Nik:              u.Nik,
+	}
+	// Counts — best-effort. Kalau salah satu fail, tetap return partial data
+	// supaya admin bisa lihat identitas dulu (counts optional untuk decision).
+	if h.reseller != nil && h.purchases != nil {
+		var counts resellerDetailCounts
+		if n, err := h.reseller.CountClientsForReseller(c.Context(), id); err == nil {
+			counts.Clients = n
+		}
+		if n, err := h.reseller.CountAgentsForReseller(c.Context(), id); err == nil {
+			counts.Agents = n
+		}
+		if actors, err := h.reseller.ListActorIDs(c.Context(), id); err == nil && len(actors) > 0 {
+			if stats, err := h.purchases.GetResellerStats(c.Context(), actors); err == nil && stats != nil {
+				counts.ActiveDomains = stats.ActiveDomains
+				counts.PendingDomains = stats.PendingJobs
+			}
+		}
+		detail.Counts = &counts
+	}
+	return httpx.OK(c, detail)
+}
+
+// ListResellerClients — GET /api/v1/admin/resellers/:id/clients
+// Client yang di-manage reseller tsb atau agent-agent di bawahnya.
+func (h *Handler) ListResellerClients(c *fiber.Ctx) error {
+	if h.reseller == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "reseller_disabled",
+			"Reseller feature belum di-wire.")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	rows, err := h.reseller.ListClientsForReseller(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, rows)
+}
+
+// ListResellerAgents — GET /api/v1/admin/resellers/:id/agents
+func (h *Handler) ListResellerAgents(c *fiber.Ctx) error {
+	if h.reseller == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "reseller_disabled",
+			"Reseller feature belum di-wire.")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	rows, err := h.reseller.ListAgentsByReseller(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, rows)
+}
+
+// ListResellerDomains — GET /api/v1/admin/resellers/:id/domains
+// Semua purchase yang di-trigger oleh reseller ini atau agent-nya (portfolio).
+func (h *Handler) ListResellerDomains(c *fiber.Ctx) error {
+	if h.reseller == nil || h.purchases == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "reseller_disabled",
+			"Feature belum di-wire.")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	actors, err := h.reseller.ListActorIDs(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "actor lookup failed")
+	}
+	rows, err := h.purchases.ListByPurchasers(c.Context(), actors, 500)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, rows)
 }
 
 // ApproveReseller — POST /api/v1/admin/resellers/:id/approve

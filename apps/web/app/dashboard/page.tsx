@@ -106,7 +106,9 @@ export default function DashboardPage() {
   async function refresh() {
     setLoadingSites(true);
     try {
-      const list = await api<Site[]>("/api/v1/sites");
+      // Guard nil dari backend (reseller/agent tanpa akses site apapun bisa
+      // return null di JSON kalau Go marshaling ke nil slice — normalisasi ke []).
+      const list = (await api<Site[]>("/api/v1/sites")) ?? [];
       setSites(list);
       const entries = await Promise.all(
         list.map(async (s) => {
