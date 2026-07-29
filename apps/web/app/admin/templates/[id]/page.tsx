@@ -198,7 +198,7 @@ export default function AdminTemplateEditPage() {
 
   const previewURL =
     tpl.status === "published"
-      ? `${RENDERER_BASE}/_template-preview/${encodeURIComponent(tpl.slug)}`
+      ? `${RENDERER_BASE}/template-preview/${encodeURIComponent(tpl.slug)}`
       : null;
 
   return (

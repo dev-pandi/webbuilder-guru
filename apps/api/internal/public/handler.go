@@ -218,7 +218,7 @@ type TemplatePreviewResponse struct {
 // TemplatePreview — GET /public/template-preview/:slug
 //
 // Public endpoint (no auth) — dipakai renderer di route
-// `/_template-preview/:slug` untuk render HTML live seperti site production.
+// `/template-preview/:slug` untuk render HTML live seperti site production.
 // Hanya template dengan status='published' yang accessible; draft/archived
 // return 404 supaya WIP tidak bocor ke crawler.
 //

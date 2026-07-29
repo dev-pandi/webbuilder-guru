@@ -107,7 +107,7 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	pub.Get("/sites/:id/blog-posts", deps.Public.ListBlogPosts)
 	pub.Get("/sites/:id/blog-posts/:slug", deps.Public.BlogPostBySlug)
 
-	// Template live preview — dipakai renderer route /_template-preview/:slug
+	// Template live preview — dipakai renderer route /template-preview/:slug
 	// + wizard client modal iframe. Hanya status='published' yang accessible.
 	pub.Get("/template-preview/:slug", deps.Public.TemplatePreview)
 

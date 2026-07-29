@@ -1,7 +1,7 @@
 "use client";
 
 // Template live preview modal — iframe ke renderer route
-// /_template-preview/<slug> dengan device switcher (Desktop/Tablet/Mobile).
+// /template-preview/<slug> dengan device switcher (Desktop/Tablet/Mobile).
 //
 // Cross-origin: renderer di host berbeda dari dashboard. Iframe display tetap
 // jalan (browser allow rendering cross-origin), kita tidak baca DOM-nya.
@@ -56,7 +56,7 @@ export function TemplatePreviewModal({
   if (!open) return null;
 
   const currentDevice = DEVICES.find((d) => d.key === device) ?? DEVICES[0];
-  const previewURL = `${RENDERER_BASE}/_template-preview/${encodeURIComponent(slug)}`;
+  const previewURL = `${RENDERER_BASE}/template-preview/${encodeURIComponent(slug)}`;
 
   return (
     // Custom modal — bukan pakai shadcn Dialog karena butuh full-screen +

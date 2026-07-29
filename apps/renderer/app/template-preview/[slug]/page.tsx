@@ -1,30 +1,39 @@
-// Template preview — sub-page. Render page bukan-home dalam template.
-// Reuse pattern dari root preview page.
+// Template live preview — render homepage template seperti site production.
+// Dipakai admin panel + wizard client (iframe modal) untuk lihat template
+// SEBELUM di-apply ke site. Tanpa auth (published template public browseable).
+//
+// Flow:
+//   1. Fetch /public/template-preview/:slug (API side)
+//   2. Inject theme CSS variables + Google Fonts link
+//   3. Render is_home page's block tree pakai component sama seperti site render
+//   4. Kalau template multi-page, link "Lihat page lain" navigasi ke sub-route
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
+import { PreviewLinkRewriter } from "@/components/PreviewLinkRewriter";
 import { TemplatePreviewBadge } from "@/components/TemplatePreviewBadge";
 import { findTemplatePage, getTemplatePreview } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
+// Preview boleh cache ringan (10s) — template config admin bisa berubah tapi
+// tidak perlu real-time; refresh browser cukup.
 export const revalidate = 10;
 
-export default async function TemplatePreviewPageSub({
+export default async function TemplatePreviewPage({
   params,
 }: {
-  params: { slug: string; pageSlug: string };
+  params: { slug: string };
 }) {
   const tpl = await getTemplatePreview(params.slug);
   if (!tpl) notFound();
 
-  const page = findTemplatePage(tpl, params.pageSlug);
+  const page = findTemplatePage(tpl, "");
   if (!page) notFound();
 
   const blocks = page.tree?.blocks ?? [];
   const fontHref = googleFontsUrl(tpl.theme);
-  // Semua page LAIN dari yang sedang di-render (termasuk home) — untuk nav.
-  const otherPages = tpl.pages.filter((p) => p.slug !== page.slug);
+  const otherPages = tpl.pages.filter((p) => !p.is_home && p.slug !== page.slug);
 
   return (
     <>
@@ -36,9 +45,13 @@ export default async function TemplatePreviewPageSub({
         category={tpl.category}
         variant={tpl.variant}
       />
+      <PreviewLinkRewriter templateSlug={tpl.slug} />
 
       <RenderBlocks blocks={blocks} siteId="_template" />
 
+      {/* Multi-page navigator — floating card di bawah, hanya tampil kalau
+          template punya > 1 page. Link ke sub-route yang render page lain
+          dalam preview yang sama. */}
       {otherPages.length > 0 && (
         <div
           style={{
@@ -62,17 +75,10 @@ export default async function TemplatePreviewPageSub({
             {otherPages.map((p) => (
               <li key={p.slug} style={{ marginBottom: "0.25rem" }}>
                 <Link
-                  href={
-                    p.is_home
-                      ? `/_template-preview/${tpl.slug}`
-                      : `/_template-preview/${tpl.slug}/${p.slug}`
-                  }
+                  href={`/template-preview/${tpl.slug}/${p.slug}`}
                   style={{ color: "white", textDecoration: "underline" }}
                 >
                   {p.title || p.slug}
-                  {p.is_home && (
-                    <span style={{ opacity: 0.6, marginLeft: "0.25rem" }}>(home)</span>
-                  )}
                 </Link>
               </li>
             ))}
@@ -83,16 +89,13 @@ export default async function TemplatePreviewPageSub({
   );
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { slug: string; pageSlug: string };
-}) {
+export async function generateMetadata({ params }: { params: { slug: string } }) {
   const tpl = await getTemplatePreview(params.slug);
   if (!tpl) return {};
-  const page = findTemplatePage(tpl, params.pageSlug);
   return {
-    title: `Preview — ${tpl.name} · ${page?.title ?? params.pageSlug}`,
+    title: `Preview — ${tpl.name}`,
+    description: tpl.description,
+    // Preview page shouldn't be indexed oleh search engine.
     robots: { index: false, follow: false },
   };
 }

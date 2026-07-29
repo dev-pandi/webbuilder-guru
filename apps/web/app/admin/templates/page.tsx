@@ -13,6 +13,7 @@ import {
   Eye,
   LayoutTemplate,
   Loader2,
+  MoreHorizontal,
   Package,
   Pencil,
   Plus,
@@ -38,6 +39,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -46,8 +54,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/Pagination";
 import { TemplatePreviewModal } from "@/components/templates/TemplatePreviewModal";
 import { ThumbnailPicker } from "@/components/templates/ThumbnailPicker";
+
+const PAGE_SIZE = 20;
 
 type Template = {
   id: string;
@@ -118,7 +129,7 @@ export default function AdminTemplatesPage() {
   async function refresh() {
     setLoading(true);
     setErr(null);
-    const q = new URLSearchParams({ page: String(page), page_size: "50" });
+    const q = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
     if (statusFilter) q.set("status", statusFilter);
     if (sourceFilter) q.set("source", sourceFilter);
     if (debouncedSearch) q.set("search", debouncedSearch);
@@ -182,7 +193,7 @@ export default function AdminTemplatesPage() {
     // Preview via renderer route. Draft/archived tidak accessible (404 dari
     // backend), disable tombolnya.
     if (t.status !== "published") return null;
-    return `${RENDERER_BASE}/_template-preview/${encodeURIComponent(t.slug)}`;
+    return `${RENDERER_BASE}/template-preview/${encodeURIComponent(t.slug)}`;
   }
 
   const hasFilter = statusFilter !== "" || sourceFilter !== "" || debouncedSearch !== "";
@@ -351,117 +362,14 @@ export default function AdminTemplatesPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {pv ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setPreviewTarget(t)}
-                              className="h-8 gap-1 text-xs"
-                            >
-                              <Eye className="size-3.5" />
-                              Preview
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled
-                              className="h-8 gap-1 text-xs"
-                              title="Draft/archived tidak bisa di-preview (publish dulu)"
-                            >
-                              <Eye className="size-3.5" />
-                              Preview
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            asChild
-                            className="h-8 gap-1 text-xs"
-                          >
-                            <Link href={`/admin/templates/${t.id}`}>
-                              <Pencil className="size-3.5" />
-                              Edit
-                            </Link>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setDuplicateTarget(t)}
-                            className="h-8 gap-1 text-xs"
-                          >
-                            <Copy className="size-3.5" />
-                            Duplicate
-                          </Button>
-                          {t.status === "draft" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => doAction(t, "publish")}
-                              disabled={acting === t.id + "publish"}
-                              className="h-8 gap-1 text-xs text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-500/10"
-                            >
-                              {acting === t.id + "publish" ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Send className="size-3.5" />
-                              )}
-                              Publish
-                            </Button>
-                          )}
-                          {t.status === "published" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => doAction(t, "archive")}
-                              disabled={acting === t.id + "archive"}
-                              className="h-8 gap-1 text-xs"
-                            >
-                              {acting === t.id + "archive" ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Undo2 className="size-3.5" />
-                              )}
-                              Archive
-                            </Button>
-                          )}
-                          {t.status === "archived" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => doAction(t, "publish")}
-                              disabled={acting === t.id + "publish"}
-                              className="h-8 gap-1 text-xs text-emerald-600"
-                            >
-                              {acting === t.id + "publish" ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <Send className="size-3.5" />
-                              )}
-                              Republish
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => doAction(t, "delete")}
-                            disabled={t.source === "builtin" || acting === t.id + "delete"}
-                            title={
-                              t.source === "builtin"
-                                ? "Built-in tidak bisa dihapus"
-                                : undefined
-                            }
-                            className="h-8 gap-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          >
-                            {acting === t.id + "delete" ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <Trash2 className="size-3.5" />
-                            )}
-                            Hapus
-                          </Button>
-                        </div>
+                        <RowActions
+                          template={t}
+                          previewURL={pv}
+                          acting={acting}
+                          onPreview={() => setPreviewTarget(t)}
+                          onDuplicate={() => setDuplicateTarget(t)}
+                          onAction={(a) => doAction(t, a)}
+                        />
                       </TableCell>
                     </TableRow>
                   );
@@ -472,29 +380,15 @@ export default function AdminTemplatesPage() {
         </div>
       </Card>
 
-      {totalPages > 1 && (
-        <div className={cn("flex items-center justify-between text-sm", loading && "opacity-60")}>
-          <span className="text-muted-foreground">
-            Halaman {page} dari {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Sebelumnya
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Berikutnya
-            </Button>
-          </div>
+      {total > 0 && (
+        <div className={cn("rounded-md border bg-card", loading && "opacity-60")}>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={PAGE_SIZE}
+            onPage={(n) => setPage(n)}
+          />
         </div>
       )}
 
@@ -560,6 +454,122 @@ function Thumbnail({ template }: { template: Template }) {
     <div className="flex h-12 w-16 items-center justify-center rounded border bg-muted">
       <Blocks className="size-4 text-muted-foreground" />
     </div>
+  );
+}
+
+// Row-level action menu — kompak (1 trigger) supaya kolom Aksi tidak
+// memanjang keluar viewport. Semua tindakan tetap satu klik dari trigger.
+function RowActions({
+  template,
+  previewURL,
+  acting,
+  onPreview,
+  onDuplicate,
+  onAction,
+}: {
+  template: Template;
+  previewURL: string | null;
+  acting: string | null;
+  onPreview: () => void;
+  onDuplicate: () => void;
+  onAction: (a: "publish" | "archive" | "unpublish" | "delete") => void;
+}) {
+  const isBuiltin = template.source === "builtin";
+  const busyPublish = acting === template.id + "publish";
+  const busyArchive = acting === template.id + "archive";
+  const busyDelete = acting === template.id + "delete";
+  const anyBusy = busyPublish || busyArchive || busyDelete;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 w-8 p-0"
+          aria-label="Aksi template"
+          disabled={anyBusy}
+        >
+          {anyBusy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <MoreHorizontal className="size-4" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem
+          disabled={!previewURL}
+          onSelect={(e) => {
+            if (!previewURL) {
+              e.preventDefault();
+              return;
+            }
+            onPreview();
+          }}
+        >
+          <Eye className="size-3.5" />
+          Preview
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`/admin/templates/${template.id}`}>
+            <Pencil className="size-3.5" />
+            Edit
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onDuplicate()}>
+          <Copy className="size-3.5" />
+          Duplicate
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        {template.status === "draft" && (
+          <DropdownMenuItem
+            onSelect={() => onAction("publish")}
+            className="text-emerald-600 focus:bg-emerald-50 focus:text-emerald-700 dark:focus:bg-emerald-500/10"
+          >
+            <Send className="size-3.5" />
+            Publish
+          </DropdownMenuItem>
+        )}
+        {template.status === "published" && (
+          <DropdownMenuItem onSelect={() => onAction("archive")}>
+            <Undo2 className="size-3.5" />
+            Archive
+          </DropdownMenuItem>
+        )}
+        {template.status === "archived" && (
+          <DropdownMenuItem
+            onSelect={() => onAction("publish")}
+            className="text-emerald-600 focus:bg-emerald-50 focus:text-emerald-700 dark:focus:bg-emerald-500/10"
+          >
+            <Send className="size-3.5" />
+            Republish
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuItem
+          disabled={isBuiltin}
+          onSelect={(e) => {
+            if (isBuiltin) {
+              e.preventDefault();
+              return;
+            }
+            onAction("delete");
+          }}
+          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+        >
+          <Trash2 className="size-3.5" />
+          Hapus
+          {isBuiltin && (
+            <span className="ml-auto text-[10px] text-muted-foreground">
+              built-in
+            </span>
+          )}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

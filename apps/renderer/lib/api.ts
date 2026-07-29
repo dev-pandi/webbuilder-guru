@@ -245,7 +245,7 @@ export type TemplatePreview = {
 };
 
 // getTemplatePreview — fetch template lengkap dengan semua pages + theme,
-// dipakai renderer route `/_template-preview/:slug` untuk render HTML live.
+// dipakai renderer route `/template-preview/:slug` untuk render HTML live.
 // Kalau template belum published atau slug tidak ada → null (renderer 404).
 export async function getTemplatePreview(slug: string): Promise<TemplatePreview | null> {
   if (!slug) return null;

@@ -1,5 +1,5 @@
 // Visual marker "PREVIEW: <Nama Template>" untuk halaman
-// /_template-preview/*. Style inline supaya tidak collide dengan CSS template
+// /template-preview/*. Style inline supaya tidak collide dengan CSS template
 // yang di-preview.
 
 export function TemplatePreviewBadge({
