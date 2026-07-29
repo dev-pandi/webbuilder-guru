@@ -20,6 +20,7 @@ import (
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
+	"github.com/webbuilder/api/internal/email_log"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
@@ -98,6 +99,9 @@ type Deps struct {
 
 	// Audit — Phase 7 admin audit log viewer. Nil-safe.
 	Audit *audit.Handler
+
+	// EmailLog — admin email log viewer (debugging delivery). Nil-safe.
+	EmailLog *email_log.Handler
 
 	// Pricing — Phase 3.10+ 3-tier pricing (admin platform CRUD + reseller
 	// list + wizard resolve). Nil = feature disabled.

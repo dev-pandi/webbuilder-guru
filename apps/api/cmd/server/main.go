@@ -24,6 +24,7 @@ import (
 	"github.com/webbuilder/api/internal/db"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
+	"github.com/webbuilder/api/internal/email_log"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
@@ -183,6 +184,13 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("mail ready", "driver", mailer.Driver())
+
+	// Email log — wrap mailer supaya tiap Send() insert 1 row `email_log`
+	// untuk audit + debugging delivery. Kalau mailer / repo nil, Wrap
+	// returns underlying apa adanya (no-op).
+	emailLogRepo := email_log.NewRepo(pool)
+	mailer = email_log.Wrap(mailer, emailLogRepo)
+	emailLogHandler := email_log.NewHandler(emailLogRepo)
 
 	// Handlers
 	issuer := auth.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
@@ -401,6 +409,7 @@ func main() {
 		Reseller:     resellerHandler,
 		Wallet:       walletHandler,
 		Audit:        auditHandler,
+		EmailLog:     emailLogHandler,
 		Pricing:      pricingHandler,
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,

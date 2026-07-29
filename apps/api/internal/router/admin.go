@@ -50,6 +50,11 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/audit-log", deps.Audit.List)
 	}
 
+	// Email log — debugging delivery. Nil-safe.
+	if deps.EmailLog != nil {
+		g.Get("/email-log", deps.EmailLog.List)
+	}
+
 	// Pricing platform (Phase 3.10) — admin CRUD retail + wholesale per TLD.
 	if deps.Pricing != nil {
 		g.Get("/pricing/platform", deps.Pricing.AdminListPlatform)
