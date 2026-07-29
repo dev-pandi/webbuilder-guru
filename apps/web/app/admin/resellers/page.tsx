@@ -325,7 +325,7 @@ export default function AdminResellersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="outline" asChild className="gap-1.5">
+                          <Button size="sm" variant="outline" asChild className="gap-1.5 text-primary hover:bg-blue-400 hover:text-blue-50">
                             <Link href={`/admin/resellers/${r.id}`}>Detail</Link>
                           </Button>
                           {isPending && (

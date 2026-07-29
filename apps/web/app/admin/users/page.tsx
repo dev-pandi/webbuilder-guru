@@ -320,7 +320,7 @@ export default function AdminUsersPage() {
                             variant="ghost"
                             size="sm"
                             asChild
-                            className="h-8 gap-1.5 text-xs"
+                            className="h-8 gap-1.5 text-xs text-primary hover:bg-blue-300 hover:text-blue-50"
                           >
                             <Link href={`/admin/users/${u.id}`}>Detail</Link>
                           </Button>
