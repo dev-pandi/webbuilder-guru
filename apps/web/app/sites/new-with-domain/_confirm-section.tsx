@@ -203,6 +203,17 @@ export function ConfirmSection(props: {
           </div>
         </div>
 
+        {/* Transparency line untuk reseller/agent (Phase 3.14) — tampilkan
+            wholesale supaya reseller sadar margin per transaksi. Wallet method
+            = debit dari saldo, gateway = bayar via Midtrans/Paylabs. */}
+        {walletEnabled && paymentMethod === "wallet" && selected.price && (
+          <div className="rounded-md border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
+            💡 Wallet Anda akan di-debit sesuai wholesale platform. Selisih ke
+            kulakan agent atau harga jual ke client adalah margin Anda. Detail
+            di menu <span className="font-medium">Harga Jual</span>.
+          </div>
+        )}
+
         {/* Total — prominent gradient card */}
         {selected.price && (
           <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 sm:p-5">

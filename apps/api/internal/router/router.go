@@ -24,6 +24,7 @@ import (
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
@@ -97,6 +98,10 @@ type Deps struct {
 
 	// Audit — Phase 7 admin audit log viewer. Nil-safe.
 	Audit *audit.Handler
+
+	// Pricing — Phase 3.10+ 3-tier pricing (admin platform CRUD + reseller
+	// list + wizard resolve). Nil = feature disabled.
+	Pricing *pricing.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

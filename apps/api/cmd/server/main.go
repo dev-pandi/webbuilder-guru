@@ -32,6 +32,7 @@ import (
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/notifier"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
@@ -360,6 +361,10 @@ func main() {
 		walletHandler.SetAudit(auditRepo)
 	}
 
+	// Pricing — Phase 3.10+ 3-tier pricing model.
+	pricingRepo := pricing.NewRepo(pool)
+	pricingHandler := pricing.NewHandler(pricingRepo, authRepo)
+
 	deps := router.Deps{
 		Cfg:          cfg,
 		Pool:         pool,
@@ -391,6 +396,7 @@ func main() {
 		Reseller:     resellerHandler,
 		Wallet:       walletHandler,
 		Audit:        auditHandler,
+		Pricing:      pricingHandler,
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,
 	}

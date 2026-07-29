@@ -8,6 +8,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   ChevronLeft,
+  DollarSign,
   LogOut,
   Settings,
   UserCircle,
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/agent/dashboard", label: "Dashboard", icon: UserCircle },
   { href: "/agent/clients", label: "Klien", icon: Users },
   { href: "/agent/wallet", label: "Wallet", icon: Wallet },
+  { href: "/agent/pricing", label: "Kulakan", icon: DollarSign },
   { href: "/agent/settings", label: "Pengaturan", icon: Settings },
 ] as const;
 

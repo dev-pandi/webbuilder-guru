@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Briefcase, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2, Webhook, Cloud, ScrollText } from "lucide-react";
+import { BarChart3, Briefcase, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2, Webhook, Cloud, ScrollText, DollarSign } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +16,7 @@ const nav = [
   { href: "/admin/users", label: "Pengguna", icon: Users },
   { href: "/admin/resellers", label: "Reseller", icon: Briefcase },
   { href: "/admin/sites", label: "Situs", icon: Globe2 },
+  { href: "/admin/pricing", label: "Pricing", icon: DollarSign },
   { href: "/admin/registrar", label: "Registrar", icon: Webhook },
   { href: "/admin/cloudflare", label: "Cloudflare", icon: Cloud },
   { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },

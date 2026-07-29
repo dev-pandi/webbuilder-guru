@@ -45,6 +45,13 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/audit-log", deps.Audit.List)
 	}
 
+	// Pricing platform (Phase 3.10) — admin CRUD retail + wholesale per TLD.
+	if deps.Pricing != nil {
+		g.Get("/pricing/platform", deps.Pricing.AdminListPlatform)
+		g.Post("/pricing/platform", deps.Pricing.AdminUpsertPlatform)
+		g.Delete("/pricing/platform/:id", deps.Pricing.AdminDeletePlatform)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {

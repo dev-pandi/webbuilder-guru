@@ -259,5 +259,22 @@ func MountUser(app *fiber.App, deps Deps) {
 			agentG.Get("/wallet/ledger", deps.Wallet.GetLedger)
 			agentG.Get("/wallet/topup", deps.Wallet.ListMyTopups)
 		}
+
+		// Pricing (Phase 3.11-3.12):
+		//   - Reseller CRUD price list per-TLD (write reseller-only, di-enforce di handler)
+		//   - Agent view-only (share endpoint, handler filter response)
+		if deps.Pricing != nil {
+			roaG.Get("/reseller/pricing", deps.Pricing.ResellerList)
+			resellerG.Post("/pricing", mutateLimit, deps.Pricing.ResellerUpsert)
+			resellerG.Delete("/pricing/:id", mutateLimit, deps.Pricing.ResellerDelete)
+			agentG.Get("/pricing", deps.Pricing.ResellerList)
+		}
+	}
+
+	// Public resolve endpoint (Phase 3.14) — dipakai wizard untuk display
+	// harga + transparency box (wholesale untuk reseller/agent, retail untuk
+	// client). Response redacted per role di handler.
+	if deps.Pricing != nil {
+		authed.Get("/pricing/resolve/:tld", deps.Pricing.Resolve)
 	}
 }
