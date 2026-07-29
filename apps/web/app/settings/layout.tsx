@@ -7,7 +7,15 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ChevronLeft, LogOut, User, Globe2, Files, Receipt } from "lucide-react";
+import {
+  ChevronLeft,
+  Files,
+  Globe2,
+  LogOut,
+  Receipt,
+  User,
+  Users,
+} from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -17,6 +25,7 @@ type Me = { id: string; email: string; role: string };
 const NAV = [
   { href: "/settings/profile", label: "Profil", icon: User },
   { href: "/settings/domains", label: "Domain", icon: Globe2 },
+  { href: "/settings/collaborators", label: "Kolaborator", icon: Users },
   { href: "/settings/invoices", label: "Invoice", icon: Receipt },
   { href: "/settings/documents", label: "Dokumen", icon: Files },
 ] as const;

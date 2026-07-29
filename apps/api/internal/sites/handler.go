@@ -69,7 +69,10 @@ type updateReq struct {
 
 func (h *Handler) List(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
-	out, err := h.repo.ListByUser(c.Context(), uid)
+	// Union: owned + collaborator (via site_members). Reseller/agent lihat
+	// situs klien yang di-assign ke mereka; client tetap lihat cuma milik
+	// sendiri (yang otomatis include mereka sebagai 'owner' role).
+	out, err := h.repo.ListSitesAccessibleTo(c.Context(), uid)
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}
@@ -238,10 +241,9 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid id")
 	}
-	// Verify ownership dulu (repo.Delete juga guard, tapi kita perlu tahu
-	// ownership SEBELUM trigger cleanup — supaya user A tidak bisa trigger
-	// cleanup file user B via ID guessing walaupun DB delete akan fail).
-	if _, err := h.repo.GetOwned(c.Context(), id, uid); err != nil {
+	// Verify STRICT ownership — delete hanya boleh oleh sites.user_id.
+	// Editor/collaborator TIDAK boleh delete (destructive, tidak reversible).
+	if _, err := h.repo.GetStrictlyOwned(c.Context(), id, uid); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return httpx.NotFound(c, "site not found")
 		}
@@ -284,4 +286,139 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 		h.purger.PurgeSite(c.Context(), id)
 	}
 	return httpx.OK(c, s)
+}
+
+// ---------------- Site members (Phase 4 collab) ----------------
+
+// ListMembers — GET /api/v1/sites/:id/members
+// Owner, editor, dan viewer semua boleh lihat siapa saja yang punya akses.
+func (h *Handler) ListMembers(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	if _, err := h.repo.HasAccess(c.Context(), id, uid); err != nil {
+		return httpx.NotFound(c, "site not found")
+	}
+	members, err := h.repo.ListMembersForSite(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	type row struct {
+		UserID  string `json:"user_id"`
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+		Role    string `json:"role"`
+		AddedAt string `json:"added_at"`
+	}
+	out := make([]row, 0, len(members))
+	for _, m := range members {
+		out = append(out, row{
+			UserID:  m.UserID.String(),
+			Email:   m.Email,
+			Name:    m.Name,
+			Role:    m.Role,
+			AddedAt: m.AddedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+	return httpx.OK(c, out)
+}
+
+// RemoveMember — DELETE /api/v1/sites/:id/members/:user_id
+// Hanya owner (strict) yang boleh remove collaborator. Owner tidak bisa
+// di-remove via endpoint ini — perlu transfer ownership dulu.
+func (h *Handler) RemoveMember(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	memberID, err := uuid.Parse(c.Params("user_id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid user_id")
+	}
+	// Strict-owner enforce — reseller/editor tidak boleh remove diri sendiri
+	// via endpoint ini (bisa mereka pakai POST /leave nanti kalau perlu).
+	if _, err := h.repo.GetStrictlyOwned(c.Context(), id, uid); err != nil {
+		return httpx.NotFound(c, "site not found")
+	}
+	if err := h.repo.RemoveMember(c.Context(), id, memberID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "member tidak ditemukan atau adalah owner")
+		}
+		return httpx.Internal(c, "remove failed")
+	}
+	return httpx.OK(c, fiber.Map{"ok": true})
+}
+
+// ListMyCollaborators — GET /api/v1/collaborators
+// Halaman /settings/collaborators (client-side). Return semua non-owner
+// member di sites yang caller own. Grouped by site di response supaya
+// frontend tinggal render nested.
+func (h *Handler) ListMyCollaborators(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	rows, err := h.repo.ListCollaboratorsOwnedBy(c.Context(), uid)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	// Group by site untuk output. Preserve order dari query (site name ASC).
+	type collabRow struct {
+		UserID  string `json:"user_id"`
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+		Role    string `json:"role"`
+		AddedAt string `json:"added_at"`
+	}
+	type siteGroup struct {
+		SiteID     string      `json:"site_id"`
+		SiteName   string      `json:"site_name"`
+		SiteSlug   string      `json:"site_slug"`
+		Members    []collabRow `json:"members"`
+	}
+	groups := make(map[string]*siteGroup)
+	order := []string{}
+	for _, r := range rows {
+		key := r.SiteID.String()
+		g, ok := groups[key]
+		if !ok {
+			g = &siteGroup{
+				SiteID:   key,
+				SiteName: r.SiteName,
+				SiteSlug: r.SiteSlug,
+			}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.Members = append(g.Members, collabRow{
+			UserID:  r.MemberID.String(),
+			Email:   r.MemberEmail,
+			Name:    r.MemberName,
+			Role:    r.Role,
+			AddedAt: r.AddedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+	out := make([]siteGroup, 0, len(order))
+	for _, k := range order {
+		out = append(out, *groups[k])
+	}
+	return httpx.OK(c, out)
+}
+
+// LeaveSite — POST /api/v1/sites/:id/leave
+// Collaborator (editor/viewer) mundur dari site. Owner tidak boleh leave.
+// Dipakai reseller/agent setelah "handoff" ke client kalau tidak lagi terlibat.
+func (h *Handler) LeaveSite(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	if err := h.repo.RemoveMember(c.Context(), id, uid); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "Anda bukan collaborator (atau adalah owner) di site ini")
+		}
+		return httpx.Internal(c, "leave failed")
+	}
+	return httpx.OK(c, fiber.Map{"ok": true})
 }

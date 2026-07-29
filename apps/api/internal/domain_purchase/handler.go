@@ -1555,14 +1555,27 @@ func (h *Handler) AdminSetWebhookConfig(c *fiber.Ctx) error {
 // ------------- Webhook receiver (global, HMAC-authed) -------------
 
 type webhookPayload struct {
-	JobID          string `json:"job_id"`
-	ExternalUserID string `json:"external_user_id"`
-	Domain         string `json:"domain"`
-	Status         string `json:"status"`
+	// Kind opsional — untuk backward compat, empty berarti domain-status event
+	// (default flow). Kalau "wallet_topup", parse via WalletTopupID + Amount.
+	Kind string `json:"kind,omitempty"`
+
+	// --- Domain job event (default) ---
+	JobID          string `json:"job_id,omitempty"`
+	ExternalUserID string `json:"external_user_id,omitempty"`
+	Domain         string `json:"domain,omitempty"`
+	Status         string `json:"status,omitempty"`
 	Reason         string `json:"reason,omitempty"`
 	ExpiresAt      string `json:"expires_at,omitempty"`
 	PaymentURL     string `json:"payment_url,omitempty"`
-	SentAt         string `json:"sent_at"`
+
+	// --- Wallet topup event (Phase 3.8) ---
+	WalletTopupID string  `json:"topup_id,omitempty"`
+	PaymentMethod string  `json:"payment_method,omitempty"`
+	Amount        float64 `json:"amount,omitempty"`
+	BalanceAfter  float64 `json:"balance_after,omitempty"`
+	CreditedAt    string  `json:"credited_at,omitempty"`
+
+	SentAt string `json:"sent_at"`
 }
 
 // Webhook — POST /webhooks/registrar/domain-status
@@ -1609,6 +1622,27 @@ func (h *Handler) Webhook(c *fiber.Ctx) error {
 	if err := json.Unmarshal(body, &p); err != nil {
 		return httpx.BadRequest(c, "invalid json")
 	}
+
+	// Wallet topup event (Phase 3.8) — kind !="" berarti extended payload.
+	// Web-builder tidak simpan wallet state; kita cukup log + metric supaya
+	// admin bisa audit + UI polling nanti pick up status via reguler endpoint.
+	if p.Kind == "wallet_topup" {
+		if p.WalletTopupID == "" {
+			return httpx.BadRequest(c, "topup_id required for wallet_topup")
+		}
+		slog.Info("wallet topup webhook",
+			"topup_id", p.WalletTopupID,
+			"status", p.Status,
+			"amount", p.Amount,
+			"balance_after", p.BalanceAfter,
+		)
+		metrics.Default.CounterInc(metricWebhooksReceived,
+			"Webhook receiver hits by outcome",
+			map[string]string{"result": "wallet_topup"},
+		)
+		return c.SendStatus(fiber.StatusOK)
+	}
+
 	if p.JobID == "" {
 		return httpx.BadRequest(c, "job_id required")
 	}

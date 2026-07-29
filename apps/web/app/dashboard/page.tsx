@@ -33,6 +33,9 @@ type Site = {
   quota_max_pages: number;
   quota_max_storage_bytes: number;
   updated_at: string;
+  // Role caller di site tsb — 'owner' (milik sendiri) atau 'editor'/'viewer'
+  // (collaborator, mis. reseller/agent yang beli untuk klien).
+  role?: "owner" | "editor" | "viewer";
 };
 
 type SiteUsage = {
@@ -424,6 +427,11 @@ export default function DashboardPage() {
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                       <span className="text-muted-foreground/50">/</span>{s.slug}
                     </p>
+                    {s.role && s.role !== "owner" && (
+                      <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        Kolaborator ({s.role})
+                      </p>
+                    )}
                   </div>
                   <Badge className={`shrink-0 gap-1 text-xs ${cfg.class}`}>
                     <Icon className="size-3" />

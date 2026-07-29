@@ -74,6 +74,15 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Patch("/sites/:id", mutateLimit, deps.Sites.Update)
 	authed.Delete("/sites/:id", mutateLimit, deps.Sites.Delete)
 	authed.Post("/sites/:id/publish", mutateLimit, deps.Sites.Publish)
+
+	// Site members (Phase 4 collab). Read: siapapun yang punya akses; write:
+	// owner-only (add/remove) atau self (leave). Endpoint add belum expose
+	// via wizard di Phase 4 — reseller auto-add lewat purchase flow.
+	authed.Get("/sites/:id/members", deps.Sites.ListMembers)
+	authed.Delete("/sites/:id/members/:user_id", mutateLimit, deps.Sites.RemoveMember)
+	authed.Post("/sites/:id/leave", mutateLimit, deps.Sites.LeaveSite)
+	// Phase 5 — aggregate list untuk halaman /settings/collaborators.
+	authed.Get("/collaborators", deps.Sites.ListMyCollaborators)
 	authed.Post("/sites/:id/export", mutateLimit, deps.Export.Export)
 	authed.Get("/sites/:id/usage", deps.Usage.Current)
 	authed.Get("/sites/:id/usage/history", deps.Usage.History)

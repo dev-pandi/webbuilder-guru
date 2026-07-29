@@ -81,6 +81,11 @@ func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, 
 	if err != nil {
 		return nil, err
 	}
+	// Register owner di site_members — supaya query yang cek collab access
+	// via site_members langsung match. Idempotent (ON CONFLICT DO NOTHING),
+	// fail-silent kalau membership table down (owner check via sites.user_id
+	// masih jalan sebagai fallback).
+	_ = r.EnsureOwner(ctx, s.ID, userID)
 	return &s, nil
 }
 
@@ -114,7 +119,29 @@ func (r *Repo) ListByUser(ctx context.Context, userID uuid.UUID) ([]Site, error)
 	return out, rows.Err()
 }
 
+// GetOwned lookup site oleh user yang punya akses (owner/editor/viewer).
+// Nama historis "Owned" dipertahankan agar tidak refactor semua caller —
+// scope sudah diperluas ke collaborator via site_members (Phase 4).
+// Kalau butuh strict owner-only check (mis. Delete), pakai `GetStrictlyOwned`.
 func (r *Repo) GetOwned(ctx context.Context, id, userID uuid.UUID) (*Site, error) {
+	var s Site
+	err := r.pool.QueryRow(ctx, `
+		SELECT `+siteCols+`
+		  FROM sites
+		 WHERE id = $1
+		   AND id IN (
+		       SELECT site_id FROM site_members WHERE user_id = $2
+		   )
+	`, id, userID).Scan(scanArgs(&s)...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &s, err
+}
+
+// GetStrictlyOwned — original semantic (sites.user_id = userID). Dipakai
+// untuk operasi destructive yang HARUS owner (Delete, transfer ownership).
+func (r *Repo) GetStrictlyOwned(ctx context.Context, id, userID uuid.UUID) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
 		SELECT `+siteCols+`
@@ -153,6 +180,9 @@ type UpdateFields struct {
 }
 
 func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, f UpdateFields) (*Site, error) {
+	// Update boleh dilakukan oleh owner ATAU editor (site_members).
+	// Filter role via subquery IN site_members supaya reseller/agent yang
+	// di-add sebagai editor bisa update site milik client.
 	var s Site
 	err := r.pool.QueryRow(ctx, `
 		UPDATE sites SET
@@ -162,7 +192,11 @@ func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, f UpdateFields)
 			custom_head_code     = COALESCE($6, custom_head_code),
 			custom_body_end_code = COALESCE($7, custom_body_end_code),
 			updated_at           = now()
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1
+		  AND id IN (
+		      SELECT site_id FROM site_members
+		       WHERE user_id = $2 AND role IN ('owner','editor')
+		  )
 		RETURNING `+siteCols+`
 	`, id, userID, f.Name, f.Theme, f.Status, f.CustomHeadCode, f.CustomBodyEndCode).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {

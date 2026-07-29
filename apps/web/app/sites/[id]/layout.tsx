@@ -42,6 +42,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     { href: `/sites/${params.id}/domains`, label: "Domain" },
     { href: `/sites/${params.id}/analytics`, label: "Analitik" },
     { href: `/sites/${params.id}/code`, label: "Kode Kustom" },
+    { href: `/sites/${params.id}/members`, label: "Kolaborator" },
     { href: `/sites/${params.id}/usage`, label: "Usage" },
     { href: `/sites/${params.id}/export`, label: "Export" },
   ];

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -163,7 +164,9 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusBadRequest, "job_id_required",
 			"Domain wajib. Beli domain dulu lewat halaman 'Beli Domain + Buat Situs'.")
 	}
-	purchase, err := h.purchases.GetByJobID(c.Context(), req.JobID, uid)
+	// Actor-inclusive lookup — reseller/agent yang beli on-behalf-of tetap
+	// boleh trigger create-site flow untuk klien mereka.
+	purchase, err := h.purchases.GetByJobIDForActor(c.Context(), req.JobID, uid)
 	if errors.Is(err, domain_purchase.ErrNotFound) {
 		return httpx.NotFound(c, "domain purchase tidak ditemukan atau bukan milik Anda")
 	}
@@ -179,7 +182,13 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 			"Domain sudah dipakai untuk situs lain. 1 domain = 1 situs.")
 	}
 
-	site, err := h.sites.Create(c.Context(), uid, req.Slug, req.Name, &tpl.ID, tpl.Theme)
+	// Site owner = purchase.user_id (client kalau on-behalf-of, self kalau
+	// caller = owner). Ini penting: reseller trigger create-site tapi site
+	// tetap dimiliki client. Reseller/agent auto-di-add sebagai editor di
+	// site_members (Phase 4 collab), supaya mereka bisa edit setelah handoff.
+	ownerID := purchase.UserID
+
+	site, err := h.sites.Create(c.Context(), ownerID, req.Slug, req.Name, &tpl.ID, tpl.Theme)
 	if errors.Is(err, sites.ErrSlugTaken) {
 		return httpx.Conflict(c, "slug already taken")
 	}
@@ -190,12 +199,26 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		return httpx.Internal(c, "create failed")
 	}
 
+	// Register owner + collab (reseller/agent) di site_members. EnsureOwner
+	// idempotent — cover backward compat. AddMember untuk actor (kalau
+	// on-behalf-of, purchased_by != nil dan != owner).
+	if err := h.sites.EnsureOwner(c.Context(), site.ID, ownerID); err != nil {
+		slog.Warn("site_members: ensure owner failed", "site_id", site.ID, "error", err)
+	}
+	if purchase.PurchasedBy != nil && *purchase.PurchasedBy != ownerID {
+		actor := *purchase.PurchasedBy
+		if err := h.sites.AddMember(c.Context(), site.ID, actor, sites.RoleEditor, &actor); err != nil {
+			slog.Warn("site_members: add editor failed",
+				"site_id", site.ID, "editor", actor, "error", err)
+		}
+	}
+
 	// Atomic attach — kalau attach gagal (race: purchase sudah di-attach oleh
 	// request lain antara GetByJobID + sini), rollback site untuk cegah
 	// site "yatim" tanpa domain. AttachSite pakai WHERE site_id IS NULL, jadi
 	// kalau race, hanya satu yang menang.
-	if err := h.purchases.AttachSite(c.Context(), req.JobID, uid, site.ID); err != nil {
-		_ = h.sites.Delete(c.Context(), site.ID, uid)
+	if err := h.purchases.AttachSite(c.Context(), req.JobID, ownerID, site.ID); err != nil {
+		_ = h.sites.Delete(c.Context(), site.ID, ownerID)
 		if errors.Is(err, domain_purchase.ErrNotFound) {
 			return httpx.Err(c, fiber.StatusConflict, "domain_already_attached",
 				"Domain baru saja di-attach ke situs lain. Coba refresh dashboard.")
