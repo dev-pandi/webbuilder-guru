@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Blocks,
   Copy,
-  ExternalLink,
   Eye,
   LayoutTemplate,
   Loader2,
@@ -47,6 +46,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { TemplatePreviewModal } from "@/components/templates/TemplatePreviewModal";
+import { ThumbnailPicker } from "@/components/templates/ThumbnailPicker";
 
 type Template = {
   id: string;
@@ -103,6 +104,7 @@ export default function AdminTemplatesPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [duplicateTarget, setDuplicateTarget] = useState<Template | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<Template | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -354,14 +356,11 @@ export default function AdminTemplatesPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              asChild
+                              onClick={() => setPreviewTarget(t)}
                               className="h-8 gap-1 text-xs"
                             >
-                              <a href={pv} target="_blank" rel="noopener noreferrer">
-                                <Eye className="size-3.5" />
-                                Preview
-                                <ExternalLink className="size-3" />
-                              </a>
+                              <Eye className="size-3.5" />
+                              Preview
                             </Button>
                           ) : (
                             <Button
@@ -515,6 +514,16 @@ export default function AdminTemplatesPage() {
           setDuplicateTarget(null);
           refresh();
         }}
+      />
+
+      {/* Live preview modal — iframe ke renderer + device switcher. Admin
+          view-only (tidak ada tombol "Pakai template ini" — hanya untuk QA). */}
+      <TemplatePreviewModal
+        open={previewTarget !== null}
+        slug={previewTarget?.slug ?? ""}
+        name={previewTarget?.name ?? ""}
+        description={previewTarget?.description}
+        onClose={() => setPreviewTarget(null)}
       />
     </div>
   );
@@ -705,18 +714,11 @@ function CreateTemplateDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="t-thumb">Preview thumbnail URL (opsional)</Label>
-            <Input
-              id="t-thumb"
+            <Label>Thumbnail (opsional)</Label>
+            <ThumbnailPicker
               value={form.preview_url}
-              onChange={(e) => setForm((f) => ({ ...f, preview_url: e.target.value }))}
-              placeholder="https://…/thumbnail.png"
-              type="url"
+              onChange={(url) => setForm((f) => ({ ...f, preview_url: url }))}
             />
-            <p className="text-[11px] text-muted-foreground">
-              Kalau kosong, thumbnail auto-gen belum ada; fallback ke icon
-              placeholder di list.
-            </p>
           </div>
 
           {err && (

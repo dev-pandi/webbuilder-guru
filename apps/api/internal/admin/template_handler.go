@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -402,4 +405,97 @@ func validatePagesJSON(raw json.RawMessage, wantStatus string) error {
 		}
 	}
 	return nil
+}
+
+// -------- Thumbnail upload (Phase 7) --------
+
+// UploadThumbnailResp — response setelah upload sukses. URL langsung bisa
+// di-set ke `templates.preview_url` via PATCH biasa (frontend handles this).
+type UploadThumbnailResp struct {
+	URL string `json:"url"`
+}
+
+// allowedThumbMime — mirror allowedMime di assets pkg tapi lokal supaya tidak
+// tergantung export. Raster-only, no SVG (XSS via inline script).
+var allowedThumbMime = map[string]string{
+	"image/png":  ".png",
+	"image/jpeg": ".jpg",
+	"image/webp": ".webp",
+	"image/gif":  ".gif",
+}
+
+// Max 5 MiB — thumbnail cukup di bawah ini. Aggressive limit karena
+// dashboard admin akan tampil banyak thumbnail sekaligus.
+const maxThumbBytes = 5 * 1024 * 1024
+
+// UploadTemplateThumbnail — POST /api/v1/admin/templates/thumbnail
+// Multipart field "file". Return { url } yang bisa admin paste ke
+// `preview_url` field template (via UI: auto-set setelah upload).
+//
+// Storage key: `template-thumbnails/<random>.<ext>` — flat namespace supaya
+// tidak butuh template_id (upload BISA sebelum template dibuat).
+func (h *Handler) UploadTemplateThumbnail(c *fiber.Ctx) error {
+	if h.storage == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "storage_disabled",
+			"Asset storage belum di-konfigurasi.")
+	}
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return httpx.BadRequest(c, "field 'file' wajib (multipart)")
+	}
+	if fh.Size > maxThumbBytes {
+		return httpx.BadRequest(c, "file terlalu besar (max 5 MB)")
+	}
+
+	// MIME detection — trust header dulu, fallback ke ekstensi.
+	mime := fh.Header.Get("Content-Type")
+	ext := ""
+	if e, ok := allowedThumbMime[mime]; ok {
+		ext = e
+	} else {
+		// Fallback ke ekstensi filename.
+		switch strings.ToLower(filepath.Ext(fh.Filename)) {
+		case ".png":
+			mime, ext = "image/png", ".png"
+		case ".jpg", ".jpeg":
+			mime, ext = "image/jpeg", ".jpg"
+		case ".webp":
+			mime, ext = "image/webp", ".webp"
+		case ".gif":
+			mime, ext = "image/gif", ".gif"
+		}
+	}
+	if ext == "" {
+		return httpx.BadRequest(c, "format file harus PNG, JPG, WebP, atau GIF (bukan SVG)")
+	}
+
+	src, err := fh.Open()
+	if err != nil {
+		return httpx.Internal(c, "buka file gagal")
+	}
+	defer src.Close()
+
+	// Random 16-byte hex — cukup untuk avoid collision + tidak leak path.
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return httpx.Internal(c, "random error")
+	}
+	key := "template-thumbnails/" + hex.EncodeToString(buf) + ext
+
+	url, err := h.storage.Put(c.Context(), key, src, fh.Size, mime)
+	if err != nil {
+		return httpx.Internal(c, "upload failed: "+err.Error())
+	}
+
+	// Audit — track admin yang upload untuk trace.
+	h.logAudit(c.Context(), auth.UserIDFrom(c),
+		"template.thumbnail_uploaded", "template", "", map[string]any{
+			"filename": fh.Filename,
+			"size":     fh.Size,
+			"mime":     mime,
+			"url":      url,
+		})
+
+	return httpx.OK(c, UploadThumbnailResp{URL: url})
 }

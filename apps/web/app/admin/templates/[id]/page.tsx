@@ -26,7 +26,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { ThemeEditor, type ThemeValue } from "@/components/theme/ThemeEditor";
+import {
+  TemplatePagesEditor,
+  type TemplatePage,
+} from "@/components/templates/TemplatePagesEditor";
+import { ThumbnailPicker } from "@/components/templates/ThumbnailPicker";
 
 type Template = {
   id: string;
@@ -59,7 +64,17 @@ export default function AdminTemplateEditPage() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    slug: string;
+    name: string;
+    description: string;
+    category: string;
+    variant: string;
+    preview_url: string;
+    is_premium: boolean;
+    theme: ThemeValue;
+    pages: TemplatePage[];
+  }>({
     slug: "",
     name: "",
     description: "",
@@ -67,8 +82,8 @@ export default function AdminTemplateEditPage() {
     variant: "modern",
     preview_url: "",
     is_premium: false,
-    themeJSON: "",
-    pagesJSON: "",
+    theme: {},
+    pages: [],
   });
 
   useEffect(() => {
@@ -84,8 +99,12 @@ export default function AdminTemplateEditPage() {
           variant: t.variant,
           preview_url: t.preview_url,
           is_premium: t.is_premium,
-          themeJSON: JSON.stringify(t.theme ?? {}, null, 2),
-          pagesJSON: JSON.stringify(t.pages ?? [], null, 2),
+          // theme di-store sebagai object supaya ThemeEditor bisa langsung
+          // consume. Fallback ke {} kalau backend kirim null.
+          theme: (t.theme as ThemeValue) ?? {},
+          // Pages parsed sebagai array — kalau backend kirim null / non-array,
+          // fallback ke [].
+          pages: Array.isArray(t.pages) ? (t.pages as TemplatePage[]) : [],
         });
       })
       .catch((e) => setErr((e as Error).message))
@@ -95,25 +114,8 @@ export default function AdminTemplateEditPage() {
   async function save() {
     if (!tpl) return;
     setErr(null);
-    // Validate JSON kalau di-edit.
-    let themeParsed: unknown = null;
-    let pagesParsed: unknown = null;
-    try {
-      themeParsed = JSON.parse(form.themeJSON || "{}");
-    } catch {
-      setErr("Theme JSON tidak valid");
-      return;
-    }
-    try {
-      pagesParsed = JSON.parse(form.pagesJSON || "[]");
-    } catch {
-      setErr("Pages JSON tidak valid");
-      return;
-    }
-    if (!Array.isArray(pagesParsed)) {
-      setErr("Pages harus array [{slug, title, tree, seo, is_home}]");
-      return;
-    }
+    // Theme + pages sudah object (ThemeEditor + TemplatePagesEditor sync
+    // parent state). PATCH langsung — validation minimal server-side.
     setSaving(true);
     try {
       const updated = await api<Template>(`/api/v1/admin/templates/${id}`, {
@@ -126,8 +128,8 @@ export default function AdminTemplateEditPage() {
           variant: form.variant,
           preview_url: form.preview_url,
           is_premium: form.is_premium,
-          theme: themeParsed,
-          pages: pagesParsed,
+          theme: form.theme,
+          pages: form.pages,
         }),
       });
       setTpl(updated);
@@ -346,12 +348,10 @@ export default function AdminTemplateEditPage() {
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="f-thumb">Thumbnail URL</Label>
-              <Input
-                id="f-thumb"
+              <Label>Thumbnail</Label>
+              <ThumbnailPicker
                 value={form.preview_url}
-                onChange={(e) => setForm((f) => ({ ...f, preview_url: e.target.value }))}
-                placeholder="https://…"
+                onChange={(url) => setForm((f) => ({ ...f, preview_url: url }))}
               />
             </div>
           </div>
@@ -367,52 +367,35 @@ export default function AdminTemplateEditPage() {
         </CardContent>
       </Card>
 
-      {/* Theme JSON — Phase 4 nanti diganti visual editor */}
+      {/* Theme visual editor — colors + fonts + radius + live preview */}
       <Card>
-        <CardContent className="space-y-3 p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Theme JSON
-            </h2>
-            <p className="text-[11px] text-muted-foreground">
-              Phase 4: visual color/font picker menyusul
-            </p>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Shape: <code>{`{ colors: {primary, secondary, bg, fg}, font: {heading, body}, radius }`}</code>
-          </p>
-          <Textarea
-            rows={8}
-            value={form.themeJSON}
-            onChange={(e) => setForm((f) => ({ ...f, themeJSON: e.target.value }))}
-            className="font-mono text-xs"
+        <CardContent className="space-y-4 p-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Theme
+          </h2>
+          <ThemeEditor
+            value={form.theme}
+            onChange={(next) => setForm((f) => ({ ...f, theme: next }))}
           />
         </CardContent>
       </Card>
 
-      {/* Pages JSON — Phase 5 nanti diganti block editor */}
+      {/* Pages editor — visual page manager + block editor per page */}
       <Card>
-        <CardContent className="space-y-3 p-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Blocks className="size-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Pages JSON
-              </h2>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Phase 5: block editor visual menyusul
-            </p>
+        <CardContent className="space-y-4 p-6">
+          <div className="flex items-center gap-2">
+            <Blocks className="size-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Pages
+            </h2>
           </div>
           <p className="text-xs text-muted-foreground">
-            Array of <code>{`{ slug, title, is_home, tree: { blocks: [...] }, seo }`}</code>.
-            Publish butuh minimal 1 page dengan <code>is_home: true</code>.
+            Tambah page + susun block per page. Publish butuh minimal 1 page
+            dengan tanda <code>Home</code>.
           </p>
-          <Textarea
-            rows={16}
-            value={form.pagesJSON}
-            onChange={(e) => setForm((f) => ({ ...f, pagesJSON: e.target.value }))}
-            className="font-mono text-xs"
+          <TemplatePagesEditor
+            value={form.pages}
+            onChange={(next) => setForm((f) => ({ ...f, pages: next }))}
           />
         </CardContent>
       </Card>

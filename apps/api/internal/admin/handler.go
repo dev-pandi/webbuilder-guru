@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/domain_purchase"
@@ -21,6 +22,7 @@ type Handler struct {
 	reseller  *reseller.Repo         // nil = detail counts kosong
 	purchases *domain_purchase.Repo  // nil = domain tab kosong
 	templates *templates.Repo        // nil = template CRUD 503
+	storage   assets.Storage         // nil = admin upload endpoint 503
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
@@ -38,6 +40,10 @@ func (h *Handler) SetReseller(r *reseller.Repo) { h.reseller = r }
 
 // SetPurchases inject domain purchase repo untuk domain tab di detail page.
 func (h *Handler) SetPurchases(p *domain_purchase.Repo) { h.purchases = p }
+
+// SetStorage inject asset storage untuk admin-scoped uploads (template
+// thumbnail dsb). Nil-safe.
+func (h *Handler) SetStorage(s assets.Storage) { h.storage = s }
 
 // logAudit — helper fire-and-forget. Kalau audit nil, no-op. Kalau gagal
 // insert, sudah di-warn di repo.Log — kita tidak block admin action.

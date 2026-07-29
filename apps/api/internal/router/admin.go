@@ -65,6 +65,9 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Post("/templates/:id/archive", deps.Admin.ArchiveTemplate)
 	g.Post("/templates/:id/duplicate", deps.Admin.DuplicateTemplate)
 	g.Delete("/templates/:id", deps.Admin.DeleteTemplate)
+	// Thumbnail upload — flat namespace, tidak butuh template_id (upload bisa
+	// sebelum template dibuat). Handler nil-safe (503 kalau storage disabled).
+	g.Post("/templates/thumbnail", deps.Admin.UploadTemplateThumbnail)
 
 	// Pricing platform (Phase 3.10) — admin CRUD retail + wholesale per TLD.
 	if deps.Pricing != nil {

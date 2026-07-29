@@ -35,6 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { TemplatePreviewModal } from "@/components/templates/TemplatePreviewModal";
 
 type Purchase = {
   job_id: string;
@@ -590,6 +591,7 @@ function TemplatePicker({
 }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<Template | null>(null);
   // Nama situs default dari SLD domain (mis. "myshop" dari "myshop.co.id").
   // User bisa edit — slug backend auto-generate dari nama ini (internal only,
   // tidak jadi URL karena free-subdomain flow sudah dihapus).
@@ -651,19 +653,39 @@ function TemplatePicker({
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               {list.map((t) => (
-                <button
+                <div
                   key={t.slug}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelected(t.slug)}
-                  className={`rounded-lg border p-3 text-left transition-colors hover:border-primary ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelected(t.slug);
+                    }
+                  }}
+                  className={`group relative cursor-pointer rounded-lg border p-3 text-left transition-colors hover:border-primary ${
                     selected === t.slug ? "border-primary bg-primary/5 ring-1 ring-primary" : ""
                   }`}
                 >
-                  <div className="text-sm font-medium">{t.name}</div>
-                  <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                  <div className="pr-14 text-sm font-medium">{t.name}</div>
+                  <div className="mt-0.5 line-clamp-2 pr-14 text-xs text-muted-foreground">
                     {t.description}
                   </div>
-                </button>
+                  {/* Preview button — stopPropagation supaya tidak trigger
+                      select saat klik. Absolute di kanan-atas card. */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewTarget(t);
+                    }}
+                    className="absolute right-2 top-2 rounded-md border bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity hover:border-primary hover:text-primary group-hover:opacity-100"
+                    aria-label={`Preview ${t.name}`}
+                  >
+                    Preview
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -712,6 +734,19 @@ function TemplatePicker({
           </div>
         )}
       </CardContent>
+
+      {/* Preview modal — dipicu klik "Preview" di card. onSelect = pilih
+          template ini + close modal. */}
+      <TemplatePreviewModal
+        open={previewTarget !== null}
+        slug={previewTarget?.slug ?? ""}
+        name={previewTarget?.name ?? ""}
+        description={previewTarget?.description}
+        onClose={() => setPreviewTarget(null)}
+        onSelect={() => {
+          if (previewTarget) setSelected(previewTarget.slug);
+        }}
+      />
     </Card>
   );
 }

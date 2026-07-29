@@ -332,6 +332,10 @@ func main() {
 	adminHandler := admin.NewHandler(adminRepo)
 	adminHandler.SetAuthRepo(authRepo)
 	adminHandler.SetTemplates(templateRepo)
+	if assetStorage != nil {
+		// Storage untuk admin-scoped uploads (template thumbnail Phase 7).
+		adminHandler.SetStorage(assetStorage)
+	}
 
 	// Public handler — template preview endpoint butuh templates repo,
 	// inject lewat SetTemplates (nil-safe).
