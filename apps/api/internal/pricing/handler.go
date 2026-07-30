@@ -207,6 +207,47 @@ func (h *Handler) AdminDeletePlatform(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 
+// -------- Reseller: available TLDs (whitelist dari platform_prices) --------
+
+// platformTLDOption — 1 opsi TLD untuk dropdown reseller. Wholesale +
+// retail platform disertakan supaya UI bisa surface hint markup langsung.
+type platformTLDOption struct {
+	TLD                    string `json:"tld"`
+	Currency               string `json:"currency"`
+	RetailRegisterPrice    int64  `json:"retail_register_price"`
+	RetailRenewPrice       int64  `json:"retail_renew_price"`
+	WholesaleRegisterPrice *int64 `json:"wholesale_register_price,omitempty"`
+	WholesaleRenewPrice    *int64 `json:"wholesale_renew_price,omitempty"`
+}
+
+// ResellerListPlatformTLDs — GET /api/v1/reseller/pricing/platform-tlds
+//
+// List TLD yang admin sudah konfigurasi di platform_prices — jadi opsi valid
+// untuk reseller/agent set harga jual. Cegah reseller add TLD random yang
+// belum tersedia di sistem. Response include wholesale + retail supaya UI
+// bisa tampilkan hint sebelum reseller isi harga.
+func (h *Handler) ResellerListPlatformTLDs(c *fiber.Ctx) error {
+	if _, err := h.resolveResellerID(c); err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	items, err := h.repo.ListPlatform(c.Context())
+	if err != nil {
+		return httpx.Internal(c, "list platform tlds failed")
+	}
+	out := make([]platformTLDOption, 0, len(items))
+	for _, p := range items {
+		out = append(out, platformTLDOption{
+			TLD:                    p.TLD,
+			Currency:               p.Currency,
+			RetailRegisterPrice:    p.RetailRegisterPrice,
+			RetailRenewPrice:       p.RetailRenewPrice,
+			WholesaleRegisterPrice: p.WholesaleRegisterPrice,
+			WholesaleRenewPrice:    p.WholesaleRenewPrice,
+		})
+	}
+	return httpx.OK(c, out)
+}
+
 // -------- Reseller: price list CRUD (reseller only) --------
 
 // ResellerList — GET /api/v1/reseller/pricing
@@ -258,18 +299,30 @@ func (h *Handler) ResellerUpsert(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "harga harus >= 0")
 	}
 
+	// Whitelist: TLD wajib ada di platform_prices (admin sudah konfigurasi
+	// wholesale + retail dari registrar). Cegah reseller add TLD random yang
+	// belum di-support oleh sistem — kalau lolos, backend book job register
+	// akan gagal di step billing (unresolvable wholesale) dan user experience
+	// buruk. Better fail fast di sini.
+	pf, err := h.repo.GetPlatformByTLD(c.Context(), req.TLD)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.Err(c, fiber.StatusBadRequest, "tld_not_offered",
+			"TLD ."+req.TLD+" belum tersedia di platform. Hubungi admin untuk aktifkan TLD ini.")
+	}
+	if err != nil {
+		return httpx.Internal(c, "platform lookup failed")
+	}
+
 	// Business rule (transparency): agent_price + client_price harus >= wholesale
-	// supaya reseller tidak (accidental) jual rugi. Wholesale sudah di
-	// platform_prices — kalau tidak ada, skip check.
-	if pf, err := h.repo.GetPlatformByTLD(c.Context(), req.TLD); err == nil && pf != nil {
-		if pf.WholesaleRegisterPrice != nil && (req.AgentRegisterPrice < *pf.WholesaleRegisterPrice || req.ClientRegisterPrice < *pf.WholesaleRegisterPrice) {
-			return httpx.Err(c, fiber.StatusBadRequest, "below_wholesale",
-				"Harga register lebih rendah dari wholesale — Anda akan rugi. Naikkan harga.")
-		}
-		if pf.WholesaleRenewPrice != nil && (req.AgentRenewPrice < *pf.WholesaleRenewPrice || req.ClientRenewPrice < *pf.WholesaleRenewPrice) {
-			return httpx.Err(c, fiber.StatusBadRequest, "below_wholesale",
-				"Harga renew lebih rendah dari wholesale — Anda akan rugi. Naikkan harga.")
-		}
+	// supaya reseller tidak (accidental) jual rugi. Wholesale bisa nil kalau
+	// admin belum sync dari registrar — skip check kalau nil.
+	if pf.WholesaleRegisterPrice != nil && (req.AgentRegisterPrice < *pf.WholesaleRegisterPrice || req.ClientRegisterPrice < *pf.WholesaleRegisterPrice) {
+		return httpx.Err(c, fiber.StatusBadRequest, "below_wholesale",
+			"Harga register lebih rendah dari wholesale — Anda akan rugi. Naikkan harga.")
+	}
+	if pf.WholesaleRenewPrice != nil && (req.AgentRenewPrice < *pf.WholesaleRenewPrice || req.ClientRenewPrice < *pf.WholesaleRenewPrice) {
+		return httpx.Err(c, fiber.StatusBadRequest, "below_wholesale",
+			"Harga renew lebih rendah dari wholesale — Anda akan rugi. Naikkan harga.")
 	}
 
 	p, err := h.repo.UpsertResellerPrice(c.Context(), UpsertResellerPriceInput{

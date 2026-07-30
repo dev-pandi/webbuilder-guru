@@ -5,7 +5,7 @@
 // Wholesale platform ditampilkan sebagai referensi (transparency); reseller
 // tidak boleh set harga di bawah wholesale (backend enforce).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   DollarSign,
@@ -17,6 +17,13 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,6 +57,17 @@ type ResellerPrice = {
   updated_at: string;
 };
 
+// PlatformTLD — 1 opsi TLD dari /reseller/pricing/platform-tlds. Wholesale
+// nullable kalau admin belum sync dari registrar.
+type PlatformTLD = {
+  tld: string;
+  currency: string;
+  retail_register_price: number;
+  retail_renew_price: number;
+  wholesale_register_price?: number | null;
+  wholesale_renew_price?: number | null;
+};
+
 type Resolved = {
   tld: string;
   currency: string;
@@ -61,6 +79,7 @@ type Resolved = {
 
 export default function ResellerPricingPage() {
   const [items, setItems] = useState<ResellerPrice[]>([]);
+  const [platformTLDs, setPlatformTLDs] = useState<PlatformTLD[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<ResellerPrice | null>(null);
@@ -70,8 +89,12 @@ export default function ResellerPricingPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await api<ResellerPrice[]>("/api/v1/reseller/pricing");
-      setItems(res ?? []);
+      const [priceRes, tldRes] = await Promise.all([
+        api<ResellerPrice[]>("/api/v1/reseller/pricing"),
+        api<PlatformTLD[]>("/api/v1/reseller/pricing/platform-tlds"),
+      ]);
+      setItems(priceRes ?? []);
+      setPlatformTLDs(tldRes ?? []);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -82,6 +105,16 @@ export default function ResellerPricingPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  // TLD yang belum di-set reseller — hanya ini yang muncul di dropdown
+  // "Tambah TLD". Waktu edit, TLD current tetap accessible via `initial`.
+  const usedTLDs = useMemo(() => new Set(items.map((p) => p.tld)), [items]);
+  const availableTLDs = useMemo(
+    () => platformTLDs.filter((t) => !usedTLDs.has(t.tld)),
+    [platformTLDs, usedTLDs],
+  );
+  const noMoreTLDs = platformTLDs.length > 0 && availableTLDs.length === 0;
+  const noPlatformTLDs = platformTLDs.length === 0;
 
   async function remove(id: string, tld: string) {
     if (!confirm(`Hapus price list untuk .${tld}? Nanti fallback ke retail platform.`)) return;
@@ -113,12 +146,43 @@ export default function ResellerPricingPage() {
             setEditing(null);
             setDialogOpen(true);
           }}
+          disabled={noMoreTLDs || noPlatformTLDs}
+          title={
+            noPlatformTLDs
+              ? "Platform belum punya TLD apa pun — hubungi admin"
+              : noMoreTLDs
+                ? "Semua TLD sudah Anda tambahkan"
+                : undefined
+          }
           className="gap-1.5"
         >
           <Plus className="size-4" />
           Tambah TLD
         </Button>
       </div>
+
+      {noPlatformTLDs && !loading && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertCircle className="size-4 shrink-0 translate-y-0.5" />
+          <div>
+            <p className="font-medium">Platform belum punya TLD terkonfigurasi</p>
+            <p className="mt-0.5 text-xs">
+              Admin perlu setup harga wholesale + retail per TLD dari halaman
+              Admin → Pricing dulu. Setelah itu Anda bisa set harga jual di sini.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!noPlatformTLDs && noMoreTLDs && (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+          <Info className="size-4 shrink-0 translate-y-0.5" />
+          <span>
+            Anda sudah set harga untuk semua TLD ({platformTLDs.length} TLD).
+            Tambahan TLD baru akan muncul di sini setelah admin aktifkan.
+          </span>
+        </div>
+      )}
 
       <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
         <Info className="size-4 shrink-0 translate-y-0.5 text-primary" />
@@ -212,6 +276,7 @@ export default function ResellerPricingPage() {
       <UpsertDialog
         open={dialogOpen}
         initial={editing}
+        availableTLDs={availableTLDs}
         onClose={() => setDialogOpen(false)}
         onSaved={() => {
           setDialogOpen(false);
@@ -225,11 +290,13 @@ export default function ResellerPricingPage() {
 function UpsertDialog({
   open,
   initial,
+  availableTLDs,
   onClose,
   onSaved,
 }: {
   open: boolean;
   initial: ResellerPrice | null;
+  availableTLDs: PlatformTLD[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -336,14 +403,65 @@ function UpsertDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="tld">TLD *</Label>
-            <Input
-              id="tld"
-              value={form.tld}
-              onChange={(e) => setForm((f) => ({ ...f, tld: e.target.value }))}
-              placeholder="co.id"
-              disabled={!!initial}
-              className="font-mono"
-            />
+            {initial ? (
+              // Edit mode — TLD locked (row identity). Tampilkan sebagai
+              // input disabled supaya konsisten visual dengan mode create.
+              <Input
+                id="tld"
+                value={form.tld}
+                disabled
+                className="font-mono"
+              />
+            ) : (
+              <Select
+                value={form.tld}
+                onValueChange={(v) => {
+                  const opt = availableTLDs.find((o) => o.tld === v);
+                  // Auto-suggest markup: agent = retail * 0.9, client = retail.
+                  // Reseller boleh adjust manual — ini cuma starting point.
+                  const retailReg = opt?.retail_register_price ?? 0;
+                  const retailRen = opt?.retail_renew_price ?? 0;
+                  setForm({
+                    tld: v,
+                    agent_register_price: retailReg
+                      ? String(Math.round(retailReg * 0.9))
+                      : "",
+                    agent_renew_price: retailRen
+                      ? String(Math.round(retailRen * 0.9))
+                      : "",
+                    client_register_price: retailReg ? String(retailReg) : "",
+                    client_renew_price: retailRen ? String(retailRen) : "",
+                  });
+                }}
+                disabled={availableTLDs.length === 0}
+              >
+                <SelectTrigger id="tld" className="font-mono">
+                  <SelectValue
+                    placeholder={
+                      availableTLDs.length === 0
+                        ? "Tidak ada TLD tersisa untuk ditambahkan"
+                        : "Pilih TLD dari daftar platform…"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTLDs.map((o) => (
+                    <SelectItem key={o.tld} value={o.tld} className="font-mono">
+                      .{o.tld}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (retail {fmt(o.retail_register_price, o.currency)})
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {!initial && (
+              <p className="text-[11px] text-muted-foreground">
+                Daftar TLD di-batasi ke yang admin sudah aktifkan di platform.
+                Kalau TLD yang Anda butuhkan belum ada, hubungi admin.
+              </p>
+            )}
           </div>
 
           {reference && (

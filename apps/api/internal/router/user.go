@@ -266,6 +266,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		// Pricing (Phase 3.11-3.12).
 		if deps.Pricing != nil {
 			authed.Get("/reseller/pricing", roleResellerOrAgent, deps.Pricing.ResellerList)
+			// Opsi TLD valid (dari platform_prices) — whitelist supaya reseller
+			// tidak bisa add TLD sembarang.
+			authed.Get("/reseller/pricing/platform-tlds", roleResellerOrAgent, deps.Pricing.ResellerListPlatformTLDs)
 			authed.Post("/reseller/pricing", roleReseller, mutateLimit, deps.Pricing.ResellerUpsert)
 			authed.Delete("/reseller/pricing/:id", roleReseller, mutateLimit, deps.Pricing.ResellerDelete)
 			authed.Get("/agent/pricing", roleAgent, deps.Pricing.ResellerList)

@@ -17,7 +17,7 @@ import {
   User,
   Zap,
 } from "lucide-react";
-import { AuthedHomeRedirect } from "@/components/AuthedHomeRedirect";
+import { HomeNavAuth } from "@/components/HomeNavAuth";
 import { Button } from "@/components/ui/button";
 
 const features = [
@@ -118,10 +118,6 @@ const audiences = [
 export default function Home() {
   return (
     <main className="relative min-h-screen bg-background">
-      {/* Client-side auth check — kalau user sudah login, redirect ke portal
-          sesuai role. Render null, aman di server component parent. */}
-      <AuthedHomeRedirect />
-
       {/* Background decoration */}
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[600px] overflow-hidden">
         <div className="absolute left-1/2 top-0 h-[500px] w-[900px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
@@ -145,15 +141,7 @@ export default function Home() {
             <Button variant="ghost" asChild className="hidden sm:inline-flex">
               <Link href="#template">Template</Link>
             </Button>
-            <Button variant="ghost" asChild>
-              <Link href="/login">Masuk</Link>
-            </Button>
-            <Button asChild className="gap-1.5 shadow-sm">
-              <Link href="/register">
-                Daftar Gratis
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </Button>
+            <HomeNavAuth />
           </div>
         </div>
       </nav>
