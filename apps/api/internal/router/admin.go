@@ -74,6 +74,8 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/pricing/platform", deps.Pricing.AdminListPlatform)
 		g.Post("/pricing/platform", deps.Pricing.AdminUpsertPlatform)
 		g.Delete("/pricing/platform/:id", deps.Pricing.AdminDeletePlatform)
+		// Sync dari registrar-api: allowed zones + harga awal (wholesale).
+		g.Get("/pricing/registrar-tlds", deps.Pricing.AdminListRegistrarTLDs)
 	}
 
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF

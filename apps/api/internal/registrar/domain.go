@@ -84,6 +84,67 @@ func (c *Client) CheckDomain(ctx context.Context, domain string) (*DomainCheckRe
 	return &env.Data, nil
 }
 
+// RegistrarTLD — 1 entri list TLD yang reseller boleh handle + harga awal
+// dari registrar. Currency dan flag zone (require_document, auto_approved)
+// disertakan supaya admin bisa langsung decide markup dan surface hint.
+type RegistrarTLD struct {
+	TLD             string  `json:"tld"`
+	Currency        string  `json:"currency"`
+	Register        float64 `json:"register"`
+	Renew           float64 `json:"renew"`
+	Transfer        float64 `json:"transfer"`
+	RequireDocument bool    `json:"require_document"`
+	AutoApproved    bool    `json:"auto_approved"`
+	NikAutoApproved bool    `json:"nik_auto_approved"`
+}
+
+// ListRegistrarTLDs mengembalikan daftar zone yang reseller boleh handle
+// plus harga wholesale awal dari registrar. Implementasi memanggil endpoint
+// check dengan placeholder SLD — registrar batch EPP check untuk semua
+// allowed zones (1 round-trip). Availability SLD-nya di-abaikan; kita hanya
+// pakai `AllowedZones` + `Results[*].Price` + `Results[*].Zone`.
+//
+// Placeholder SLD `webbuilder-tld-probe` sengaja panjang & nonsensical
+// supaya tidak akan bentrok dengan domain user; kalau ternyata "tersedia"
+// di EPP kita ignore. Method ini dipanggil admin manual dari halaman
+// pricing — 1 EPP round-trip acceptable.
+func (c *Client) ListRegistrarTLDs(ctx context.Context) ([]RegistrarTLD, error) {
+	res, err := c.CheckDomain(ctx, "webbuilder-tld-probe")
+	if err != nil {
+		return nil, err
+	}
+	byTLD := make(map[string]*DomainCheckEntry, len(res.Results))
+	for i := range res.Results {
+		r := &res.Results[i]
+		byTLD[strings.ToLower(r.TLD)] = r
+	}
+	out := make([]RegistrarTLD, 0, len(res.AllowedZones))
+	for _, z := range res.AllowedZones {
+		z = strings.ToLower(strings.TrimSpace(z))
+		if z == "" {
+			continue
+		}
+		row := RegistrarTLD{TLD: z, Currency: "IDR"}
+		if entry, ok := byTLD[z]; ok {
+			if entry.Price != nil {
+				if entry.Price.Currency != "" {
+					row.Currency = entry.Price.Currency
+				}
+				row.Register = entry.Price.Register
+				row.Renew = entry.Price.Renew
+				row.Transfer = entry.Price.Transfer
+			}
+			if entry.Zone != nil {
+				row.RequireDocument = entry.Zone.RequireDocument
+				row.AutoApproved = entry.Zone.AutoApproved
+				row.NikAutoApproved = entry.Zone.NikAutoApproved
+			}
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
 // CheckAvailability = semantic wrapper untuk single-domain query (input WAJIB
 // full FQDN). Return entry pertama dari results (registrar guarantee 1 entry
 // untuk single-zone input). Kalau reseller call gagal (401/5xx), fallback ke

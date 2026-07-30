@@ -387,6 +387,10 @@ func main() {
 	// Pricing — Phase 3.10+ 3-tier pricing model.
 	pricingRepo := pricing.NewRepo(pool)
 	pricingHandler := pricing.NewHandler(pricingRepo, authRepo)
+	if registrarClient != nil {
+		// Sync TLD list + wholesale awal dari registrar (admin panel).
+		pricingHandler.SetRegistrar(registrarClient)
+	}
 
 	deps := router.Deps{
 		Cfg:          cfg,

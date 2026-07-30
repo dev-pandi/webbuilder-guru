@@ -2,6 +2,7 @@ package pricing
 
 import (
 	"errors"
+	"math"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -9,19 +10,25 @@ import (
 
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/registrar"
 )
 
 // Handler — endpoint pricing untuk admin (CRUD platform + wildcard) dan
 // reseller/agent (CRUD reseller list + resolve). Semua enforce role di router
 // layer; handler asumsi middleware sudah lolos.
 type Handler struct {
-	repo     *Repo
-	authRepo *auth.Repo
+	repo      *Repo
+	authRepo  *auth.Repo
+	registrar *registrar.Client // nil = registrar disabled → sync endpoint 503
 }
 
 func NewHandler(r *Repo, authRepo *auth.Repo) *Handler {
 	return &Handler{repo: r, authRepo: authRepo}
 }
+
+// SetRegistrar inject registrar client untuk sync TLD + harga awal dari
+// registrar-api (Phase pricing). Nil = admin sync endpoint return 503.
+func (h *Handler) SetRegistrar(c *registrar.Client) { h.registrar = c }
 
 // resolveResellerID — untuk reseller/agent, ambil "effective reseller id"
 // (self kalau reseller, parent kalau agent). Return uuid.Nil + error kalau
@@ -49,6 +56,86 @@ func (h *Handler) resolveResellerID(c *fiber.Ctx) (uuid.UUID, error) {
 	default:
 		return uuid.Nil, errors.New("role tidak diizinkan")
 	}
+}
+
+// -------- Admin: sync TLD list + harga awal dari registrar --------
+
+// registrarTLDRow — 1 baris respons sync. Include state dari platform_prices
+// lokal supaya UI bisa tampilkan "sudah imported" atau "wholesale beda dari
+// registrar" tanpa fetch dua kali.
+type registrarTLDRow struct {
+	TLD                    string  `json:"tld"`
+	Currency               string  `json:"currency"`
+	WholesaleRegisterPrice int64   `json:"wholesale_register_price"`
+	WholesaleRenewPrice    int64   `json:"wholesale_renew_price"`
+	SuggestedRetailReg     int64   `json:"suggested_retail_register_price"`
+	SuggestedRetailRen     int64   `json:"suggested_retail_renew_price"`
+	RequireDocument        bool    `json:"require_document"`
+	AutoApproved           bool    `json:"auto_approved"`
+	NikAutoApproved        bool    `json:"nik_auto_approved"`
+	LocalExists            bool    `json:"local_exists"`
+	LocalOutOfSync         bool    `json:"local_out_of_sync"` // wholesale beda / kosong
+}
+
+// AdminListRegistrarTLDs — GET /api/v1/admin/pricing/registrar-tlds
+//
+// Sync TLD list dari registrar-api: allowed zones + harga wholesale awal +
+// flag zone (require_document, auto_approved). Include cross-check terhadap
+// platform_prices lokal supaya UI bisa surface "belum imported / wholesale
+// out-of-sync". Retail suggested = wholesale * 1.2 (markup default 20%) —
+// admin bebas override sebelum simpan.
+func (h *Handler) AdminListRegistrarTLDs(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar client belum di-wire (set REGISTRAR_API_URL + credentials di .env).")
+	}
+	tlds, err := h.registrar.ListRegistrarTLDs(c.Context())
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_lookup_failed",
+			"Gagal ambil daftar TLD dari registrar: "+err.Error())
+	}
+	// Bulk-load platform_prices lokal untuk cross-check dalam 1 query.
+	local, err := h.repo.ListPlatform(c.Context())
+	if err != nil {
+		return httpx.Internal(c, "list local prices failed")
+	}
+	localByTLD := make(map[string]*PlatformPrice, len(local))
+	for i := range local {
+		localByTLD[strings.ToLower(local[i].TLD)] = &local[i]
+	}
+	out := make([]registrarTLDRow, 0, len(tlds))
+	for _, t := range tlds {
+		reg := int64(math.Round(t.Register))
+		ren := int64(math.Round(t.Renew))
+		row := registrarTLDRow{
+			TLD:                    t.TLD,
+			Currency:               defaultString(t.Currency, "IDR"),
+			WholesaleRegisterPrice: reg,
+			WholesaleRenewPrice:    ren,
+			SuggestedRetailReg:     int64(math.Round(t.Register * 1.2)),
+			SuggestedRetailRen:     int64(math.Round(t.Renew * 1.2)),
+			RequireDocument:        t.RequireDocument,
+			AutoApproved:           t.AutoApproved,
+			NikAutoApproved:        t.NikAutoApproved,
+		}
+		if pf := localByTLD[t.TLD]; pf != nil {
+			row.LocalExists = true
+			// Out-of-sync = wholesale kosong ATAU nilai beda.
+			if pf.WholesaleRegisterPrice == nil || *pf.WholesaleRegisterPrice != reg ||
+				pf.WholesaleRenewPrice == nil || *pf.WholesaleRenewPrice != ren {
+				row.LocalOutOfSync = true
+			}
+		}
+		out = append(out, row)
+	}
+	return httpx.OK(c, out)
+}
+
+func defaultString(v, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return v
 }
 
 // -------- Admin: platform_prices CRUD --------
