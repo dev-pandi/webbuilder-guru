@@ -1,0 +1,134 @@
+// Package config load environment variables + expose typed config struct.
+// Follows same pattern as apps/api/internal/config supaya operator familiar.
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Config — full runtime config. Semua load dari environment (12-factor).
+// Panic di Load kalau field mandatory kosong — fail fast di startup.
+type Config struct {
+	// HTTP server
+	Port     string
+	AppEnv   string // "dev" | "staging" | "prod"
+	LogLevel string // "debug" | "info" | "warn" | "error"
+
+	// Provider mode — decide implementation. Fase 1: `pandi_wrapper` (proxy ke
+	// registrar-api). Fase 2 nanti: `epp_direct` (native EPP client).
+	ProviderMode string // "pandi_wrapper" | "epp_direct"
+
+	// PANDI wrapper config (kalau ProviderMode=pandi_wrapper)
+	PandiAPIURL      string
+	PandiAPIKey      string        // JWT statis (opsional kalau pakai email/pass)
+	PandiEmail       string        // untuk auto-login + refresh
+	PandiPassword    string
+	PandiAPITimeout  time.Duration
+
+	// EPP direct config (kalau ProviderMode=epp_direct) — untuk Fase 2 nanti.
+	// Cocok untuk PANDI EPP OT&E: epp1.pandi.id:700, epp2.pandi.id:700.
+	EPPHost     string
+	EPPPort     int
+	EPPUser     string
+	EPPPassword string
+	EPPCertFile string // client TLS certificate path
+	EPPKeyFile  string // client TLS private key path
+	EPPCAFile   string // registry CA cert (opsional; verify server)
+
+	// Security — auth header dari web builder API.
+	// HMAC shared secret — request body di-sign, verify di-server. Simple + no
+	// PKI overhead untuk phase awal. Kalau butuh stronger, migrate ke mTLS.
+	InternalHMACSecret string
+
+	// Rate limit + timeouts
+	RequestTimeout time.Duration
+	MaxConcurrent  int // limit inflight EPP call (registry biasanya cap session)
+}
+
+// Load reads config from env; defaults for optional fields. Panic kalau
+// mandatory-nya kosong.
+func Load() *Config {
+	c := &Config{
+		Port:     getEnv("PORT", "5000"),
+		AppEnv:   getEnv("APP_ENV", "dev"),
+		LogLevel: getEnv("LOG_LEVEL", "info"),
+
+		ProviderMode: getEnv("PROVIDER_MODE", "pandi_wrapper"),
+
+		PandiAPIURL:     getEnv("PANDI_API_URL", ""),
+		PandiAPIKey:     getEnv("PANDI_API_KEY", ""),
+		PandiEmail:      getEnv("PANDI_EMAIL", ""),
+		PandiPassword:   getEnv("PANDI_PASSWORD", ""),
+		PandiAPITimeout: getDuration("PANDI_API_TIMEOUT", 15*time.Second),
+
+		EPPHost:     getEnv("EPP_HOST", ""),
+		EPPPort:     getInt("EPP_PORT", 700),
+		EPPUser:     getEnv("EPP_USER", ""),
+		EPPPassword: getEnv("EPP_PASSWORD", ""),
+		EPPCertFile: getEnv("EPP_CERT_FILE", ""),
+		EPPKeyFile:  getEnv("EPP_KEY_FILE", ""),
+		EPPCAFile:   getEnv("EPP_CA_FILE", ""),
+
+		InternalHMACSecret: getEnv("INTERNAL_HMAC_SECRET", ""),
+
+		RequestTimeout: getDuration("REQUEST_TIMEOUT", 30*time.Second),
+		MaxConcurrent:  getInt("MAX_CONCURRENT", 20),
+	}
+
+	// Validate per provider mode. Wrapper butuh URL + credentials; EPP direct
+	// butuh EPP host+user+password+cert. Fail fast dengan pesan jelas.
+	if c.ProviderMode == "pandi_wrapper" {
+		if c.PandiAPIURL == "" {
+			panic("PANDI_API_URL wajib saat PROVIDER_MODE=pandi_wrapper")
+		}
+		if c.PandiAPIKey == "" && (c.PandiEmail == "" || c.PandiPassword == "") {
+			panic("PANDI_API_KEY atau (PANDI_EMAIL + PANDI_PASSWORD) wajib saat PROVIDER_MODE=pandi_wrapper")
+		}
+	} else if c.ProviderMode == "epp_direct" {
+		if c.EPPHost == "" || c.EPPUser == "" || c.EPPPassword == "" {
+			panic("EPP_HOST + EPP_USER + EPP_PASSWORD wajib saat PROVIDER_MODE=epp_direct")
+		}
+	} else {
+		panic(fmt.Sprintf("PROVIDER_MODE tidak dikenal: %q (harus pandi_wrapper atau epp_direct)", c.ProviderMode))
+	}
+
+	if c.InternalHMACSecret == "" {
+		// Boleh kosong di dev; wajib di staging/prod.
+		if c.AppEnv != "dev" {
+			panic("INTERNAL_HMAC_SECRET wajib di staging/prod (protect internal API)")
+		}
+	}
+
+	return c
+}
+
+// --- env helpers ---
+
+func getEnv(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func getInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
+}
+
+func getDuration(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return fallback
+}
