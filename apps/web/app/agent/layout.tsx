@@ -5,18 +5,30 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ChevronLeft,
+  ChevronDown,
   DollarSign,
+  Globe2,
+  Home,
   LogOut,
+  Receipt,
   Settings,
   UserCircle,
   Users,
+  UserSquare2,
   Wallet,
 } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 type Me = {
@@ -27,11 +39,21 @@ type Me = {
   parent_reseller_id?: string | null;
 };
 
+function getInitials(name: string | undefined, email: string): string {
+  const source = (name || email).trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
 const NAV = [
   { href: "/agent/dashboard", label: "Dashboard", icon: UserCircle },
   { href: "/agent/clients", label: "Klien", icon: Users },
+  { href: "/agent/domains", label: "Domain", icon: Globe2 },
   { href: "/agent/wallet", label: "Wallet", icon: Wallet },
   { href: "/agent/pricing", label: "Kulakan", icon: DollarSign },
+  { href: "/agent/invoices", label: "Invoice", icon: Receipt },
+  { href: "/agent/collaborators", label: "Kolaborator", icon: UserSquare2 },
   { href: "/agent/settings", label: "Pengaturan", icon: Settings },
 ] as const;
 
@@ -63,6 +85,14 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
       });
   }, [router]);
 
+  // Hooks first — pathname-only, aman dijalankan pre-auth.
+  const activeLabel = useMemo(() => {
+    const hit = NAV.find(
+      (n) => pathname === n.href || pathname?.startsWith(n.href + "/"),
+    );
+    return hit?.label ?? "Agent";
+  }, [pathname]);
+
   if (!ready || !me) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -76,31 +106,104 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     router.replace("/login");
   }
 
+  const initials = getInitials(me.name, me.email);
+
   return (
     <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/">
-                <ChevronLeft />
-                <span className="hidden sm:inline">Beranda</span>
-              </Link>
-            </Button>
-            <div className="flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary/10">
-                <UserCircle className="size-4 text-primary" />
+      <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-6">
+          <div className="flex min-w-0 items-center gap-4">
+            <Link
+              href="/agent/dashboard"
+              className="group flex items-center gap-2.5"
+              aria-label="Ke dashboard agent"
+            >
+              <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-sm transition-transform group-hover:scale-105">
+                <UserCircle className="size-4" />
               </div>
-              <div>
-                <div className="text-sm font-semibold leading-tight">{me.name}</div>
-                <div className="text-[11px] text-muted-foreground">Agent Portal</div>
+              <div className="min-w-0 leading-tight">
+                <span className="block truncate text-sm font-semibold">
+                  {me.name || me.email.split("@")[0]}
+                </span>
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Agent Portal
+                </span>
               </div>
+            </Link>
+
+            <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
+              <span aria-hidden="true">/</span>
+              <span className="font-medium text-foreground">{activeLabel}</span>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={logout}>
-            <LogOut />
-            Keluar
-          </Button>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              className="hidden gap-1.5 text-muted-foreground hover:text-foreground sm:inline-flex"
+            >
+              <Link href="/" target="_blank" rel="noopener noreferrer">
+                <Home className="size-4" />
+                <span className="hidden md:inline">Beranda</span>
+              </Link>
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-full border bg-card px-1.5 py-1 text-sm transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Menu akun"
+                >
+                  <span className="flex size-7 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
+                    {initials}
+                  </span>
+                  <span className="hidden max-w-[10rem] truncate pr-1 text-xs font-medium text-foreground sm:inline">
+                    {me.name || me.email.split("@")[0]}
+                  </span>
+                  <ChevronDown className="mr-1 size-3.5 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="normal-case">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Masuk sebagai
+                    </span>
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {me.name || "Agent"}
+                    </span>
+                    <span className="truncate text-xs font-normal text-muted-foreground">
+                      {me.email}
+                    </span>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/agent/settings">
+                    <Settings className="size-3.5" />
+                    Pengaturan
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/" target="_blank" rel="noopener noreferrer">
+                    <Home className="size-3.5" />
+                    Beranda publik
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => logout()}
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <LogOut className="size-3.5" />
+                  Keluar
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
       <div className="mx-auto grid max-w-6xl gap-6 px-6 py-8 md:grid-cols-[220px_1fr]">

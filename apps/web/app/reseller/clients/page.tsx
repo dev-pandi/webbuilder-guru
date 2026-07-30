@@ -208,6 +208,7 @@ function CreateClientDialog({
     address: "",
     city: "",
     postal_code: "",
+    nik: "",
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -221,6 +222,7 @@ function CreateClientDialog({
         address: "",
         city: "",
         postal_code: "",
+        nik: "",
       });
       setErr(null);
     }
@@ -325,15 +327,33 @@ function CreateClientDialog({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="c-postal">Kode Pos</Label>
-            <Input
-              id="c-postal"
-              value={form.postal_code}
-              onChange={(e) => set("postal_code", e.target.value)}
-              placeholder="10110"
-              className="max-w-[150px]"
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="c-postal">Kode Pos</Label>
+              <Input
+                id="c-postal"
+                value={form.postal_code}
+                onChange={(e) => set("postal_code", e.target.value)}
+                placeholder="10110"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="c-nik">
+                NIK (KTP){" "}
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  — wajib untuk .id
+                </span>
+              </Label>
+              <Input
+                id="c-nik"
+                value={form.nik}
+                onChange={(e) => set("nik", e.target.value.replace(/\D/g, "").slice(0, 16))}
+                placeholder="16 digit NIK"
+                inputMode="numeric"
+                maxLength={16}
+                className="font-mono"
+              />
+            </div>
           </div>
 
           {err && (

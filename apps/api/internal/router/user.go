@@ -225,14 +225,16 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/reseller/agents", roleReseller, deps.Reseller.ListAgents)
 		authed.Get("/reseller/stats", roleReseller, deps.Reseller.GetStats)
 
-		// Reseller ATAU agent boleh (invite/list client).
+		// Reseller ATAU agent boleh (invite/list/update client).
 		authed.Post("/reseller/clients", roleResellerOrAgent, mutateLimit, deps.Reseller.CreateClient)
 		authed.Get("/reseller/clients", roleResellerOrAgent, deps.Reseller.ListClients)
 		authed.Get("/reseller/clients/:client_id", roleResellerOrAgent, deps.Reseller.GetClient)
+		authed.Patch("/reseller/clients/:client_id", roleResellerOrAgent, mutateLimit, deps.Reseller.UpdateClient)
 
 		// Agent-only mirror (list assigned clients dari POV agent).
 		authed.Get("/agent/clients", roleAgent, deps.Reseller.ListClients)
 		authed.Get("/agent/clients/:client_id", roleAgent, deps.Reseller.GetClient)
+		authed.Patch("/agent/clients/:client_id", roleAgent, mutateLimit, deps.Reseller.UpdateClient)
 		authed.Get("/agent/stats", roleAgent, deps.Reseller.GetStats)
 
 		// Phase 3 — list domain purchase yang di-trigger on-behalf-of client.

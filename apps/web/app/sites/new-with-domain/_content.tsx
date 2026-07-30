@@ -308,6 +308,7 @@ export function NewWithDomainContent() {
             purchasing={purchasing}
             onPurchase={onPurchase}
             forClientID={forClientID || undefined}
+            onClientUpdated={(updated) => setMe(updated)}
             walletBalance={walletBalance}
           />
         )}

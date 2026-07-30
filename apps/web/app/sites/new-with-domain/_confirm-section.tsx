@@ -42,6 +42,8 @@ export function ConfirmSection(props: {
   onPurchase: () => void;
   // Phase 3 on-behalf-of: kalau set, ProfileBlock tampilkan copy "klien".
   forClientID?: string;
+  // Callback pasca inline-edit klien sukses — wizard state `me` di-refresh.
+  onClientUpdated?: (updated: Me) => void;
   // Phase 3.5 wallet — kalau caller reseller/agent, `walletBalance` di-set
   // (bisa 0). null = mode client (tanpa opsi wallet).
   walletBalance?: number | null;
@@ -50,12 +52,19 @@ export function ConfirmSection(props: {
     selected, me, profileComplete, missingProfile,
     years, setYears, paymentMethod, setPaymentMethod,
     promoCode, setPromoCode, documentIds, setDocumentIds,
-    purchasing, onPurchase, forClientID, walletBalance,
+    purchasing, onPurchase, forClientID, onClientUpdated, walletBalance,
   } = props;
 
   const total = selected.price ? selected.price.register * years : 0;
   const currency = selected.price?.currency ?? "IDR";
   const showKtpHint = selected.zone?.require_document && !selected.zone.nik_auto_approved;
+  // Zone butuh NIK — mis. .id family. Kalau nik_auto_approved false + zone
+  // require document, NIK jadi kritis (bisa auto-approve alt-alt kalau
+  // nik_auto_approved true, tapi tetap butuh NIK di WHOIS).
+  const needNik = Boolean(selected.zone?.require_document);
+  // Block "Beli & bayar" kalau on-behalf-of + zone butuh NIK + client belum
+  // isi. Kalau kita biarkan lolos, registrar reject → user bingung.
+  const nikBlocking = needNik && Boolean(forClientID) && !me?.nik;
 
   const walletEnabled = walletBalance != null;
   const balanceEnough = walletEnabled && (walletBalance ?? 0) >= total;
@@ -93,6 +102,8 @@ export function ConfirmSection(props: {
           profileComplete={profileComplete}
           missingProfile={missingProfile}
           forClientID={forClientID}
+          onClientUpdated={onClientUpdated}
+          needNik={needNik}
         />
 
         {/* Zone butuh dokumen (mis. .id) — tampilkan picker inline supaya
@@ -243,9 +254,14 @@ export function ConfirmSection(props: {
               {missingProfile.map((k) => FIELD_LABEL[k] ?? k).join(", ")}
             </Badge>
           )}
+          {profileComplete && nikBlocking && (
+            <Badge variant="warning" className="justify-center text-xs">
+              NIK klien wajib untuk .{selected.tld ?? "id"}
+            </Badge>
+          )}
           <Button
             onClick={onPurchase}
-            disabled={!profileComplete || purchasing}
+            disabled={!profileComplete || nikBlocking || purchasing}
             size="lg"
             className="h-12 gap-2 text-base font-semibold shadow-sm sm:w-auto"
           >

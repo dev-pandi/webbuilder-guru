@@ -410,6 +410,87 @@ func (h *Handler) GetClient(c *fiber.Ctx) error {
 	})
 }
 
+// ---------------- Update Client Profile ----------------
+
+// updateClientReq — semua field optional (pointer) supaya kita bisa update
+// per-field tanpa wipe kolom lain. NIK dipisah karena inilah use-case
+// utamanya (client belum isi NIK, agent isi dari wizard on-behalf-of biar
+// bisa lanjut register domain .id).
+type updateClientReq struct {
+	Name        *string `json:"name,omitempty"`
+	PhoneNumber *string `json:"phone_number,omitempty"`
+	Address     *string `json:"address,omitempty"`
+	City        *string `json:"city,omitempty"`
+	State       *string `json:"state,omitempty"`
+	PostalCode  *string `json:"postal_code,omitempty"`
+	Nik         *string `json:"nik,omitempty"`
+}
+
+// UpdateClient — PATCH /api/v1/reseller/clients/:client_id
+// Reseller ATAU agent boleh update profil client yang mereka manage. Ownership
+// via active assignment (sama seperti GetClient). Digunakan oleh wizard
+// on-behalf-of untuk isi NIK klien tanpa harus minta klien login sendiri.
+//
+// COALESCE-based UPDATE — nil pointer = tidak ubah field itu.
+func (h *Handler) UpdateClient(c *fiber.Ctx) error {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return httpx.Forbidden(c, err.Error())
+	}
+	clientID, err := uuid.Parse(c.Params("client_id"))
+	if err != nil {
+		return httpx.BadRequest(c, "client_id bukan UUID valid")
+	}
+	if _, err := h.repo.FindActiveAssignmentBetween(c.Context(), caller.User.ID, clientID); err != nil {
+		return httpx.NotFound(c, "klien tidak ditemukan atau bukan asuhan Anda")
+	}
+	var req updateClientReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	// Semua field null → no-op (return current). Cegah round-trip yang tidak
+	// perlu tanpa fail body kosong (frontend boleh submit form parsial).
+	if req.Name == nil && req.PhoneNumber == nil && req.Address == nil &&
+		req.City == nil && req.State == nil && req.PostalCode == nil && req.Nik == nil {
+		return httpx.BadRequest(c, "minimal 1 field harus diisi")
+	}
+	// Trim string pointer supaya "  " tidak nyimpan whitespace.
+	trimPtr := func(p *string) *string {
+		if p == nil {
+			return nil
+		}
+		v := strings.TrimSpace(*p)
+		return &v
+	}
+	u, err := h.authRepo.UpdateProfile(c.Context(), clientID, auth.ProfileUpdate{
+		Name:        trimPtr(req.Name),
+		PhoneNumber: trimPtr(req.PhoneNumber),
+		Address:     trimPtr(req.Address),
+		City:        trimPtr(req.City),
+		State:       trimPtr(req.State),
+		PostalCode:  trimPtr(req.PostalCode),
+		Nik:         trimPtr(req.Nik),
+	})
+	if err != nil {
+		if errors.Is(err, auth.ErrNotFound) {
+			return httpx.NotFound(c, "klien tidak ditemukan")
+		}
+		return httpx.Internal(c, "update failed")
+	}
+	return httpx.OK(c, fiber.Map{
+		"id":           u.ID.String(),
+		"email":        u.Email,
+		"name":         u.Name,
+		"phone_number": u.PhoneNumber,
+		"address":      u.Address,
+		"city":         u.City,
+		"state":        u.State,
+		"postal_code":  u.PostalCode,
+		"nik":          u.Nik,
+		"role":         u.Role,
+	})
+}
+
 // ---------------- Stats (Phase 6) ----------------
 
 // GetStats — GET /api/v1/reseller/stats
