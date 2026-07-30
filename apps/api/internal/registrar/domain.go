@@ -315,6 +315,57 @@ func (c *Client) GetRegisterStatus(ctx context.Context, jobID string) (*Register
 	return &env.Data, nil
 }
 
+// UpdateContactPayload — full replace payload untuk PATCH
+// /reseller/domain/:name/contact. Registrar treat sebagai contact:update EPP
+// yang REPLACE semua field (bukan partial). Caller wajib merge dari state
+// lama sebelum submit — kalau tidak, field yang tidak dikirim akan wipe.
+//
+// Nik wajib non-empty untuk zone .id (registrar reject 400 kalau kosong).
+// CountryCode default "ID" di server-side kalau kosong.
+type UpdateContactPayload struct {
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	Address     string `json:"address"`
+	City        string `json:"city"`
+	State       string `json:"state,omitempty"`
+	PostalCode  string `json:"postal_code"`
+	CountryCode string `json:"country_code,omitempty"`
+	Nik         string `json:"nik,omitempty"`
+}
+
+// UpdateContactResponse — envelope response. `Message` punya 3 varian
+// (lihat plan §14.10) — caller yang butuh UX banner bisa string-match
+// substring "DB + EPP registry" / "DB only" / "drift".
+type UpdateContactResponse struct {
+	Domain    string `json:"domain"`
+	ContactID uint64 `json:"contact_id"`
+	NicHandle string `json:"nic_handle"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	Phone     string `json:"phone"`
+	Message   string `json:"message"`
+}
+
+// UpdateResellerDomainContact — PATCH /reseller/domain/:name/contact.
+// Sync contact info end-user ke registry EPP + DB registrar. Semua field
+// di payload WAJIB (registry replace-all). Ownership enforced di registrar
+// (404 kalau bukan milik reseller yang login).
+//
+// Return 3 varian sukses berdasarkan state contact di registry — semua
+// 200 OK, beda hanya `Message`.
+func (c *Client) UpdateResellerDomainContact(ctx context.Context, name string, payload UpdateContactPayload) (*UpdateContactResponse, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
+	}
+	var env envelope[UpdateContactResponse]
+	if err := c.do(ctx, "PATCH", "/v1/api/user/reseller/domain/"+url.PathEscape(name)+"/contact", payload, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
 // asAPIError is the internal counterpart of the public IsAPIError. Named
 // separately because we return the *APIError value itself, not a bool.
 func asAPIError(err error) (*APIError, bool) {

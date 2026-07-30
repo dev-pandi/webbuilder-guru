@@ -329,6 +329,49 @@ Backend fix internal (tidak butuh frontend change):
 - EPP response nil guards di semua handler + worker
 - Idempotent retry via `InfoDomain` ownership check
 
+### 📌 Changelog integrasi (per update backend 2026-07-30)
+
+**Update contact untuk domain aktif:**
+
+Endpoint baru `PATCH /reseller/domain/:name/contact` — reseller (via web
+builder) bisa update contact info end-user (nama, email, phone, alamat, NIK)
+untuk domain aktif. Sync ke registry EPP + DB.
+
+Client SDK expose `UpdateResellerDomainContact(ctx, domainName, payload)`:
+
+```go
+type UpdateContactPayload struct {
+    Name        string `json:"name"`         // required
+    Email       string `json:"email"`        // required (format email)
+    Phone       string `json:"phone"`        // required
+    Address     string `json:"address"`      // required
+    City        string `json:"city"`         // required
+    State       string `json:"state,omitempty"`
+    PostalCode  string `json:"postal_code"`  // required
+    CountryCode string `json:"country_code,omitempty"` // default "ID"
+    Nik         string `json:"nik,omitempty"` // WAJIB untuk zone .id
+}
+
+type UpdateContactResponse struct {
+    Domain    string `json:"domain"`
+    ContactID uint64 `json:"contact_id"`
+    NicHandle string `json:"nic_handle"`
+    Name      string `json:"name"`
+    Email     string `json:"email"`
+    Phone     string `json:"phone"`
+    Message   string `json:"message"`  // 3 varian (lihat §14.10)
+}
+```
+
+**UX di web builder:**
+- End-user UMKM di dashboard web builder: form "Info Kontak Domain" dengan
+  pre-fill dari cache lokal (data terakhir dari register response).
+- Submit → backend web builder call `UpdateResellerDomainContact` → return
+  ke user dengan pesan sesuai `message` field.
+- Payload FULL required — client-side merge dari state lama sebelum PATCH.
+
+Detail spec di §14.10 di bawah.
+
 ### 14.1 Setup awal
 
 1. Admin registrar-api create account untuk web builder company:
@@ -577,6 +620,74 @@ Beberapa fitur di registrar-api yang perlu di-expose di UI web builder:
   - 409 → conflict (domain sudah taken, idempotency key dobel)
   - 5xx → retry di worker (bukan fail-fast di request)
 
+### 14.10 Update contact untuk domain aktif (backend 2026-07-30)
+
+**Endpoint:** `PATCH /api/user/reseller/domain/:name/contact`
+
+Reseller update info contact (nama, email, phone, alamat, NIK) untuk domain
+yang sudah ter-register. Endpoint sync ke registry EPP + DB. Domain harus
+milik reseller yang login (404 kalau bukan owner).
+
+**Semua field WAJIB** (payload FULL, bukan partial): EPP `contact:update`
+replace field. Client-side WAJIB merge dari state lama (mis. dari cache
+web builder lokal atau `GET /reseller/domain/list`) sebelum PATCH.
+
+**Response 200 — 3 varian berdasarkan state contact di registry:**
+
+| Kondisi | `message` | Behavior |
+|---|---|---|
+| Contact sudah di-provisioning di registry | `"contact updated (DB + EPP registry)"` | EPP contact:update + DB update, keduanya sukses |
+| Contact BELUM di-provisioning (domain masih pending) | `"contact updated (DB only — belum di-provisioning ke registry, akan disync saat domain aktif)"` | DB update saja. Worker `CheckContactAndCreate` akan sync data terkini saat domain provisioning nanti. |
+| Data drift (registry contact hilang) | `"contact updated (registry state drift — auto-reset flag; akan re-provision saat domain aktif)"` | Backend auto-reset flag internal, DB update, worker re-provision |
+
+Semua 3 varian return `200 OK` dengan body sukses — beda hanya di `message`.
+Web builder UI bisa tampilkan warning banner kalau `message` contain "DB only"
+atau "drift" (informasi supaya user tidak bingung kenapa update tidak
+langsung reflect di WHOIS).
+
+**Zone .id NIK guard:**
+- Kalau `domain.zone` berakhir `.id` → `nik` field WAJIB non-empty (400 kalau
+  kosong).
+- NIK di-store di `domains.user_nik`, bukan di contact row. Update sekaligus
+  update `domain.user_nik` kalau berbeda.
+
+**Errors:**
+- 400 — payload invalid / NIK kosong untuk .id / `country_code` tidak dikenal
+- 404 — domain bukan milik reseller
+- 502 — EPP registry reject (`contact:update code != 1000`) atau connection error
+- 503 — EPP unreachable
+
+**Recommended UX di web builder:**
+
+1. **Domain detail page** — tampilkan section "Kontak Domain" dengan tombol
+   "Edit Kontak". Klik → open form modal / navigate ke halaman edit.
+
+2. **Form pre-fill** — dari cache web builder (data disimpan sejak register
+   response). Kalau data hilang / stale, panggil `GET /reseller/domain/list`
+   untuk refresh.
+
+3. **Submit handler:**
+   ```go
+   resp, err := registrarClient.UpdateResellerDomainContact(ctx, domainName, payload)
+   if err != nil {
+       // handle 400/404/502 sesuai error type
+       return err
+   }
+   // Update cache lokal dengan data baru
+   cache.SetContact(domainName, resp)
+   // Tampilkan message ke user (3 varian)
+   showBanner(resp.Message)
+   ```
+
+4. **Message-to-banner mapping:**
+   - Match `"DB + EPP registry"` → green banner "Kontak berhasil diperbarui"
+   - Match `"DB only"` → yellow banner "Kontak tersimpan. Registry akan disync setelah domain aktif."
+   - Match `"drift"` → orange banner "Data ter-update. Registry akan re-sync otomatis."
+
+**Impact ke webhook:**
+- Endpoint TIDAK fire webhook — update contact sifatnya request-response, bukan async job.
+- Kalau web builder butuh notify end-user "kontak sudah diperbarui", handle di sisi web builder (mis. email confirmation setelah PATCH sukses).
+
 ### 14.9 Referensi
 
 - Backend spec lengkap: [`../../Golang/registrar-api/plan.md`](../../Golang/registrar-api/plan.md)
@@ -599,6 +710,7 @@ Beberapa fitur di registrar-api yang perlu di-expose di UI web builder:
 | POST | `/reseller/domain/:name/renew` | Renew |
 | GET  | `/reseller/domain/:name/nameservers` | Baca NS |
 | POST | `/reseller/domain/:name/nameservers` | Update NS |
+| PATCH | `/reseller/domain/:name/contact` | Update contact info (registrant/admin/tech/billing) + sync EPP registry |
 | GET  | `/reseller/config/webhook` | Read webhook URL |
 | POST | `/reseller/config/webhook` | Rotate secret |
 

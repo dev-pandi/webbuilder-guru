@@ -22,6 +22,7 @@ import (
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
+	"github.com/webbuilder/api/internal/contactsync"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/email_log"
@@ -390,6 +391,15 @@ func main() {
 	if registrarClient != nil {
 		// Sync TLD list + wholesale awal dari registrar (admin panel).
 		pricingHandler.SetRegistrar(registrarClient)
+	}
+
+	// Contact syncer — propagate profile update (self atau by reseller/agent)
+	// ke registrar contact per domain aktif user. Skip kalau registrar
+	// disabled (client nil). Async fire-and-forget.
+	if registrarClient != nil {
+		syncer := contactsync.New(registrarClient, purchaseRepo, authRepo)
+		authHandler.SetContactSyncer(syncer)
+		resellerHandler.SetContactSyncer(syncer)
 	}
 
 	deps := router.Deps{

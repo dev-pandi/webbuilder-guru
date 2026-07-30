@@ -13,6 +13,14 @@ import (
 	"github.com/webbuilder/api/internal/mail"
 )
 
+// ContactSyncer — hook opsional yang propagate profile update ke registrar
+// contact untuk semua domain aktif user. Interface bukan concrete type
+// supaya package auth tidak import contactsync (menghindari circular dep).
+// Nil = fitur disabled (skip silent).
+type ContactSyncer interface {
+	SyncUser(userID uuid.UUID)
+}
+
 type Handler struct {
 	repo   *Repo
 	issuer *TokenIssuer
@@ -22,6 +30,8 @@ type Handler struct {
 
 	resetTTL  time.Duration
 	verifyTTL time.Duration
+
+	contactSyncer ContactSyncer // nil = no propagation
 }
 
 // HandlerOptions lets main wire optional dependencies (mailer, app URL) without
@@ -49,6 +59,9 @@ func NewHandler(repo *Repo, issuer *TokenIssuer, opt HandlerOptions) *Handler {
 		verifyTTL:  opt.VerifyTTL,
 	}
 }
+
+// SetContactSyncer inject syncer opsional pasca-construction. Nil = disable.
+func (h *Handler) SetContactSyncer(s ContactSyncer) { h.contactSyncer = s }
 
 type registerReq struct {
 	Email    string `json:"email"`
@@ -348,6 +361,11 @@ func (h *Handler) UpdateMe(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return httpx.Internal(c, "update failed")
+	}
+	// Propagate ke registrar contact untuk semua domain aktif user. Async
+	// fire-and-forget — return response cepat, sync log-only kalau gagal.
+	if h.contactSyncer != nil {
+		h.contactSyncer.SyncUser(u.ID)
 	}
 	return httpx.OK(c, toMeResp(u))
 }

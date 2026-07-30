@@ -34,6 +34,13 @@ type DomainStats struct {
 
 // Handler bundles repo + auth repo + mailer supaya endpoint reseller portal
 // bisa akses user + invitation table plus kirim email.
+// ContactSyncer — hook opsional untuk propagate update profil client ke
+// registrar contact di seluruh domain aktif. Interface lokal supaya reseller
+// package tidak import contactsync (menghindari import cycle).
+type ContactSyncer interface {
+	SyncUser(userID uuid.UUID)
+}
+
 type Handler struct {
 	repo       *Repo
 	authRepo   *auth.Repo
@@ -41,6 +48,8 @@ type Handler struct {
 	appBaseURL string // dipakai bangun URL invite
 	stats      StatsProvider // nil = stats endpoint 503
 	audit      *audit.Repo   // nil = audit disabled (silent)
+
+	contactSyncer ContactSyncer // nil = no propagation
 }
 
 func NewHandler(r *Repo, authRepo *auth.Repo, mailer mail.Sender, appBaseURL string) *Handler {
@@ -59,6 +68,9 @@ func (h *Handler) SetStatsProvider(p StatsProvider) { h.stats = p }
 // SetAudit inject audit repo untuk record invite/create events (Phase 7).
 // Nil = no-op.
 func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
+
+// SetContactSyncer inject syncer pasca-construction. Nil-safe.
+func (h *Handler) SetContactSyncer(s ContactSyncer) { h.contactSyncer = s }
 
 // logAudit — fire-and-forget helper, safe kalau audit nil.
 func (h *Handler) logAudit(ctx context.Context, actor uuid.UUID, event, targetType, targetID string, meta map[string]any) {
@@ -476,6 +488,11 @@ func (h *Handler) UpdateClient(c *fiber.Ctx) error {
 			return httpx.NotFound(c, "klien tidak ditemukan")
 		}
 		return httpx.Internal(c, "update failed")
+	}
+	// Propagate ke registrar contact untuk semua domain aktif klien —
+	// async fire-and-forget.
+	if h.contactSyncer != nil {
+		h.contactSyncer.SyncUser(u.ID)
 	}
 	return httpx.OK(c, fiber.Map{
 		"id":           u.ID.String(),

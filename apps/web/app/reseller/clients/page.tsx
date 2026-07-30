@@ -165,12 +165,19 @@ export default function ResellerClientsPage() {
                       {formatDate(c.created_at)}
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant="outline" asChild className="gap-1 whitespace-nowrap">
-                        <Link href={`/sites/new-with-domain?for_client=${c.client_id}`}>
-                          <Globe2 className="size-3" />
-                          Beli Domain
-                        </Link>
-                      </Button>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button size="sm" variant="ghost" asChild className="gap-1 whitespace-nowrap">
+                          <Link href={`/reseller/clients/${c.client_id}`}>
+                            Detail
+                          </Link>
+                        </Button>
+                        <Button size="sm" variant="outline" asChild className="gap-1 whitespace-nowrap">
+                          <Link href={`/sites/new-with-domain?for_client=${c.client_id}`}>
+                            <Globe2 className="size-3" />
+                            Beli Domain
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
