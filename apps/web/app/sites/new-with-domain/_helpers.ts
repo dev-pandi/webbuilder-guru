@@ -3,11 +3,15 @@
 
 import type { Me } from "./_types";
 
+// Wajib untuk EPP CREATE contact — registrar (PANDI/newTLD) reject dengan
+// "State is required" atau serupa kalau kolom ini kosong. State ditambah
+// setelah insiden EPP code=2005 karena provinsi kosong di kontak klien.
 export const REQUIRED_PROFILE_FIELDS: Array<keyof Me> = [
   "name",
   "phone_number",
   "address",
   "city",
+  "state",
   "postal_code",
 ];
 

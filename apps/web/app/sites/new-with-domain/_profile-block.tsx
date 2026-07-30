@@ -206,6 +206,7 @@ function ClientInlineEdit({
     phone_number: me.phone_number ?? "",
     address: me.address ?? "",
     city: me.city ?? "",
+    state: me.state ?? "",
     postal_code: me.postal_code ?? "",
     nik: me.nik ?? "",
   });
@@ -220,6 +221,7 @@ function ClientInlineEdit({
       phone_number: me.phone_number ?? "",
       address: me.address ?? "",
       city: me.city ?? "",
+      state: me.state ?? "",
       postal_code: me.postal_code ?? "",
       nik: me.nik ?? "",
     });
@@ -302,15 +304,26 @@ function ClientInlineEdit({
           />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="ie-postal" className="text-xs">
-            Kode Pos
+          <Label htmlFor="ie-state" className="text-xs">
+            Provinsi
           </Label>
           <Input
-            id="ie-postal"
-            value={form.postal_code}
-            onChange={(e) => set("postal_code", e.target.value)}
+            id="ie-state"
+            value={form.state}
+            onChange={(e) => set("state", e.target.value)}
+            placeholder="DKI Jakarta"
           />
         </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="ie-postal" className="text-xs">
+          Kode Pos
+        </Label>
+        <Input
+          id="ie-postal"
+          value={form.postal_code}
+          onChange={(e) => set("postal_code", e.target.value)}
+        />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="ie-nik" className="text-xs">

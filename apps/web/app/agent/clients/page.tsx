@@ -207,6 +207,7 @@ function CreateClientDialog({
     phone_number: "",
     address: "",
     city: "",
+    state: "",
     postal_code: "",
     nik: "",
   });
@@ -221,6 +222,7 @@ function CreateClientDialog({
         phone_number: "",
         address: "",
         city: "",
+        state: "",
         postal_code: "",
         nik: "",
       });
@@ -325,6 +327,21 @@ function CreateClientDialog({
               value={form.address}
               onChange={(e) => set("address", e.target.value)}
               placeholder="Jl. Contoh No. 10..."
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="c-state">
+              Provinsi{" "}
+              <span className="text-[10px] font-normal text-muted-foreground">
+                — wajib untuk register domain
+              </span>
+            </Label>
+            <Input
+              id="c-state"
+              value={form.state}
+              onChange={(e) => set("state", e.target.value)}
+              placeholder="DKI Jakarta"
             />
           </div>
 
