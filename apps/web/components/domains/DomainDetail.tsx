@@ -61,7 +61,20 @@ type NameserverInfo = {
 // DomainDetail — shared component untuk halaman kelola 1 domain.
 // `basePath` mengatur back-link supaya user tetap di layout yang benar
 // (settings vs reseller vs agent).
-export function DomainDetail({ basePath = "/settings/domains" }: { basePath?: string }) {
+// `listEndpoint` mengatur endpoint fetch untuk ownership check +
+// expiry — default `/api/v1/domains/purchases` (self-scope by user_id).
+// Reseller/agent portal WAJIB override ke /reseller/purchases atau
+// /agent/purchases supaya on-behalf-of purchase (user_id = client,
+// purchased_by = caller) muncul. Backend endpoint WHOIS + Nameserver
+// sudah support ownership via `user_id OR purchased_by`, jadi cukup
+// swap endpoint di sini.
+export function DomainDetail({
+  basePath = "/settings/domains",
+  listEndpoint = "/api/v1/domains/purchases?limit=100",
+}: {
+  basePath?: string;
+  listEndpoint?: string;
+}) {
   const router = useRouter();
   const params = useParams<{ name: string }>();
   const domain = decodeURIComponent(params.name ?? "").toLowerCase();
@@ -79,7 +92,7 @@ export function DomainDetail({ basePath = "/settings/domains" }: { basePath?: st
     try {
       // 1) Purchase ownership check + expiry — dari list purchases, filter
       //    by domain. Alternatif: bikin GET /purchases/by-domain/:name.
-      const list = await api<Purchase[]>("/api/v1/domains/purchases?limit=100");
+      const list = await api<Purchase[]>(listEndpoint);
       const found = (list ?? []).find(
         (p) => p.domain === domain && p.status === "active" && p.kind === "register",
       );
@@ -108,7 +121,7 @@ export function DomainDetail({ basePath = "/settings/domains" }: { basePath?: st
   useEffect(() => {
     if (domain) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [domain]);
+  }, [domain, listEndpoint]);
 
   const expiryInfo = useMemo(() => formatExpiry(purchase?.expires_at), [purchase?.expires_at]);
 

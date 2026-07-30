@@ -56,7 +56,18 @@ const STATUS_LABEL: Record<string, { label: string; variant: "default" | "second
 // DomainsList — shared component untuk halaman daftar domain user.
 // `basePath` mengatur URL detail page — supaya reseller/settings pakai
 // prefix yang sesuai (dan sidebar layout tidak lompat).
-export function DomainsList({ basePath = "/settings/domains" }: { basePath?: string }) {
+// `endpoint` bebas — default `/api/v1/domains/purchases` (self-scope
+// via user_id). Reseller/agent portal WAJIB override ke
+// `/api/v1/reseller/purchases` atau `/api/v1/agent/purchases` supaya
+// purchase yang di-trigger on-behalf-of client (user_id != caller) tetap
+// muncul; scope backend-nya `purchased_by`, bukan `user_id`.
+export function DomainsList({
+  basePath = "/settings/domains",
+  endpoint = "/api/v1/domains/purchases?limit=100",
+}: {
+  basePath?: string;
+  endpoint?: string;
+}) {
   const router = useRouter();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,10 +75,15 @@ export function DomainsList({ basePath = "/settings/domains" }: { basePath?: str
   const [err, setErr] = useState<string | null>(null);
   const [renewTarget, setRenewTarget] = useState<Purchase | null>(null);
 
+  // Sync tombol hanya relevan untuk self-scope (endpoint default) — on-
+  // behalf-of purchases di-sync via user_id klien, bukan caller. Untuk
+  // reseller/agent portal, sembunyikan supaya UX tidak misleading.
+  const isSelfScope = endpoint.startsWith("/api/v1/domains/purchases");
+
   async function refresh() {
     setLoading(true);
     try {
-      const list = await api<Purchase[]>("/api/v1/domains/purchases?limit=100");
+      const list = await api<Purchase[]>(endpoint);
       setPurchases(list ?? []);
     } catch (e) {
       setErr((e as Error).message);
@@ -100,7 +116,8 @@ export function DomainsList({ basePath = "/settings/domains" }: { basePath?: str
 
   useEffect(() => {
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint]);
 
   // Group by status: active dulu (dedupe per domain — kalau ada register +
   // renew keduanya active, tampilkan satu row dengan expires_at terbaru),
@@ -134,21 +151,23 @@ export function DomainsList({ basePath = "/settings/domains" }: { basePath?: str
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onSync}
-            disabled={syncing || loading}
-            className="gap-2"
-            title="Ambil status terbaru langsung dari registrar (fix drift)"
-          >
-            {syncing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-            Sinkronkan
-          </Button>
+          {isSelfScope && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onSync}
+              disabled={syncing || loading}
+              className="gap-2"
+              title="Ambil status terbaru langsung dari registrar (fix drift)"
+            >
+              {syncing ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="size-3.5" />
+              )}
+              Sinkronkan
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={refresh} disabled={loading} className="gap-2">
             <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
             Refresh

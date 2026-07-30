@@ -235,15 +235,24 @@ func (r *Repo) ListByPurchaser(ctx context.Context, purchaserID uuid.UUID, limit
 }
 
 // GetLatestActiveByDomain cari purchase yang statusnya active + kind=register
-// untuk domain tertentu, scoped ke user. Dipakai Renew handler untuk verify
-// bahwa user memang pemilik domain sebelum forward renew request ke registrar.
-// Renew job sendiri di-exclude (kind != 'register') supaya bisa multiple renew
-// per domain.
+// untuk domain tertentu, scoped ke user (SEBAGAI owner ATAU purchaser).
+// Dipakai Renew + WHOIS + Nameserver handler untuk verify bahwa caller
+// memang berhak manage domain ini sebelum forward request ke registrar.
+//
+// Ownership dua-jalur:
+//   - `user_id = $1` → self-purchase (client role atau reseller/agent yang
+//     beli untuk diri sendiri).
+//   - `purchased_by = $1` → on-behalf-of. Reseller/agent yang beli untuk
+//     client tetap boleh manage NS + WHOIS + renew (dia yang trigger + bayar).
+//
+// Renew job sendiri di-exclude (kind != 'register') supaya bisa multiple
+// renew per domain tanpa duplicate result.
 func (r *Repo) GetLatestActiveByDomain(ctx context.Context, domain string, userID uuid.UUID) (*Purchase, error) {
 	var p Purchase
 	err := scan(r.pool.QueryRow(ctx,
 		`SELECT `+cols+` FROM domain_purchases
-		  WHERE user_id = $1 AND domain = $2 AND kind = 'register' AND status = 'active'
+		  WHERE (user_id = $1 OR purchased_by = $1)
+		    AND domain = $2 AND kind = 'register' AND status = 'active'
 		  ORDER BY created_at DESC LIMIT 1`,
 		userID, domain,
 	), &p)

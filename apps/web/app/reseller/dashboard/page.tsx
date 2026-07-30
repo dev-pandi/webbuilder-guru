@@ -34,6 +34,7 @@ type WalletSnapshot = { balance: number; currency: string };
 
 type Stats = {
   clients: number;
+  clients_via_agents?: number; // klien yang di-invite agent (bukan direct)
   agents: number;
   active_domains: number;
   expiring_30_days: number;
@@ -71,8 +72,14 @@ export default function ResellerDashboardPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           icon={Users}
-          label="Klien"
+          label="Klien saya"
           value={stats ? String(stats.clients) : "…"}
+          sub={
+            stats && (stats.clients_via_agents ?? 0) > 0
+              ? `+${stats.clients_via_agents} via agent`
+              : undefined
+          }
+          subTone="muted"
           href="/reseller/clients"
         />
         <StatTile
@@ -238,12 +245,16 @@ function StatTile({
   value,
   href,
   sub,
+  subTone = "warn",
 }: {
   icon: React.ElementType;
   label: string;
   value: string;
   href?: string;
   sub?: string;
+  // Warna sub-text: "warn" (amber, default — untuk expiring domain), "muted"
+  // (muted-foreground, untuk info netral seperti "+N via agent").
+  subTone?: "warn" | "muted";
 }) {
   const body = (
     <Card className={href ? "transition-colors hover:border-primary" : undefined}>
@@ -255,7 +266,17 @@ function StatTile({
           <p className="text-sm text-muted-foreground">{label}</p>
         </div>
         <p className="mt-3 text-2xl font-bold tracking-tight">{value}</p>
-        {sub && <p className="mt-0.5 text-[11px] text-amber-600">{sub}</p>}
+        {sub && (
+          <p
+            className={
+              subTone === "muted"
+                ? "mt-0.5 text-[11px] text-muted-foreground"
+                : "mt-0.5 text-[11px] text-amber-600"
+            }
+          >
+            {sub}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

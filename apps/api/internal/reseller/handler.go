@@ -522,13 +522,25 @@ func (h *Handler) GetStats(c *fiber.Ctx) error {
 
 	// Aggregate parallel-safe (query independen, tidak share transaction).
 	// Best-effort — kalau salah satu fail, return 500 supaya UI retry.
-	clientCount, err := h.repo.CountClientsForReseller(c.Context(), resellerID)
+	//
+	// `clients` = klien direct caller (matches ListClientsByManager). Sebelumnya
+	// pool count (via agents) — dilepas karena bikin tile != list count.
+	clientCount, err := h.repo.CountClientsByManager(c.Context(), caller.User.ID)
 	if err != nil {
 		return httpx.Internal(c, "client count failed")
 	}
 	agentCount, err := h.repo.CountAgentsForReseller(c.Context(), resellerID)
 	if err != nil {
 		return httpx.Internal(c, "agent count failed")
+	}
+	// clients_via_agents cuma relevan untuk reseller — agent tidak lihat
+	// klien-klien milik agent lain (per plan permission matrix).
+	var clientsViaAgents int64
+	if caller.User.Role == auth.RoleReseller {
+		clientsViaAgents, err = h.repo.CountClientsViaAgents(c.Context(), resellerID)
+		if err != nil {
+			return httpx.Internal(c, "team client count failed")
+		}
 	}
 
 	// Domain stats — actor IDs = reseller + agent-nya. Purchase yang di-trigger
@@ -548,12 +560,13 @@ func (h *Handler) GetStats(c *fiber.Ctx) error {
 	}
 
 	return httpx.OK(c, fiber.Map{
-		"clients":          clientCount,
-		"agents":           agentCount,
-		"active_domains":   domainStats.ActiveDomains,
-		"expiring_30_days": domainStats.Expiring30Days,
-		"expiring_90_days": domainStats.Expiring90Days,
-		"pending_jobs":     domainStats.PendingJobs,
+		"clients":            clientCount,
+		"clients_via_agents": clientsViaAgents, // 0 untuk agent
+		"agents":             agentCount,
+		"active_domains":     domainStats.ActiveDomains,
+		"expiring_30_days":   domainStats.Expiring30Days,
+		"expiring_90_days":   domainStats.Expiring90Days,
+		"pending_jobs":       domainStats.PendingJobs,
 	})
 }
 

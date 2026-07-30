@@ -88,6 +88,31 @@ func (r *Repo) HasActiveAssignment(ctx context.Context, managerID, clientID uuid
 	return err
 }
 
+// ListManagedClientIDs — implementasi lain untuk interface
+// `domain_purchase.AssignmentChecker`. Kembalikan hanya client_id yang
+// di-assign LANGSUNG ke managerID (status != revoked). Dipakai team
+// invoice fan-out supaya aggregate scope match dengan ListClientsByManager.
+func (r *Repo) ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT client_id
+		  FROM client_assignments
+		 WHERE manager_id = $1 AND access_status != 'revoked'
+	`, managerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // FindActiveAssignmentBetween cek apakah managerID benar mengelola clientID.
 // Return ErrNotFound kalau tidak ada / sudah revoked. Access status 'setup'
 // (belum accept invite) tetap dianggap valid — reseller boleh beli domain
@@ -246,8 +271,10 @@ func (r *Repo) ListClientsForReseller(ctx context.Context, resellerID uuid.UUID)
 	return out, rows.Err()
 }
 
-// CountClientsForReseller — hitung unique client yang di-assign ke reseller
-// atau ke agent-agentnya (sesuai tim). Dipakai stat tile "Klien".
+// CountClientsForReseller — pool count: klien direct reseller + klien yang
+// di-invite agent-agentnya. Dipakai admin panel reseller detail supaya
+// admin lihat total business (reseller + tim). Reseller/agent dashboard
+// pakai CountClientsByManager (direct-only) supaya tile == list count.
 func (r *Repo) CountClientsForReseller(ctx context.Context, resellerID uuid.UUID) (int64, error) {
 	var n int64
 	err := r.pool.QueryRow(ctx, `
@@ -256,6 +283,39 @@ func (r *Repo) CountClientsForReseller(ctx context.Context, resellerID uuid.UUID
 		  JOIN users mgr ON mgr.id = ca.manager_id
 		 WHERE ca.access_status != 'revoked'
 		   AND (ca.manager_id = $1 OR mgr.parent_reseller_id = $1)
+	`, resellerID).Scan(&n)
+	return n, err
+}
+
+// CountClientsByManager — hitung klien yang di-assign LANGSUNG ke caller
+// (baik caller reseller atau agent). Sepadan dengan ListClientsByManager
+// supaya UI stat tile match dengan list "Klien saya" — tidak dobel-count
+// klien yang di-invite agent lain.
+func (r *Repo) CountClientsByManager(ctx context.Context, managerID uuid.UUID) (int64, error) {
+	var n int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		  FROM client_assignments
+		 WHERE manager_id = $1 AND access_status != 'revoked'
+	`, managerID).Scan(&n)
+	return n, err
+}
+
+// CountClientsViaAgents — hitung klien yang di-invite oleh AGENT-agent
+// reseller (bukan direct). Dipakai reseller dashboard untuk info tambahan
+// "Klien tim: N" — cegah confusion dengan direct count.
+//
+// DISTINCT karena satu klien bisa di-share antar agent (walau jarang).
+// Klien yang di-invite reseller sendiri di-exclude via `mgr.role = 'agent'`.
+func (r *Repo) CountClientsViaAgents(ctx context.Context, resellerID uuid.UUID) (int64, error) {
+	var n int64
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT ca.client_id)
+		  FROM client_assignments ca
+		  JOIN users mgr ON mgr.id = ca.manager_id
+		 WHERE ca.access_status != 'revoked'
+		   AND mgr.role = 'agent'
+		   AND mgr.parent_reseller_id = $1
 	`, resellerID).Scan(&n)
 	return n, err
 }

@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ type AssignmentChecker interface {
 	// HasActiveAssignment return nil kalau managerID mengelola clientID.
 	// Return error non-nil kalau tidak ada assignment / sudah revoked.
 	HasActiveAssignment(ctx context.Context, managerID, clientID uuid.UUID) error
+	// ListManagedClientIDs — client IDs yang di-manage langsung oleh managerID.
+	// Dipakai team invoice fan-out (aggregate self + client invoices di
+	// portal reseller/agent).
+	ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // Handler menjembatani frontend web builder ↔ registrar-api.
@@ -1440,6 +1445,156 @@ func (h *Handler) ListInvoices(c *fiber.Ctx) error {
 		return proxyRegistrarErr(c, "registrar_error", err)
 	}
 	return httpx.OK(c, res)
+}
+
+// ListInvoicesForTeam — GET /api/v1/reseller/invoices ATAU /agent/invoices
+//
+// Aggregate: caller's self-invoices + invoices untuk semua client yang
+// di-manage caller (via client_assignments). Cegah "invoice kosong" di
+// portal reseller/agent — /invoices default hanya self-scope, tidak
+// include on-behalf-of purchases yang di-tag external_user_id = client.
+//
+// Fan-out N calls ke registrar (1 per external_user_id) — parallel via
+// goroutine + WaitGroup. Bounded oleh jumlah managed client (jarang > 20-30
+// per manager, aman). Sort DESC by created_at, dedup by invoice UUID
+// (double-safety walau registrar seharusnya sudah unique). Paginate
+// client-side pasca merge.
+//
+// Filter status + search di-passthrough. Kalau salah satu fan-out call gagal,
+// skip client itu (log warn) — jangan block seluruh response.
+func (h *Handler) ListInvoicesForTeam(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar API belum dikonfigurasi.")
+	}
+	if h.assignments == nil {
+		// Fallback ke self-scope kalau reseller module belum wired — daripada
+		// return 503.
+		return h.ListInvoices(c)
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	perPage, _ := strconv.Atoi(c.Query("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage <= 0 || perPage > 100 {
+		perPage = 20
+	}
+	status := c.Query("status")
+	search := c.Query("search")
+
+	clientIDs, err := h.assignments.ListManagedClientIDs(c.Context(), cl.UserID)
+	if err != nil {
+		return httpx.Internal(c, "list managed clients failed")
+	}
+
+	// Union scope IDs: self + managed clients. Dedup via map — client bisa
+	// jadi caller diri sendiri dalam edge case (paranoia guard).
+	scopeIDs := make([]string, 0, len(clientIDs)+1)
+	seen := map[string]struct{}{}
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		scopeIDs = append(scopeIDs, id)
+	}
+	add(cl.UserID.String())
+	for _, id := range clientIDs {
+		add(id.String())
+	}
+
+	// Fan-out parallel — 1 fetch per external_user_id. Pakai buffered channel
+	// supaya goroutine bisa write hasil tanpa lock.
+	type result struct {
+		items []registrar.Invoice
+		err   error
+	}
+	resCh := make(chan result, len(scopeIDs))
+	// Setiap fan-out fetch page 1 + perPage besar (500) supaya aggregate
+	// pagination client-side tidak miss data. Kalau seorang klien punya
+	// > 500 invoice, edge case — nanti bisa ditambah pagination server-side.
+	const fetchPerCall = 500
+	for _, id := range scopeIDs {
+		go func(eid string) {
+			r, err := h.registrar.ListInvoices(c.Context(), eid, status, search, 1, fetchPerCall)
+			if err != nil {
+				resCh <- result{err: err}
+				return
+			}
+			resCh <- result{items: r.Items}
+		}(id)
+	}
+
+	// Merge — dedup by invoice UUID.
+	byUUID := map[string]registrar.Invoice{}
+	failCount := 0
+	for range scopeIDs {
+		r := <-resCh
+		if r.err != nil {
+			failCount++
+			slog.Warn("invoices team fan-out: single call failed",
+				"caller", cl.UserID, "err", r.err)
+			continue
+		}
+		for _, inv := range r.items {
+			key := inv.UUID
+			if key == "" {
+				key = inv.InvoiceNumber
+			}
+			if _, ok := byUUID[key]; !ok {
+				byUUID[key] = inv
+			}
+		}
+	}
+
+	// Kalau semua call gagal, propagate error terakhir sebagai bad gateway.
+	if failCount == len(scopeIDs) && failCount > 0 {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error",
+			"gagal fetch invoice dari registrar (semua scope gagal)")
+	}
+
+	// Materialize + sort desc by CreatedAt (string RFC3339 comparable secara
+	// lexical). Kalau format berbeda, sort tetap deterministic walau tidak
+	// perfect.
+	merged := make([]registrar.Invoice, 0, len(byUUID))
+	for _, inv := range byUUID {
+		merged = append(merged, inv)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].CreatedAt > merged[j].CreatedAt
+	})
+
+	// Paginate.
+	total := len(merged)
+	totalPages := (total + perPage - 1) / perPage
+	start := (page - 1) * perPage
+	end := start + perPage
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+	items := merged[start:end]
+
+	return httpx.OK(c, fiber.Map{
+		"items": items,
+		"pagination": fiber.Map{
+			"page":        page,
+			"per_page":    perPage,
+			"total":       total,
+			"total_pages": totalPages,
+		},
+	})
 }
 
 // UploadDocument — POST /api/v1/documents (multipart)

@@ -72,7 +72,18 @@ const FILTERS: {
   { key: "other", label: "Lainnya", value: "canceled,expired,refund", icon: Ban },
 ];
 
-export function InvoicesList() {
+// InvoicesList — shared component untuk daftar invoice.
+// `endpoint` opsional — default `/api/v1/invoices` (self-scope via
+// external_user_id = caller). Reseller/agent portal WAJIB override ke
+// `/api/v1/reseller/invoices` atau `/api/v1/agent/invoices` supaya
+// aggregate (self + client managed) muncul; kalau tidak, invoice
+// on-behalf-of client tidak akan tampil karena registrar filter by
+// external_user_id yang tagged ke client, bukan caller.
+export function InvoicesList({
+  endpoint = "/api/v1/invoices",
+}: {
+  endpoint?: string;
+} = {}) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,7 +135,7 @@ export function InvoicesList() {
 
       try {
         const res = await api<InvoicesResponse>(
-          `/api/v1/invoices?${params.toString()}`,
+          `${endpoint}?${params.toString()}`,
           { signal: controller.signal } as RequestInit,
         );
         if (cancelled) return;
@@ -150,7 +161,7 @@ export function InvoicesList() {
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, debouncedSearch, page]);
+  }, [filter, debouncedSearch, page, endpoint]);
 
   const stats = useMemo(() => {
     const unpaid = invoices.filter((i) =>

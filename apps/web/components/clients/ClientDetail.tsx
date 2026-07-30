@@ -491,7 +491,7 @@ function DomainRow({ purchase }: { purchase: Purchase }) {
   const isPending = purchase.status.startsWith("pending_") || purchase.status === "failed";
   const detailHref = isPending
     ? `/sites/pending/${purchase.job_id}`
-    : `/settings/domains/${purchase.domain}`;
+    : `/agent/domains/${purchase.domain}`;
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">

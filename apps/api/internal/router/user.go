@@ -242,6 +242,11 @@ func MountUser(app *fiber.App, deps Deps) {
 			authed.Get("/reseller/purchases", roleResellerOrAgent, deps.DomainPurchase.ListOnBehalfOf)
 			authed.Get("/reseller/purchases.csv", roleResellerOrAgent, deps.DomainPurchase.ExportOnBehalfOfCSV)
 			authed.Get("/agent/purchases", roleAgent, deps.DomainPurchase.ListOnBehalfOf)
+			// Aggregate invoice untuk portal reseller/agent — self + semua
+			// client yang di-manage. Cegah "invoice kosong" karena on-behalf-of
+			// tagged external_user_id = client.
+			authed.Get("/reseller/invoices", roleResellerOrAgent, deps.DomainPurchase.ListInvoicesForTeam)
+			authed.Get("/agent/invoices", roleAgent, deps.DomainPurchase.ListInvoicesForTeam)
 		}
 
 		// Phase 3.5 — reseller wallet proxy. Read-only endpoint dibuka untuk
