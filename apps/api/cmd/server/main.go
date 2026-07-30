@@ -400,6 +400,9 @@ func main() {
 		syncer := contactsync.New(registrarClient, purchaseRepo, authRepo)
 		authHandler.SetContactSyncer(syncer)
 		resellerHandler.SetContactSyncer(syncer)
+		slog.Info("contact syncer: enabled — profile update akan propagate ke registrar per domain aktif")
+	} else {
+		slog.Info("contact syncer: disabled (REGISTRAR_API_URL kosong)")
 	}
 
 	deps := router.Deps{

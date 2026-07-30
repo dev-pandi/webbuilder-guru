@@ -688,6 +688,27 @@ langsung reflect di WHOIS).
 - Endpoint TIDAK fire webhook — update contact sifatnya request-response, bukan async job.
 - Kalau web builder butuh notify end-user "kontak sudah diperbarui", handle di sisi web builder (mis. email confirmation setelah PATCH sukses).
 
+**Variant: Direct contact update (`PATCH /reseller/contacts/:id`)**
+
+Endpoint alternatif untuk update contact via `contact_id` langsung (bukan
+via domain name). Berguna kalau:
+- Contact di-share antara multiple domain — update sekali affect semua.
+- Web builder manage contact library terpisah dari domain (mis. UI
+  "Address Book" untuk end-user).
+- Domain-scoped route bikin URL confusing kalau contact tidak ter-attach
+  ke satu domain spesifik.
+
+Behavior identik dengan domain-scoped variant (3 varian message, EPP-first
+DB-second ordering, dsb) — KECUALI:
+- **Tidak update NIK** — NIK di-store di `domains.user_nik`, butuh domain
+  context. Untuk update NIK, pakai `PATCH /domain/:name/contact`.
+- **Tidak zone-specific validation** — no `.id` NIK guard (karena tidak
+  tahu zone context).
+
+Pre-fetch data untuk pre-fill form: `GET /reseller/contacts/:id`
+(response include `is_provisioned` flag supaya UI tampilkan warning
+sebelum submit kalau contact belum di-registry).
+
 ### 14.9 Referensi
 
 - Backend spec lengkap: [`../../Golang/registrar-api/plan.md`](../../Golang/registrar-api/plan.md)
@@ -710,7 +731,9 @@ langsung reflect di WHOIS).
 | POST | `/reseller/domain/:name/renew` | Renew |
 | GET  | `/reseller/domain/:name/nameservers` | Baca NS |
 | POST | `/reseller/domain/:name/nameservers` | Update NS |
-| PATCH | `/reseller/domain/:name/contact` | Update contact info (registrant/admin/tech/billing) + sync EPP registry |
+| PATCH | `/reseller/domain/:name/contact` | Update contact info via domain (domain-scoped, tahu NIK context) |
+| GET   | `/reseller/contacts/:id` | Detail contact (pre-fill form update) |
+| PATCH | `/reseller/contacts/:id` | Direct contact update by ID (untuk shared contact / library mgmt) |
 | GET  | `/reseller/config/webhook` | Read webhook URL |
 | POST | `/reseller/config/webhook` | Rotate secret |
 

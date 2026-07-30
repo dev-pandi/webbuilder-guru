@@ -347,6 +347,53 @@ type UpdateContactResponse struct {
 	Message   string `json:"message"`
 }
 
+// GetResellerContact — GET /v1/api/user/reseller/contacts/:id.
+// Detail contact untuk pre-fill form update. `is_provisioned` flag di
+// response bisa dipakai UI untuk warning kalau contact belum di-registry.
+type ResellerContact struct {
+	ID            uint64 `json:"id"`
+	NicHandle     string `json:"nic_handle"`
+	Name          string `json:"name"`
+	Email         string `json:"email"`
+	Phone         string `json:"phone"`
+	Address       string `json:"address"`
+	City          string `json:"city"`
+	State         string `json:"state,omitempty"`
+	PostalCode    string `json:"postal_code"`
+	CountryID     uint64 `json:"country_id"`
+	IsProvisioned bool   `json:"is_provisioned"`
+}
+
+func (c *Client) GetResellerContact(ctx context.Context, contactID uint64) (*ResellerContact, error) {
+	if contactID == 0 {
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "contact_id kosong"}
+	}
+	var env envelope[ResellerContact]
+	path := "/v1/api/user/reseller/contacts/" + strconv.FormatUint(contactID, 10)
+	if err := c.do(ctx, "GET", path, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// UpdateResellerContactByID — PATCH /v1/api/user/reseller/contacts/:id.
+// Direct contact update via contact_id. Efficient (1 call untuk semua
+// domain yang share contact) dan tidak butuh domain aktif. Behavior
+// identik dengan domain-scoped variant untuk semua state (registry
+// synced / DB-only / drift). NIK TIDAK ter-update di sini — NIK per-domain
+// di `domains.user_nik`.
+func (c *Client) UpdateResellerContactByID(ctx context.Context, contactID uint64, payload UpdateContactPayload) (*UpdateContactResponse, error) {
+	if contactID == 0 {
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "contact_id kosong"}
+	}
+	var env envelope[UpdateContactResponse]
+	path := "/v1/api/user/reseller/contacts/" + strconv.FormatUint(contactID, 10)
+	if err := c.do(ctx, "PATCH", path, payload, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
 // UpdateResellerDomainContact — PATCH /reseller/domain/:name/contact.
 // Sync contact info end-user ke registry EPP + DB registrar. Semua field
 // di payload WAJIB (registry replace-all). Ownership enforced di registrar

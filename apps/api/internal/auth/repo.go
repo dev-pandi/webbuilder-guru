@@ -49,17 +49,25 @@ type User struct {
 	ResellerDisplayName string
 	ResellerStatus      string
 	ResellerTier        string
+
+	// RegistrarContactID — cache dari registrar's contact.id, di-populate
+	// setelah first successful sync (contactsync). Nil = belum sync sekalipun
+	// / user belum punya kontak di registrar side (mis. belum pernah beli
+	// domain). Sekali set, dipakai direct PATCH /reseller/contacts/:id (1
+	// call untuk semua domain user, tidak butuh domain aktif).
+	RegistrarContactID *int64
 }
 
 // scanUserCols is the projection every SELECT below uses. Kept in sync with
 // the SELECT statements so a schema-column reorder only needs one edit.
-const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik, parent_reseller_id, reseller_display_name, reseller_status, reseller_tier`
+const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik, parent_reseller_id, reseller_display_name, reseller_status, reseller_tier, registrar_contact_id`
 
 func scanUser(u *User) []any {
 	return []any{
 		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.EmailVerifiedAt, &u.OAuthGoogleSub,
 		&u.PhoneNumber, &u.Address, &u.City, &u.State, &u.PostalCode, &u.Nik,
 		&u.ParentResellerID, &u.ResellerDisplayName, &u.ResellerStatus, &u.ResellerTier,
+		&u.RegistrarContactID,
 	}
 }
 
@@ -176,6 +184,17 @@ func (r *Repo) UpdateProfile(ctx context.Context, userID uuid.UUID, p ProfileUpd
 		return nil, ErrNotFound
 	}
 	return &u, err
+}
+
+// SetRegistrarContactID cache-back id contact registrar setelah first
+// successful sync via contactsync. Update idempoten — no-op kalau nilai
+// sama. Pass 0 tidak diperbolehkan (guard di caller).
+func (r *Repo) SetRegistrarContactID(ctx context.Context, userID uuid.UUID, contactID int64) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET registrar_contact_id = $2, updated_at = now() WHERE id = $1`,
+		userID, contactID,
+	)
+	return err
 }
 
 // UpsertGoogleUser links a Google account to an existing user (by email) or
