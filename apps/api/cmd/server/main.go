@@ -501,3 +501,27 @@ func (a resellerStatsAdapter) GetResellerStats(ctx context.Context, actorIDs []u
 		PendingJobs:    s.PendingJobs,
 	}, nil
 }
+
+// ListByPurchaser — adapter untuk agent detail page (list domain yang
+// agent daftarkan). Konversi domain_purchase.Purchase → reseller.PurchaseSummary.
+func (a resellerStatsAdapter) ListByPurchaser(ctx context.Context, purchaserID uuid.UUID, limit int) ([]reseller.PurchaseSummary, error) {
+	rows, err := a.repo.ListByPurchaser(ctx, purchaserID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]reseller.PurchaseSummary, 0, len(rows))
+	for _, p := range rows {
+		out = append(out, reseller.PurchaseSummary{
+			JobID:      p.RegistrarJobID,
+			Domain:     p.Domain,
+			Status:     p.Status,
+			Kind:       p.Kind,
+			Years:      p.Years,
+			ExpiresAt:  p.ExpiresAt,
+			CreatedAt:  p.CreatedAt,
+			UserID:     p.UserID,
+			PaymentURL: p.PaymentURL,
+		})
+	}
+	return out, nil
+}

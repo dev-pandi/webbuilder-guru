@@ -4,8 +4,10 @@
 // Pending invites tampil di list yang sama dengan badge "menunggu accept".
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
+  ArrowRight,
   Clock,
   Loader2,
   Mail,
@@ -104,18 +106,19 @@ export default function ResellerTeamPage() {
                 <TableHead>Email</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Tanggal</TableHead>
+                <TableHead className="w-0">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className={loading ? "opacity-60" : ""}>
               {loading && items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-14 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="py-14 text-center text-muted-foreground">
                     <Loader2 className="mx-auto size-5 animate-spin" />
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-14 text-center">
+                  <TableCell colSpan={5} className="py-14 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Users className="size-8 opacity-30" />
                       <p className="text-sm font-medium">Belum ada agent</p>
@@ -151,6 +154,25 @@ export default function ResellerTeamPage() {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(a.created_at)}
+                    </TableCell>
+                    <TableCell>
+                      {a.id ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          asChild
+                          className="gap-1 whitespace-nowrap"
+                        >
+                          <Link href={`/reseller/team/${a.id}`}>
+                            Detail
+                            <ArrowRight className="size-3" />
+                          </Link>
+                        </Button>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">
+                          — invite pending
+                        </span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

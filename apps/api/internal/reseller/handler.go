@@ -21,6 +21,9 @@ import (
 // lean + testable.
 type StatsProvider interface {
 	GetResellerStats(ctx context.Context, actorIDs []uuid.UUID) (*DomainStats, error)
+	// ListByPurchaser — purchases yang di-trigger oleh purchaserID. Dipakai
+	// agent detail page untuk render list domain yang agent daftarkan.
+	ListByPurchaser(ctx context.Context, purchaserID uuid.UUID, limit int) ([]PurchaseSummary, error)
 }
 
 // DomainStats — mirror struct domain_purchase.ResellerStats supaya interface
@@ -30,6 +33,21 @@ type DomainStats struct {
 	Expiring30Days int64
 	Expiring90Days int64
 	PendingJobs    int64
+}
+
+// PurchaseSummary — subset field yang dipakai UI reseller. Sengaja tidak
+// mirror penuh Purchase struct dari domain_purchase supaya interface stabil
+// walau field internal di package sana berubah.
+type PurchaseSummary struct {
+	JobID      string     `json:"job_id"`
+	Domain     string     `json:"domain"`
+	Status     string     `json:"status"`
+	Kind       string     `json:"kind"`
+	Years      int        `json:"years"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UserID     uuid.UUID  `json:"user_id"` // owner (client kalau on-behalf-of)
+	PaymentURL string     `json:"payment_url,omitempty"`
 }
 
 // Handler bundles repo + auth repo + mailer supaya endpoint reseller portal
@@ -231,6 +249,130 @@ func (h *Handler) ListAgents(c *fiber.Ctx) error {
 		})
 	}
 	return httpx.OK(c, out)
+}
+
+// ---------------- Agent Detail (reseller only) ----------------
+
+// resolveOwnedAgent — helper: parse :agent_id param + verify agent milik
+// caller (parent_reseller_id = caller.ID). Return agent user + counts info
+// via authRepo/repo. 404 kalau bukan agent atau bukan milik caller.
+func (h *Handler) resolveOwnedAgent(c *fiber.Ctx) (*auth.User, error) {
+	caller, err := h.resolveCaller(c)
+	if err != nil {
+		return nil, httpx.Forbidden(c, err.Error())
+	}
+	if !caller.IsReseller {
+		return nil, httpx.Forbidden(c, "hanya reseller yang boleh akses detail agent")
+	}
+	agentID, err := uuid.Parse(c.Params("agent_id"))
+	if err != nil {
+		return nil, httpx.BadRequest(c, "agent_id bukan UUID valid")
+	}
+	agent, err := h.authRepo.GetByID(c.Context(), agentID)
+	if err != nil {
+		return nil, httpx.NotFound(c, "agent tidak ditemukan")
+	}
+	// Guard: agent WAJIB role=agent + parent_reseller_id = caller.
+	if agent.Role != auth.RoleAgent {
+		return nil, httpx.NotFound(c, "user bukan agent")
+	}
+	if agent.ParentResellerID == nil || *agent.ParentResellerID != caller.User.ID {
+		return nil, httpx.NotFound(c, "agent bukan bawahan Anda")
+	}
+	return agent, nil
+}
+
+// GetAgent — GET /api/v1/reseller/agents/:agent_id
+//
+// Detail agent + counts ringkas (jumlah klien di-manage + agregat domain).
+// Reseller-only, ownership check via parent_reseller_id.
+func (h *Handler) GetAgent(c *fiber.Ctx) error {
+	agent, ferr := h.resolveOwnedAgent(c)
+	if ferr != nil {
+		return ferr
+	}
+	// Counts — best-effort, kalau salah satu fail balikin partial supaya UI
+	// bisa tampilkan identitas dulu.
+	clientCount, _ := h.repo.CountClientsByManager(c.Context(), agent.ID)
+
+	var stats *DomainStats
+	if h.stats != nil {
+		stats, _ = h.stats.GetResellerStats(c.Context(), []uuid.UUID{agent.ID})
+	}
+	if stats == nil {
+		stats = &DomainStats{}
+	}
+
+	resp := fiber.Map{
+		"id":                agent.ID.String(),
+		"email":             agent.Email,
+		"name":              agent.Name,
+		"phone_number":      agent.PhoneNumber,
+		"created_at":        agent.CreatedAt.Format(time.RFC3339),
+		"email_verified":    agent.EmailVerifiedAt != nil,
+		"clients":           clientCount,
+		"active_domains":    stats.ActiveDomains,
+		"pending_jobs":      stats.PendingJobs,
+		"expiring_30_days":  stats.Expiring30Days,
+		"expiring_90_days":  stats.Expiring90Days,
+	}
+	if agent.EmailVerifiedAt != nil {
+		resp["email_verified_at"] = agent.EmailVerifiedAt.Format(time.RFC3339)
+	}
+	return httpx.OK(c, resp)
+}
+
+// ListAgentClients — GET /api/v1/reseller/agents/:agent_id/clients
+// Reseller lihat klien yang di-manage agent-nya (delegasi visibility).
+func (h *Handler) ListAgentClients(c *fiber.Ctx) error {
+	agent, ferr := h.resolveOwnedAgent(c)
+	if ferr != nil {
+		return ferr
+	}
+	items, err := h.repo.ListClientsByManager(c.Context(), agent.ID)
+	if err != nil {
+		return httpx.Internal(c, "list clients failed")
+	}
+	type clientResp struct {
+		ClientID      string `json:"client_id"`
+		AssignmentID  string `json:"assignment_id"`
+		Email         string `json:"email"`
+		Name          string `json:"name"`
+		AccessStatus  string `json:"access_status"`
+		EmailVerified bool   `json:"email_verified"`
+		CreatedAt     string `json:"created_at"`
+	}
+	out := make([]clientResp, 0, len(items))
+	for _, r := range items {
+		out = append(out, clientResp{
+			ClientID:      r.Assignment.ClientID.String(),
+			AssignmentID:  r.Assignment.ID.String(),
+			Email:         r.Email,
+			Name:          r.Name,
+			AccessStatus:  r.Assignment.AccessStatus,
+			EmailVerified: r.EmailVerified,
+			CreatedAt:     r.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return httpx.OK(c, out)
+}
+
+// ListAgentPurchases — GET /api/v1/reseller/agents/:agent_id/purchases
+// Reseller lihat domain yang agent daftarkan (purchased_by = agent).
+func (h *Handler) ListAgentPurchases(c *fiber.Ctx) error {
+	agent, ferr := h.resolveOwnedAgent(c)
+	if ferr != nil {
+		return ferr
+	}
+	if h.stats == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "purchases_disabled",
+			"Domain purchase module belum wired.")
+	}
+	items, err := h.stats.ListByPurchaser(c.Context(), agent.ID, 500)
+	if err != nil {
+		return httpx.Internal(c, "list purchases failed")
+	}
+	return httpx.OK(c, items)
 }
 
 // ---------------- Create Client ----------------

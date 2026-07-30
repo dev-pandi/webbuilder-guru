@@ -223,6 +223,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		// Reseller-only (invite agent + list agent + stats + pricing write).
 		authed.Post("/reseller/agents/invite", roleReseller, mutateLimit, deps.Reseller.InviteAgent)
 		authed.Get("/reseller/agents", roleReseller, deps.Reseller.ListAgents)
+		authed.Get("/reseller/agents/:agent_id", roleReseller, deps.Reseller.GetAgent)
+		authed.Get("/reseller/agents/:agent_id/clients", roleReseller, deps.Reseller.ListAgentClients)
+		authed.Get("/reseller/agents/:agent_id/purchases", roleReseller, deps.Reseller.ListAgentPurchases)
 		authed.Get("/reseller/stats", roleReseller, deps.Reseller.GetStats)
 
 		// Reseller ATAU agent boleh (invite/list/update client).
