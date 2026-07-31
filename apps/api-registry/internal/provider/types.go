@@ -44,6 +44,10 @@ type Provider interface {
 	GetNameservers(ctx context.Context, name string) (*NameserverInfo, error)
 	UpdateNameservers(ctx context.Context, name string, nameservers []string) (*NameserverInfo, error)
 
+	// --- Documents (KTP/NPWP untuk zone .id) ---
+	UploadDocument(ctx context.Context, req UploadDocumentRequest) (*UploadDocumentResponse, error)
+	ListDocuments(ctx context.Context, externalUserID string) (*DocumentsListResponse, error)
+
 	// --- Contact (WHOIS-visible identity) ---
 	GetContact(ctx context.Context, contactID uint64) (*Contact, error)
 	UpdateContactByID(ctx context.Context, contactID uint64, req UpdateContactRequest) (*UpdateContactResponse, error)
@@ -163,6 +167,45 @@ type UpdateContactResponse struct {
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 	Message   string `json:"message"` // 3 varian: DB+EPP / DB only / drift
+}
+
+// --- Documents (KTP/NPWP untuk zone .id) ---
+
+// UploadDocumentRequest — multipart file + metadata. Body raw bytes (max 8
+// MiB enforce di handler layer). Consumer WAJIB sertakan ExternalUserID —
+// registrar-api tag document per user supaya tidak leak antar user.
+type UploadDocumentRequest struct {
+	ExternalUserID string
+	CategoryID     int64  // dari registrar-api document categories (mis. 1=KTP, 2=NPWP)
+	Filename       string
+	ContentType    string // "image/jpeg", "image/png", "application/pdf"
+	Body           []byte
+	Label          string // opsional, human-readable
+}
+
+// UploadDocumentResponse — hasil upload sukses. ID plain integer (no masking
+// per plan design decision).
+type UploadDocumentResponse struct {
+	ID         int64  `json:"id"`
+	Filename   string `json:"filename"`
+	CategoryID int64  `json:"category_id"`
+	Status     string `json:"status,omitempty"` // "pending" | "verified" | "rejected"
+	CreatedAt  string `json:"created_at,omitempty"`
+}
+
+// DocumentItem — 1 row list document. Dipakai wizard untuk render picker
+// "pilih dokumen existing" post-payment supaya user tidak upload dobel.
+type DocumentItem struct {
+	ID         int64  `json:"id"`
+	Filename   string `json:"filename"`
+	CategoryID int64  `json:"category_id"`
+	Status     string `json:"status,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	Label      string `json:"label,omitempty"`
+}
+
+type DocumentsListResponse struct {
+	Items []DocumentItem `json:"items"`
 }
 
 // --- BulkCheck ---

@@ -71,7 +71,9 @@ Atau pakai Docker:
 docker build -t webbuilder/api-registry:latest .
 ```
 
-Snippet Docker Compose siap-pakai: [docker-compose.snippet.yml](docker-compose.snippet.yml)
+Sudah wired di [`infra/docker-compose.yml`](../../infra/docker-compose.yml)
+sebagai service `api-registry` — reuse env `REGISTRAR_*` dari sisi `api`
+plus `API_REGISTRY_*` var baru (lihat [`infra/.env.example`](../../infra/.env.example)).
 
 ## Endpoints
 
@@ -111,6 +113,10 @@ Snippet Docker Compose siap-pakai: [docker-compose.snippet.yml](docker-compose.s
 
 **WHOIS**:
 - `GET /v1/whois?domain=<name>`
+
+**Documents** (KTP/NPWP untuk zone .id):
+- `POST /v1/documents` — multipart upload (max 8 MiB, whitelist image/jpeg | png | pdf)
+- `GET  /v1/documents?external_user_id=<uuid>` — list dokumen per user (cegah cross-user leak)
 
 **Jobs audit (read-only)**:
 - `GET /v1/jobs?kind=&status=&domain=&external_user_id=&limit=&offset=` — list
@@ -232,14 +238,18 @@ apps/api-registry/
 go test -race ./...
 ```
 
-Unit test cover:
-- `internal/jobs` — memory store CRUD, idempotency, eviction, terminal states
-- `internal/security` — HMAC happy path, tampered body, expired timestamp, missing headers, skip healthz
-- `internal/metrics` — counter dedup, label ordering stable, Prometheus format
-- `client` — signing correctness, error envelope parsing, no-secret mode
-
-Integration test (butuh registrar-api sandbox running) belum di-include —
-punya markup `t.Skip` kalau `PANDI_API_URL` env kosong.
+Coverage (55+ tests, all `-race` safe):
+- `internal/jobs` — memory store CRUD, idempotency, eviction, terminal states (8)
+- `internal/security` — HMAC happy path, tampered body, expired ts, missing headers, skip healthz, empty secret (6)
+- `internal/metrics` — counter dedup, label ordering stable, Prometheus format, escape (4)
+- `internal/provider` — PANDI wrapper integration terhadap httptest mock upstream (6)
+- `internal/webhooks` — verify HMAC, tampered body, forward + independent signature check (7)
+- `internal/domains` — handler via fake provider: check, register w/ job tracking, provider error propagate, list, cancel, capability_missing (9)
+- `internal/hosts` — nameserver get/update, validation min 2 / max 13 (4)
+- `internal/contacts` — get by ID, update, invalid ID, missing name/email (5)
+- `internal/whois` — missing query, success, not found mapping (3)
+- `internal/documents` — multipart upload happy path, missing file, invalid MIME, too large, missing user_id, list (6)
+- `client` — signing correctness, error envelope, no-secret (3)
 
 ## Roadmap
 
@@ -252,6 +262,9 @@ punya markup `t.Skip` kalau `PANDI_API_URL` env kosong.
 - [x] Fase 1a: integration test dengan httptest mock upstream
 - [x] Fase 1a: webhook relay (registrar-api → api-registry → web builder)
 - [x] Fase 1a: bulk check + list domains + OpenAPI spec
+- [x] Fase 1a: document upload multipart (KTP/NPWP untuk .id)
+- [x] Fase 1a: handler-level test coverage semua module
+- [x] Fase 1a: docker compose integration di infra/
 - [ ] Fase 1b: integration test terhadap registrar-api sandbox real
 - [ ] Fase 1c: web builder swap dari langsung ke registrar-api → ke api-registry
 - [ ] Fase 2a: EPP client library integration

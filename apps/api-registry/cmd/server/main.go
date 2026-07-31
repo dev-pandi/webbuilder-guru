@@ -19,6 +19,7 @@ import (
 
 	"github.com/webbuilder/api-registry/internal/config"
 	"github.com/webbuilder/api-registry/internal/contacts"
+	"github.com/webbuilder/api-registry/internal/documents"
 	"github.com/webbuilder/api-registry/internal/domains"
 	"github.com/webbuilder/api-registry/internal/hosts"
 	"github.com/webbuilder/api-registry/internal/httpx"
@@ -62,11 +63,14 @@ func main() {
 		"caps", baseProvider.Capabilities(),
 	)
 
-	// Fiber app.
+	// Fiber app. BodyLimit 10 MiB — kasih headroom di atas MaxFileSize
+	// document upload (8 MiB) + JSON overhead. Fiber default 4 MiB — terlalu
+	// ketat untuk multipart KTP/NPWP.
 	app := fiber.New(fiber.Config{
 		AppName:               "api-registry",
 		DisableStartupMessage: true,
 		ErrorHandler:          errorHandler,
+		BodyLimit:             10 * 1024 * 1024,
 	})
 	app.Use(recover.New())
 	// Middleware order: RequestID (populate locals) → AccessLog (log + metrics)
@@ -249,6 +253,11 @@ func registerV1Routes(v1 fiber.Router, p provider.Provider, tracker *jobs.Tracke
 
 	wh := whois.NewHandler(p)
 	v1.Get("/whois", wh.Whois)
+
+	// Documents — KTP/NPWP untuk zone .id.
+	docH := documents.NewHandler(p)
+	v1.Post("/documents", docH.Upload)
+	v1.Get("/documents", docH.List)
 }
 
 // errorHandler — Fiber panics/errors → HTTP dengan envelope konsisten.

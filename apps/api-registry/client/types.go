@@ -85,6 +85,37 @@ type RegisterStatus struct {
 	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
+// UploadDocumentRequest — multipart body untuk POST /v1/documents.
+type UploadDocumentRequest struct {
+	ExternalUserID string
+	CategoryID     int64
+	Filename       string
+	ContentType    string
+	Body           []byte
+	Label          string
+}
+
+type UploadDocumentResponse struct {
+	ID         int64  `json:"id"`
+	Filename   string `json:"filename"`
+	CategoryID int64  `json:"category_id"`
+	Status     string `json:"status,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+}
+
+type DocumentItem struct {
+	ID         int64  `json:"id"`
+	Filename   string `json:"filename"`
+	CategoryID int64  `json:"category_id"`
+	Status     string `json:"status,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	Label      string `json:"label,omitempty"`
+}
+
+type DocumentsListResponse struct {
+	Items []DocumentItem `json:"items"`
+}
+
 type BulkCheckRequest struct {
 	Domains        []string `json:"domains"`
 	ExternalUserID string   `json:"external_user_id,omitempty"`
