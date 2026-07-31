@@ -1,0 +1,449 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "api-registry",
+    "version": "1.0.0",
+    "description": "Internal service untuk domain lifecycle + EPP execution. Konsumen: web builder API via HMAC.",
+    "contact": {
+      "name": "Web Builder Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://api-registry:5000",
+      "description": "Internal service (Docker network)"
+    }
+  ],
+  "security": [
+    {
+      "hmacAuth": []
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Liveness probe",
+        "tags": ["infra"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is up.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness probe (test upstream)",
+        "tags": ["infra"],
+        "security": [],
+        "responses": {
+          "200": { "description": "Ready to serve traffic." },
+          "503": { "description": "Upstream unreachable." }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "summary": "Build metadata",
+        "tags": ["infra"],
+        "security": [],
+        "responses": { "200": { "description": "Version info." } }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus metrics",
+        "tags": ["infra"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Text exposition format.",
+            "content": { "text/plain": {} }
+          }
+        }
+      }
+    },
+    "/v1/domains": {
+      "get": {
+        "summary": "List domains untuk end-user",
+        "tags": ["domain"],
+        "parameters": [
+          { "name": "external_user_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "Paginated list." } }
+      }
+    },
+    "/v1/domains/check": {
+      "post": {
+        "summary": "Cek availability + harga domain (single)",
+        "tags": ["domain"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CheckRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Multi-zone results.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CheckResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/domains/bulk-check": {
+      "post": {
+        "summary": "Batch check multi-domain (max 50)",
+        "tags": ["domain"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BulkCheckRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Aggregate results." } }
+      }
+    },
+    "/v1/domains/register": {
+      "post": {
+        "summary": "Register domain (async)",
+        "tags": ["domain"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegisterResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/domains/{name}/renew": {
+      "post": {
+        "summary": "Renew domain (async)",
+        "tags": ["domain"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "202": { "description": "Renew job accepted." } }
+      }
+    },
+    "/v1/domains/register/{job_id}/status": {
+      "get": {
+        "summary": "Poll status job register/renew",
+        "tags": ["domain"],
+        "parameters": [
+          { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Current status." } }
+      }
+    },
+    "/v1/domains/register/{job_id}/retry": {
+      "post": {
+        "summary": "Retry job yang failed",
+        "tags": ["domain"],
+        "parameters": [
+          { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "202": { "description": "Retry accepted." } }
+      }
+    },
+    "/v1/domains/register/{job_id}/cancel": {
+      "post": {
+        "summary": "Cancel job pre-payment",
+        "tags": ["domain"],
+        "parameters": [
+          { "name": "job_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Cancelled." } }
+      }
+    },
+    "/v1/domains/{name}/nameservers": {
+      "get": {
+        "summary": "Baca nameserver domain",
+        "tags": ["nameserver"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Nameserver list." } }
+      },
+      "post": {
+        "summary": "Update nameserver (replace-all, min 2, max 13)",
+        "tags": ["nameserver"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["nameservers"],
+                "properties": {
+                  "nameservers": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "minItems": 2,
+                    "maxItems": 13
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Nameserver updated." } }
+      }
+    },
+    "/v1/contacts/{id}": {
+      "get": {
+        "summary": "Baca detail contact",
+        "tags": ["contact"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Contact data." } }
+      },
+      "patch": {
+        "summary": "Update contact by ID (full payload)",
+        "tags": ["contact"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Contact updated." } }
+      }
+    },
+    "/v1/domains/{name}/contact": {
+      "patch": {
+        "summary": "Update contact via domain (auto lookup contact_id)",
+        "tags": ["contact"],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Contact updated." } }
+      }
+    },
+    "/v1/whois": {
+      "get": {
+        "summary": "WHOIS lookup",
+        "tags": ["whois"],
+        "parameters": [
+          { "name": "domain", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "WHOIS data." } }
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "summary": "Audit browse jobs (local tracker)",
+        "tags": ["audit"],
+        "parameters": [
+          { "name": "kind", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "domain", "in": "query", "schema": { "type": "string" } },
+          { "name": "external_user_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Paginated jobs list." } }
+      }
+    },
+    "/v1/jobs/{id}": {
+      "get": {
+        "summary": "Detail job (audit trail)",
+        "tags": ["audit"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Job detail." } }
+      }
+    },
+    "/webhooks/registrar": {
+      "post": {
+        "summary": "Receive webhook dari registrar upstream + forward ke web builder",
+        "tags": ["webhook"],
+        "security": [],
+        "parameters": [
+          { "name": "X-Signature", "in": "header", "required": true, "schema": { "type": "string" } },
+          { "name": "X-Timestamp", "in": "header", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "202": { "description": "Verified + forwarded." },
+          "401": { "description": "Signature invalid." },
+          "502": { "description": "Forward failed." }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "hmacAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Signature",
+        "description": "HMAC SHA-256 dengan format `sha256=<hex>`. Signed dari `X-Timestamp + \".\" + METHOD + PATH + \".\" + BODY`. Timestamp fresh window ±5 menit."
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "ok": { "type": "boolean" },
+              "provider": { "type": "string" },
+              "caps": {
+                "type": "object",
+                "additionalProperties": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
+      "CheckRequest": {
+        "type": "object",
+        "required": ["domain"],
+        "properties": {
+          "domain": { "type": "string", "description": "SLD-only atau full FQDN" },
+          "external_user_id": { "type": "string" }
+        }
+      },
+      "CheckResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "query": { "type": "string" },
+              "allowed_zones": { "type": "array", "items": { "type": "string" } },
+              "results": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/CheckEntry" }
+              }
+            }
+          }
+        }
+      },
+      "CheckEntry": {
+        "type": "object",
+        "properties": {
+          "domain": { "type": "string" },
+          "tld": { "type": "string" },
+          "available": { "type": "boolean" },
+          "reason": { "type": "string" },
+          "price": {
+            "type": "object",
+            "properties": {
+              "currency": { "type": "string" },
+              "register": { "type": "number" },
+              "renew": { "type": "number" },
+              "transfer": { "type": "number" }
+            }
+          },
+          "zone": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "require_document": { "type": "boolean" },
+              "auto_approved": { "type": "boolean" },
+              "nik_auto_approved": { "type": "boolean" }
+            }
+          }
+        }
+      },
+      "BulkCheckRequest": {
+        "type": "object",
+        "required": ["domains"],
+        "properties": {
+          "domains": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "external_user_id": { "type": "string" }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["domain", "years", "external_user_id", "idempotency_key", "contact"],
+        "properties": {
+          "domain": { "type": "string" },
+          "years": { "type": "integer", "minimum": 1, "maximum": 10 },
+          "external_user_id": { "type": "string" },
+          "idempotency_key": { "type": "string" },
+          "contact": { "$ref": "#/components/schemas/Contact" },
+          "nameservers": { "type": "array", "items": { "type": "string" } },
+          "document_ids": { "type": "array", "items": { "type": "integer" } }
+        }
+      },
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "job_id": { "type": "string" },
+              "status": { "type": "string" },
+              "invoice_id": { "type": "string" }
+            }
+          }
+        }
+      },
+      "Contact": {
+        "type": "object",
+        "required": ["name", "email", "phone", "address", "city", "postal_code"],
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string" },
+          "address": { "type": "string" },
+          "city": { "type": "string" },
+          "state": { "type": "string" },
+          "postal_code": { "type": "string" },
+          "country_code": { "type": "string", "default": "ID" },
+          "nik": { "type": "string", "description": "NIK KTP — WAJIB untuk zone .id" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

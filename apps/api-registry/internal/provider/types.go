@@ -31,12 +31,14 @@ type Provider interface {
 
 	// --- Domain lifecycle ---
 	CheckDomain(ctx context.Context, req CheckRequest) (*CheckResponse, error)
+	BulkCheckDomains(ctx context.Context, req BulkCheckRequest) (*BulkCheckResponse, error)
 	RegisterDomain(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
 	RenewDomain(ctx context.Context, name string, req RenewRequest) (*RegisterResponse, error)
 	GetRegisterStatus(ctx context.Context, jobID string) (*RegisterStatus, error)
 	RetryRegister(ctx context.Context, jobID string) (*RegisterStatus, error)
 	CancelRegister(ctx context.Context, jobID string) error
 	InfoDomain(ctx context.Context, name string) (*DomainInfo, error)
+	ListDomains(ctx context.Context, f ListDomainsFilter) (*DomainListResponse, error)
 
 	// --- Nameserver ---
 	GetNameservers(ctx context.Context, name string) (*NameserverInfo, error)
@@ -161,6 +163,52 @@ type UpdateContactResponse struct {
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 	Message   string `json:"message"` // 3 varian: DB+EPP / DB only / drift
+}
+
+// --- BulkCheck ---
+
+// BulkCheckRequest — batch multi-domain check. Bagus untuk wizard yang
+// tampilkan sekaligus availability dari list domain candidate (mis. AI
+// suggestion, alternative TLD suggestion). Provider yang tidak support
+// batch fallback ke loop CheckDomain per entry.
+type BulkCheckRequest struct {
+	Domains        []string `json:"domains"` // full FQDN list
+	ExternalUserID string   `json:"external_user_id,omitempty"`
+}
+
+// BulkCheckResponse — hasil per input domain. Urutan match input order.
+type BulkCheckResponse struct {
+	Results []CheckEntry `json:"results"`
+}
+
+// --- ListDomains ---
+
+// DomainListItem — 1 row hasil list. Subset field yang web builder butuh
+// untuk sync/reconcile local cache. Field pagination di wrapper response.
+type DomainListItem struct {
+	JobID          string `json:"job_id"`
+	Domain         string `json:"domain"`
+	Status         string `json:"status"`
+	Kind           string `json:"kind"`
+	ExternalUserID string `json:"external_user_id"`
+	ExpiresAt      string `json:"expires_at,omitempty"` // RFC3339
+	CreatedAt      string `json:"created_at"`
+}
+
+// DomainListResponse — envelope untuk paginated response. Pagination field
+// dari upstream provider — untuk MVP pass-through raw supaya konsumer bisa
+// paginate tanpa hardcode shape.
+type DomainListResponse struct {
+	Items      []DomainListItem `json:"items"`
+	Pagination interface{}      `json:"pagination,omitempty"`
+}
+
+// ListDomainsFilter — query params. ExternalUserID biasanya wajib supaya
+// scope by end-user; caller boleh kosongkan kalau butuh full list (admin).
+type ListDomainsFilter struct {
+	ExternalUserID string
+	Page           int
+	PerPage        int
 }
 
 // Whois — minimal shape untuk display "domain taken" info.

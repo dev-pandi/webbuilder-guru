@@ -70,6 +70,39 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 	return httpx.OK(c, res)
 }
 
+// BulkCheck — POST /v1/domains/bulk-check
+// Body: { domains: [...], external_user_id?: string }
+func (h *Handler) BulkCheck(c *fiber.Ctx) error {
+	var req provider.BulkCheckRequest
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	if len(req.Domains) == 0 {
+		return httpx.BadRequest(c, "domains wajib (array non-empty)")
+	}
+	res, err := h.provider.BulkCheckDomains(c.Context(), req)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return httpx.OK(c, res)
+}
+
+// List — GET /v1/domains?external_user_id=&page=&per_page=
+func (h *Handler) List(c *fiber.Ctx) error {
+	page := c.QueryInt("page", 0)
+	perPage := c.QueryInt("per_page", 0)
+	f := provider.ListDomainsFilter{
+		ExternalUserID: c.Query("external_user_id"),
+		Page:           page,
+		PerPage:        perPage,
+	}
+	res, err := h.provider.ListDomains(c.Context(), f)
+	if err != nil {
+		return mapErr(c, err)
+	}
+	return httpx.OK(c, res)
+}
+
 // Register — POST /v1/domains/register
 // Body: RegisterRequest (contact + years + external_user_id + idempotency_key + ...)
 // Tracked di jobs store — audit trail + idempotency dedup.

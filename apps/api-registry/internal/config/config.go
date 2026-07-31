@@ -47,6 +47,15 @@ type Config struct {
 	// Rate limit + timeouts
 	RequestTimeout time.Duration
 	MaxConcurrent  int // limit inflight EPP call (registry biasanya cap session)
+
+	// --- Webhook relay ---
+	// Upstream secret: verify webhook dari registrar-api (HMAC SHA-256 dari body).
+	WebhookUpstreamSecret string
+	// Forward config: kalau URL kosong, api-registry cuma verify + audit,
+	// tidak forward. Cocok untuk staging tanpa web builder yang match.
+	WebbuilderWebhookURL    string
+	WebbuilderWebhookSecret string
+	WebhookForwardTimeout   time.Duration
 }
 
 // Load reads config from env; defaults for optional fields. Panic kalau
@@ -77,6 +86,11 @@ func Load() *Config {
 
 		RequestTimeout: getDuration("REQUEST_TIMEOUT", 30*time.Second),
 		MaxConcurrent:  getInt("MAX_CONCURRENT", 20),
+
+		WebhookUpstreamSecret:   getEnv("WEBHOOK_UPSTREAM_SECRET", ""),
+		WebbuilderWebhookURL:    getEnv("WEBBUILDER_WEBHOOK_URL", ""),
+		WebbuilderWebhookSecret: getEnv("WEBBUILDER_WEBHOOK_SECRET", ""),
+		WebhookForwardTimeout:   getDuration("WEBHOOK_FORWARD_TIMEOUT", 10*time.Second),
 	}
 
 	// Validate per provider mode. Wrapper butuh URL + credentials; EPP direct

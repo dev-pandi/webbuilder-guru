@@ -11,6 +11,60 @@ import (
 
 // --- Domain lifecycle ---
 
+// BulkCheckDomains — registrar-api /reseller/domain/check tetap terima 1
+// SLD/FQDN per request. Untuk batch, kita fan-out sequential — hemat
+// implementation kompleksitas untuk MVP. Kalau nanti PANDI expose batch
+// endpoint native, swap di sini tanpa touch interface / consumer.
+func (p *PandiWrapperProvider) BulkCheckDomains(ctx context.Context, req BulkCheckRequest) (*BulkCheckResponse, error) {
+	if len(req.Domains) == 0 {
+		return nil, fmt.Errorf("%w: domains kosong", ErrValidation)
+	}
+	if len(req.Domains) > 50 {
+		return nil, fmt.Errorf("%w: max 50 domain per request", ErrValidation)
+	}
+	out := &BulkCheckResponse{Results: make([]CheckEntry, 0, len(req.Domains))}
+	for _, d := range req.Domains {
+		res, err := p.CheckDomain(ctx, CheckRequest{Domain: d, ExternalUserID: req.ExternalUserID})
+		if err != nil {
+			// Skip domain error individual — record entry dengan reason supaya
+			// consumer bisa map error per domain tanpa fail seluruh batch.
+			out.Results = append(out.Results, CheckEntry{
+				Domain:    strings.ToLower(strings.TrimSpace(d)),
+				Available: false,
+				Reason:    "check_failed: " + err.Error(),
+			})
+			continue
+		}
+		if len(res.Results) > 0 {
+			out.Results = append(out.Results, res.Results...)
+		}
+	}
+	return out, nil
+}
+
+// ListDomains — proxy GET /reseller/domain/list dengan filter external_user_id.
+func (p *PandiWrapperProvider) ListDomains(ctx context.Context, f ListDomainsFilter) (*DomainListResponse, error) {
+	q := url.Values{}
+	if f.ExternalUserID != "" {
+		q.Set("external_user_id", f.ExternalUserID)
+	}
+	if f.Page > 0 {
+		q.Set("page", strconv.Itoa(f.Page))
+	}
+	if f.PerPage > 0 {
+		q.Set("perPage", strconv.Itoa(f.PerPage))
+	}
+	path := "/v1/api/user/reseller/domain/list"
+	if enc := q.Encode(); enc != "" {
+		path += "?" + enc
+	}
+	var env envelope[DomainListResponse]
+	if err := p.do(ctx, "GET", path, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
 func (p *PandiWrapperProvider) CheckDomain(ctx context.Context, req CheckRequest) (*CheckResponse, error) {
 	body := map[string]string{"domain": strings.ToLower(strings.TrimSpace(req.Domain))}
 	if req.ExternalUserID != "" {
