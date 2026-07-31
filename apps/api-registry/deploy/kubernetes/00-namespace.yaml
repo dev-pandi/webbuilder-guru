@@ -1,0 +1,8 @@
+# Namespace terpisah untuk isolation + easier RBAC + cleanup.
+# Kalau customer sudah punya namespace sendiri, ganti `webbuilder`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webbuilder
+  labels:
+    app.kubernetes.io/name: webbuilder-platform

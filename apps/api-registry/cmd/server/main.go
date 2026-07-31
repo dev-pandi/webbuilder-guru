@@ -28,6 +28,7 @@ import (
 	mw "github.com/webbuilder/api-registry/internal/middleware"
 	"github.com/webbuilder/api-registry/internal/openapi"
 	"github.com/webbuilder/api-registry/internal/provider"
+	"github.com/webbuilder/api-registry/internal/resilience"
 	"github.com/webbuilder/api-registry/internal/security"
 	"github.com/webbuilder/api-registry/internal/webhooks"
 	"github.com/webbuilder/api-registry/internal/whois"
@@ -56,7 +57,32 @@ func main() {
 		slog.Error("provider init failed", "err", err)
 		os.Exit(1)
 	}
-	p := provider.NewInstrumented(baseProvider)
+	// Chain decorators: base → Resilience (retry + circuit) → Instrumented
+	// (metrics). Order penting: Instrumented paling luar supaya metrics
+	// counter increment sekali per request, bukan sekali per retry attempt.
+	var pInner provider.Provider = baseProvider
+	if cfg.ResilienceEnabled {
+		pInner = resilience.NewProvider(baseProvider, resilience.Config{
+			Enabled: true,
+			Retry: resilience.RetryConfig{
+				MaxAttempts:  cfg.RetryMaxAttempts,
+				InitialDelay: cfg.RetryInitialDelay,
+				MaxDelay:     cfg.RetryMaxDelay,
+			},
+			Breaker: resilience.BreakerConfig{
+				FailureThreshold: cfg.CircuitFailureThreshold,
+				CooldownPeriod:   cfg.CircuitCooldownPeriod,
+			},
+		})
+		slog.Info("resilience: enabled",
+			"retry_max_attempts", cfg.RetryMaxAttempts,
+			"circuit_threshold", cfg.CircuitFailureThreshold,
+			"circuit_cooldown", cfg.CircuitCooldownPeriod,
+		)
+	} else {
+		slog.Warn("resilience: disabled — upstream errors akan langsung bocor ke consumer")
+	}
+	p := provider.NewInstrumented(pInner)
 	slog.Info("provider ready",
 		"name", baseProvider.Name(),
 		"mode", cfg.ProviderMode,

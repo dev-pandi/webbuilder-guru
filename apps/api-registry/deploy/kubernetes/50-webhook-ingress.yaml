@@ -1,0 +1,37 @@
+# Ingress terpisah HANYA untuk path /webhooks/registrar — endpoint public
+# supaya registrar-api PANDI (di internet) bisa push webhook. Path lain
+# TIDAK di-expose (internal only via Service ClusterIP).
+#
+# Sesuaikan `host` dengan customer domain + install cert-manager untuk TLS.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-registry-webhook
+  namespace: webbuilder
+  labels:
+    app.kubernetes.io/name: api-registry
+  annotations:
+    # cert-manager auto-issue via Let's Encrypt.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Rate limit per IP — cegah abuse endpoint public.
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    # Body size limit — webhook payload kecil (< 64 KB typical).
+    nginx.ingress.kubernetes.io/proxy-body-size: "512k"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - webhooks.example.com  # GANTI dengan customer domain
+      secretName: api-registry-webhook-tls
+  rules:
+    - host: webhooks.example.com  # GANTI
+      http:
+        paths:
+          - path: /webhooks/registrar
+            pathType: Exact
+            backend:
+              service:
+                name: api-registry
+                port:
+                  number: 5000

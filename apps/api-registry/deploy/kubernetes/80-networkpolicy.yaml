@@ -1,0 +1,76 @@
+# NetworkPolicy — zero-trust intra-cluster. api-registry:
+#   Ingress: HANYA dari `webbuilder-api` (untuk /v1/*) + ingress-nginx
+#            (untuk /webhooks/registrar public)
+#   Egress:  DNS + HTTPS ke internet (registrar-api PANDI + webbuilder-api)
+#
+# Butuh CNI yang support NetworkPolicy (Calico, Cilium, dsb.). Kalau CNI
+# default cluster tidak enforce, ini annotation aja — traffic tetap open.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-registry
+  namespace: webbuilder
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api-registry
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Web builder API (consumer).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: webbuilder-api
+      ports:
+        - port: 5000
+          protocol: TCP
+    # Ingress controller (untuk /webhooks/registrar public path).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 5000
+          protocol: TCP
+    # Prometheus scrape.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 5000
+          protocol: TCP
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS ke internet (registrar-api PANDI) + intra-cluster web builder.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16  # link-local
+              - 10.0.0.0/8      # cluster CIDR (whitelist internal via podSelector kalau butuh strict)
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+    # Web builder API (intra-cluster, untuk webhook forward).
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: webbuilder-api
+      ports:
+        - port: 8080
+          protocol: TCP

@@ -157,6 +157,28 @@ Request masuk → melewati stack ini (dalam urutan):
    wait `REQUEST_TIMEOUT`, else 429. Skip untuk healthz/readyz/metrics/jobs.
 5. **HMAC** (only `/v1/*`) — verify signature + timestamp freshness
 
+## Provider decorator chain
+
+Provider concrete di-wrap 2 decorator sebelum di-inject ke handler:
+
+```
+Base (PandiWrapper / EPP direct / ...)
+  ↓
+Resilience (retry + circuit breaker per operation) — opsional via env
+  ↓
+Instrumented (metrics counter + duration)
+  ↓
+Handler
+```
+
+- **Resilience** — transient error (network/5xx/429) retry dengan
+  exponential backoff + jitter, circuit breaker open setelah N consecutive
+  fail. Deterministic error (validation/not_found/conflict) fail-fast.
+  Multipart upload SKIP retry (bandwidth waste). Disable via
+  `RESILIENCE_ENABLED=false` untuk debug.
+- **Instrumented** — auto-record `api_registry_provider_calls_total` +
+  duration per operation × result label.
+
 ## Observability
 
 **Metrics dikoleksi otomatis**:
@@ -164,6 +186,9 @@ Request masuk → melewati stack ini (dalam urutan):
 - `api_registry_request_duration_ms_sum{path}` — duration sum (avg = sum / count)
 - `api_registry_provider_calls_total{provider, operation, result}` — upstream call breakdown per result (success / not_found / validation / conflict / rate_limit / upstream_error / capability_missing)
 - `api_registry_provider_call_duration_ms_sum{provider, operation}` — upstream latency sum
+- `api_registry_circuit_open_total{provider, operation}` — request rejected karena circuit open (fast-fail)
+- `api_registry_retry_exhausted_total{provider, operation}` — provider call gagal setelah retry exhausted
+- `api_registry_webhooks_total{result}` — webhook receive by result (invalid_signature / verified_no_forward / forwarded / forward_error / forward_reject)
 
 **Log**: JSON structured (stdout), level via `LOG_LEVEL=debug|info|warn|error`.
 `request_id` di setiap access log — bisa correlate cross-service kalau
@@ -265,12 +290,23 @@ Coverage (55+ tests, all `-race` safe):
 - [x] Fase 1a: document upload multipart (KTP/NPWP untuk .id)
 - [x] Fase 1a: handler-level test coverage semua module
 - [x] Fase 1a: docker compose integration di infra/
+- [x] Fase 1a: resilience decorator (retry + circuit breaker)
+- [x] Fase 1a: Kubernetes manifests + runbook + provider integration guide
 - [ ] Fase 1b: integration test terhadap registrar-api sandbox real
 - [ ] Fase 1c: web builder swap dari langsung ke registrar-api → ke api-registry
 - [ ] Fase 2a: EPP client library integration
 - [ ] Fase 2b: `EPPDirectProvider` implementation
 - [ ] Fase 2c: async job runner (Asynq/Redis) — swap `MemoryStore`
 - [ ] Fase 2d: multi-registry support
+
+## Documentation
+
+- [`docs/add-provider.md`](docs/add-provider.md) — guide tambah provider baru
+  (Verisign, Namecheap, custom EPP) tanpa touch handler/consumer
+- [`docs/runbook.md`](docs/runbook.md) — troubleshooting + alert playbook
+  untuk on-call
+- [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md) — K8s
+  deployment guide + operational procedures
 
 ## Related
 

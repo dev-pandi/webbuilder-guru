@@ -1,0 +1,14 @@
+# PodDisruptionBudget — cegah semua replica ke-drain sekaligus saat node
+# maintenance. Minimal 1 pod tetap available.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-registry
+  namespace: webbuilder
+  labels:
+    app.kubernetes.io/name: api-registry
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-registry

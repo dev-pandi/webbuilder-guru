@@ -1,0 +1,23 @@
+# ClusterIP — internal service, cuma dipanggil web builder API (dalam
+# cluster). TIDAK expose Ingress — api-registry bukan public-facing.
+#
+# Webhook endpoint /webhooks/registrar butuh public inbound (registrar-api
+# push dari internet). Untuk itu, expose via Ingress terpisah dengan
+# path /webhooks/registrar saja (lihat 50-webhook-ingress.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-registry
+  namespace: webbuilder
+  labels:
+    app.kubernetes.io/name: api-registry
+    app.kubernetes.io/part-of: webbuilder-platform
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: api-registry
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+      protocol: TCP

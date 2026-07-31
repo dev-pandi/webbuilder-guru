@@ -1,0 +1,91 @@
+# Deployment — stateless, boleh scale horizontal. Job store in-memory
+# BUKAN shared antar pod (Fase 2 swap ke Redis/Postgres kalau butuh
+# cross-pod audit). Untuk MVP, single-pod atau accept per-pod job isolation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-registry
+  namespace: webbuilder
+  labels:
+    app.kubernetes.io/name: api-registry
+    app.kubernetes.io/part-of: webbuilder-platform
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  # Fase 1a: 1-2 replica cukup (job store in-memory, tidak cross-pod).
+  # Fase 2 sesudah Redis-backed jobs, bisa scale lebih tinggi.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-registry
+        app.kubernetes.io/part-of: webbuilder-platform
+      annotations:
+        # Prometheus scrape untuk /metrics (kalau pakai kube-prometheus stack).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 45  # match graceful shutdown 30s + margin
+      containers:
+        - name: api-registry
+          image: webbuilder/api-registry:1.0.0  # ganti ke registry.customer/api-registry:tag
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: api-registry-config
+            - secretRef:
+                name: api-registry-secrets
+          # Liveness — cek proc up + provider constructed.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness — actual upstream probe. Kalau registrar-api down,
+          # traffic tidak di-route ke pod ini sampai upstream recover.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 6
+            failureThreshold: 3
+            successThreshold: 1
+          # Startup probe — kasih waktu init connection pool sebelum liveness
+          # kick in (60s max).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12  # 12 × 5s = 60s window
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true

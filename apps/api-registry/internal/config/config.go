@@ -56,6 +56,16 @@ type Config struct {
 	WebbuilderWebhookURL    string
 	WebbuilderWebhookSecret string
 	WebhookForwardTimeout   time.Duration
+
+	// --- Resilience (retry + circuit breaker) ---
+	// Default enabled di production untuk lindungi dari upstream cascading
+	// failure. Disable kalau butuh raw upstream behavior untuk debug.
+	ResilienceEnabled       bool
+	RetryMaxAttempts        int
+	RetryInitialDelay       time.Duration
+	RetryMaxDelay           time.Duration
+	CircuitFailureThreshold int
+	CircuitCooldownPeriod   time.Duration
 }
 
 // Load reads config from env; defaults for optional fields. Panic kalau
@@ -91,6 +101,13 @@ func Load() *Config {
 		WebbuilderWebhookURL:    getEnv("WEBBUILDER_WEBHOOK_URL", ""),
 		WebbuilderWebhookSecret: getEnv("WEBBUILDER_WEBHOOK_SECRET", ""),
 		WebhookForwardTimeout:   getDuration("WEBHOOK_FORWARD_TIMEOUT", 10*time.Second),
+
+		ResilienceEnabled:       getBool("RESILIENCE_ENABLED", true),
+		RetryMaxAttempts:        getInt("RETRY_MAX_ATTEMPTS", 3),
+		RetryInitialDelay:       getDuration("RETRY_INITIAL_DELAY", 200*time.Millisecond),
+		RetryMaxDelay:           getDuration("RETRY_MAX_DELAY", 5*time.Second),
+		CircuitFailureThreshold: getInt("CIRCUIT_FAILURE_THRESHOLD", 5),
+		CircuitCooldownPeriod:   getDuration("CIRCUIT_COOLDOWN_PERIOD", 30*time.Second),
 	}
 
 	// Validate per provider mode. Wrapper butuh URL + credentials; EPP direct
@@ -134,6 +151,19 @@ func getInt(key string, fallback int) int {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
 		}
+	}
+	return fallback
+}
+
+func getBool(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	switch v {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
 	}
 	return fallback
 }

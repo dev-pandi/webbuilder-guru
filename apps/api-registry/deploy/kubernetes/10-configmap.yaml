@@ -1,0 +1,38 @@
+# Non-sensitive config — provider mode, tuning, feature flags.
+# Sensitive (API keys, HMAC secrets) di Secret terpisah (20-secret.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-registry-config
+  namespace: webbuilder
+  labels:
+    app.kubernetes.io/name: api-registry
+    app.kubernetes.io/part-of: webbuilder-platform
+data:
+  APP_ENV: "prod"
+  LOG_LEVEL: "info"
+  PORT: "5000"
+
+  # Fase 1: pandi_wrapper. Fase 2: epp_direct.
+  PROVIDER_MODE: "pandi_wrapper"
+
+  # Upstream registrar-api base URL (override kalau customer pakai instance
+  # PANDI OT&E vs production).
+  PANDI_API_URL: "https://api.pandi.id"
+  PANDI_API_TIMEOUT: "15s"
+
+  # Webhook forward target — internal Service name web-builder API.
+  WEBBUILDER_WEBHOOK_URL: "http://webbuilder-api.webbuilder.svc.cluster.local:8080/internal/registrar/webhook"
+  WEBHOOK_FORWARD_TIMEOUT: "10s"
+
+  # Runtime tuning.
+  REQUEST_TIMEOUT: "30s"
+  MAX_CONCURRENT: "20"
+
+  # Resilience.
+  RESILIENCE_ENABLED: "true"
+  RETRY_MAX_ATTEMPTS: "3"
+  RETRY_INITIAL_DELAY: "200ms"
+  RETRY_MAX_DELAY: "5s"
+  CIRCUIT_FAILURE_THRESHOLD: "5"
+  CIRCUIT_COOLDOWN_PERIOD: "30s"
