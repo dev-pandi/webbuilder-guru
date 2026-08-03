@@ -24,6 +24,7 @@ import (
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/sites"
@@ -90,10 +91,16 @@ type PricingLookup interface {
 }
 
 // InvoiceCreator — abstraksi minimal: buat invoice untuk register/renew.
-// Diimplementasikan oleh invoices.Service.
+// Diimplementasikan oleh invoices.Service (+ Repo via adapter).
 type InvoiceCreator interface {
 	CreateForRegister(ctx context.Context, in InvoiceCreateInput) (invoiceID uuid.UUID, total int64, dueAt time.Time, err error)
 	SavePaymentRef(ctx context.Context, id uuid.UUID, providerRef string) error
+	// MarkPaid — untuk sync gateway (wallet) — bypass webhook, langsung
+	// tandai paid.
+	MarkPaid(ctx context.Context, id uuid.UUID, paidAt time.Time, providerRef string) error
+	// GetInvoiceForCallback — fetch invoice + lines untuk pass ke
+	// ExecuteAfterPayment callback (butuh metadata untuk parse kind/domain/years).
+	GetInvoiceForCallback(ctx context.Context, id uuid.UUID) (*invoices.Invoice, error)
 }
 
 // InvoiceCreateInput — subset yang PurchaseV2 butuh; abstract dari
@@ -116,12 +123,16 @@ type GatewayRegistry interface {
 // PaymentGateway — subset dari paymentgw.Gateway yang PurchaseV2 pakai.
 type PaymentGateway interface {
 	Code() string
+	Type() string // "gateway" | "manual" | "wallet" — dipakai handler untuk
+	              // dispatch flow (sync wallet vs async webhook).
 	CreateCharge(ctx context.Context, req GatewayChargeRequest) (paymentURL string, providerRefID string, err error)
 }
 
-// GatewayChargeRequest — subset dari paymentgw.ChargeRequest.
+// GatewayChargeRequest — subset dari paymentgw.ChargeRequest. Include UserID
+// supaya WalletGateway tahu user mana yang di-debit.
 type GatewayChargeRequest struct {
 	OrderID     string
+	UserID      string
 	Amount      int64
 	Description string
 	CustomerName, CustomerEmail, CustomerPhone string

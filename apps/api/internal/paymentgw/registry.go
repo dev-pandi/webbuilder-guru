@@ -21,6 +21,12 @@ type Registry struct {
 
 	mu       sync.RWMutex
 	builders map[string]Builder
+
+	// walletDebiter — di-inject via SetWalletDebiter. Dipakai buildWallet
+	// karena WalletGateway butuh live Debiter (bukan cuma config JSONB).
+	// Nil = deposit_wallet gateway tidak akan tersedia (Get return
+	// ErrInvalidConfig).
+	walletDebiter WalletDebiter
 }
 
 // NewRegistry — construct with repo binding. Repo dipakai untuk fetch
@@ -35,8 +41,8 @@ func NewRegistry(r *payments.Repo) *Registry {
 	reg.Register(payments.CodeManualBank, buildManualBank)
 	reg.Register(payments.CodeMidtrans, buildMidtrans)
 	reg.Register(payments.CodePaylabs, buildPaylabs)
-	// deposit_wallet — TBD nanti (butuh WalletGateway impl yang link ke
-	// internal wallet_local package + PurchaseV2 synchronous debit flow).
+	// deposit_wallet — special case: butuh WalletDebiter yang di-inject
+	// via SetWalletDebiter. Kalau debiter nil, buildWallet error saat Get.
 	return reg
 }
 
@@ -48,21 +54,43 @@ func (r *Registry) Register(code string, b Builder) {
 	r.mu.Unlock()
 }
 
+// SetWalletDebiter — inject Debiter untuk WalletGateway. Call di main.go
+// setelah wallet_local.Repo di-construct. Panggil sebelum Get("deposit_wallet")
+// pertama supaya gateway tersedia.
+func (r *Registry) SetWalletDebiter(d WalletDebiter) {
+	r.mu.Lock()
+	r.walletDebiter = d
+	r.mu.Unlock()
+}
+
 // Get — resolve code → Gateway. Fetch config dari DB, validate enabled,
 // call Builder. Return ErrGatewayNotFound / ErrGatewayDisabled / ErrInvalidConfig.
 func (r *Registry) Get(ctx context.Context, code string) (Gateway, error) {
-	r.mu.RLock()
-	builder, ok := r.builders[code]
-	r.mu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrGatewayNotFound, code)
-	}
 	m, err := r.repo.GetByCode(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s (%v)", ErrGatewayNotFound, code, err)
 	}
 	if !m.Enabled {
 		return nil, fmt.Errorf("%w: %s", ErrGatewayDisabled, code)
+	}
+	// Special case: deposit_wallet butuh WalletDebiter yang di-inject
+	// terpisah dari config JSONB.
+	if code == payments.CodeDepositWallet {
+		r.mu.RLock()
+		debiter := r.walletDebiter
+		r.mu.RUnlock()
+		gw, err := buildWallet(*m, debiter)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %v", ErrInvalidConfig, code, err)
+		}
+		return gw, nil
+	}
+
+	r.mu.RLock()
+	builder, ok := r.builders[code]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrGatewayNotFound, code)
 	}
 	gw, err := builder(*m)
 	if err != nil {
@@ -81,6 +109,21 @@ func (r *Registry) ListEnabled(ctx context.Context) ([]Gateway, error) {
 	}
 	out := make([]Gateway, 0, len(items))
 	for _, m := range items {
+		// Special case: deposit_wallet — check debiter injected + build.
+		if m.Code == payments.CodeDepositWallet {
+			r.mu.RLock()
+			debiter := r.walletDebiter
+			r.mu.RUnlock()
+			if debiter == nil {
+				continue // wallet gateway not available — skip silent
+			}
+			gw, err := buildWallet(m, debiter)
+			if err == nil {
+				out = append(out, gw)
+			}
+			continue
+		}
+
 		r.mu.RLock()
 		builder, ok := r.builders[m.Code]
 		r.mu.RUnlock()

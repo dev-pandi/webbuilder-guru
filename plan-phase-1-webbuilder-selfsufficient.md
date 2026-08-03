@@ -11,9 +11,9 @@ Prerequisites: [plan-saas-registrar-platform.md](plan-saas-registrar-platform.md
 
 ## Ringkasan Status (Snapshot)
 
-**Backend + Admin UI + User Invoice UI COMPLETE.** Web builder bisa jalan
-mode self-sufficient. Sisa: wizard checkout migrate, wallet integration
-internal, data migration, docs.
+**Fase 1 self-sufficient FUNGSIONAL COMPLETE.** Backend + Admin UI + User
+Invoice UI + wallet foundation + Paylabs gateway + Docs — all done. Sisa
+optional: legacy code cleanup (defer sampai frontend legacy fully migrate).
 
 ### Cara jalan mode self-sufficient sekarang
 
@@ -58,12 +58,12 @@ registrar client: self-sufficient mode — legacy registrar-api backend disabled
 | **Fase 1** — Admin UI | ✅ | 4 halaman: `/admin/settings`, `/admin/zones`, `/admin/payment-methods`, `/admin/invoices` |
 | **Fase 1** — User invoice UI | ✅ | `/settings/invoices-v2` (local billing) |
 | **Fase 1** — Self-sufficient mode support di main.go | ✅ | `REGISTRAR_API_URL` boleh kosong; skip auto-login kalau tidak ada legacy backend |
-| **Fase 1** — Wizard checkout migrate | ⏳ | `/sites/new-with-domain` masih pakai legacy `POST /purchase`. Migrate ke `POST /purchase/v2` + fetch dynamic `GET /payment-methods` |
-| **Fase 1** — Wallet integration internal | ⏳ | Web builder wallet package (menggantikan registrar-api wallet). Migration `wallet_balances` + `wallet_ledger` + repo + handler + wire ke `paymentgw.deposit_wallet` |
-| **Fase 1** — Data migration script | ⏳ | Populate `platform_prices` + `zones` dari existing config/hardcoded values. CLI atau SQL seed |
-| **Fase 1** — Paylabs gateway impl | ⏳ | Pattern mirror Midtrans (buildPaylabs + handleWebhook signature verify) |
-| **Fase 1** — Docs | ⏳ | Admin runbook (setup gateway + zones + PPN + brand); user guide (checkout flow) |
-| **Fase 1** — Legacy code cleanup | ⏳ | Hapus `registrar/wallet.go`, `document.go`, `invoice.go`, `config.go` (rotate webhook secret via registrar-api), method `GetDomainPrice`/`ListRegistrarTLDs`/`CheckAvailability`. Setelah wizard migrate + wallet integration siap |
+| **Fase 1** — Wizard checkout migrate | ✅ | `/sites/new-with-domain` try V2 first + fallback legacy. Feature gate untuk wallet/on-behalf-of/promo/docs (route ke legacy) |
+| **Fase 1** — Wallet integration internal (foundation) | ✅ | Package `wallet_local` — `wallet_balances` + `wallet_ledger` + atomic debit/credit + admin adjust. Migrate flow + WalletGateway integration defer ke follow-up |
+| **Fase 1** — Data migration script | ✅ | `0039_seed_default_prices.sql` populate 11 PANDI TLD retail price selaras dengan zones catalog |
+| **Fase 1** — Paylabs gateway impl | ✅ | `buildPaylabs` + Snap API scaffold + HMAC-SHA256 signature verify + status mapping. 9 test coverage |
+| **Fase 1** — Docs | ✅ | 3 doc: [admin-runbook.md](apps/api/docs/admin-runbook.md), [user-guide.md](apps/web/docs/user-guide.md), [migration-registrar-to-api-registry.md](docs/migration-registrar-to-api-registry.md) |
+| **Fase 1** — Legacy code cleanup | 🟡 partial | Deprecation banner ditambahkan di `registrar/wallet.go`, `document.go`, `invoice.go`. Full deletion defer sampai frontend legacy fully migrate. Lihat [docs/cleanup-followup.md](docs/cleanup-followup.md) untuk kondisi + urutan removal |
 | **Fase 2a** — Async job runner | ⏭️ | Asynq/Redis di api-registry; swap `MemoryStore` |
 | **Fase 2b** — Multi-registry | ⏭️ | Verisign (.com), CentralNic, dsb. |
 | **Fase 3** — White-label deployment kit | ⏭️ | Docker Compose + Helm chart + branding config |

@@ -462,8 +462,14 @@ func main() {
 		// PurchaseV2 dependencies — inject via adapters. Bikin 2-phase flow
 		// (invoice + charge lokal) available di POST /purchases/v2.
 		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo})
-		purchaseHandler.SetInvoices(invoicesAdapter{svc: invoicesSvc})
+		purchaseHandler.SetInvoices(invoicesAdapter{svc: invoicesSvc, repo: invoicesRepo})
 		purchaseHandler.SetGatewayRegistry(gatewayRegistryAdapter{reg: gwRegistry})
+
+		// Inject wallet debiter ke gateway registry supaya `deposit_wallet`
+		// gateway tersedia untuk PurchaseV2 flow. WalletGateway sync-debit
+		// balance saat CreateCharge; PurchaseV2 detect Type()=="wallet" +
+		// trigger MarkPaid + ExecuteAfterPayment synchronous (no webhook wait).
+		gwRegistry.SetWalletDebiter(walletDebiterAdapter{repo: walletLocalRepo})
 	}
 
 	// Contact syncer — propagate profile update (self atau by reseller/agent)

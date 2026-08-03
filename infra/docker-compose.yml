@@ -108,10 +108,10 @@ services:
       REGISTRAR_RESELLER_EMAIL: ${REGISTRAR_RESELLER_EMAIL:-}
       REGISTRAR_RESELLER_PASSWORD: ${REGISTRAR_RESELLER_PASSWORD:-}
       REGISTRAR_WEBHOOK_SECRET: ${REGISTRAR_WEBHOOK_SECRET:-}
-      # --- api-registry backend (Fase 1c dual-backend, opsional) ---
-      # Set API_REGISTRY_URL untuk route EPP-native call ke internal service.
+      # --- api-registry backend (PRIMARY — self-sufficient mode) ---
+      # Default point ke api-registry service via internal network.
       # HMAC secret harus sama dengan api-registry INTERNAL_HMAC_SECRET.
-      API_REGISTRY_URL: ${WEBBUILDER_API_REGISTRY_URL:-}
+      API_REGISTRY_URL: ${WEBBUILDER_API_REGISTRY_URL:-http://api-registry:5000}
       API_REGISTRY_HMAC_SECRET: ${API_REGISTRY_HMAC_SECRET:-}
       API_REGISTRY_TIMEOUT: ${WEBBUILDER_API_REGISTRY_TIMEOUT:-30s}
       # --- Observability ---
@@ -122,14 +122,19 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      api-registry:
+        condition: service_healthy
     volumes:
       - uploads:/data/uploads
     ports:
       - "8080:8080"
 
-  # api-registry — internal service untuk domain lifecycle + EPP. Fase 1
-  # mode `pandi_wrapper` (proxy ke registrar-api existing). Fase 2 swap ke
-  # `epp_direct`. Konsumer tunggal: `api` (via internal HTTP + HMAC).
+  # api-registry — internal service untuk domain lifecycle + EPP execution.
+  # Konsumer tunggal: `api` (via internal HTTP + HMAC).
+  #
+  # Mode default: `epp_direct` — native EPP client, zero dependency ke
+  # registrar-api PANDI. Butuh EPP_* credentials dari PANDI onboarding.
+  # Legacy: set API_REGISTRY_PROVIDER_MODE=pandi_wrapper untuk hybrid mode.
   api-registry:
     build:
       context: ../apps/api-registry
@@ -140,13 +145,25 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PORT: "5000"
 
-      # Provider mode — default pandi_wrapper (proxy ke registrar-api). Set
-      # API_REGISTRY_PROVIDER_MODE=epp_direct untuk native EPP client (butuh
-      # EPP_* env di section EPP direct di infra/.env).
-      PROVIDER_MODE: ${API_REGISTRY_PROVIDER_MODE:-pandi_wrapper}
+      # Provider mode — default epp_direct (self-sufficient). Set ke
+      # pandi_wrapper untuk hybrid transition mode.
+      PROVIDER_MODE: ${API_REGISTRY_PROVIDER_MODE:-epp_direct}
 
-      # PANDI wrapper — reuse env yang sama dengan `api` supaya operator
-      # tidak perlu maintain 2 set credentials.
+      # EPP direct credentials (PRIMARY — PROVIDER_MODE=epp_direct).
+      # Wajib set kalau customer punya PANDI accreditation.
+      EPP_HOST: ${EPP_HOST:-epp1.pandi.id}
+      EPP_PORT: ${EPP_PORT:-700}
+      EPP_USER: ${EPP_USER:-}
+      EPP_PASSWORD: ${EPP_PASSWORD:-}
+      EPP_CERT_FILE: ${EPP_CERT_FILE:-}
+      EPP_KEY_FILE: ${EPP_KEY_FILE:-}
+      EPP_CA_FILE: ${EPP_CA_FILE:-}
+      EPP_INSECURE_SKIP_VERIFY: ${EPP_INSECURE_SKIP_VERIFY:-false}
+      EPP_KEEPALIVE_INTERVAL: ${EPP_KEEPALIVE_INTERVAL:-5m}
+
+      # LEGACY: PANDI wrapper — reuse env yang sama dengan `api` supaya
+      # operator tidak perlu maintain 2 set credentials.
+      # Hanya dipakai kalau PROVIDER_MODE=pandi_wrapper.
       PANDI_API_URL: ${REGISTRAR_API_URL:-}
       PANDI_API_KEY: ${REGISTRAR_API_KEY:-}
       PANDI_EMAIL: ${REGISTRAR_RESELLER_EMAIL:-}

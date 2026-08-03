@@ -64,13 +64,16 @@ type Customer struct {
 
 // ChargeRequest — payload create transaksi. Amount = IDR minor unit.
 type ChargeRequest struct {
-	OrderID     string   // invoice.id UUID string
-	Amount      int64    // IDR utuh (min 10000 biasanya per gateway policy)
-	Currency    string   // "IDR" untuk MVP
-	Description string   // "Domain myshop.id 1 tahun" — tampil di UI + email
-	Customer    Customer // billing info
-	ReturnURL   string   // web builder redirect setelah user selesai bayar
-	NotifURL    string   // gateway callback URL — biasanya `/webhooks/payment/:code`
+	OrderID     string    // invoice.id UUID string
+	UserID      string    // user.id UUID string — dipakai WalletGateway untuk
+	                      // tahu WHICH user yang di-debit. Kosong untuk gateway
+	                      // eksternal (Midtrans/Paylabs — irrelevant).
+	Amount      int64     // IDR utuh (min 10000 biasanya per gateway policy)
+	Currency    string    // "IDR" untuk MVP
+	Description string    // "Domain myshop.id 1 tahun" — tampil di UI + email
+	Customer    Customer  // billing info
+	ReturnURL   string    // web builder redirect setelah user selesai bayar
+	NotifURL    string    // gateway callback URL — biasanya `/webhooks/payment/:code`
 	ExpiresAt   time.Time // opsional, kosong = pakai default gateway
 }
 

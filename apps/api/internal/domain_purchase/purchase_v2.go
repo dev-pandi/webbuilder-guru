@@ -169,8 +169,12 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	// Charge — order_id = invoice.id string. Provider POST webhook nanti
 	// dengan order_id ini, paymentwh lookup invoice by GetByGatewayRef
 	// (setelah SavePaymentRef).
+	//
+	// Untuk wallet gateway (Type=="wallet"), CreateCharge sync debit —
+	// balance dikurangi langsung + return ledger.id sebagai providerRef.
 	paymentURL, providerRef, err := gw.CreateCharge(c.Context(), GatewayChargeRequest{
 		OrderID:       invoiceID.String(),
+		UserID:        owner.ID.String(),
 		Amount:        total,
 		Description:   fmt.Sprintf("Register %s (%d tahun)", req.Domain, req.Years),
 		CustomerName:  owner.Name,
@@ -180,6 +184,15 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 		ExpiresAt:     dueAt,
 	})
 	if err != nil {
+		// Detect wallet insufficient — return 402 dengan message spesifik.
+		if strings.Contains(strings.ToLower(err.Error()), "saldo") ||
+			strings.Contains(strings.ToLower(err.Error()), "insufficient") {
+			metrics.Default.CounterInc(metricPurchasesCreatedV2,
+				"PurchaseV2 checkout by outcome",
+				map[string]string{"result": "wallet_insufficient", "gateway": req.PaymentMethod},
+			)
+			return httpx.Err(c, fiber.StatusPaymentRequired, "wallet_insufficient", err.Error())
+		}
 		slog.Error("purchase_v2: charge failed",
 			"gateway", req.PaymentMethod, "invoice_id", invoiceID, "error", err)
 		metrics.Default.CounterInc(metricPurchasesCreatedV2,
@@ -197,17 +210,22 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 			"invoice_id", invoiceID, "provider_ref", providerRef, "error", err)
 	}
 
-	// Save local Purchase — status pending_payment. job_id = invoice_id
-	// string supaya webhook.ExecuteAfterPayment bisa lookup via
-	// invoice.metadata.job_id (yang kita simpan di CreateForRegister flow
-	// nanti). Untuk sekarang, kita tidak isi metadata.job_id — invoice.ID
-	// sendiri sudah cukup jadi identity.
+	// Determine initial Purchase status. Wallet gateway = sync (langsung
+	// active setelah debit + EPP execute). Gateway lain = pending_payment
+	// (menunggu webhook).
+	isWalletGateway := gw.Type() == "wallet"
+	purchaseStatus := StatusPendingPayment
+	if isWalletGateway {
+		purchaseStatus = StatusPendingProvisioning
+	}
+
+	// Save local Purchase.
 	local := &Purchase{
 		UserID:         owner.ID,
 		RegistrarJobID: jobID,
 		Domain:         req.Domain,
 		Years:          req.Years,
-		Status:         StatusPendingPayment,
+		Status:         purchaseStatus,
 		PaymentMethod:  req.PaymentMethod,
 		PaymentURL:     paymentURL,
 	}
@@ -223,14 +241,43 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	slog.Info("purchase_v2: checkout accepted",
 		"job_id", jobID, "invoice_id", invoiceID,
 		"domain", req.Domain, "total", total,
-		"gateway", req.PaymentMethod, "provider_ref", providerRef)
+		"gateway", req.PaymentMethod, "provider_ref", providerRef,
+		"is_wallet", isWalletGateway)
+
+	// Wallet gateway = synchronous flow — mark paid + EPP execute inline.
+	// Kalau gagal, invoice tetap paid (money debited); admin/user retry
+	// EPP execute manual nanti.
+	finalStatus := purchaseStatus
+	respPaymentURL := paymentURL
+	if isWalletGateway {
+		if err := h.invoicesSvc.MarkPaid(c.Context(), invoiceID, time.Now(), providerRef); err != nil {
+			slog.Error("purchase_v2 (wallet): MarkPaid failed",
+				"invoice_id", invoiceID, "error", err)
+			// Non-fatal for response — invoice biasanya bisa di-mark via admin panel.
+		}
+		inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
+		if err != nil {
+			slog.Error("purchase_v2 (wallet): fetch invoice for execute failed",
+				"invoice_id", invoiceID, "error", err)
+		} else if inv != nil {
+			if execErr := h.ExecuteAfterPayment(c.Context(), inv); execErr != nil {
+				slog.Error("purchase_v2 (wallet): ExecuteAfterPayment failed",
+					"invoice_id", invoiceID, "error", execErr)
+				// Purchase status akan updated ke failed via ExecuteAfterPayment.
+				finalStatus = StatusFailed
+			} else {
+				finalStatus = StatusActive
+			}
+		}
+		respPaymentURL = "" // no redirect untuk wallet
+	}
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseV2Resp{
 		JobID:      jobID,
 		InvoiceID:  invoiceID.String(),
 		Domain:     req.Domain,
-		Status:     StatusPendingPayment,
-		PaymentURL: paymentURL,
+		Status:     finalStatus,
+		PaymentURL: respPaymentURL,
 		Total:      total,
 		Currency:   "IDR",
 		DueAt:      dueAt.Format(time.RFC3339),

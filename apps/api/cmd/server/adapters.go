@@ -20,6 +20,7 @@ import (
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/paymentgw"
 	"github.com/webbuilder/api/internal/pricing"
+	"github.com/webbuilder/api/internal/wallet_local"
 )
 
 // --- pricingAdapter: pricing.Repo → domain_purchase.PricingLookup ---
@@ -37,9 +38,15 @@ func (a pricingAdapter) GetPlatformPrice(ctx context.Context, tld string) (int64
 	return p.RetailRegisterPrice, p.RetailRenewPrice, nil
 }
 
-// --- invoicesAdapter: invoices.Service → domain_purchase.InvoiceCreator ---
+// --- invoicesAdapter: invoices.Service + Repo → domain_purchase.InvoiceCreator ---
+//
+// Butuh Service (untuk CreateForRegister + SavePaymentRef + MarkPaid) DAN
+// Repo (untuk GetInvoiceForCallback — fetch full invoice+lines).
 
-type invoicesAdapter struct{ svc *invoices.Service }
+type invoicesAdapter struct {
+	svc  *invoices.Service
+	repo *invoices.Repo
+}
 
 func (a invoicesAdapter) CreateForRegister(ctx context.Context, in domain_purchase.InvoiceCreateInput) (uuid.UUID, int64, time.Time, error) {
 	inv, err := a.svc.CreateForRegister(ctx, invoices.CreateForRegisterInput{
@@ -61,6 +68,34 @@ func (a invoicesAdapter) SavePaymentRef(ctx context.Context, id uuid.UUID, provi
 	return a.svc.SavePaymentRef(ctx, id, providerRef)
 }
 
+func (a invoicesAdapter) MarkPaid(ctx context.Context, id uuid.UUID, paidAt time.Time, providerRef string) error {
+	return a.svc.MarkPaid(ctx, id, paidAt, providerRef)
+}
+
+func (a invoicesAdapter) GetInvoiceForCallback(ctx context.Context, id uuid.UUID) (*invoices.Invoice, error) {
+	return a.repo.GetWithLines(ctx, id)
+}
+
+// --- walletDebiterAdapter: wallet_local.Repo → paymentgw.WalletDebiter ---
+//
+// Bridge supaya WalletGateway di paymentgw package tidak import wallet_local
+// package langsung (keep concrete packages agnostic ke satu sama lain).
+
+type walletDebiterAdapter struct{ repo *wallet_local.Repo }
+
+func (a walletDebiterAdapter) Debit(ctx context.Context, in paymentgw.WalletDebitInput) (uuid.UUID, error) {
+	entry, err := a.repo.Debit(ctx, wallet_local.DebitInput{
+		UserID:      in.UserID,
+		Amount:      in.Amount,
+		Reason:      in.Reason,
+		ReferenceID: in.ReferenceID,
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return entry.ID, nil
+}
+
 // --- gatewayRegistryAdapter: paymentgw.Registry → domain_purchase.GatewayRegistry ---
 
 type gatewayRegistryAdapter struct{ reg *paymentgw.Registry }
@@ -77,10 +112,12 @@ func (a gatewayRegistryAdapter) Get(ctx context.Context, code string) (domain_pu
 type gatewayAdapter struct{ gw paymentgw.Gateway }
 
 func (a gatewayAdapter) Code() string { return a.gw.Code() }
+func (a gatewayAdapter) Type() string { return a.gw.Type() }
 
 func (a gatewayAdapter) CreateCharge(ctx context.Context, req domain_purchase.GatewayChargeRequest) (string, string, error) {
 	res, err := a.gw.CreateCharge(ctx, paymentgw.ChargeRequest{
 		OrderID:     req.OrderID,
+		UserID:      req.UserID,
 		Amount:      req.Amount,
 		Currency:    "IDR",
 		Description: req.Description,

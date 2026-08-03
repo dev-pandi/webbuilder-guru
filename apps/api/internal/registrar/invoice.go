@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+// DEPRECATED (Fase 1 self-sufficient): Invoice list endpoints — proxy ke
+// registrar-api. Diganti dengan `internal/invoices` (authoritative local
+// invoice state machine + PDF renderer).
+//
+// Endpoint baru: `/api/v1/invoices/v2` (list mine), `/api/v1/admin/invoices`
+// (list all). Setelah frontend migrate dari `/api/v1/invoices` legacy shape
+// ke `/api/v1/invoices/v2`, file ini bisa dihapus.
+
 // ListInvoices — GET /v1/api/user/reseller/invoices
 //
 // Query invoice list milik reseller yang login (auth pakai JWT reseller).
