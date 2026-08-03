@@ -134,8 +134,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PORT: "5000"
 
-      # Provider mode — kalau REGISTRAR_API_URL kosong, biarkan default
-      # pandi_wrapper (butuh env di bawah). Ganti ke epp_direct saat Fase 2.
+      # Provider mode — default pandi_wrapper (proxy ke registrar-api). Set
+      # API_REGISTRY_PROVIDER_MODE=epp_direct untuk native EPP client (butuh
+      # EPP_* env di section EPP direct di infra/.env).
       PROVIDER_MODE: ${API_REGISTRY_PROVIDER_MODE:-pandi_wrapper}
 
       # PANDI wrapper — reuse env yang sama dengan `api` supaya operator

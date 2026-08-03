@@ -21,12 +21,15 @@ di atas registrar operations. Dua implementasi:
 
 | Mode | Status | Cara kerja |
 |---|---|---|
-| `pandi_wrapper` | ✅ MVP (Fase 1) | HTTP proxy ke registrar-api PANDI. Web builder dependency arsitektural zero, tapi backend masih via registrar-api. |
-| `epp_direct` | 🚧 Fase 2 | Native EPP client (TCP+TLS) langsung ke registry PANDI OT&E / production. Full independence. |
+| `pandi_wrapper` | ✅ Fase 1a | HTTP proxy ke registrar-api PANDI (reference implementation — scaffolding untuk arsitektur decoupling) |
+| `epp_direct` | ✅ Fase 1b | Native EPP client (TCP+TLS) langsung ke registry PANDI OT&E / production via [`al0fayz/epp-pandi-client`](https://github.com/al0fayz/epp-pandi-client). **Zero dependency ke registrar-api PANDI — inilah mode yang customer registrar install.** |
 
-Swap via env `PROVIDER_MODE=pandi_wrapper` (default) atau `epp_direct`
-(pending). Consumer (web builder API) tidak berubah — kontrak API-registry
-tetap sama.
+Swap via env `PROVIDER_MODE=pandi_wrapper` atau `epp_direct`. Consumer
+(web builder API) tidak berubah — kontrak API-registry tetap sama.
+
+**EPP direct capabilities**: check/register/renew/info/whois via native EPP
+protocol. Wallet + promo + document upload TIDAK di provider ini
+(delegate ke web builder side — sesuai arsitektur SaaS platform).
 
 **Decorator `Instrumented`** wrap tiap provider auto-record metrics per
 operation (success/fail/duration) — no manual instrumentation di handler.
@@ -100,7 +103,7 @@ plus `API_REGISTRY_*` var baru (lihat [`infra/.env.example`](../../infra/.env.ex
 - `GET  /v1/domains/register/:job_id/status` — poll upstream status
 - `POST /v1/domains/register/:job_id/retry` — retry failed job
 - `POST /v1/domains/register/:job_id/cancel` — cancel pending
-- `GET  /v1/domains/:name/info` — registry state (EPP domain:info) — Fase 2
+- `GET  /v1/domains/:name/info` — registry state (EPP domain:info di mode `epp_direct`)
 
 **Nameserver**:
 - `GET  /v1/domains/:name/nameservers`
@@ -209,8 +212,14 @@ Lihat [.env.example](.env.example). Yang wajib per mode:
 - `PANDI_API_URL`
 - `PANDI_API_KEY` **atau** (`PANDI_EMAIL` + `PANDI_PASSWORD`)
 
-**`epp_direct`** (Fase 2):
-- `EPP_HOST`, `EPP_USER`, `EPP_PASSWORD`, `EPP_CERT_FILE`, `EPP_KEY_FILE`
+**`epp_direct`**:
+- `EPP_HOST` (mis. `epp1.pandi.id`)
+- `EPP_PORT` (default 700)
+- `EPP_USER` + `EPP_PASSWORD` (dari PANDI onboarding)
+- `EPP_CERT_FILE` + `EPP_KEY_FILE` (client TLS)
+- `EPP_CA_FILE` (opsional, registry CA)
+- `EPP_INSECURE_SKIP_VERIFY=true` untuk dev/OT&E (jangan pakai di prod)
+- `EPP_KEEPALIVE_INTERVAL=5m` (hello frame untuk cegah session drop)
 
 **Common**:
 - `INTERNAL_HMAC_SECRET` (min 32 char di prod — generate `openssl rand -hex 32`)
@@ -249,7 +258,7 @@ apps/api-registry/
 │   ├── hosts/handler.go            # HTTP handler: nameserver
 │   ├── contacts/handler.go         # HTTP handler: contact
 │   ├── whois/handler.go            # HTTP handler: WHOIS
-│   └── epp/                        # placeholder untuk EPP client (Fase 2)
+│   └── epp/                        # EPPDirectProvider (al0fayz/epp-pandi-client)
 ├── go.mod / go.sum
 ├── Dockerfile                      # multi-stage build (Alpine, 5000)
 ├── docker-compose.snippet.yml      # ready-to-paste service definition
@@ -292,12 +301,18 @@ Coverage (55+ tests, all `-race` safe):
 - [x] Fase 1a: docker compose integration di infra/
 - [x] Fase 1a: resilience decorator (retry + circuit breaker)
 - [x] Fase 1a: Kubernetes manifests + runbook + provider integration guide
-- [ ] Fase 1b: integration test terhadap registrar-api sandbox real
+- [x] **Fase 1b**: EPP direct client integration via [`al0fayz/epp-pandi-client`](https://github.com/al0fayz/epp-pandi-client)
+  - [x] Client wrapper + connection pool + auto-reconnect
+  - [x] `EPPDirectProvider` — check/register/renew/info/whois flows
+  - [x] EPP result code → sentinel error mapping
+  - [x] Config env + wire main.go untuk `PROVIDER_MODE=epp_direct`
+  - [x] Unit test: error mapping + response parsing + capability shape
+  - [ ] Follow-up: full `UpdateNameservers` + `UpdateDomainContact` frame builders
+  - [ ] Follow-up: PANDI NIK extension (`user_nik` field untuk .id)
+  - [ ] Follow-up: integration test terhadap PANDI OT&E sandbox real (butuh credentials)
 - [ ] Fase 1c: web builder swap dari langsung ke registrar-api → ke api-registry
-- [ ] Fase 2a: EPP client library integration
-- [ ] Fase 2b: `EPPDirectProvider` implementation
-- [ ] Fase 2c: async job runner (Asynq/Redis) — swap `MemoryStore`
-- [ ] Fase 2d: multi-registry support
+- [ ] Fase 2a: async job runner (Asynq/Redis) — swap `MemoryStore`
+- [ ] Fase 2b: multi-registry support (Verisign untuk .com, dsb.)
 
 ## Documentation
 

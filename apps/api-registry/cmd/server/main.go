@@ -1,12 +1,15 @@
 // api-registry — internal service untuk domain lifecycle + EPP execution.
 // Konsumen tunggal: web builder API (via internal HTTP + HMAC).
 //
-// Fase 1: PandiWrapperProvider (proxy ke registrar-api PANDI).
-// Fase 2: EPPDirectProvider (native EPP client — TBD di internal/epp/).
+// Provider mode dipilih via API_REGISTRY_PROVIDER_MODE:
+//   - `pandi_wrapper` : proxy ke registrar-api PANDI (Fase 1a — MVP).
+//   - `epp_direct`    : native EPP client ke registry via al0fayz/epp-pandi-client
+//                       (Fase 1b — customer registrars dengan EPP credentials sendiri).
 package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -21,6 +24,7 @@ import (
 	"github.com/webbuilder/api-registry/internal/contacts"
 	"github.com/webbuilder/api-registry/internal/documents"
 	"github.com/webbuilder/api-registry/internal/domains"
+	"github.com/webbuilder/api-registry/internal/epp"
 	"github.com/webbuilder/api-registry/internal/hosts"
 	"github.com/webbuilder/api-registry/internal/httpx"
 	"github.com/webbuilder/api-registry/internal/jobs"
@@ -188,8 +192,31 @@ func buildProvider(cfg *config.Config) (provider.Provider, error) {
 			Timeout:     cfg.PandiAPITimeout,
 		})
 	case "epp_direct":
-		return nil, fiber.NewError(fiber.StatusNotImplemented,
-			"provider mode 'epp_direct' belum tersedia (Fase 2 pending)")
+		p, err := epp.NewProvider(epp.Config{
+			Host:               cfg.EPPHost,
+			Port:               cfg.EPPPort,
+			Username:           cfg.EPPUser,
+			Password:           cfg.EPPPassword,
+			CertFile:           cfg.EPPCertFile,
+			KeyFile:            cfg.EPPKeyFile,
+			CAFile:             cfg.EPPCAFile,
+			InsecureSkipVerify: cfg.EPPInsecureSkipVerify,
+			Timeout:            cfg.RequestTimeout,
+			KeepAliveInterval:  cfg.EPPKeepAliveInterval,
+			MaxRetries:         2,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Eager connect + login supaya siap serve begitu /readyz probe masuk.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := p.Connect(ctx); err != nil {
+			return nil, fmt.Errorf("epp connect+login gagal: %w", err)
+		}
+		slog.Info("epp: connected + logged in",
+			"host", cfg.EPPHost, "port", cfg.EPPPort, "user", cfg.EPPUser)
+		return p, nil
 	default:
 		return nil, fiber.NewError(fiber.StatusBadRequest,
 			"provider mode tidak dikenal: "+cfg.ProviderMode)

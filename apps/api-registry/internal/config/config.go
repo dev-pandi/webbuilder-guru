@@ -18,8 +18,9 @@ type Config struct {
 	AppEnv   string // "dev" | "staging" | "prod"
 	LogLevel string // "debug" | "info" | "warn" | "error"
 
-	// Provider mode — decide implementation. Fase 1: `pandi_wrapper` (proxy ke
-	// registrar-api). Fase 2 nanti: `epp_direct` (native EPP client).
+	// Provider mode — decide implementation:
+	//   `pandi_wrapper` : proxy ke registrar-api PANDI (Fase 1a — MVP).
+	//   `epp_direct`    : native EPP client via al0fayz/epp-pandi-client (Fase 1b).
 	ProviderMode string // "pandi_wrapper" | "epp_direct"
 
 	// PANDI wrapper config (kalau ProviderMode=pandi_wrapper)
@@ -29,15 +30,17 @@ type Config struct {
 	PandiPassword    string
 	PandiAPITimeout  time.Duration
 
-	// EPP direct config (kalau ProviderMode=epp_direct) — untuk Fase 2 nanti.
+	// EPP direct config (kalau ProviderMode=epp_direct).
 	// Cocok untuk PANDI EPP OT&E: epp1.pandi.id:700, epp2.pandi.id:700.
-	EPPHost     string
-	EPPPort     int
-	EPPUser     string
-	EPPPassword string
-	EPPCertFile string // client TLS certificate path
-	EPPKeyFile  string // client TLS private key path
-	EPPCAFile   string // registry CA cert (opsional; verify server)
+	EPPHost               string
+	EPPPort               int
+	EPPUser               string
+	EPPPassword           string
+	EPPCertFile           string        // client TLS certificate path
+	EPPKeyFile            string        // client TLS private key path
+	EPPCAFile             string        // registry CA cert (opsional; verify server)
+	EPPInsecureSkipVerify bool          // dev/OT&E dengan self-signed cert — jangan pakai di prod
+	EPPKeepAliveInterval  time.Duration // hello frame interval (default 5min)
 
 	// Security — auth header dari web builder API.
 	// HMAC shared secret — request body di-sign, verify di-server. Simple + no
@@ -88,9 +91,11 @@ func Load() *Config {
 		EPPPort:     getInt("EPP_PORT", 700),
 		EPPUser:     getEnv("EPP_USER", ""),
 		EPPPassword: getEnv("EPP_PASSWORD", ""),
-		EPPCertFile: getEnv("EPP_CERT_FILE", ""),
-		EPPKeyFile:  getEnv("EPP_KEY_FILE", ""),
-		EPPCAFile:   getEnv("EPP_CA_FILE", ""),
+		EPPCertFile:           getEnv("EPP_CERT_FILE", ""),
+		EPPKeyFile:            getEnv("EPP_KEY_FILE", ""),
+		EPPCAFile:             getEnv("EPP_CA_FILE", ""),
+		EPPInsecureSkipVerify: getBool("EPP_INSECURE_SKIP_VERIFY", false),
+		EPPKeepAliveInterval:  getDuration("EPP_KEEPALIVE_INTERVAL", 5*time.Minute),
 
 		InternalHMACSecret: getEnv("INTERNAL_HMAC_SECRET", ""),
 

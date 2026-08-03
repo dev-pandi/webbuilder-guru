@@ -2,13 +2,14 @@
 // setiap request domain lifecycle yang api-registry terima dari web builder,
 // termasuk hasil call ke provider (upstream job_id, status, error).
 //
-// Fase 1 (wrapper mode): provider = registrar-api PANDI yang own job state
-// sebenarnya. Local job di sini fungsinya AUDIT + REPLAY / debug (siapa
+// Mode wrapper (pandi_wrapper): provider = registrar-api PANDI yang own job
+// state sebenarnya. Local job di sini fungsinya AUDIT + REPLAY / debug (siapa
 // panggil apa, kapan, hasilnya gimana). Web builder tetap poll status ke
 // upstream via GET /v1/domains/register/:job_id/status.
 //
-// Fase 2 (epp_direct mode): api-registry own job state penuh. In-memory
-// store di-swap dengan Redis/Postgres + Asynq worker untuk async EPP call.
+// Mode direct (epp_direct): api-registry own job state penuh. In-memory
+// store cocok untuk single-instance MVP; production multi-node butuh swap
+// ke Redis/Postgres + Asynq worker untuk async EPP call (Fase 2a).
 //
 // Interface Store dibikin abstract supaya swap implementation zero-touch.
 package jobs

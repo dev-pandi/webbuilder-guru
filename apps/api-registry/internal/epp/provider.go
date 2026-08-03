@@ -1,0 +1,75 @@
+// Package epp — implementasi Provider interface via native EPP client
+// (al0fayz/epp-pandi-client) langsung ke PANDI registry.
+//
+// Struktur file:
+//
+//   client.go   — connection management (TCP+TLS+login, keepalive)
+//   errors.go   — EPP result code → sentinel error mapping
+//   helpers.go  — utility (tldOf, contact handle format, job ID format)
+//   provider.go — Provider struct + constructor + Name + Capabilities +
+//                 lifecycle methods (Connect/Close/Ping)
+//   domain.go   — CheckDomain / BulkCheckDomains / InfoDomain / ListDomains
+//   register.go — RegisterDomain / RenewDomain / GetRegisterStatus /
+//                 RetryRegister / CancelRegister
+//   host.go     — GetNameservers / UpdateNameservers (dengan add/rem diff)
+//   contact.go  — CreateContact / GetContact / UpdateContactByID /
+//                 UpdateDomainContact
+//   whois.go    — Whois via TCP:43 (real WHOIS, bukan cuma InfoDomain)
+//   docs.go     — UploadDocument / ListDocuments (capability_missing —
+//                 document flow di web builder side)
+package epp
+
+import (
+	"context"
+
+	"github.com/webbuilder/api-registry/internal/provider"
+)
+
+// EPPDirectProvider — implement provider.Provider via native EPP.
+// Session di-share (single-conn per instance) — serialize commands via
+// underlying Client.connMu.
+type EPPDirectProvider struct {
+	c *Client
+}
+
+// NewProvider — construct + wrap Client. Belum connect — call Connect(ctx)
+// explicitly di main() supaya fail-fast saat startup.
+func NewProvider(cfg Config) (*EPPDirectProvider, error) {
+	client, err := New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &EPPDirectProvider{c: client}, nil
+}
+
+// Connect — startup: bikin session ke EPP registry.
+func (p *EPPDirectProvider) Connect(ctx context.Context) error {
+	return p.c.Connect(ctx)
+}
+
+// Close — shutdown: logout + close TCP.
+func (p *EPPDirectProvider) Close() error {
+	return p.c.Close()
+}
+
+// Ping — readiness probe. Hello frame lightweight, no state change.
+func (p *EPPDirectProvider) Ping(ctx context.Context) error {
+	return p.c.Ping(ctx)
+}
+
+func (p *EPPDirectProvider) Name() string { return "epp_direct" }
+
+func (p *EPPDirectProvider) Capabilities() provider.Capabilities {
+	return provider.Capabilities{
+		HasWallet:        false, // wallet di web builder — not EPP concern
+		HasDocumentFlow:  false, // document di web builder — not EPP concern
+		HasBulkCheck:     true,  // EPP domain:check native batch
+		HasTransfer:      false, // out-of-scope (Provider interface belum expose Transfer*)
+		HasDNSSEC:        false, // out-of-scope (Provider interface belum expose secDNS)
+		HasPromoInternal: false, // promo di web builder
+		HasContact:       true,  // EPP contact:*
+	}
+}
+
+// Compile-time guard — kalau interface Provider berubah, build fail di sini.
+var _ provider.Provider = (*EPPDirectProvider)(nil)
