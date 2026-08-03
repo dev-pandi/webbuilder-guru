@@ -230,36 +230,6 @@ func (p *Provider) Whois(ctx context.Context, domain string) (*provider.Whois, e
 	return res, err
 }
 
-func (p *Provider) UploadDocument(ctx context.Context, req provider.UploadDocumentRequest) (*provider.UploadDocumentResponse, error) {
-	// Multipart upload TIDAK di-retry — body bisa besar (8 MiB), retry
-	// buang bandwidth + no idempotency guarantee upstream. Kalau butuh,
-	// consumer retry di level HTTP.
-	if !p.cfg.Enabled {
-		return p.inner.UploadDocument(ctx, req)
-	}
-	b := p.breakers.Get("upload_document")
-	if !b.Allow() {
-		return nil, fmt.Errorf("%w (operation=upload_document)", ErrCircuitOpen)
-	}
-	r, err := p.inner.UploadDocument(ctx, req)
-	if err == nil {
-		b.RecordSuccess()
-	} else if IsTransient(err) {
-		b.RecordFailure()
-	}
-	return r, err
-}
-
-func (p *Provider) ListDocuments(ctx context.Context, externalUserID string) (*provider.DocumentsListResponse, error) {
-	var res *provider.DocumentsListResponse
-	err := p.wrap(ctx, "list_documents", func() error {
-		r, err := p.inner.ListDocuments(ctx, externalUserID)
-		res = r
-		return err
-	})
-	return res, err
-}
-
 var _ provider.Provider = (*Provider)(nil)
 
 // Guard supaya errors import tetap dipakai di masa depan.

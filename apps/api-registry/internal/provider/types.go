@@ -13,14 +13,17 @@ import (
 
 // Capabilities — feature flags per provider. Runtime cek supaya handler bisa
 // return 501 Not Implemented untuk fitur yang provider ini tidak support
-// (mis. `deposit_wallet` cuma ada di PANDI wrapper, tidak di EPP direct).
+// (mis. `deposit_wallet` cuma ada di PANDI wrapper legacy, tidak di EPP direct).
+//
+// Documents/invoice/wallet/promo/zone/pricing SEMUA di web builder side per
+// arsitektur SaaS — bukan concern api-registry. Field di sini reflect
+// dukungan EPP-native saja.
 type Capabilities struct {
-	HasWallet        bool // deposit/prepaid balance (registrar-side)
-	HasDocumentFlow  bool // KTP/NPWP upload flow
+	HasWallet        bool // legacy deposit/prepaid balance (pandi_wrapper only)
 	HasBulkCheck     bool // 1 request check banyak domain
 	HasTransfer      bool // transfer in/out
 	HasDNSSEC        bool // DS record management
-	HasPromoInternal bool // promo code registrar-side
+	HasPromoInternal bool // legacy promo code (pandi_wrapper only)
 	HasContact       bool // contact create/update/info via EPP
 }
 
@@ -43,10 +46,6 @@ type Provider interface {
 	// --- Nameserver ---
 	GetNameservers(ctx context.Context, name string) (*NameserverInfo, error)
 	UpdateNameservers(ctx context.Context, name string, nameservers []string) (*NameserverInfo, error)
-
-	// --- Documents (KTP/NPWP untuk zone .id) ---
-	UploadDocument(ctx context.Context, req UploadDocumentRequest) (*UploadDocumentResponse, error)
-	ListDocuments(ctx context.Context, externalUserID string) (*DocumentsListResponse, error)
 
 	// --- Contact (WHOIS-visible identity) ---
 	GetContact(ctx context.Context, contactID uint64) (*Contact, error)
@@ -72,30 +71,19 @@ type CheckResponse struct {
 	Results      []CheckEntry `json:"results"`
 }
 
+// CheckEntry — hasil check per-domain dari EPP domain:check. Pricing +
+// zone metadata (require_document / auto_approved / nik) TIDAK di sini
+// per arsitektur: itu urusan web builder yang tahu zone catalog + harga.
 type CheckEntry struct {
-	Domain    string     `json:"domain"`
-	TLD       string     `json:"tld"`
-	Available bool       `json:"available"`
-	Reason    string     `json:"reason,omitempty"`
-	Price     *PriceInfo `json:"price,omitempty"`
-	Zone      *ZoneInfo  `json:"zone,omitempty"`
+	Domain    string `json:"domain"`
+	TLD       string `json:"tld"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
-type PriceInfo struct {
-	Currency string  `json:"currency"`
-	Register float64 `json:"register"`
-	Renew    float64 `json:"renew"`
-	Transfer float64 `json:"transfer"`
-}
-
-type ZoneInfo struct {
-	Name            string `json:"name"`
-	RequireDocument bool   `json:"require_document"`
-	AutoApproved    bool   `json:"auto_approved"`
-	NikAutoApproved bool   `json:"nik_auto_approved"`
-}
-
-// RegisterRequest — payload untuk domain register.
+// RegisterRequest — payload untuk domain register. Document verification
+// (KTP/NPWP untuk .id) di web builder — tidak diteruskan ke api-registry.
+// Invoice + payment juga di web builder.
 type RegisterRequest struct {
 	Domain         string      `json:"domain"`
 	Years          int         `json:"years"`
@@ -103,14 +91,12 @@ type RegisterRequest struct {
 	IdempotencyKey string      `json:"idempotency_key"`
 	Contact        Contact     `json:"contact"`
 	Nameservers    []string    `json:"nameservers,omitempty"` // opsional; default registry NS
-	DocumentIDs    []int64     `json:"document_ids,omitempty"`
-	Metadata       interface{} `json:"metadata,omitempty"` // pass-through untuk tracing
+	Metadata       interface{} `json:"metadata,omitempty"`    // pass-through untuk tracing
 }
 
 type RegisterResponse struct {
-	JobID     string `json:"job_id"`
-	Status    string `json:"status"` // 'accepted' | 'pending_document' | 'pending_provisioning' | 'active' | 'failed'
-	InvoiceID string `json:"invoice_id,omitempty"`
+	JobID  string `json:"job_id"`
+	Status string `json:"status"` // 'accepted' | 'pending_provisioning' | 'active' | 'failed'
 }
 
 type RenewRequest struct {
@@ -144,7 +130,9 @@ type NameserverInfo struct {
 	Nameservers []string `json:"nameservers"`
 }
 
-// Contact — identity registrant/admin/tech/billing.
+// Contact — identity registrant/admin/tech/billing. Mirror EPP contact:*
+// object shape. NIK / civil ID / document data BUKAN di sini — itu PII
+// user yang di-owned web builder (verify via document flow di sana).
 type Contact struct {
 	Name        string `json:"name"`
 	Email       string `json:"email"`
@@ -154,7 +142,6 @@ type Contact struct {
 	State       string `json:"state,omitempty"`
 	PostalCode  string `json:"postal_code"`
 	CountryCode string `json:"country_code,omitempty"` // default "ID"
-	Nik         string `json:"nik,omitempty"`          // WAJIB untuk .id family
 }
 
 type UpdateContactRequest = Contact
@@ -167,45 +154,6 @@ type UpdateContactResponse struct {
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 	Message   string `json:"message"` // 3 varian: DB+EPP / DB only / drift
-}
-
-// --- Documents (KTP/NPWP untuk zone .id) ---
-
-// UploadDocumentRequest — multipart file + metadata. Body raw bytes (max 8
-// MiB enforce di handler layer). Consumer WAJIB sertakan ExternalUserID —
-// registrar-api tag document per user supaya tidak leak antar user.
-type UploadDocumentRequest struct {
-	ExternalUserID string
-	CategoryID     int64  // dari registrar-api document categories (mis. 1=KTP, 2=NPWP)
-	Filename       string
-	ContentType    string // "image/jpeg", "image/png", "application/pdf"
-	Body           []byte
-	Label          string // opsional, human-readable
-}
-
-// UploadDocumentResponse — hasil upload sukses. ID plain integer (no masking
-// per plan design decision).
-type UploadDocumentResponse struct {
-	ID         int64  `json:"id"`
-	Filename   string `json:"filename"`
-	CategoryID int64  `json:"category_id"`
-	Status     string `json:"status,omitempty"` // "pending" | "verified" | "rejected"
-	CreatedAt  string `json:"created_at,omitempty"`
-}
-
-// DocumentItem — 1 row list document. Dipakai wizard untuk render picker
-// "pilih dokumen existing" post-payment supaya user tidak upload dobel.
-type DocumentItem struct {
-	ID         int64  `json:"id"`
-	Filename   string `json:"filename"`
-	CategoryID int64  `json:"category_id"`
-	Status     string `json:"status,omitempty"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	Label      string `json:"label,omitempty"`
-}
-
-type DocumentsListResponse struct {
-	Items []DocumentItem `json:"items"`
 }
 
 // --- BulkCheck ---

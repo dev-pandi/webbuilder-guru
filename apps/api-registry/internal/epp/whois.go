@@ -146,8 +146,9 @@ func maskOwner(name string) string {
 	return name[:2] + "***" + name[len(name)-2:]
 }
 
-// whoisFromInfoDomain — fallback kalau TCP:43 unreachable. Data terbatas
-// (no registrant name, cuma status + dates + registrar handle).
+// whoisFromInfoDomain — fallback kalau TCP:43 unreachable. Data terbatas:
+// status + dates saja (registrar handle NOT exposed via EPP domain:info
+// yang kita punya, dan Registrant adalah owner — bukan registrar).
 func (p *EPPDirectProvider) whoisFromInfoDomain(ctx context.Context, domain string) (*provider.Whois, error) {
 	info, err := p.InfoDomain(ctx, domain)
 	if err != nil {
@@ -156,8 +157,16 @@ func (p *EPPDirectProvider) whoisFromInfoDomain(ctx context.Context, domain stri
 	return &provider.Whois{
 		Domain:    info.Domain,
 		Status:    joinStatuses(info.Status),
-		Registrar: info.Registrant,
-		CreatedAt: info.CreatedAt.Format(time.RFC3339),
-		ExpiresAt: info.ExpiresAt.Format(time.RFC3339),
+		CreatedAt: formatTimeOrEmpty(info.CreatedAt),
+		ExpiresAt: formatTimeOrEmpty(info.ExpiresAt),
 	}, nil
+}
+
+// formatTimeOrEmpty — kalau time zero, return "" (bukan "0001-01-01T00:00:00Z"
+// yang confusing untuk consumer).
+func formatTimeOrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }

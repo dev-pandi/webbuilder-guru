@@ -90,9 +90,10 @@ func TestParseResponse_MalformedXMLReturnsError(t *testing.T) {
 func TestCapabilities_EPPDirectShape(t *testing.T) {
 	p := &EPPDirectProvider{}
 	caps := p.Capabilities()
-	// EPP direct: wallet/promo/document di web builder — bukan EPP concern.
-	if caps.HasWallet || caps.HasPromoInternal || caps.HasDocumentFlow {
-		t.Errorf("EPP direct seharusnya delegate wallet/promo/doc ke web builder, dapat: %+v", caps)
+	// EPP direct: wallet + promo di web builder — bukan EPP concern.
+	// (HasDocumentFlow sudah dihapus dari struct karena dokumen 100% di web builder.)
+	if caps.HasWallet || caps.HasPromoInternal {
+		t.Errorf("EPP direct seharusnya delegate wallet/promo ke web builder, dapat: %+v", caps)
 	}
 	// Yang harus tersedia via EPP native (interface currently exposes):
 	if !caps.HasBulkCheck || !caps.HasContact {
@@ -108,5 +109,50 @@ func TestName_ReturnsEPPDirect(t *testing.T) {
 	p := &EPPDirectProvider{}
 	if p.Name() != "epp_direct" {
 		t.Errorf("Name = %q, expected 'epp_direct'", p.Name())
+	}
+}
+
+func TestEPPResponseError_ErrorFormat(t *testing.T) {
+	e := &EPPResponseError{Code: 2303, Op: "domain:info", Message: "Object does not exist"}
+	got := e.Error()
+	// Format harus include code, op, dan message supaya log/telemetry usable.
+	if !strings.Contains(got, "2303") ||
+		!strings.Contains(got, "domain:info") ||
+		!strings.Contains(got, "Object does not exist") {
+		t.Errorf("Error() output missing fields: %q", got)
+	}
+}
+
+func TestNewProvider_RejectsMissingCreds(t *testing.T) {
+	// Config kosong — Host/Username/Password wajib, harus error early sebelum
+	// alokasi resource.
+	_, err := NewProvider(Config{})
+	if err == nil {
+		t.Fatal("expected error for empty Config, got nil")
+	}
+	if !strings.Contains(err.Error(), "Host") && !strings.Contains(err.Error(), "wajib") {
+		t.Errorf("error message tidak informative: %v", err)
+	}
+}
+
+func TestNewProvider_AcceptsMinimalValidConfig(t *testing.T) {
+	// Konfigurasi minimum (belum connect — hanya validate + build struct).
+	p, err := NewProvider(Config{
+		Host:     "epp1.pandi.id",
+		Username: "test-user",
+		Password: "test-pass",
+	})
+	if err != nil {
+		t.Fatalf("valid config should not error: %v", err)
+	}
+	if p == nil || p.c == nil {
+		t.Fatal("provider or underlying client nil")
+	}
+	// Defaults harus filled in (Port, Timeout, KeepAliveInterval, MaxRetries).
+	if p.c.cfg.Port == 0 {
+		t.Error("Port default should be filled (700)")
+	}
+	if p.c.cfg.Timeout == 0 {
+		t.Error("Timeout default should be filled")
 	}
 }

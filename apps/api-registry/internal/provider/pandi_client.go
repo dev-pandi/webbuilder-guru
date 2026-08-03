@@ -75,7 +75,6 @@ func (p *PandiWrapperProvider) Name() string { return "pandi_wrapper" }
 func (p *PandiWrapperProvider) Capabilities() Capabilities {
 	return Capabilities{
 		HasWallet:        true,
-		HasDocumentFlow:  true,
 		HasBulkCheck:     true,
 		HasTransfer:      true,
 		HasDNSSEC:        false, // registrar-api tidak expose

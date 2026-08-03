@@ -12,11 +12,12 @@
 //   register.go — RegisterDomain / RenewDomain / GetRegisterStatus /
 //                 RetryRegister / CancelRegister
 //   host.go     — GetNameservers / UpdateNameservers (dengan add/rem diff)
-//   contact.go  — CreateContact / GetContact / UpdateContactByID /
+//   contact.go  — ensureContact / GetContact / UpdateContactByID /
 //                 UpdateDomainContact
 //   whois.go    — Whois via TCP:43 (real WHOIS, bukan cuma InfoDomain)
-//   docs.go     — UploadDocument / ListDocuments (capability_missing —
-//                 document flow di web builder side)
+//
+// Documents + invoice + NIK + pricing + zone catalog SEMUA di web builder
+// (arsitektur SaaS boundary) — bukan di api-registry.
 package epp
 
 import (
@@ -61,8 +62,7 @@ func (p *EPPDirectProvider) Name() string { return "epp_direct" }
 
 func (p *EPPDirectProvider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
-		HasWallet:        false, // wallet di web builder — not EPP concern
-		HasDocumentFlow:  false, // document di web builder — not EPP concern
+		HasWallet:        false, // wallet di web builder
 		HasBulkCheck:     true,  // EPP domain:check native batch
 		HasTransfer:      false, // out-of-scope (Provider interface belum expose Transfer*)
 		HasDNSSEC:        false, // out-of-scope (Provider interface belum expose secDNS)

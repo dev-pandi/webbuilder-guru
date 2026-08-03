@@ -36,8 +36,6 @@ type FakeProvider struct {
 	UpdateContactByIDFn    func(context.Context, uint64, UpdateContactRequest) (*UpdateContactResponse, error)
 	UpdateDomainContactFn  func(context.Context, string, UpdateContactRequest) (*UpdateContactResponse, error)
 	WhoisFn                func(context.Context, string) (*Whois, error)
-	UploadDocumentFn       func(context.Context, UploadDocumentRequest) (*UploadDocumentResponse, error)
-	ListDocumentsFn        func(context.Context, string) (*DocumentsListResponse, error)
 
 	// Capabilities di-override kalau perlu test capability-guard behavior.
 	CapsOverride *Capabilities
@@ -80,7 +78,6 @@ func (p *FakeProvider) Capabilities() Capabilities {
 	}
 	return Capabilities{
 		HasWallet:        false,
-		HasDocumentFlow:  true,
 		HasBulkCheck:     true,
 		HasTransfer:      false,
 		HasDNSSEC:        false,
@@ -207,27 +204,6 @@ func (p *FakeProvider) Whois(ctx context.Context, domain string) (*Whois, error)
 		return p.WhoisFn(ctx, domain)
 	}
 	return &Whois{Domain: domain, Status: "registered"}, nil
-}
-
-func (p *FakeProvider) UploadDocument(ctx context.Context, req UploadDocumentRequest) (*UploadDocumentResponse, error) {
-	p.recordCall("UploadDocument", map[string]any{
-		"external_user_id": req.ExternalUserID,
-		"category_id":      req.CategoryID,
-		"filename":         req.Filename,
-		"size":             len(req.Body),
-	})
-	if p.UploadDocumentFn != nil {
-		return p.UploadDocumentFn(ctx, req)
-	}
-	return &UploadDocumentResponse{ID: 42, Filename: req.Filename, CategoryID: req.CategoryID, Status: "pending"}, nil
-}
-
-func (p *FakeProvider) ListDocuments(ctx context.Context, externalUserID string) (*DocumentsListResponse, error) {
-	p.recordCall("ListDocuments", map[string]any{"external_user_id": externalUserID})
-	if p.ListDocumentsFn != nil {
-		return p.ListDocumentsFn(ctx, externalUserID)
-	}
-	return &DocumentsListResponse{Items: []DocumentItem{}}, nil
 }
 
 var _ Provider = (*FakeProvider)(nil)

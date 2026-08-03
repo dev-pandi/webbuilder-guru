@@ -58,8 +58,8 @@ func TestPandiWrapper_CheckDomain_Roundtrip(t *testing.T) {
 	if len(res.Results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(res.Results))
 	}
-	if !res.Results[0].Available || res.Results[0].Price == nil {
-		t.Errorf("first result should be available with price: %+v", res.Results[0])
+	if !res.Results[0].Available {
+		t.Errorf("first result should be available: %+v", res.Results[0])
 	}
 	if res.Results[1].Reason != "registered" {
 		t.Errorf("second result reason mismatch: %+v", res.Results[1])

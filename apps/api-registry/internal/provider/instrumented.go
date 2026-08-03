@@ -138,20 +138,6 @@ func (p *Instrumented) InfoDomain(ctx context.Context, name string) (*DomainInfo
 	return r, err
 }
 
-func (p *Instrumented) UploadDocument(ctx context.Context, req UploadDocumentRequest) (*UploadDocumentResponse, error) {
-	start := time.Now()
-	r, err := p.inner.UploadDocument(ctx, req)
-	p.record("upload_document", start, err)
-	return r, err
-}
-
-func (p *Instrumented) ListDocuments(ctx context.Context, externalUserID string) (*DocumentsListResponse, error) {
-	start := time.Now()
-	r, err := p.inner.ListDocuments(ctx, externalUserID)
-	p.record("list_documents", start, err)
-	return r, err
-}
-
 func (p *Instrumented) GetNameservers(ctx context.Context, name string) (*NameserverInfo, error) {
 	start := time.Now()
 	r, err := p.inner.GetNameservers(ctx, name)

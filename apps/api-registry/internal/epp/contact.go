@@ -43,11 +43,9 @@ func deriveHandleFromExternalID(externalUserID string) (string, error) {
 // Contact digenerate dengan minimal viable fields. Update lebih detail
 // via UpdateDomainContact atau UpdateContactByID pasca register.
 //
-// NIK (untuk .id family) NOT di-embed di contact object per EPP standard —
-// PANDI pakai custom extension `user_nik` di domain object. Untuk MVP:
-// caller pass NIK di req.Contact.Nik, kita set di postal address street
-// (workaround yang PANDI OT&E biasanya toleransi). Follow-up: real
-// PANDI NIK extension.
+// NIK / civil ID BUKAN concern api-registry per arsitektur — itu PII user
+// yang di-owned web builder (verify via document flow di sana). EPP
+// contact object hanya menerima nama/email/tel/address standard.
 func (p *EPPDirectProvider) ensureContact(ctx context.Context, handle string, c provider.Contact) error {
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
@@ -69,7 +67,7 @@ func (p *EPPDirectProvider) ensureContact(ctx context.Context, handle string, c 
 		Name: c.Name,
 		Type: frames.PostalInfoInternational,
 		Address: frames.Address{
-			Street:        streetLines(c.Address, c.Nik),
+			Street:        streetLines(c.Address),
 			City:          c.City,
 			StateProvince: c.State,
 			PostalCode:    c.PostalCode,
@@ -147,16 +145,8 @@ func (p *EPPDirectProvider) getContactByHandle(ctx context.Context, handle strin
 	}
 	if postal != nil {
 		out.Name = postal.Name
-		// Scan semua street lines: recover address (first non-NIK line) + NIK
-		// (any line with "NIK:" prefix). streetLines() menaruh NIK setelah
-		// address lines — bisa index 0, 1, atau 2 tergantung berapa baris
-		// address user, jadi index-scan salah.
 		var addrLines []string
 		for _, s := range postal.Address.Street {
-			if strings.HasPrefix(s, "NIK:") {
-				out.Nik = strings.TrimPrefix(s, "NIK:")
-				continue
-			}
 			if s != "" && s != "(no address)" {
 				addrLines = append(addrLines, s)
 			}
@@ -222,7 +212,7 @@ func (p *EPPDirectProvider) updateContactByHandle(ctx context.Context, handle, d
 		Name: req.Name,
 		Type: frames.PostalInfoInternational,
 		Address: frames.Address{
-			Street:        streetLines(req.Address, req.Nik),
+			Street:        streetLines(req.Address),
 			City:          req.City,
 			StateProvince: req.State,
 			PostalCode:    req.PostalCode,
@@ -251,31 +241,25 @@ func (p *EPPDirectProvider) updateContactByHandle(ctx context.Context, handle, d
 
 // --- Contact-specific helpers ---
 
-// streetLines — EPP address street max 3 lines. Kita pakai:
-//   - line 1: user address
-//   - line 2 (opsional): "NIK:<nik>" — workaround PANDI extension pending.
-//     Real PANDI NIK extension harusnya via <extension>user_nik</extension>
-//     — TODO Fase 1b-follow-up.
-func streetLines(address, nik string) []string {
+// streetLines — split user address multi-line ke slice yang RFC-compliant
+// (max 3 lines). EPP city+countryCode wajib; street formally opsional tapi
+// PANDI biasanya reject empty — kita fallback `(no address)`.
+func streetLines(address string) []string {
 	lines := []string{}
 	if a := strings.TrimSpace(address); a != "" {
-		// Split kalau ada newline — max 3 lines per RFC.
 		parts := strings.Split(a, "\n")
 		for _, part := range parts {
 			part = strings.TrimSpace(part)
 			if part != "" {
 				lines = append(lines, part)
 			}
-			if len(lines) >= 2 {
-				break // sisakan 1 slot untuk NIK
+			if len(lines) >= 3 {
+				break
 			}
 		}
 	}
-	if n := strings.TrimSpace(nik); n != "" && len(lines) < 3 {
-		lines = append(lines, "NIK:"+n)
-	}
 	if len(lines) == 0 {
-		lines = []string{"(no address)"} // EPP city+cc wajib, street opsional tapi kita fill default
+		lines = []string{"(no address)"}
 	}
 	return lines
 }

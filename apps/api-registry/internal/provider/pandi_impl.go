@@ -1,14 +1,8 @@
 package provider
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"net/http"
-	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -88,11 +82,10 @@ func (p *PandiWrapperProvider) CheckDomain(ctx context.Context, req CheckRequest
 type registrarRegisterReq struct {
 	Domain         string  `json:"domain"`
 	Years          int     `json:"years"`
-	ExternalUserID string  `json:"external_user_id"`
-	IdempotencyKey string  `json:"idempotency_key"`
-	Contact        Contact `json:"contact"`
+	ExternalUserID string   `json:"external_user_id"`
+	IdempotencyKey string   `json:"idempotency_key"`
+	Contact        Contact  `json:"contact"`
 	Nameservers    []string `json:"nameservers,omitempty"`
-	DocumentIDs    []int64  `json:"document_ids,omitempty"`
 }
 
 func (p *PandiWrapperProvider) RegisterDomain(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
@@ -103,7 +96,6 @@ func (p *PandiWrapperProvider) RegisterDomain(ctx context.Context, req RegisterR
 		IdempotencyKey: req.IdempotencyKey,
 		Contact:        req.Contact,
 		Nameservers:    req.Nameservers,
-		DocumentIDs:    req.DocumentIDs,
 	}
 	var env envelope[RegisterResponse]
 	if err := p.do(ctx, "POST", "/v1/api/user/reseller/domain/register", body, &env); err != nil {
@@ -247,117 +239,6 @@ func (p *PandiWrapperProvider) UpdateDomainContact(ctx context.Context, name str
 	return &env.Data, nil
 }
 
-// --- Documents ---
-
-// UploadDocument — multipart POST /reseller/documents. Registrar-api butuh
-// external_user_id tag supaya document tidak leak antar user. Handler
-// api-registry validate ExternalUserID non-empty sebelum call ini.
-//
-// Bikin multipart di sini alih-alih helper do() karena content-type +
-// boundary spesifik multipart.
-func (p *PandiWrapperProvider) UploadDocument(ctx context.Context, req UploadDocumentRequest) (*UploadDocumentResponse, error) {
-	if req.ExternalUserID == "" {
-		return nil, fmt.Errorf("%w: external_user_id wajib", ErrValidation)
-	}
-	if req.CategoryID <= 0 {
-		return nil, fmt.Errorf("%w: category_id wajib", ErrValidation)
-	}
-	if len(req.Body) == 0 {
-		return nil, fmt.Errorf("%w: file body kosong", ErrValidation)
-	}
-	if req.Filename == "" {
-		req.Filename = "upload.bin"
-	}
-	if req.ContentType == "" {
-		req.ContentType = "application/octet-stream"
-	}
-
-	// Build multipart body.
-	buf, contentType, err := buildMultipart(req)
-	if err != nil {
-		return nil, fmt.Errorf("build multipart: %w", err)
-	}
-
-	// Custom HTTP req — do() marshal JSON, tidak cocok multipart.
-	url := p.baseURL + "/v1/api/user/reseller/documents"
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, buf)
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", contentType)
-	httpReq.Header.Set("Authorization", "Bearer "+p.currentToken())
-
-	resp, err := p.httpc.Do(httpReq)
-	if err != nil {
-		return nil, &UpstreamError{Provider: p.Name(), Status: 0, Code: "network", Message: err.Error(), Cause: err}
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-
-	// 401 reauth path — reuse pattern do().
-	if resp.StatusCode == http.StatusUnauthorized && p.email != "" {
-		if reErr := p.reauth(ctx); reErr == nil {
-			return p.UploadDocument(ctx, req)
-		}
-	}
-	if resp.StatusCode >= 400 {
-		return nil, p.decodeError(resp.StatusCode, body)
-	}
-
-	var env envelope[UploadDocumentResponse]
-	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, &UpstreamError{Provider: p.Name(), Status: resp.StatusCode, Code: "decode", Message: err.Error(), Cause: err}
-	}
-	return &env.Data, nil
-}
-
-// buildMultipart — helper: assemble multipart form body dengan field
-// `file` (binary), `external_user_id`, `category_id`, `name` (opsional).
-func buildMultipart(req UploadDocumentRequest) (*bytes.Buffer, string, error) {
-	buf := &bytes.Buffer{}
-	w := multipart.NewWriter(buf)
-	// Field text.
-	_ = w.WriteField("external_user_id", req.ExternalUserID)
-	_ = w.WriteField("category_id", strconv.FormatInt(req.CategoryID, 10))
-	if req.Label != "" {
-		_ = w.WriteField("name", req.Label)
-	}
-	// File field — content-type via custom part header supaya registrar tau
-	// mime aktual (bukan default text/plain).
-	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, req.Filename))
-	h.Set("Content-Type", req.ContentType)
-	part, err := w.CreatePart(h)
-	if err != nil {
-		return nil, "", err
-	}
-	if _, err := part.Write(req.Body); err != nil {
-		return nil, "", err
-	}
-	if err := w.Close(); err != nil {
-		return nil, "", err
-	}
-	return buf, w.FormDataContentType(), nil
-}
-
-// ListDocuments — GET /reseller/documents?external_user_id=X. Cross-user
-// isolation kritis: kalau ExternalUserID kosong, registrar akan return
-// SEMUA document milik reseller (multi-user cross-leak). Kita hard-reject
-// kosong.
-func (p *PandiWrapperProvider) ListDocuments(ctx context.Context, externalUserID string) (*DocumentsListResponse, error) {
-	if externalUserID == "" {
-		return nil, fmt.Errorf("%w: external_user_id wajib (cegah cross-user leak)", ErrValidation)
-	}
-	q := url.Values{}
-	q.Set("external_user_id", externalUserID)
-	q.Set("all", "true") // fetch semua (upstream pagination bisa diambil sekali)
-	var env envelope[DocumentsListResponse]
-	if err := p.do(ctx, "GET", "/v1/api/user/reseller/documents?"+q.Encode(), nil, &env); err != nil {
-		return nil, err
-	}
-	return &env.Data, nil
-}
-
 // --- WHOIS ---
 
 func (p *PandiWrapperProvider) Whois(ctx context.Context, domain string) (*Whois, error) {
@@ -377,6 +258,3 @@ func (p *PandiWrapperProvider) Whois(ctx context.Context, domain string) (*Whois
 
 // --- helper: compile-time guard bahwa PandiWrapperProvider implement Provider ---
 var _ Provider = (*PandiWrapperProvider)(nil)
-
-// Kompilasi trigger untuk ensure package json di-import (dipakai marshal).
-var _ = json.Marshal

@@ -357,25 +357,7 @@
           "domain": { "type": "string" },
           "tld": { "type": "string" },
           "available": { "type": "boolean" },
-          "reason": { "type": "string" },
-          "price": {
-            "type": "object",
-            "properties": {
-              "currency": { "type": "string" },
-              "register": { "type": "number" },
-              "renew": { "type": "number" },
-              "transfer": { "type": "number" }
-            }
-          },
-          "zone": {
-            "type": "object",
-            "properties": {
-              "name": { "type": "string" },
-              "require_document": { "type": "boolean" },
-              "auto_approved": { "type": "boolean" },
-              "nik_auto_approved": { "type": "boolean" }
-            }
-          }
+          "reason": { "type": "string" }
         }
       },
       "BulkCheckRequest": {
@@ -400,8 +382,7 @@
           "external_user_id": { "type": "string" },
           "idempotency_key": { "type": "string" },
           "contact": { "$ref": "#/components/schemas/Contact" },
-          "nameservers": { "type": "array", "items": { "type": "string" } },
-          "document_ids": { "type": "array", "items": { "type": "integer" } }
+          "nameservers": { "type": "array", "items": { "type": "string" } }
         }
       },
       "RegisterResponse": {
@@ -411,8 +392,7 @@
             "type": "object",
             "properties": {
               "job_id": { "type": "string" },
-              "status": { "type": "string" },
-              "invoice_id": { "type": "string" }
+              "status": { "type": "string" }
             }
           }
         }
@@ -420,6 +400,7 @@
       "Contact": {
         "type": "object",
         "required": ["name", "email", "phone", "address", "city", "postal_code"],
+        "description": "EPP contact:* object shape. NIK/civil-ID + document verification di web builder (bukan di sini).",
         "properties": {
           "name": { "type": "string" },
           "email": { "type": "string", "format": "email" },
@@ -428,8 +409,7 @@
           "city": { "type": "string" },
           "state": { "type": "string" },
           "postal_code": { "type": "string" },
-          "country_code": { "type": "string", "default": "ID" },
-          "nik": { "type": "string", "description": "NIK KTP — WAJIB untuk zone .id" }
+          "country_code": { "type": "string", "default": "ID" }
         }
       },
       "Error": {

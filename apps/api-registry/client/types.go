@@ -20,29 +20,15 @@ type CheckResponse struct {
 	Results      []CheckEntry `json:"results"`
 }
 
+// CheckEntry — pricing/zone metadata di web builder (bukan api-registry).
 type CheckEntry struct {
-	Domain    string     `json:"domain"`
-	TLD       string     `json:"tld"`
-	Available bool       `json:"available"`
-	Reason    string     `json:"reason,omitempty"`
-	Price     *PriceInfo `json:"price,omitempty"`
-	Zone      *ZoneInfo  `json:"zone,omitempty"`
+	Domain    string `json:"domain"`
+	TLD       string `json:"tld"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
-type PriceInfo struct {
-	Currency string  `json:"currency"`
-	Register float64 `json:"register"`
-	Renew    float64 `json:"renew"`
-	Transfer float64 `json:"transfer"`
-}
-
-type ZoneInfo struct {
-	Name            string `json:"name"`
-	RequireDocument bool   `json:"require_document"`
-	AutoApproved    bool   `json:"auto_approved"`
-	NikAutoApproved bool   `json:"nik_auto_approved"`
-}
-
+// Contact — EPP contact:* object shape only. NIK/civil-ID di web builder.
 type Contact struct {
 	Name        string `json:"name"`
 	Email       string `json:"email"`
@@ -52,9 +38,10 @@ type Contact struct {
 	State       string `json:"state,omitempty"`
 	PostalCode  string `json:"postal_code"`
 	CountryCode string `json:"country_code,omitempty"`
-	Nik         string `json:"nik,omitempty"`
 }
 
+// RegisterRequest — mirror provider.RegisterRequest. Document verification +
+// invoice + payment SEMUA di web builder (bukan diteruskan ke api-registry).
 type RegisterRequest struct {
 	Domain         string   `json:"domain"`
 	Years          int      `json:"years"`
@@ -62,13 +49,11 @@ type RegisterRequest struct {
 	IdempotencyKey string   `json:"idempotency_key"`
 	Contact        Contact  `json:"contact"`
 	Nameservers    []string `json:"nameservers,omitempty"`
-	DocumentIDs    []int64  `json:"document_ids,omitempty"`
 }
 
 type RegisterResponse struct {
-	JobID     string `json:"job_id"`
-	Status    string `json:"status"`
-	InvoiceID string `json:"invoice_id,omitempty"`
+	JobID  string `json:"job_id"`
+	Status string `json:"status"`
 }
 
 type RenewRequest struct {
@@ -83,37 +68,6 @@ type RegisterStatus struct {
 	Status    string `json:"status"`
 	Reason    string `json:"reason,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"`
-}
-
-// UploadDocumentRequest — multipart body untuk POST /v1/documents.
-type UploadDocumentRequest struct {
-	ExternalUserID string
-	CategoryID     int64
-	Filename       string
-	ContentType    string
-	Body           []byte
-	Label          string
-}
-
-type UploadDocumentResponse struct {
-	ID         int64  `json:"id"`
-	Filename   string `json:"filename"`
-	CategoryID int64  `json:"category_id"`
-	Status     string `json:"status,omitempty"`
-	CreatedAt  string `json:"created_at,omitempty"`
-}
-
-type DocumentItem struct {
-	ID         int64  `json:"id"`
-	Filename   string `json:"filename"`
-	CategoryID int64  `json:"category_id"`
-	Status     string `json:"status,omitempty"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	Label      string `json:"label,omitempty"`
-}
-
-type DocumentsListResponse struct {
-	Items []DocumentItem `json:"items"`
 }
 
 type BulkCheckRequest struct {

@@ -5,92 +5,46 @@ import (
 	"testing"
 )
 
-func TestStreetLines_EmptyBoth(t *testing.T) {
-	lines := streetLines("", "")
+func TestStreetLines_Empty(t *testing.T) {
+	lines := streetLines("")
 	if len(lines) != 1 || lines[0] != "(no address)" {
-		t.Errorf("empty both should fallback ke '(no address)', got %v", lines)
+		t.Errorf("empty should fallback ke '(no address)', got %v", lines)
 	}
 }
 
-func TestStreetLines_AddressOnly(t *testing.T) {
-	lines := streetLines("Jl. Sudirman No. 1", "")
+func TestStreetLines_SingleLine(t *testing.T) {
+	lines := streetLines("Jl. Sudirman No. 1")
 	if len(lines) != 1 || lines[0] != "Jl. Sudirman No. 1" {
-		t.Errorf("address only: got %v", lines)
+		t.Errorf("single line: got %v", lines)
 	}
 }
 
-func TestStreetLines_NIKOnly(t *testing.T) {
-	lines := streetLines("", "3201234567890001")
-	if len(lines) != 1 || lines[0] != "NIK:3201234567890001" {
-		t.Errorf("NIK only: got %v", lines)
-	}
-}
-
-func TestStreetLines_AddressAndNIK(t *testing.T) {
-	lines := streetLines("Jl. Sudirman No. 1", "3201234567890001")
-	if len(lines) != 2 || lines[0] != "Jl. Sudirman No. 1" || lines[1] != "NIK:3201234567890001" {
-		t.Errorf("addr+NIK: got %v", lines)
-	}
-}
-
-func TestStreetLines_MultiLineAddressAndNIK(t *testing.T) {
-	// 2-line address + NIK → NIK harusnya di baris ke-3, dan reader
-	// harus scan semua baris (bukan cuma index 1).
-	lines := streetLines("Jl. Sudirman No. 1\nRT 05 RW 03", "3201234567890001")
+func TestStreetLines_MultiLine(t *testing.T) {
+	lines := streetLines("Jl. Sudirman No. 1\nRT 05 RW 03\nJakarta")
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 lines, got %d: %v", len(lines), lines)
 	}
-	if lines[2] != "NIK:3201234567890001" {
-		t.Errorf("NIK should be at index 2, got %v", lines)
+	if lines[0] != "Jl. Sudirman No. 1" || lines[1] != "RT 05 RW 03" || lines[2] != "Jakarta" {
+		t.Errorf("multi-line mismatch: %v", lines)
 	}
 }
 
-func TestStreetLines_AddressCappedAt2Lines(t *testing.T) {
-	// Address 4 lines → cap ke 2 supaya NIK dapat slot.
-	lines := streetLines("A\nB\nC\nD", "NIKX")
-	// Expect: 2 address + 1 NIK.
+func TestStreetLines_CappedAt3Lines(t *testing.T) {
+	// RFC max 3 street lines — extras di-drop.
+	lines := streetLines("A\nB\nC\nD\nE")
 	if len(lines) != 3 {
-		t.Fatalf("expected 3 lines (2 addr + 1 NIK), got %d: %v", len(lines), lines)
+		t.Fatalf("expected cap at 3 lines, got %d: %v", len(lines), lines)
 	}
-	if lines[0] != "A" || lines[1] != "B" || lines[2] != "NIK:NIKX" {
+	if lines[0] != "A" || lines[1] != "B" || lines[2] != "C" {
 		t.Errorf("cap wrong: got %v", lines)
 	}
 }
 
-// Simulate roundtrip: streetLines → parse back → NIK & address must be recoverable
-// regardless of where NIK ended up in the array.
-func TestStreetLines_RoundtripRecoversNIK(t *testing.T) {
-	cases := []struct {
-		address, nik string
-	}{
-		{"Jl. Sudirman No. 1", "3201234567890001"},
-		{"Jl. Sudirman No. 1\nRT 05 RW 03", "3201234567890001"}, // NIK at index 2
-		{"", "3201234567890001"},                                 // NIK at index 0
-		{"single line", ""},                                      // no NIK
-	}
-	for _, tc := range cases {
-		street := streetLines(tc.address, tc.nik)
-		// Recovery logic mirror ke getContactByHandle.
-		var addrLines []string
-		var recoveredNIK string
-		for _, s := range street {
-			if strings.HasPrefix(s, "NIK:") {
-				recoveredNIK = strings.TrimPrefix(s, "NIK:")
-				continue
-			}
-			if s != "" && s != "(no address)" {
-				addrLines = append(addrLines, s)
-			}
-		}
-		recoveredAddr := strings.Join(addrLines, "\n")
-
-		if recoveredNIK != tc.nik {
-			t.Errorf("NIK roundtrip fail: input=%q recovered=%q (street=%v)", tc.nik, recoveredNIK, street)
-		}
-		// Address roundtrip: strip trailing empty lines; only compare non-empty user input.
-		if tc.address != "" && !strings.Contains(recoveredAddr, strings.Split(tc.address, "\n")[0]) {
-			t.Errorf("address roundtrip fail: input=%q recovered=%q", tc.address, recoveredAddr)
-		}
+func TestStreetLines_StripsBlankLines(t *testing.T) {
+	// Blank lines in the middle should be dropped, not counted.
+	lines := streetLines("Line1\n\n\nLine2")
+	if len(lines) != 2 || lines[0] != "Line1" || lines[1] != "Line2" {
+		t.Errorf("blank strip fail: %v", lines)
 	}
 }
 

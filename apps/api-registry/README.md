@@ -27,9 +27,12 @@ di atas registrar operations. Dua implementasi:
 Swap via env `PROVIDER_MODE=pandi_wrapper` atau `epp_direct`. Consumer
 (web builder API) tidak berubah — kontrak API-registry tetap sama.
 
-**EPP direct capabilities**: check/register/renew/info/whois via native EPP
-protocol. Wallet + promo + document upload TIDAK di provider ini
-(delegate ke web builder side — sesuai arsitektur SaaS platform).
+**EPP direct capabilities**: check (single + bulk), register, renew,
+info, WHOIS (TCP:43 + EPP fallback), nameserver update (add/rem diff),
+contact read/update, contact create-on-register (idempotent). Wallet +
+promo + document upload TIDAK di provider ini (delegate ke web builder
+side — sesuai arsitektur SaaS platform). List-domains + transfer +
+DNSSEC belum di Provider interface.
 
 **Decorator `Instrumented`** wrap tiap provider auto-record metrics per
 operation (success/fail/duration) — no manual instrumentation di handler.
@@ -117,9 +120,9 @@ plus `API_REGISTRY_*` var baru (lihat [`infra/.env.example`](../../infra/.env.ex
 **WHOIS**:
 - `GET /v1/whois?domain=<name>`
 
-**Documents** (KTP/NPWP untuk zone .id):
-- `POST /v1/documents` — multipart upload (max 8 MiB, whitelist image/jpeg | png | pdf)
-- `GET  /v1/documents?external_user_id=<uuid>` — list dokumen per user (cegah cross-user leak)
+**Documents** — TIDAK di api-registry. Upload + verifikasi KTP/NPWP dilakukan
+di web builder (storage S3/MinIO, metadata di web builder DB, verification
+via admin panel workflow). api-registry murni EPP-to-registry.
 
 **Jobs audit (read-only)**:
 - `GET /v1/jobs?kind=&status=&domain=&external_user_id=&limit=&offset=` — list
@@ -282,7 +285,6 @@ Coverage (55+ tests, all `-race` safe):
 - `internal/hosts` — nameserver get/update, validation min 2 / max 13 (4)
 - `internal/contacts` — get by ID, update, invalid ID, missing name/email (5)
 - `internal/whois` — missing query, success, not found mapping (3)
-- `internal/documents` — multipart upload happy path, missing file, invalid MIME, too large, missing user_id, list (6)
 - `client` — signing correctness, error envelope, no-secret (3)
 
 ## Roadmap
@@ -296,8 +298,8 @@ Coverage (55+ tests, all `-race` safe):
 - [x] Fase 1a: integration test dengan httptest mock upstream
 - [x] Fase 1a: webhook relay (registrar-api → api-registry → web builder)
 - [x] Fase 1a: bulk check + list domains + OpenAPI spec
-- [x] Fase 1a: document upload multipart (KTP/NPWP untuk .id)
 - [x] Fase 1a: handler-level test coverage semua module
+- [x] **Arsitektur boundary cleanup**: hapus document/invoice/pricing/zone/NIK dari api-registry (semua di web builder side per arsitektur SaaS)
 - [x] Fase 1a: docker compose integration di infra/
 - [x] Fase 1a: resilience decorator (retry + circuit breaker)
 - [x] Fase 1a: Kubernetes manifests + runbook + provider integration guide
@@ -306,9 +308,11 @@ Coverage (55+ tests, all `-race` safe):
   - [x] `EPPDirectProvider` — check/register/renew/info/whois flows
   - [x] EPP result code → sentinel error mapping
   - [x] Config env + wire main.go untuk `PROVIDER_MODE=epp_direct`
-  - [x] Unit test: error mapping + response parsing + capability shape
-  - [ ] Follow-up: full `UpdateNameservers` + `UpdateDomainContact` frame builders
-  - [ ] Follow-up: PANDI NIK extension (`user_nik` field untuk .id)
+  - [x] `UpdateNameservers` (add/rem diff) + `UpdateDomainContact` frame builders
+  - [x] Contact create/read/update via deterministic NIC handle
+  - [x] WHOIS TCP:43 client + parser + EPP `domain:info` fallback
+  - [x] Unit test: error mapping + response parsing + capability shape + validation guards
+  - [ ] Follow-up: PANDI NIK extension (`user_nik` field untuk .id — currently workaround via street line 2)
   - [ ] Follow-up: integration test terhadap PANDI OT&E sandbox real (butuh credentials)
 - [ ] Fase 1c: web builder swap dari langsung ke registrar-api → ke api-registry
 - [ ] Fase 2a: async job runner (Asynq/Redis) — swap `MemoryStore`

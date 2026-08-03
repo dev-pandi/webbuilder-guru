@@ -22,7 +22,6 @@ import (
 
 	"github.com/webbuilder/api-registry/internal/config"
 	"github.com/webbuilder/api-registry/internal/contacts"
-	"github.com/webbuilder/api-registry/internal/documents"
 	"github.com/webbuilder/api-registry/internal/domains"
 	"github.com/webbuilder/api-registry/internal/epp"
 	"github.com/webbuilder/api-registry/internal/hosts"
@@ -306,11 +305,6 @@ func registerV1Routes(v1 fiber.Router, p provider.Provider, tracker *jobs.Tracke
 
 	wh := whois.NewHandler(p)
 	v1.Get("/whois", wh.Whois)
-
-	// Documents — KTP/NPWP untuk zone .id.
-	docH := documents.NewHandler(p)
-	v1.Post("/documents", docH.Upload)
-	v1.Get("/documents", docH.List)
 }
 
 // errorHandler — Fiber panics/errors → HTTP dengan envelope konsisten.

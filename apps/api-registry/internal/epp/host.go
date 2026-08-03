@@ -30,11 +30,17 @@ func (p *EPPDirectProvider) GetNameservers(ctx context.Context, name string) (*p
 // belum, PANDI reject dengan code 2303 → caller harus create host dulu
 // atau pakai hostAttr flow.
 func (p *EPPDirectProvider) UpdateNameservers(ctx context.Context, name string, ns []string) (*provider.NameserverInfo, error) {
-	// Validasi input.
-	if len(ns) < 2 {
-		return nil, fmt.Errorf("%w: min 2 nameserver (redundancy)", provider.ErrValidation)
+	// Normalize + dedup dulu, baru validasi count — cegah user pass
+	// ["NS1", "ns1"] lolos min-2 tapi collapse jadi 1 setelah dedup.
+	nextSet := setOf(ns)
+	deduped := make([]string, 0, len(nextSet))
+	for n := range nextSet {
+		deduped = append(deduped, n)
 	}
-	if len(ns) > 13 {
+	if len(deduped) < 2 {
+		return nil, fmt.Errorf("%w: min 2 nameserver unik (redundancy)", provider.ErrValidation)
+	}
+	if len(deduped) > 13 {
 		return nil, fmt.Errorf("%w: max 13 nameserver per RFC 5731", provider.ErrValidation)
 	}
 
@@ -44,7 +50,6 @@ func (p *EPPDirectProvider) UpdateNameservers(ctx context.Context, name string, 
 		return nil, err
 	}
 	curSet := setOf(current.Nameservers)
-	nextSet := setOf(ns)
 
 	toAdd := make([]string, 0)
 	toRem := make([]string, 0)
@@ -92,9 +97,10 @@ func (p *EPPDirectProvider) UpdateNameservers(ctx context.Context, name string, 
 		return nil, mapEPPErr(err)
 	}
 
-	// Return desired state (asumsi PANDI accept — kalau reject, sudah error di atas).
+	// Return desired state — pakai deduped supaya reflect apa yang beneran
+	// dikirim ke EPP (client-input mungkin punya case-duplicate).
 	return &provider.NameserverInfo{
 		Domain:      strings.ToLower(name),
-		Nameservers: ns,
+		Nameservers: deduped,
 	}, nil
 }

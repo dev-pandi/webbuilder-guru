@@ -3,6 +3,7 @@ package epp
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseWhois_NotFoundReturnsAvailable(t *testing.T) {
@@ -105,14 +106,28 @@ func TestSplitWhoisKV(t *testing.T) {
 
 func TestMaskOwner(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"AB", "***"},
-		{"ABC", "***"},
-		{"ABCDE", "AB***"},
-		{"Budi Setiawan", "Bu***an"},
+		{"", "***"},                     // edge: empty
+		{"A", "***"},                    // 1 char
+		{"AB", "***"},                   // 2 char
+		{"ABC", "***"},                  // 3 char — masih terlalu pendek
+		{"ABCDE", "AB***"},              // 4-6 char: prefix + ***
+		{"Budi Setiawan", "Bu***an"},    // >6: prefix + *** + suffix
 	}
 	for _, tc := range cases {
 		if got := maskOwner(tc.in); got != tc.want {
 			t.Errorf("maskOwner(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestFormatTimeOrEmpty(t *testing.T) {
+	// Zero time — jangan render "0001-01-01T00:00:00Z" yang confusing.
+	if got := formatTimeOrEmpty(time.Time{}); got != "" {
+		t.Errorf("zero time should format as empty, got %q", got)
+	}
+	// Non-zero — proper RFC3339.
+	ts := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	if got := formatTimeOrEmpty(ts); got != "2026-08-03T12:00:00Z" {
+		t.Errorf("format mismatch: %q", got)
 	}
 }
