@@ -45,8 +45,10 @@ import (
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
+	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/paymentgw"
 	"github.com/webbuilder/api/internal/payments"
+	"github.com/webbuilder/api/internal/paymentwh"
 	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/wallet"
 	"github.com/webbuilder/api/internal/zones"
@@ -278,6 +280,12 @@ func main() {
 		slog.Info("registrar client: disabled (set REGISTRAR_API_URL + REGISTRAR_API_KEY to enable)")
 	}
 
+	// Zones — Phase 1 self-sufficient TLD catalog. Di-construct sebelum
+	// purchaseHandler karena purchaseHandler.SetZones butuh instance ini
+	// untuk cross-check zone active saat CheckDomain.
+	zonesRepo := zones.NewRepo(pool)
+	zonesHandler := zones.NewHandler(zonesRepo)
+
 	// Domain purchase handler menyatukan repo lokal + registrar client + user
 	// repo (untuk ambil profil kontak). Hanya di-build kalau registrar client
 	// aktif — kalau nil, route domain purchase auto-skip di router.
@@ -290,6 +298,9 @@ func main() {
 			purchaseRepo, registrarClient, authRepo, siteRepo, cloudflareRepo,
 			cfg.PlatformIPs, cfg.RegistrarWebhookSecret,
 		)
+		// Inject local zones — filter TLD hasil check ke hanya yang active
+		// di zones catalog. Operator kontrol full via /admin/zones.
+		purchaseHandler.SetZones(zonesRepo)
 		if cfg.RegistrarWebhookSecret == "" {
 			slog.Warn("registrar webhook: REGISTRAR_WEBHOOK_SECRET kosong — endpoint akan 503 sampai di-set")
 		}
@@ -407,10 +418,6 @@ func main() {
 		pricingHandler.SetRegistrar(registrarClient)
 	}
 
-	// Zones — Phase 1 self-sufficient TLD catalog.
-	zonesRepo := zones.NewRepo(pool)
-	zonesHandler := zones.NewHandler(zonesRepo)
-
 	// Settings — Phase 1 self-sufficient key-value store.
 	settingsRepo := settings.NewRepo(pool)
 	settingsSvc := settings.NewService(settingsRepo)
@@ -424,7 +431,30 @@ func main() {
 	// payment_methods.config JSONB. Konsumer (invoices, domain_purchase)
 	// call `gwRegistry.Get(ctx, "midtrans")` untuk build fresh Gateway.
 	gwRegistry := paymentgw.NewRegistry(paymentsRepo)
-	_ = gwRegistry // used by future invoices/domain_purchase refactor
+	_ = gwRegistry // used by future domain_purchase refactor + webhook receiver
+
+	// Invoices — Phase 1 self-sufficient invoice state machine + PDF renderer.
+	invoicesRepo := invoices.NewRepo(pool)
+	invoicesSvc := invoices.NewService(invoicesRepo, settingsSvc)
+	invoicesHandler := invoices.NewHandler(invoicesRepo, invoicesSvc)
+	invoicesHandler.SetPDFRenderer(invoices.NewHTMLRenderer(settingsSvc))
+
+	// Payment webhook receiver — /webhooks/payment/:code dispatch ke
+	// gwRegistry + invoicesSvc.MarkPaid. Downstream trigger:
+	// ExecuteAfterPayment → EPP register/renew via api-registry (Fase 1c).
+	paymentWebhookHandler := paymentwh.NewHandler(gwRegistry, invoicesSvc, invoicesRepo)
+	if purchaseHandler != nil {
+		// Wire callback: invoice paid → domain_purchase execute EPP.
+		// Skip kalau purchaseHandler nil (registrar client tidak configured).
+		paymentWebhookHandler.SetPaidCallback(purchaseHandler.ExecuteAfterPayment)
+		slog.Info("payment webhook: callback wired ke domain_purchase.ExecuteAfterPayment")
+
+		// PurchaseV2 dependencies — inject via adapters. Bikin 2-phase flow
+		// (invoice + charge lokal) available di POST /purchases/v2.
+		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo})
+		purchaseHandler.SetInvoices(invoicesAdapter{svc: invoicesSvc})
+		purchaseHandler.SetGatewayRegistry(gatewayRegistryAdapter{reg: gwRegistry})
+	}
 
 	// Contact syncer — propagate profile update (self atau by reseller/agent)
 	// ke registrar contact per domain aktif user. Skip kalau registrar
@@ -474,7 +504,9 @@ func main() {
 		Zones:        zonesHandler,
 		Settings:     settingsHandler,
 		Payments:     paymentsHandler,
-		AssetStorage: assetStorage,
+		Invoices:       invoicesHandler,
+		PaymentWebhook: paymentWebhookHandler,
+		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,
 	}
 	if assetStorage != nil {

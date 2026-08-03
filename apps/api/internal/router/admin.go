@@ -103,6 +103,16 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Delete("/payment-methods/:id", deps.Payments.Delete)
 	}
 
+	// Invoices (Phase 1 self-sufficient) — list all + detail + PDF + manual
+	// verify (mark-paid for manual_bank) + cancel.
+	if deps.Invoices != nil {
+		g.Get("/invoices", deps.Invoices.ListAdmin)
+		g.Get("/invoices/:id", deps.Invoices.GetAdmin)
+		g.Get("/invoices/:id/pdf", deps.Invoices.GetPDFAdmin)
+		g.Post("/invoices/:id/mark-paid", deps.Invoices.MarkPaidAdmin)
+		g.Post("/invoices/:id/cancel", deps.Invoices.CancelAdmin)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {

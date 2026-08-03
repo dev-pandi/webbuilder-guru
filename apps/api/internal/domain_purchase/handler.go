@@ -27,6 +27,7 @@ import (
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/sites"
+	"github.com/webbuilder/api/internal/zones"
 )
 
 // Metric names — kept as constants supaya konsisten dgn dashboard Prometheus
@@ -72,7 +73,76 @@ type Handler struct {
 	webhookSecret string
 	assignments   AssignmentChecker // nil = on-behalf-of disabled (Phase 3)
 	audit         *audit.Repo       // nil = audit disabled
+	zonesRepo     *zones.Repo       // nil = trust upstream AllowedZones (legacy)
+
+	// --- 2-phase self-sufficient dependencies (PurchaseV2 flow) ---
+	// Semua nil-safe: kalau salah satu belum di-wire, PurchaseV2 endpoint
+	// return 503 dengan pesan jelas mana yang missing.
+	pricingRepo PricingLookup     // fetch retail price per TLD
+	invoicesSvc InvoiceCreator    // create invoice + apply PPN
+	gwRegistry  GatewayRegistry   // resolve payment gateway by code
 }
+
+// PricingLookup — abstraksi minimal: dapatkan retail price per TLD.
+// Diimplementasikan oleh pricing.Repo (via adapter di main.go).
+type PricingLookup interface {
+	GetPlatformPrice(ctx context.Context, tld string) (retailRegister int64, retailRenew int64, err error)
+}
+
+// InvoiceCreator — abstraksi minimal: buat invoice untuk register/renew.
+// Diimplementasikan oleh invoices.Service.
+type InvoiceCreator interface {
+	CreateForRegister(ctx context.Context, in InvoiceCreateInput) (invoiceID uuid.UUID, total int64, dueAt time.Time, err error)
+	SavePaymentRef(ctx context.Context, id uuid.UUID, providerRef string) error
+}
+
+// InvoiceCreateInput — subset yang PurchaseV2 butuh; abstract dari
+// invoices.CreateForRegisterInput supaya package tidak import cycle.
+type InvoiceCreateInput struct {
+	UserID        uuid.UUID
+	Domain        string
+	Years         int
+	UnitPrice     int64
+	PaymentMethod string
+	Kind          string // "register" | "renew"
+	JobID         string
+}
+
+// GatewayRegistry — abstraksi resolve gateway.
+type GatewayRegistry interface {
+	Get(ctx context.Context, code string) (PaymentGateway, error)
+}
+
+// PaymentGateway — subset dari paymentgw.Gateway yang PurchaseV2 pakai.
+type PaymentGateway interface {
+	Code() string
+	CreateCharge(ctx context.Context, req GatewayChargeRequest) (paymentURL string, providerRefID string, err error)
+}
+
+// GatewayChargeRequest — subset dari paymentgw.ChargeRequest.
+type GatewayChargeRequest struct {
+	OrderID     string
+	Amount      int64
+	Description string
+	CustomerName, CustomerEmail, CustomerPhone string
+	ReturnURL   string
+	NotifURL    string
+	ExpiresAt   time.Time
+}
+
+// SetZones inject local zones source. Kalau di-set, handler filter
+// hasil check untuk hanya expose TLD yang active di local table (per
+// arsitektur self-sufficient — operator kontrol full atas zone yang expose).
+func (h *Handler) SetZones(z *zones.Repo) { h.zonesRepo = z }
+
+// SetPricing inject pricing lookup untuk PurchaseV2 flow.
+func (h *Handler) SetPricing(p PricingLookup) { h.pricingRepo = p }
+
+// SetInvoices inject invoice creator untuk PurchaseV2 flow.
+func (h *Handler) SetInvoices(i InvoiceCreator) { h.invoicesSvc = i }
+
+// SetGatewayRegistry inject payment gateway registry untuk PurchaseV2.
+func (h *Handler) SetGatewayRegistry(g GatewayRegistry) { h.gwRegistry = g }
 
 // SetAudit inject audit repo untuk record purchase / retry / renew (Phase 7).
 func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }
@@ -208,12 +278,24 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
+	// Cross-check dengan local zones catalog: kalau zonesRepo di-set,
+	// operator kontrol TLD apa yang expose ke user (bukan trust upstream).
+	// Zone yang active=false di local akan drop dari response walau
+	// registrar-api masih support.
+	allowedLocal, allowedSet := h.resolveAllowedZones(c.Context(), res.AllowedZones)
+
 	out := checkResp{
 		Query:        res.Query,
-		AllowedZones: res.AllowedZones,
+		AllowedZones: allowedLocal,
 		Results:      make([]checkEntry, 0, len(res.Results)),
 	}
 	for _, r := range res.Results {
+		// Filter per-entry — kalau TLD tidak active di local, skip.
+		if allowedSet != nil {
+			if _, ok := allowedSet[strings.ToLower(r.TLD)]; !ok {
+				continue
+			}
+		}
 		e := checkEntry{
 			Domain:    r.Domain,
 			TLD:       r.TLD,
@@ -239,6 +321,42 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		out.Results = append(out.Results, e)
 	}
 	return httpx.OK(c, out)
+}
+
+// resolveAllowedZones — kalau zonesRepo di-set, intersect upstream zones
+// dengan local active. Return (finalList, membershipSet). Set nil = no
+// local filter (legacy passthrough).
+func (h *Handler) resolveAllowedZones(ctx context.Context, upstream []string) ([]string, map[string]struct{}) {
+	if h.zonesRepo == nil {
+		return upstream, nil
+	}
+	local, err := h.zonesRepo.ListActive(ctx)
+	if err != nil {
+		// Fallback: trust upstream kalau local query fail. Log tapi jangan
+		// block user — better degrade to upstream-only than break wizard.
+		return upstream, nil
+	}
+	localSet := make(map[string]struct{}, len(local))
+	for _, z := range local {
+		localSet[strings.ToLower(z.TLD)] = struct{}{}
+	}
+	// Intersect: hanya TLD yang muncul di kedua source.
+	// Kalau upstream empty (mis. registrar-api tidak return zones), fallback
+	// pakai semua local active.
+	if len(upstream) == 0 {
+		out := make([]string, 0, len(local))
+		for _, z := range local {
+			out = append(out, z.TLD)
+		}
+		return out, localSet
+	}
+	out := make([]string, 0, len(upstream))
+	for _, tld := range upstream {
+		if _, ok := localSet[strings.ToLower(tld)]; ok {
+			out = append(out, tld)
+		}
+	}
+	return out, localSet
 }
 
 func (h *Handler) Purchase(c *fiber.Ctx) error {

@@ -220,6 +220,11 @@ func (c *Client) useAPIRegistry() bool {
 	return c != nil && c.apiRegistry != nil
 }
 
+// UsesAPIRegistry — public predicate. Konsumer (domain_purchase.PurchaseV2)
+// cek untuk gate flow 2-phase self-sufficient (butuh EPP execute via
+// api-registry).
+func (c *Client) UsesAPIRegistry() bool { return c.useAPIRegistry() }
+
 // APIError is the typed error returned when registrar-api responds with a
 // non-2xx status. Callers can `errors.As(err, &apiErr)` to branch on Status
 // (network vs 4xx vs 5xx) or Code (business error taxonomy).

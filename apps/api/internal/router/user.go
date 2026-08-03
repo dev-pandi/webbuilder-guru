@@ -126,6 +126,10 @@ func MountUser(app *fiber.App, deps Deps) {
 		// Purchase + renew guarded dengan limit lebih ketat (money-moving ops).
 		purchaseLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
 		authed.Post("/domains/purchase", purchaseLimit, deps.DomainPurchase.Purchase)
+		// PurchaseV2 — 2-phase self-sufficient checkout (Task 1.7). Berjalan
+		// paralel dengan endpoint lama; frontend migrate incremental. Butuh
+		// api-registry configured + pricing/invoices/gateway wired.
+		authed.Post("/domains/purchase/v2", purchaseLimit, deps.DomainPurchase.PurchaseV2)
 		// Renew existing domain — bikin job baru dengan kind=renew di job tracker
 		// lokal + di registrar. Response shape sama dengan purchase supaya
 		// frontend re-use pending page.
@@ -303,5 +307,13 @@ func MountUser(app *fiber.App, deps Deps) {
 	// tahu credentials — hanya `code`, `label`, `type`, `config.snap_url`, dsb.
 	if deps.Payments != nil {
 		authed.Get("/payment-methods", deps.Payments.ListPublic)
+	}
+
+	// Invoices user — list + detail + PDF (own only, ownership enforced di
+	// handler).
+	if deps.Invoices != nil {
+		authed.Get("/invoices", deps.Invoices.ListMine)
+		authed.Get("/invoices/:id", deps.Invoices.GetMine)
+		authed.Get("/invoices/:id/pdf", deps.Invoices.GetPDFMine)
 	}
 }

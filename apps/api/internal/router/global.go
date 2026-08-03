@@ -67,6 +67,16 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		)
 	}
 
+	// Payment gateway webhook — Midtrans/Paylabs POST kesini setelah user
+	// bayar. Signature verify per-code di paymentgw.Gateway.HandleWebhook,
+	// bukan HMAC generic. Rate-limit per IP defence in depth.
+	if deps.PaymentWebhook != nil {
+		app.Post("/webhooks/payment/:code",
+			RateLimitIP(webhookPerWindow, webhookWindow),
+			deps.PaymentWebhook.Receive,
+		)
+	}
+
 	// Public form submission — no JWT (visitor situs anonymous). Anti-spam:
 	// (1) rate limit 10/menit per IP, (2) honeypot field "_hp" di handler.
 	// Kalau form_id tidak valid → 404 (tidak leak enumeration).

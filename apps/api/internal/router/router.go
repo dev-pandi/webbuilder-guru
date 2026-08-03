@@ -24,8 +24,10 @@ import (
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
+	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/payments"
+	"github.com/webbuilder/api/internal/paymentwh"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
@@ -123,6 +125,14 @@ type Deps struct {
 	// CRUD + toggle enable/disable + config credentials. Public endpoint
 	// (enabled only, credentials masked) dipakai wizard render.
 	Payments *payments.Handler
+
+	// Invoices — Phase 1 self-sufficient invoice state machine. Admin + user
+	// endpoints (list/detail/PDF). Manual bank verify via mark-paid.
+	Invoices *invoices.Handler
+
+	// PaymentWebhook — receiver `/webhooks/payment/:code`. Dispatch ke
+	// paymentgw.Gateway.HandleWebhook + invoices.MarkPaid. Nil-safe.
+	PaymentWebhook *paymentwh.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

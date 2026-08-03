@@ -107,6 +107,90 @@ func (c *Client) updateNameserversViaAPIRegistry(ctx context.Context, name strin
 	return &NameserverInfo{Domain: res.Domain, Nameservers: res.Nameservers}, nil
 }
 
+// RegisterDomainDirect — direct EPP register via api-registry, ZERO payment
+// coupling. Dipakai flow 2-phase self-sufficient dimana web builder handle
+// payment/invoice sendiri lewat paymentgw + invoices; setelah invoice paid
+// (webhook), ExecuteAfterPayment panggil method ini untuk trigger EPP.
+//
+// Beda dari `RegisterDomain` yang legacy (forward ke registrar-api PANDI
+// termasuk payment): method ini API-registry only, sync EPP execute, return
+// job_id + status. Tidak ada payment_method/return_url/promo_code — semua
+// concern payment di sisi caller.
+//
+// Requirement: `APIRegistryURL` di-set (kalau tidak, return error jelas).
+func (c *Client) RegisterDomainDirect(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
+	if !c.useAPIRegistry() {
+		return nil, &APIError{
+			Status: 501,
+			Code:   "api_registry_not_configured",
+			Msg:    "RegisterDomainDirect butuh API_REGISTRY_URL di-set — flow 2-phase self-sufficient tidak available",
+		}
+	}
+	if req.Domain == "" || req.Years < 1 || req.ExternalUserID == "" {
+		return nil, &APIError{Status: 400, Code: "bad_request",
+			Msg: "domain, years, external_user_id wajib"}
+	}
+	// Translate registrar.RegisterRequest → apiregistry.RegisterRequest.
+	// Payment fields (payment_method, return_url, promo_code, document_ids)
+	// SENGAJA tidak diteruskan — semua di web builder side sekarang.
+	res, err := c.apiRegistry.RegisterDomain(ctx, apiregistry.RegisterRequest{
+		Domain:         req.Domain,
+		Years:          req.Years,
+		ExternalUserID: req.ExternalUserID,
+		IdempotencyKey: req.IdempotencyKey,
+		Contact: apiregistry.Contact{
+			Name:        req.Contact.Name,
+			Email:       req.Contact.Email,
+			Phone:       req.Contact.Phone,
+			Address:     req.Contact.Address,
+			City:        req.Contact.City,
+			State:       req.Contact.State,
+			PostalCode:  req.Contact.PostalCode,
+			CountryCode: req.Contact.CountryCode,
+			// Nik SENGAJA drop — api-registry sudah tidak accept per arsitektur.
+		},
+		Nameservers: req.Nameservers,
+	})
+	if err != nil {
+		return nil, translateAPIRegistryErr(err)
+	}
+	// api-registry RegisterResponse: {JobID, Status}. Payment URL kosong
+	// karena payment sudah selesai di sisi caller.
+	return &RegisterResponse{
+		JobID:  res.JobID,
+		Status: res.Status,
+	}, nil
+}
+
+// RenewDomainDirect — direct EPP renew via api-registry. Sama dengan
+// RegisterDomainDirect pattern: ZERO payment coupling.
+func (c *Client) RenewDomainDirect(ctx context.Context, name string, req RenewRequest) (*RegisterResponse, error) {
+	if !c.useAPIRegistry() {
+		return nil, &APIError{
+			Status: 501,
+			Code:   "api_registry_not_configured",
+			Msg:    "RenewDomainDirect butuh API_REGISTRY_URL di-set",
+		}
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" || req.Years < 1 {
+		return nil, &APIError{Status: 400, Code: "bad_request",
+			Msg: "domain + years wajib"}
+	}
+	res, err := c.apiRegistry.RenewDomain(ctx, name, apiregistry.RenewRequest{
+		Years:          req.Years,
+		IdempotencyKey: req.IdempotencyKey,
+		ExternalUserID: req.ExternalUserID,
+	})
+	if err != nil {
+		return nil, translateAPIRegistryErr(err)
+	}
+	return &RegisterResponse{
+		JobID:  res.JobID,
+		Status: res.Status,
+	}, nil
+}
+
 // checkDomainViaAPIRegistry — route CheckDomain ke api-registry.
 //
 // api-registry HTTP contract:
