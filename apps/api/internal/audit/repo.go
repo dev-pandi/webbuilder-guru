@@ -29,6 +29,7 @@ const (
 	EventDomainPurchasedOBO  = "purchase.on_behalf_of" // reseller/agent for client
 	EventDomainRetried       = "purchase.retried"
 	EventDomainRenewed       = "purchase.renewed"
+	EventPromoApplied        = "promo.applied"
 	EventWalletTopupInit     = "wallet.topup_initiated"
 	EventWalletProofUploaded = "wallet.proof_uploaded"
 	EventSiteMemberAdded     = "site_member.added"

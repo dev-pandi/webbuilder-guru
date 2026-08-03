@@ -119,7 +119,23 @@ Buka `/admin/pricing`:
 - 11 default retail price sudah ada
 - Kalau harga PANDI berubah, klik Edit → update
 
-### 1.9 Test end-to-end
+### 1.9 (Opsional) Buat promo perdana
+
+Buka `/admin/promos` → klik **Tambah promo**:
+- **Kode**: `WELCOME10` (uppercase, auto-normalized)
+- **Jenis**: Persen, nilai 10
+- **Max diskon**: 50000 (Rp 50k cap supaya tidak habis di TLD mahal)
+- **Berlaku untuk**: Register saja (renew kena promo lain nanti)
+- **TLD**: kosong (semua zone eligible)
+- **Min subtotal**: 100000 (cegah abuse untuk domain super murah)
+- **Max pakai per user**: 1
+- **Max pakai total**: 100 (limit exposure)
+- **Berlaku sampai**: end of year
+- **Aktifkan**: ✓
+
+User apply lewat input di wizard checkout — diskon dihitung sebelum PPN.
+
+### 1.10 Test end-to-end
 
 1. Register user baru → login sebagai user
 2. Buka `/sites/new-with-domain` → cari domain `.web.id` (paling murah, no doc)

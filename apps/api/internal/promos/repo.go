@@ -116,6 +116,52 @@ func (r *Repo) CountRedemptionsByUser(ctx context.Context, promoID, userID uuid.
 	return n, err
 }
 
+// RedemptionRow — enriched dengan user email untuk admin table.
+type RedemptionRow struct {
+	ID              uuid.UUID `json:"id"`
+	PromoID         uuid.UUID `json:"promo_id"`
+	UserID          uuid.UUID `json:"user_id"`
+	UserEmail       string    `json:"user_email"`
+	UserName        string    `json:"user_name"`
+	InvoiceID       uuid.UUID `json:"invoice_id"`
+	InvoiceNumber   string    `json:"invoice_number"`
+	DiscountApplied int64     `json:"discount_applied"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// ListRedemptionsByPromo — history redemption untuk 1 promo, join users +
+// invoices supaya admin dashboard bisa tampilkan email + invoice number
+// dalam 1 query.
+func (r *Repo) ListRedemptionsByPromo(ctx context.Context, promoID uuid.UUID, limit int) ([]RedemptionRow, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	q := `SELECT r.id, r.promo_id, r.user_id, u.email, u.name,
+	             r.invoice_id, i.number, r.discount_applied, r.created_at
+	      FROM promo_redemptions r
+	      JOIN users    u ON u.id = r.user_id
+	      JOIN invoices i ON i.id = r.invoice_id
+	      WHERE r.promo_id = $1
+	      ORDER BY r.created_at DESC
+	      LIMIT $2`
+	rows, err := r.pool.Query(ctx, q, promoID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]RedemptionRow, 0)
+	for rows.Next() {
+		var rr RedemptionRow
+		if err := rows.Scan(&rr.ID, &rr.PromoID, &rr.UserID, &rr.UserEmail, &rr.UserName,
+			&rr.InvoiceID, &rr.InvoiceNumber, &rr.DiscountApplied, &rr.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rr)
+	}
+	return out, rows.Err()
+}
+
 // InsertRedemption — race-safe via unique index di invoice_id. Kalau invoice
 // sudah pernah di-redeem, akan error unique violation → caller treat sebagai
 // no-op (idempotent).

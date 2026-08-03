@@ -5,7 +5,8 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, Loader2, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, Eye, Loader2, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -177,11 +178,17 @@ export default function AdminPromosPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" asChild className="gap-1">
+                          <Link href={`/admin/promos/${p.id}`} title="Lihat detail + riwayat">
+                            <Eye className="size-3.5" />
+                          </Link>
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setEditing(p)}
                           className="gap-1"
+                          title="Edit"
                         >
                           <Pencil className="size-3.5" />
                         </Button>
@@ -190,6 +197,7 @@ export default function AdminPromosPage() {
                           size="sm"
                           onClick={() => onDelete(p)}
                           className="gap-1 text-destructive hover:text-destructive"
+                          title="Hapus"
                         >
                           <Trash2 className="size-3.5" />
                         </Button>

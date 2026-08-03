@@ -186,6 +186,20 @@ func (h *Handler) AdminUpdate(c *fiber.Ctx) error {
 	return httpx.OK(c, p)
 }
 
+// AdminListRedemptions — GET /api/v1/admin/promos/:id/redemptions
+// History pemakaian promo (user + invoice + discount + timestamp).
+func (h *Handler) AdminListRedemptions(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	items, err := h.repo.ListRedemptionsByPromo(c.Context(), id, 200)
+	if err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	return httpx.OK(c, items)
+}
+
 func (h *Handler) AdminDelete(c *fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {

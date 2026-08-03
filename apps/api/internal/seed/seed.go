@@ -53,6 +53,9 @@ func Run(ctx context.Context, d Deps, o Options) error {
 	if err := Templates(ctx, d.Templates); err != nil {
 		return fmt.Errorf("seed: templates: %w", err)
 	}
+	if err := Promos(ctx, d.Pool); err != nil {
+		return fmt.Errorf("seed: promos: %w", err)
+	}
 	if o.AdminEmail != "" && o.AdminPassword != "" {
 		if err := Admin(ctx, d.Auth, o.AdminEmail, o.AdminPassword, o.AdminName); err != nil {
 			return fmt.Errorf("seed: admin: %w", err)
@@ -72,6 +75,20 @@ func Run(ctx context.Context, d Deps, o Options) error {
 		}
 	}
 	return nil
+}
+
+// Promos — seed 1 demo promo `WELCOME10` (inactive by default). Idempotent
+// via ON CONFLICT DO NOTHING. Operator aktifkan lewat admin panel kalau mau
+// dipakai — atau edit dulu (nilai, TLD, expiry) sebelum aktif.
+func Promos(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO promo_codes (code, description, discount_type, discount_value,
+		    applies_to, allowed_tlds, min_subtotal, max_discount, max_uses_per_user, active)
+		VALUES ('WELCOME10', 'Diskon selamat datang 10%%', 'percent', 10,
+		        'register', '{}', 100000, 50000, 1, false)
+		ON CONFLICT (code) DO NOTHING
+	`)
+	return err
 }
 
 // Templates re-upserts the 15 built-in templates.

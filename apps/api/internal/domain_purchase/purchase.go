@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/metrics"
@@ -246,6 +247,14 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		if err := h.promos.Redeem(c.Context(), promoID, owner.ID, invoiceID, promoDiscount); err != nil {
 			slog.Warn("purchase: promo redeem failed",
 				"invoice_id", invoiceID, "promo_id", promoID, "error", err)
+		} else {
+			h.logAudit(c.Context(), caller.ID, audit.EventPromoApplied, "invoice", invoiceID.String(), map[string]any{
+				"promo_code": req.PromoCode,
+				"promo_id":   promoID.String(),
+				"discount":   promoDiscount,
+				"kind":       KindRegister,
+				"domain":     req.Domain,
+			})
 		}
 	}
 

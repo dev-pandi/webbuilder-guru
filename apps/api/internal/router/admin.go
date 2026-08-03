@@ -72,13 +72,14 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Delete("/pricing/platform/:id", deps.Pricing.AdminDeletePlatform)
 	}
 
-	// Promos — admin CRUD kupon diskon.
+	// Promos — admin CRUD kupon diskon + redemption history.
 	if deps.Promos != nil {
 		g.Get("/promos", deps.Promos.AdminList)
 		g.Post("/promos", deps.Promos.AdminCreate)
 		g.Get("/promos/:id", deps.Promos.AdminGet)
 		g.Patch("/promos/:id", deps.Promos.AdminUpdate)
 		g.Delete("/promos/:id", deps.Promos.AdminDelete)
+		g.Get("/promos/:id/redemptions", deps.Promos.AdminListRedemptions)
 	}
 
 	// Zones catalog (Phase 1 self-sufficient) — TLD supported + verification rules.

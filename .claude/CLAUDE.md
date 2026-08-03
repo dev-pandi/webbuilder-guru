@@ -212,61 +212,63 @@ Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2
 - **Dynamic blocks**: `ProductGridDynamic`, `BlogListDynamic` fetch dari `/public/sites/:id/products` & `/blog` — jangan hard-code data.
 - **Theme tokens** dari site JSON diinject sebagai CSS variables di `<style>` inline di layout (`--color-primary`, `--font-heading`, `--radius`). Blok pakai `var(--color-primary)`, bukan `bg-primary` Tailwind class.
 
-## Domain Purchase Flow (registrar integration)
+## Domain Purchase Flow (self-sufficient)
 
 **Konsep produk**: **1 domain = 1 situs**. User HARUS beli domain dulu sebelum bisa create situs — tidak ada free subdomain flow. `POST /sites/from-template/:slug` wajib `job_id` di body; atomic create + attach.
 
-**Arsitektur**:
-- Web builder API = **transparent proxy** ke `registrar-api` (Go/Gin di `/Users/pandi-rofai/Project/Golang/registrar-api`).
-- Dokumen sensitif (KTP/NPWP) **TIDAK disimpan di web builder** — multipart di-forward langsung ke registrar. Single source of truth = registrar (menghindari duplikasi PII).
-- Client wrapper: [apps/api/internal/registrar/](../apps/api/internal/registrar/) — `Client.CheckDomain / RegisterDomain / GetRegisterStatus / RetryDomain / RenewDomain / ListDomains / GetNameservers / UpdateNameservers / Whois / UploadDocumentForJob / Login / SetAPIKey`. `SetAPIKey` thread-safe (`sync.RWMutex`) untuk background refresh loop.
-- Local job tracker: [apps/api/internal/domain_purchase/](../apps/api/internal/domain_purchase/) — mirror shallow dari `reseller_domain_jobs` di registrar, cache status + kind + expires_at + link ke `sites.id`.
+**Arsitektur** (Phase 3 self-sufficient):
+- Web builder = authoritative source untuk **invoice + payment + wallet + document + promo**.
+- EPP execute (register/renew/whois/nameserver) di-route lewat internal service [apps/api-registry](../apps/api-registry/) via HMAC-signed HTTP.
+- Client wrapper: [apps/api/internal/registrar/](../apps/api/internal/registrar/) — `Client.CheckDomain / RegisterDomainDirect / RenewDomainDirect / GetNameservers / UpdateNameservers / Whois / UsesAPIRegistry`. Zero coupling ke external registrar-api PANDI.
+- Local job tracker: [apps/api/internal/domain_purchase/](../apps/api/internal/domain_purchase/) — canonical status source, `job_id = invoice.ID` di V2 flow.
 
-**Auth ke registrar**: JWT reseller (30-day TTL). Dua mode:
-- **Static**: `REGISTRAR_API_KEY` = JWT hasil login manual sekali. Operator harus rotate manual sebelum 30 hari.
-- **Auto-refresh** (recommended prod): set `REGISTRAR_RESELLER_EMAIL` + `REGISTRAR_RESELLER_PASSWORD`. `main.go` login saat startup + refresh tiap 25 hari via background goroutine.
+**Env yang wajib**:
+- `API_REGISTRY_URL` (kalau kosong = fitur domain disabled)
+- `API_REGISTRY_HMAC_SECRET` (must match api-registry `INTERNAL_HMAC_SECRET`)
+- `API_REGISTRY_TIMEOUT` (default 30s)
 
-**Webhook**: registrar POST ke `/webhooks/registrar/domain-status` dengan HMAC signature (`X-Registrar-Signature: sha256=...`). Secret dari `REGISTRAR_WEBHOOK_SECRET` — set via `POST /v1/api/user/reseller/config/webhook` di registrar (return secret, salin ke env web builder).
-
-**Env baru** (`apps/api/.env.example` + `infra/.env.example`):
-- `REGISTRAR_API_URL` (kosong = fitur disabled)
-- `REGISTRAR_API_KEY` (JWT statis, opsional kalau pakai credentials)
-- `REGISTRAR_RESELLER_EMAIL` + `REGISTRAR_RESELLER_PASSWORD` (auto-login)
-- `REGISTRAR_WEBHOOK_SECRET` (HMAC verify)
-- `REGISTRAR_API_TIMEOUT` (default 15s)
+**Local packages** yang menopang flow:
+- [invoices](../apps/api/internal/invoices/) — invoice state machine (draft → unpaid → paid) + PDF renderer + PPN
+- [paymentgw](../apps/api/internal/paymentgw/) — gateway registry (Midtrans, Paylabs, manual_bank, deposit_wallet)
+- [paymentwh](../apps/api/internal/paymentwh/) — webhook receiver `/webhooks/payment/:code` → MarkPaid + ExecuteAfterPayment callback
+- [wallet_local](../apps/api/internal/wallet_local/) — balance + ledger (append-only) + admin adjust
+- [documents_local](../apps/api/internal/documents_local/) — KTP/NPWP library, blob di assets.Storage
+- [promos](../apps/api/internal/promos/) — kupon diskon (validate + redeem, unique per invoice_id)
 
 **User flow end-to-end**:
 1. Dashboard → **"Beli Domain + Buat Situs"** (satu-satunya CTA create — free subdomain flow sudah dihapus)
-2. `/sites/new-with-domain` — wizard: cari domain → cek availability + harga + zone flags (`require_document`, `auto_approved`) → confirm dengan profile check (nama/HP/alamat/kota/kode pos + NIK kalau .id)
-3. `POST /api/v1/domains/purchase` dengan header `Idempotency-Key: <uuid>` — proxy ke registrar → dapat `job_id` + `payment_url`
+2. `/sites/new-with-domain` — wizard: cari domain → cek availability + zone flags (`require_document`, `auto_approved`) → confirm dengan profile check (nama/HP/alamat/kota/kode pos + NIK kalau .id) + opsional promo code (validate via `POST /promos/validate`)
+3. `POST /api/v1/domains/purchase` dengan header `Idempotency-Key: <uuid>` → invoice created lokal + payment charge via paymentgw → `{ job_id, payment_url }`
 4. Navigate ke `/sites/pending/[jobId]` — polling 3s status:
-   - `pending_payment` → tombol "Buka halaman pembayaran" (Midtrans/Paylabs)
-   - `pending_document` → **DocumentUpload** multipart passthrough (file + category_id) ke registrar
-   - `pending_provisioning` → wait EPP CREATE
-   - `failed` → **tombol "Coba lagi"** (POST `/purchases/:job_id/retry` — TIDAK bayar ulang)
-   - `active` → **TemplatePicker** → pilih template + slug → `POST /sites/from-template/:slug { job_id }` atomic create+attach → editor
-5. Payment gateway redirect ke `/checkout/return` → auto ke `/sites/pending/<jobId>` (via `GET /purchases?limit=1`)
+   - `pending_payment` → tombol "Buka halaman pembayaran" (Midtrans/Paylabs) atau langsung `active` untuk `deposit_wallet` (sync flow)
+   - `pending_provisioning` → wait ExecuteAfterPayment → `RegisterDomainDirect` via api-registry
+   - `failed` → **tombol "Coba lagi"** (`POST /purchases/:job_id/retry` — re-run ExecuteAfterPayment, TIDAK bayar ulang)
+   - `active` → **TemplatePicker** → `POST /sites/from-template/:slug { job_id }` atomic create+attach → editor
+5. Payment gateway webhook `/webhooks/payment/:code` → paymentwh verify signature → MarkPaid → ExecuteAfterPayment → EPP CREATE via api-registry
 6. Dashboard poll `/domains/purchases` tiap 30s — kartu "Domain sedang diproses" update tanpa reload
 
 **Sub-flow yang sudah live**:
-- **Renew**: `POST /api/v1/domains/renew` → jobs bertype `kind=renew` dengan flow polling sama seperti register. UI reuse `/sites/pending/[jobId]` — kalau `kind=renew` template picker skipped, ganti dengan kartu "Perpanjangan berhasil".
-- **Nameserver + WHOIS**: [/settings/domains/[name]](../apps/web/app/settings/domains/) — user edit NS (min 2, max 13, hostname regex client-side) + view WHOIS. Semua ownership-verified.
-- **Sync**: `POST /api/v1/domains/sync` — user-triggered self-heal drift kalau webhook drop. Backend juga auto-run tiap 6 jam via goroutine `Handler.RunPeriodicSync` di [cmd/server/main.go](../apps/api/cmd/server/main.go).
+- **Renew**: `POST /api/v1/domains/:name/renew` → jobs `kind=renew`. UI reuse `/sites/pending/[jobId]` — kalau `kind=renew` template picker skipped, ganti dengan kartu "Perpanjangan berhasil". Wallet payment sync (`deposit_wallet`) langsung `active`.
+- **Nameserver + WHOIS**: [/settings/domains/[name]](../apps/web/app/settings/domains/) — user edit NS (min 2, max 13, hostname regex client-side) + view WHOIS via api-registry. Semua ownership-verified.
+- **Documents**: [/settings/documents](../apps/web/app/settings/documents/) — library KTP/NPWP user, upload multipart ke `POST /documents` (metadata di `documents` table + blob di assets.Storage). Preview via `GET /documents/:id` (base64 data URI). Dipakai wizard sebagai pre-attach `document_ids[]` saat purchase TLD yang require_document.
+- **Promos**: [/admin/promos](../apps/web/app/admin/promos/) — admin CRUD kupon (percent/fixed, applies_to register|renew|both, TLD whitelist, min subtotal, max cap, valid window, max uses total + per-user). User apply via wizard: input code → validate preview → submit purchase with `promo_code`. Redemption tracked di `promo_redemptions` (unique per invoice_id), audit event `promo.applied` fires setelah redeem sukses.
 - **Expiry email notifier**: [internal/notifier/expiry.go](../apps/api/internal/notifier/expiry.go) — background goroutine, scan tiap 24 jam. Kirim email peringatan per user (Bahasa Indonesia + deep-link `/settings/domains/<domain>`) untuk domain aktif expire ≤ 30 hari, dedup via kolom `expiry_notice_sent_at` + resend 7 hari.
-- **Dashboard banner**: 2 kartu — "Domain sedang diproses" (pending states) + "Domain akan segera expire" (< 30 hari, sisa hari relative label). Filter dedupe per-domain (`latestActivePerDomain`) supaya post-renewal user tidak lihat tanggal lama.
-- **Admin observability**: `/admin/registrar` — dua tab. **Webhook** (rotate secret) + **Domain Purchases** (paginated + filter status/kind/search, join users untuk email). `GET /api/v1/admin/registrar/purchases` pakai `AdminList` repo method dengan whitelist sort preset.
+- **Dashboard banner**: 2 kartu — "Domain sedang diproses" (pending states) + "Domain akan segera expire" (< 30 hari). Filter dedupe per-domain (`latestActivePerDomain`) supaya post-renewal user tidak lihat tanggal lama.
+- **Admin observability**: [/admin/registrar/purchases](../apps/web/app/admin/registrar/purchases/) — paginated + filter status/kind/search, join users untuk email. `GET /api/v1/admin/registrar/purchases` pakai `AdminList` repo method dengan whitelist sort preset.
 - **Hardening**:
-  - Webhook receiver rate-limit 600/60s per source IP (defence in depth di atas HMAC verify).
-  - Registrar client auto-recover 401: kalau JWT ditolak di tengah siklus 25-day refresh, `Client.do` re-login sekali + retry (serialized via `reauthMu`). Aktif kalau `SetCredentials` dipanggil di startup.
-  - Metrics counters di [/metrics](../apps/api/internal/router/global.go): `domain_purchases_created_total{kind}`, `domain_purchase_webhooks_total{result=processed|invalid_signature|stale_timestamp|disabled}`, `domain_purchase_reconcile_runs_total{trigger=user|periodic}`, `domain_purchase_reconcile_updated_total`, `domain_expiry_notices_total{result=sent|failed}`, `registrar_jwt_reauth_total{result=success|failed|skipped_racewin}`.
+  - Payment webhook rate-limit 600/60s per source IP (defence in depth di atas gateway HMAC verify).
+  - Idempotency-Key WAJIB di `POST /domains/purchase` + `/renew` (frontend generate `useMemo` UUID) — cegah double-charge.
+  - Wallet payment untuk purchase reseller/agent-only (client role dilarang).
+  - Metrics counters di [/metrics](../apps/api/internal/router/global.go): `domain_purchase_created_total{result,gateway}`, `domain_renew_created_total{result,gateway}`, `payment_webhooks_total{code,result}`, `domain_purchase_execute_after_payment_total{result,kind}`, `domain_expiry_notices_total{result=sent|failed}`.
 
 **Yang harus dijaga saat kerja di area ini**:
-- Ownership check di setiap endpoint (`GetByJobID(jobID, userID)` bukan `GetByJobID(jobID)`) — cegah URL guessing
-- Idempotency-Key WAJIB di POST /purchase + /renew (frontend generate `useMemo` UUID) — cegah double-charge
-- Error dari registrar dimap ke pesan ID di `friendlyError()` (wizard) — jangan expose "HTTP 403" mentah ke user
-- Path registrar-api: `/v1/api/user/reseller/*` (bukan `/api/reseller/*` — pernah ada mismatch bug)
-- **Dedupe expires_at per domain di frontend**: setelah renew, register-row punya expires_at lama, renew-row punya yang baru. Selalu pakai `latestActivePerDomain(items)` helper (di dashboard + settings/domains) — jangan filter `kind === "register"`.
-- `lib/api.ts` throw `ApiError` (subclass Error dengan `.status` + `.code`) — pattern-match status 404/403 untuk friendly screen, bukan string-match message.
+- Ownership check di setiap endpoint (`GetByJobIDForActor(jobID, userID)` inklusif ke `purchased_by` untuk on-behalf-of) — cegah URL guessing.
+- Idempotency-Key WAJIB di POST /purchase + /renew — cegah double-charge.
+- Promo validate + redeem race-safe: unique index di `promo_redemptions(invoice_id)` cegah dobel-redeem per invoice. Test via `TestRepo_InsertRedemption_UniqueInvoice` di `internal/promos`.
+- On-behalf-of validation: `CanRegisterForClient(caller)` + `HasActiveAssignment(caller, client)` sebelum owner switch. `PurchasedBy` disimpan di invoice + purchase.
+- Error dari api-registry di-translate ke `registrar.APIError` (via `translateAPIRegistryErr`). Konsumer pattern-match `errors.As(err, &apiErr)` — jangan string-match message.
+- **Dedupe expires_at per domain di frontend**: setelah renew, register-row punya expires_at lama, renew-row punya yang baru. Pakai `latestActivePerDomain(items)` helper (di dashboard + settings/domains).
+- `lib/api.ts` throw `ApiError` (subclass Error dengan `.status` + `.code`) — pattern-match status 404/403 untuk friendly screen.
 
 ## Don'ts
 
