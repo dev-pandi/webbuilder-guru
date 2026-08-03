@@ -134,6 +134,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		// lokal + di registrar. Response shape sama dengan purchase supaya
 		// frontend re-use pending page.
 		authed.Post("/domains/renew", purchaseLimit, deps.DomainPurchase.Renew)
+		// RenewV2 — 2-phase self-sufficient renew (Task 1.7). Path param
+		// `:name` untuk domain. Ownership check via GetLatestActiveByDomain.
+		authed.Post("/domains/:name/renew/v2", purchaseLimit, deps.DomainPurchase.RenewV2)
 		// Domain management (nameservers + whois) — semua verify ownership.
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
@@ -309,11 +312,13 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/payment-methods", deps.Payments.ListPublic)
 	}
 
-	// Invoices user — list + detail + PDF (own only, ownership enforced di
-	// handler).
+	// Invoices user — versioned path `/invoices/v2` supaya tidak collision
+	// dengan legacy `/invoices` yang masih di-mount ke DomainPurchase.ListInvoices
+	// (proxy registrar-api PANDI). Setelah frontend migrate ke local invoices
+	// + payment gateway 2-phase, legacy path bisa di-remove.
 	if deps.Invoices != nil {
-		authed.Get("/invoices", deps.Invoices.ListMine)
-		authed.Get("/invoices/:id", deps.Invoices.GetMine)
-		authed.Get("/invoices/:id/pdf", deps.Invoices.GetPDFMine)
+		authed.Get("/invoices/v2", deps.Invoices.ListMine)
+		authed.Get("/invoices/v2/:id", deps.Invoices.GetMine)
+		authed.Get("/invoices/v2/:id/pdf", deps.Invoices.GetPDFMine)
 	}
 }
