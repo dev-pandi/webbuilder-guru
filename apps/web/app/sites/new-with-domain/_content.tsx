@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import { api, getAccessToken, clearTokens, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-import type { CheckEntry, CheckResp, Me, PaymentMethod, PurchaseResp } from "./_types";
+import type { CheckEntry, CheckResp, Me, PaymentMethod, PurchaseResp, PurchaseV2Resp } from "./_types";
 import { friendlyError, missingProfileFields } from "./_helpers";
 import { Stepper, type StepIdx } from "./_stepper";
 import { SearchSection } from "./_search-section";
@@ -199,32 +199,81 @@ export function NewWithDomainContent() {
     }
   }
 
-  async function onPurchase() {
-    if (!selected?.available || !profileComplete) return;
-    setErr(null);
-    setPurchasing(true);
+  // tryPurchaseV2 — attempt 2-phase self-sufficient checkout (Task 1.7).
+  // Return job_id kalau sukses, null kalau flow tidak eligible (wallet /
+  // on-behalf-of / promo / docs — V2 belum support). Legacy fallback dipanggil
+  // caller kalau null.
+  //
+  // V2 endpoint auto-return 503 kalau API_REGISTRY_URL belum di-set → catch
+  // + return null supaya user tetap bisa checkout via legacy path.
+  async function tryPurchaseV2(): Promise<PurchaseResp | null> {
+    if (!selected) return null;
+    // Feature gate — V2 belum support:
+    if (paymentMethod === "wallet") return null;
+    if (forClientID) return null;
+    if (documentIds.length > 0) return null;
+    if (promoCode.trim() !== "") return null;
     try {
-      const res = await api<PurchaseResp>("/api/v1/domains/purchase", {
+      const res = await api<PurchaseV2Resp>("/api/v1/domains/purchase/v2", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({
           domain: selected.domain,
           years,
           payment_method: paymentMethod,
-          promo_code: promoCode.trim() || undefined,
-          // Pre-attach docs kalau user pilih dari picker — kosong = skip
-          // (post-payment upload flow di /sites/pending/[jobId]).
-          document_ids: documentIds.length > 0 ? documentIds : undefined,
-          // On-behalf-of: kalau wizard di-load dengan ?for_client=<id>,
-          // backend set user_id purchase = client, purchased_by = caller.
-          on_behalf_of_user_id: forClientID || undefined,
-          // Static return page — pengambil job terbaru user lalu redirect ke
-          // /sites/pending/<job_id>. Kita nggak tahu job_id di sini karena
-          // baru dapat dari response, sedangkan payment session butuh URL
-          // saat POST /purchase.
           return_url: `${window.location.origin}/checkout/return`,
         }),
       });
+      // Adapt V2 response → PurchaseResp shape supaya downstream identik.
+      return {
+        job_id: res.job_id,
+        domain: res.domain,
+        status: res.status,
+        payment_url: res.payment_url,
+      };
+    } catch (e) {
+      // 503 = api_registry_required / dependencies belum wired → silent fallback.
+      // 400 = validation gagal di V2 → surface ke user (bukan fallback).
+      // Other 5xx = server error, try legacy sebagai plan B.
+      if (e instanceof ApiError) {
+        if (e.status === 503) return null;
+        if (e.status >= 500) return null;
+      }
+      throw e; // 4xx propagate
+    }
+  }
+
+  async function onPurchase() {
+    if (!selected?.available || !profileComplete) return;
+    setErr(null);
+    setPurchasing(true);
+    try {
+      // Try V2 first (self-sufficient path). Kalau tidak eligible atau
+      // service belum ready → fallback ke legacy /purchase.
+      const v2 = await tryPurchaseV2();
+      const res =
+        v2 ??
+        (await api<PurchaseResp>("/api/v1/domains/purchase", {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify({
+            domain: selected.domain,
+            years,
+            payment_method: paymentMethod,
+            promo_code: promoCode.trim() || undefined,
+            // Pre-attach docs kalau user pilih dari picker — kosong = skip
+            // (post-payment upload flow di /sites/pending/[jobId]).
+            document_ids: documentIds.length > 0 ? documentIds : undefined,
+            // On-behalf-of: kalau wizard di-load dengan ?for_client=<id>,
+            // backend set user_id purchase = client, purchased_by = caller.
+            on_behalf_of_user_id: forClientID || undefined,
+            // Static return page — pengambil job terbaru user lalu redirect ke
+            // /sites/pending/<job_id>. Kita nggak tahu job_id di sini karena
+            // baru dapat dari response, sedangkan payment session butuh URL
+            // saat POST /purchase.
+            return_url: `${window.location.origin}/checkout/return`,
+          }),
+        }));
       toast.success("Job pembelian dibuat");
       router.push(`/sites/pending/${res.job_id}`);
     } catch (e) {

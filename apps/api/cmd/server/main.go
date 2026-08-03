@@ -51,6 +51,7 @@ import (
 	"github.com/webbuilder/api/internal/paymentwh"
 	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/wallet"
+	"github.com/webbuilder/api/internal/wallet_local"
 	"github.com/webbuilder/api/internal/zones"
 )
 
@@ -431,6 +432,11 @@ func main() {
 	paymentsRepo := payments.NewRepo(pool)
 	paymentsHandler := payments.NewHandler(paymentsRepo)
 
+	// Wallet local — Phase 1 self-sufficient wallet (menggantikan legacy
+	// wallet.Handler yang proxy ke registrar-api).
+	walletLocalRepo := wallet_local.NewRepo(pool)
+	walletLocalHandler := wallet_local.NewHandler(walletLocalRepo)
+
 	// Payment gateway registry — instansiasi Gateway concrete dari
 	// payment_methods.config JSONB. Konsumer (invoices, domain_purchase)
 	// call `gwRegistry.Get(ctx, "midtrans")` untuk build fresh Gateway.
@@ -510,6 +516,7 @@ func main() {
 		Payments:     paymentsHandler,
 		Invoices:       invoicesHandler,
 		PaymentWebhook: paymentWebhookHandler,
+		WalletLocal:    walletLocalHandler,
 		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,
 	}

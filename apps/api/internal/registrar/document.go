@@ -12,6 +12,14 @@ import (
 	"strconv"
 )
 
+// DEPRECATED (Fase 1 self-sufficient): Document upload endpoints — proxy ke
+// registrar-api reseller documents. Per arsitektur, dokumen SEMUA di web
+// builder side (storage S3/MinIO + verification admin panel). Legacy proxy
+// ini akan di-remove setelah frontend document flow di-refactor.
+//
+// Timeline removal: setelah `apps/api/internal/documents_local/` selesai
+// di-implement + frontend migrate ke endpoint local.
+
 // Category = shape response dari GET /v1/api/get-category (registrar public).
 // ID = registrar's categories.id (dipakai sebagai `category_id` di document
 // upload). Web builder simpan ini di user_documents.registrar_category_id.

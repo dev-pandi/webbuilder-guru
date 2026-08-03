@@ -34,8 +34,9 @@ func NewRegistry(r *payments.Repo) *Registry {
 	// Auto-register built-in gateways. Order tidak matter.
 	reg.Register(payments.CodeManualBank, buildManualBank)
 	reg.Register(payments.CodeMidtrans, buildMidtrans)
-	// paylabs, deposit_wallet — TBD nanti (Paylabs punya API mirip; wallet
-	// butuh internal wallet package yang belum ada di web builder side).
+	reg.Register(payments.CodePaylabs, buildPaylabs)
+	// deposit_wallet — TBD nanti (butuh WalletGateway impl yang link ke
+	// internal wallet_local package + PurchaseV2 synchronous debit flow).
 	return reg
 }
 

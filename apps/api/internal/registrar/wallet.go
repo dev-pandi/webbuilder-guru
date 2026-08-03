@@ -12,11 +12,17 @@ import (
 	"strconv"
 )
 
-// Wallet endpoints — proxy ke registrar-api reseller wallet (plan section 15).
+// DEPRECATED (Fase 1 self-sufficient): Wallet endpoints — proxy ke
+// registrar-api reseller wallet. Diganti dengan `internal/wallet_local`
+// yang authoritative di web builder DB.
 //
-// Boundary: web-builder = transparent proxy. Wallet balance + ledger tetap
-// authoritative di registrar. Client di sini hanya forward HTTP + type-safe
-// unmarshal.
+// Timeline removal: setelah frontend fully migrate ke `/wallet/v2` endpoint.
+// Sampai itu, method di file ini tetap available untuk hybrid mode
+// (`REGISTRAR_API_URL` set). Kalau self-sufficient (`REGISTRAR_API_URL=""`),
+// semua method di sini akan error "not configured" saat di-call.
+//
+// Lihat [docs/migration-registrar-to-api-registry.md] Step 5 untuk migrate
+// balance existing dari registrar-api ke wallet_local.
 
 // GetWallet — GET /v1/api/user/reseller/wallet.
 // Return balance + recent 20 ledger entries. Auto-init wallet row di registrar

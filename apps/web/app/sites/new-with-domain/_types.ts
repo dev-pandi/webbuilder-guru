@@ -54,6 +54,21 @@ export type PurchaseResp = {
   payment_url?: string;
 };
 
+// PurchaseV2Resp — shape response dari POST /api/v1/domains/purchase/v2
+// (2-phase self-sufficient checkout). Extends PurchaseResp dengan info
+// invoice + total + due_at.
+export type PurchaseV2Resp = {
+  job_id: string;      // = invoice_id string
+  invoice_id: string;
+  domain: string;
+  status: string;      // "pending_payment"
+  payment_url?: string;
+  instructions?: string; // untuk manual_bank
+  total: number;       // IDR minor unit
+  currency: string;
+  due_at: string;      // RFC3339
+};
+
 // Document = 1 baris di library registrar user tsb (proxied). ID dipakai
 // pre-attach di purchase → registrar auto-link, skip pending_document.
 export type Document = {

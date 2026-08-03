@@ -113,6 +113,12 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Post("/invoices/:id/cancel", deps.Invoices.CancelAdmin)
 	}
 
+	// Wallet local admin — manual adjustment (refund, credit promo, koreksi
+	// bug). Full audit trail via ledger.
+	if deps.WalletLocal != nil {
+		g.Post("/wallet/v2/adjust", deps.WalletLocal.AdminAdjust)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {

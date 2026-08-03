@@ -39,6 +39,7 @@ import (
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
 	"github.com/webbuilder/api/internal/wallet"
+	"github.com/webbuilder/api/internal/wallet_local"
 	"github.com/webbuilder/api/internal/zones"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -133,6 +134,11 @@ type Deps struct {
 	// PaymentWebhook — receiver `/webhooks/payment/:code`. Dispatch ke
 	// paymentgw.Gateway.HandleWebhook + invoices.MarkPaid. Nil-safe.
 	PaymentWebhook *paymentwh.Handler
+
+	// WalletLocal — Phase 1 self-sufficient wallet (menggantikan legacy
+	// wallet.Handler yang proxy ke registrar-api). Endpoints versioned
+	// di /wallet/v2 supaya coexist dengan legacy sampai frontend migrate.
+	WalletLocal *wallet_local.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

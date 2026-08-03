@@ -321,4 +321,13 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/invoices/v2/:id", deps.Invoices.GetMine)
 		authed.Get("/invoices/v2/:id/pdf", deps.Invoices.GetPDFMine)
 	}
+
+	// Wallet local — Phase 1 self-sufficient. Versioned `/wallet/v2` supaya
+	// tidak collision dengan legacy `/reseller/wallet`/`/agent/wallet` yang
+	// proxy ke registrar-api. Semua authenticated user boleh punya wallet
+	// (bukan hanya reseller/agent).
+	if deps.WalletLocal != nil {
+		authed.Get("/wallet/v2", deps.WalletLocal.GetBalance)
+		authed.Get("/wallet/v2/ledger", deps.WalletLocal.ListLedger)
+	}
 }
