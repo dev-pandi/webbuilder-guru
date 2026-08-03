@@ -1,11 +1,11 @@
 "use client";
 
 // Agent wallet dashboard — view saldo agent (read-only). Data dari
-// `wallet_local` via `/api/v1/wallet/v2` (Phase 1 self-sufficient).
+// `wallet_local` via `/api/v1/wallet` (Phase 1 self-sufficient).
 //
 // Note: di flow self-sufficient, tiap user (termasuk agent) punya balance
 // sendiri di `wallet_balances`. Top-up mandiri belum tersedia — admin
-// credit manual via /admin/wallet/v2/adjust.
+// credit manual via /admin/wallet/adjust.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -47,8 +47,8 @@ export default function AgentWalletPage() {
     setErr(null);
     try {
       const [b, l] = await Promise.all([
-        api<WalletBalance>("/api/v1/wallet/v2"),
-        api<{ items: LedgerEntry[] }>("/api/v1/wallet/v2/ledger?limit=5"),
+        api<WalletBalance>("/api/v1/wallet"),
+        api<{ items: LedgerEntry[] }>("/api/v1/wallet/ledger?limit=5"),
       ]);
       setBalance(b);
       setRecent(l.items || []);

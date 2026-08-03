@@ -1,6 +1,6 @@
 "use client";
 
-// Ledger detail — paginated dari `/api/v1/wallet/v2/ledger` (Phase 1
+// Ledger detail — paginated dari `/api/v1/wallet/ledger` (Phase 1
 // self-sufficient). Filter kind client-side (backend belum support filter
 // per reason — bisa di-add nanti).
 
@@ -56,7 +56,7 @@ export default function LedgerPage() {
     setLoading(true);
     setErr(null);
     const q = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
-    api<LedgerListResp>(`/api/v1/wallet/v2/ledger?${q.toString()}`)
+    api<LedgerListResp>(`/api/v1/wallet/ledger?${q.toString()}`)
       .then((res) => setItems(res.items ?? []))
       .catch((e) => setErr((e as Error).message))
       .finally(() => setLoading(false));

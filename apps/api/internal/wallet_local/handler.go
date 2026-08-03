@@ -13,10 +13,10 @@ import (
 // Handler — user-facing wallet endpoints.
 //
 // Scope MVP:
-//   - GET  /wallet/v2         — balance current
-//   - GET  /wallet/v2/ledger  — history paginated
+//   - GET  /wallet         — balance current
+//   - GET  /wallet/ledger  — history paginated
 //
-// Topup flow (POST /wallet/v2/topup) DEFERRED — butuh invoice + payment
+// Topup flow (POST /wallet/topup) DEFERRED — butuh invoice + payment
 // gateway integration (pattern sama dengan PurchaseV2). Untuk MVP, admin
 // bisa credit manual via SQL atau via admin endpoint (belum di-implement).
 type Handler struct {
@@ -25,7 +25,7 @@ type Handler struct {
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
 
-// --- GET /api/v1/wallet/v2 ---
+// --- GET /api/v1/wallet ---
 func (h *Handler) GetBalance(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	if uid == uuid.Nil {
@@ -38,7 +38,7 @@ func (h *Handler) GetBalance(c *fiber.Ctx) error {
 	return httpx.OK(c, b)
 }
 
-// --- GET /api/v1/wallet/v2/ledger?page=&limit= ---
+// --- GET /api/v1/wallet/ledger?page=&limit= ---
 func (h *Handler) ListLedger(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	if uid == uuid.Nil {
@@ -60,7 +60,7 @@ func (h *Handler) ListLedger(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"items": items, "page": page, "limit": limit})
 }
 
-// --- Admin endpoint: POST /api/v1/admin/wallet/v2/adjust ---
+// --- Admin endpoint: POST /api/v1/admin/wallet/adjust ---
 //
 // Manual balance adjustment (audit trail via ledger). Butuh admin role
 // (di-guard di router level). Untuk operator support case: refund manual,

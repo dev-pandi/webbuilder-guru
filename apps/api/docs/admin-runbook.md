@@ -20,13 +20,7 @@ ke `registrar-api` PANDI).
 Edit `infra/.env`:
 
 ```bash
-# --- Web builder API self-sufficient mode ---
-REGISTRAR_API_URL=                        # KOSONGKAN → skip legacy proxy
-REGISTRAR_API_KEY=
-REGISTRAR_RESELLER_EMAIL=
-REGISTRAR_RESELLER_PASSWORD=
-
-# api-registry backend
+# --- Web builder API (self-sufficient) ---
 API_REGISTRY_URL=http://api-registry:5000
 API_REGISTRY_HMAC_SECRET=<32-char-min>    # generate: openssl rand -hex 32
 API_REGISTRY_TIMEOUT=30s
@@ -42,26 +36,23 @@ EPP_KEY_FILE=/etc/api-registry/epp-client.key
 EPP_CA_FILE=/etc/api-registry/pandi-ca.crt
 ```
 
-**Verify env**: `API_REGISTRY_HMAC_SECRET` di api-registry MUST match `INTERNAL_HMAC_SECRET` di api-registry side.
+**Verify env**: `API_REGISTRY_HMAC_SECRET` di web-builder MUST match `INTERNAL_HMAC_SECRET` di api-registry service.
 
 ### 1.3 Start services
 
 ```bash
 cd infra/
 docker compose up -d postgres api-registry api web renderer
-docker compose logs api | grep "self-sufficient mode"
+docker compose logs api | grep "registrar client"
 ```
 
 Harusnya muncul log:
 ```
-registrar client: enabled  legacy_base_url=  api_registry_url=http://api-registry:5000
-registrar client: self-sufficient mode — legacy registrar-api backend disabled,
-                  EPP via api-registry only
+registrar client: enabled (self-sufficient, EPP via api-registry)
+  api_registry_url=http://api-registry:5000  timeout=30s
 ```
 
-Kalau muncul → migrasi self-sufficient sukses. Kalau tampil error
-`dial tcp [::1]:3002: connect: connection refused` → env `REGISTRAR_API_URL`
-belum di-kosongkan.
+Kalau `registrar client: disabled` → `API_REGISTRY_URL` belum di-set.
 
 ### 1.4 Admin bootstrap
 
@@ -308,9 +299,8 @@ docker compose up -d
 |---|---|---|
 | `DATABASE_URL` | ✅ | Postgres connection |
 | `JWT_SECRET` | ✅ | Min 32 char di production |
-| `API_REGISTRY_URL` | ✅ (self-sufficient) | http://api-registry:5000 di compose |
-| `API_REGISTRY_HMAC_SECRET` | ✅ (self-sufficient) | Match api-registry side |
-| `REGISTRAR_API_URL` | ❌ | Kosongkan untuk self-sufficient mode |
+| `API_REGISTRY_URL` | ✅ | http://api-registry:5000 di compose |
+| `API_REGISTRY_HMAC_SECRET` | ✅ | Match api-registry `INTERNAL_HMAC_SECRET` |
 | `ADMIN_EMAIL` + `ADMIN_PASSWORD` | ✅ (first-time) | Bootstrap admin user |
 | `CADDY_ASK_SECRET` | ✅ (kalau pakai Caddy) | On-demand TLS |
 | `SMTP_*` | ⚠ | Kalau `MAIL_DRIVER=smtp` |

@@ -46,7 +46,7 @@ export function RenewDialog({
     setSubmitting(true);
     try {
       const res = await api<{ job_id: string }>(
-        `/api/v1/domains/${encodeURIComponent(domain)}/renew/v2`,
+        `/api/v1/domains/${encodeURIComponent(domain)}/renew`,
         {
           method: "POST",
           headers: { "Idempotency-Key": idempotencyKey },

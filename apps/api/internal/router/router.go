@@ -70,13 +70,12 @@ type Deps struct {
 	Caddy  *caddy.Handler
 	Public *public.Handler
 
-	// Registrar is the domain-purchase client. May be nil (feature disabled
-	// when REGISTRAR_API_URL is empty) — callers must nil-check.
+	// Registrar is the EPP client wrapping api-registry service. May be nil
+	// (feature disabled when API_REGISTRY_URL is empty) — callers must nil-check.
 	Registrar *registrar.Client
 
-	// DomainPurchase menjembatani frontend ↔ registrar. Handler check/purchase/
-	// status/webhook + attach document (multipart passthrough). Nil kalau
-	// registrar disabled (client wrapper nil).
+	// DomainPurchase — handler check/purchase/renew/retry + local job tracker.
+	// Nil kalau registrar client tidak configured.
 	DomainPurchase *domain_purchase.Handler
 
 	Admin *admin.Handler

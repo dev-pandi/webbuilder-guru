@@ -35,7 +35,7 @@ type renewV2Req struct {
 
 // RenewV2 — Phase A checkout untuk renew.
 //
-// POST /api/v1/domains/:name/renew/v2
+// POST /api/v1/domains/:name/renew
 // Body: renewV2Req
 // Header: Idempotency-Key wajib.
 func (h *Handler) RenewV2(c *fiber.Ctx) error {

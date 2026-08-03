@@ -9,7 +9,7 @@
 //   3. Setelah sukses, list refresh + toast.
 //
 // Phase 2 self-sufficient: file disimpan lokal (assets.Storage) via
-// /api/v1/documents/v2. Blob preview lewat data URI.
+// /api/v1/documents. Blob preview lewat data URI.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -68,8 +68,8 @@ export function DocumentsCard() {
 
   useEffect(() => {
     Promise.allSettled([
-      api<Category[]>("/api/v1/documents/v2/categories"),
-      api<{ items: Document[] }>("/api/v1/documents/v2"),
+      api<Category[]>("/api/v1/documents/categories"),
+      api<{ items: Document[] }>("/api/v1/documents"),
     ])
       .then(([cats, list]) => {
         if (cats.status === "fulfilled") {
@@ -89,7 +89,7 @@ export function DocumentsCard() {
   async function refresh() {
     setRefreshing(true);
     try {
-      const list = await api<{ items: Document[] }>("/api/v1/documents/v2");
+      const list = await api<{ items: Document[] }>("/api/v1/documents");
       setDocs(list?.items ?? []);
     } catch (e) {
       toast.error((e as Error).message);
@@ -243,7 +243,7 @@ function DocumentRow({ doc }: { doc: Document }) {
   );
 }
 
-// PreviewDialog fetch content via /api/v1/documents/v2/:id. Response
+// PreviewDialog fetch content via /api/v1/documents/:id. Response
 // `image` sudah data URI (`data:image/png;base64,...` atau
 // `data:application/pdf;base64,...`), langsung set ke <img> / <iframe>
 // tanpa transform.
@@ -254,7 +254,7 @@ function PreviewDialog({ doc, onClose }: { doc: Document; onClose: () => void })
 
   useEffect(() => {
     let cancelled = false;
-    api<{ id: string; type: string; image: string }>(`/api/v1/documents/v2/${doc.id}`)
+    api<{ id: string; type: string; image: string }>(`/api/v1/documents/${doc.id}`)
       .then((res) => {
         if (!cancelled) setPreview({ image: res.image, type: res.type });
       })
@@ -385,7 +385,7 @@ function UploadForm({
       fd.append("category_id", String(categoryID));
       // displayName tidak dipakai backend V2 (nama dari file.name saja).
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents/v2`,
+        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },

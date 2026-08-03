@@ -902,16 +902,7 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 
 // ------------- Admin: registrar webhook config -------------
 //
-// Endpoint di bawah HANYA di-mount di /api/v1/admin/* — proteksi via
-// auth.RequireAdmin di router. Berbeda dari `Webhook` yang menerima callback
-// dari registrar (HMAC-authed, no JWT); yang di bawah adalah reseller-scoped
-// config di registrar (siapa URL webhook + rotate secret).
-//
-// Alur operasional:
-//   1. Admin buka /admin/registrar → dashboard load `AdminGetWebhookConfig`
-//   2. Kalau URL kosong / mau pindah: input URL baru → `AdminSetWebhookConfig`
-//   3. Response ada `webhook_secret` — SEKALI ini muncul. Admin salin ke env
-//      `REGISTRAR_WEBHOOK_SECRET` + restart API supaya HMAC verify pakai secret baru.
+// Admin endpoints — /api/v1/admin/* — proteksi via auth.RequireAdmin di router.
 
 // AdminListPurchases — GET /api/v1/admin/registrar/purchases
 //

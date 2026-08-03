@@ -78,8 +78,9 @@ docker build -t webbuilder/api-registry:latest .
 ```
 
 Sudah wired di [`infra/docker-compose.yml`](../../infra/docker-compose.yml)
-sebagai service `api-registry` — reuse env `REGISTRAR_*` dari sisi `api`
-plus `API_REGISTRY_*` var baru (lihat [`infra/.env.example`](../../infra/.env.example)).
+sebagai service `api-registry`. Env var pakai `EPP_*` untuk direct mode +
+`API_REGISTRY_*` untuk konfigurasi service (lihat
+[`infra/.env.example`](../../infra/.env.example)).
 
 ## Endpoints
 
@@ -313,12 +314,10 @@ Coverage (55+ tests, all `-race` safe):
   - [x] WHOIS TCP:43 client + parser + EPP `domain:info` fallback
   - [x] Unit test: error mapping + response parsing + capability shape + validation guards
   - [ ] Follow-up: integration test terhadap PANDI OT&E sandbox real (butuh credentials)
-- [x] **Fase 1c (initial)**: web builder dual-backend switch untuk EPP-native read-heavy call — [apps/api/internal/registrar/apiregistry_adapter.go](../api/internal/registrar/apiregistry_adapter.go)
-  - [x] Config: `API_REGISTRY_URL` + `API_REGISTRY_HMAC_SECRET` + `API_REGISTRY_TIMEOUT` (env off = behavior lama)
-  - [x] Routed: `CheckDomain`, `Whois`, `GetNameservers`, `UpdateNameservers` (4 method EPP-native murni)
-  - [x] Test: 8 test — routing switch, type translation, error mapping, legacy-mode compatibility
-  - [ ] Follow-up: route `RegisterDomain` + `RenewDomain` + `GetRegisterStatus` + `RetryDomain` — perlu Phase 1 self-sufficient dulu (payment/invoice pindah ke web builder supaya tidak coupling ke registrar-api PANDI)
-  - [ ] Follow-up: route contact methods (`GetResellerContact`, `UpdateResellerContactByID`, `UpdateResellerDomainContact`) — perlu NicHandle + CountryID exposed di api-registry response ATAU refactor consumer supaya tidak tergantung field tersebut
+- [x] **Fase 1c**: web builder full-switch ke api-registry — [apps/api/internal/registrar/apiregistry_adapter.go](../api/internal/registrar/apiregistry_adapter.go)
+  - [x] Config: `API_REGISTRY_URL` + `API_REGISTRY_HMAC_SECRET` + `API_REGISTRY_TIMEOUT`
+  - [x] Semua EPP-native call route ke api-registry: `CheckDomain`, `Whois`, `GetNameservers`, `UpdateNameservers`, `RegisterDomainDirect`, `RenewDomainDirect`
+- [x] **Fase 3**: legacy registrar-api PANDI proxy dihapus di web builder — full self-sufficient (payment/invoice/wallet/document lokal di web builder + EPP lewat api-registry)
 - [ ] Fase 2a: async job runner (Asynq/Redis) — swap `MemoryStore`
 - [ ] Fase 2b: multi-registry support (Verisign untuk .com, dsb.)
 

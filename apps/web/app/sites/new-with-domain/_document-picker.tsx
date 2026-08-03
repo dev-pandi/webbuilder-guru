@@ -5,7 +5,7 @@
 //   1. Pilih dokumen existing dari library (sudah upload sebelumnya)
 //   2. Upload dokumen baru (disimpan di storage internal)
 //
-// Phase 2 self-sufficient: /api/v1/documents/v2/* — dokumen tersimpan di
+// Phase 2 self-sufficient: /api/v1/documents/* — dokumen tersimpan di
 // web builder assets storage (bukan proxy registrar).
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -45,8 +45,8 @@ export function DocumentPicker({
   useEffect(() => {
     // Load categories + existing library documents in parallel.
     Promise.allSettled([
-      api<DocumentCategory[]>("/api/v1/documents/v2/categories"),
-      api<{ items: Document[] }>("/api/v1/documents/v2"),
+      api<DocumentCategory[]>("/api/v1/documents/categories"),
+      api<{ items: Document[] }>("/api/v1/documents"),
     ])
       .then(([cats, list]) => {
         if (cats.status === "fulfilled") setCategories(cats.value ?? []);
@@ -57,7 +57,7 @@ export function DocumentPicker({
 
   async function refreshDocs() {
     try {
-      const list = await api<{ items: Document[] }>("/api/v1/documents/v2");
+      const list = await api<{ items: Document[] }>("/api/v1/documents");
       setDocs(list?.items ?? []);
     } catch (e) {
       toast.error((e as Error).message);
@@ -257,7 +257,7 @@ function UploadForm({
       fd.append("category_id", String(categoryID));
       // suggestedName tidak dipakai backend V2 (nama dari file.name saja).
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents/v2`,
+        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },

@@ -2,12 +2,12 @@
 
 // Reseller wallet dashboard — balance + recent ledger.
 // Sumber data: `wallet_local` package (Phase 1 self-sufficient) via
-// `/api/v1/wallet/v2` endpoint. Legacy `/api/v1/reseller/wallet` (proxy ke
+// `/api/v1/wallet` endpoint. Legacy `/api/v1/reseller/wallet` (proxy ke
 // registrar-api) sudah tidak dipakai — di-guard return 503 di backend
 // kalau operator jalan di mode self-sufficient.
 //
 // Top-up flow di-defer sampai `wallet_local.Topup` di-implement. Untuk
-// sementara, admin credit manual via `/admin/wallet/v2/adjust`.
+// sementara, admin credit manual via `/admin/wallet/adjust`.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -23,7 +23,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-// Shape dari GET /api/v1/wallet/v2/ledger — items[] dari wallet_local.
+// Shape dari GET /api/v1/wallet/ledger — items[] dari wallet_local.
 type LedgerEntry = {
   id: string;       // uuid
   delta: number;    // + credit, - debit (IDR minor unit)
@@ -33,7 +33,7 @@ type LedgerEntry = {
   created_at: string;
 };
 
-// Shape dari GET /api/v1/wallet/v2 — balance snapshot.
+// Shape dari GET /api/v1/wallet — balance snapshot.
 type WalletBalance = {
   balance: number;
   currency: string;
@@ -51,8 +51,8 @@ export default function ResellerWalletPage() {
     try {
       // Paralel fetch balance + last 5 ledger entries.
       const [b, l] = await Promise.all([
-        api<WalletBalance>("/api/v1/wallet/v2"),
-        api<{ items: LedgerEntry[] }>("/api/v1/wallet/v2/ledger?limit=5"),
+        api<WalletBalance>("/api/v1/wallet"),
+        api<{ items: LedgerEntry[] }>("/api/v1/wallet/ledger?limit=5"),
       ]);
       setBalance(b);
       setRecent(l.items || []);

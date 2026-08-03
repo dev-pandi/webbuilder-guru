@@ -16,10 +16,10 @@ import (
 	"github.com/webbuilder/api/internal/httpx"
 )
 
-// RetryV2 — POST /api/v1/domains/purchases/:job_id/retry/v2
+// RetryV2 — POST /api/v1/domains/purchases/:job_id/retry
 //
 // Prereq: job status=failed AND invoice status=paid. Kalau invoice belum paid,
-// user harus lunasi via /invoices/v2 dulu (webhook otomatis trigger execute).
+// user harus lunasi via /invoices dulu (webhook otomatis trigger execute).
 func (h *Handler) RetryV2(c *fiber.Ctx) error {
 	if h.invoicesSvc == nil {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "retry_v2_not_ready",

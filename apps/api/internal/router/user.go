@@ -126,12 +126,12 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/check", mutateLimit, deps.DomainPurchase.Check)
 		// Purchase + renew guarded dengan limit lebih ketat (money-moving ops).
 		purchaseLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
-		// PurchaseV2 — 2-phase self-sufficient checkout. Invoice + payment
+		// Purchase — 2-phase self-sufficient checkout. Invoice + payment
 		// lokal, EPP execute lewat api-registry via ExecuteAfterPayment.
-		authed.Post("/domains/purchase/v2", purchaseLimit, deps.DomainPurchase.PurchaseV2)
-		// RenewV2 — 2-phase self-sufficient renew. Path param `:name` untuk
-		// domain. Ownership check via GetLatestActiveByDomain.
-		authed.Post("/domains/:name/renew/v2", purchaseLimit, deps.DomainPurchase.RenewV2)
+		authed.Post("/domains/purchase", purchaseLimit, deps.DomainPurchase.PurchaseV2)
+		// Renew — 2-phase self-sufficient. Path param `:name` untuk domain.
+		// Ownership check via GetLatestActiveByDomain.
+		authed.Post("/domains/:name/renew", purchaseLimit, deps.DomainPurchase.RenewV2)
 		// Domain management (nameservers + whois) — semua verify ownership.
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
@@ -147,9 +147,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/domains/purchases/:job_id", deps.DomainPurchase.Status)
 		// Attach site ke job yang sudah active (link ke sites row lokal).
 		authed.Post("/domains/purchases/:job_id/attach", mutateLimit, deps.DomainPurchase.Attach)
-		// RetryV2 — re-run ExecuteAfterPayment untuk failed job (invoice
-		// paid tapi EPP CREATE gagal). Tidak bayar ulang.
-		authed.Post("/domains/purchases/:job_id/retry/v2", mutateLimit, deps.DomainPurchase.RetryV2)
+		// Retry — re-run ExecuteAfterPayment untuk failed job (invoice paid
+		// tapi EPP CREATE gagal). Tidak bayar ulang.
+		authed.Post("/domains/purchases/:job_id/retry", mutateLimit, deps.DomainPurchase.RetryV2)
 	}
 
 	// Products
@@ -265,35 +265,28 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/payment-methods", deps.Payments.ListPublic)
 	}
 
-	// Invoices user — versioned path `/invoices/v2` supaya tidak collision
-	// dengan legacy `/invoices` yang masih di-mount ke DomainPurchase.ListInvoices
-	// (proxy registrar-api PANDI). Setelah frontend migrate ke local invoices
-	// + payment gateway 2-phase, legacy path bisa di-remove.
+	// Invoices — self-sufficient invoice state machine + PDF renderer.
 	if deps.Invoices != nil {
-		authed.Get("/invoices/v2", deps.Invoices.ListMine)
-		authed.Get("/invoices/v2/:id", deps.Invoices.GetMine)
-		authed.Get("/invoices/v2/:id/pdf", deps.Invoices.GetPDFMine)
+		authed.Get("/invoices", deps.Invoices.ListMine)
+		authed.Get("/invoices/:id", deps.Invoices.GetMine)
+		authed.Get("/invoices/:id/pdf", deps.Invoices.GetPDFMine)
 	}
 
-	// Wallet local — Phase 1 self-sufficient. Versioned `/wallet/v2` supaya
-	// tidak collision dengan legacy `/reseller/wallet`/`/agent/wallet` yang
-	// proxy ke registrar-api. Semua authenticated user boleh punya wallet
-	// (bukan hanya reseller/agent).
+	// Wallet — self-sufficient wallet (balance + ledger). Semua authenticated
+	// user boleh punya wallet (bukan hanya reseller/agent).
 	if deps.WalletLocal != nil {
-		authed.Get("/wallet/v2", deps.WalletLocal.GetBalance)
-		authed.Get("/wallet/v2/ledger", deps.WalletLocal.ListLedger)
+		authed.Get("/wallet", deps.WalletLocal.GetBalance)
+		authed.Get("/wallet/ledger", deps.WalletLocal.ListLedger)
 	}
 
-	// Documents local — Phase 2 self-sufficient. Versioned `/documents/v2`
-	// supaya coexist dengan legacy `/documents/*` (proxy) selama migration.
-	// Semua authenticated user boleh punya dokumen (dipakai saat register
-	// domain di TLD yang butuh verifikasi identitas mis. .id).
+	// Documents — dokumen kepatuhan (KTP/NPWP/dll.) untuk domain register
+	// di TLD yang butuh verifikasi identitas (mis. .id).
 	if deps.Documents != nil {
 		uploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
-		authed.Get("/documents/v2/categories", deps.Documents.ListCategories)
-		authed.Get("/documents/v2", deps.Documents.ListMine)
-		authed.Post("/documents/v2", uploadLimit, deps.Documents.Upload)
-		authed.Get("/documents/v2/:id", deps.Documents.Show)
-		authed.Delete("/documents/v2/:id", deps.Documents.Delete)
+		authed.Get("/documents/categories", deps.Documents.ListCategories)
+		authed.Get("/documents", deps.Documents.ListMine)
+		authed.Post("/documents", uploadLimit, deps.Documents.Upload)
+		authed.Get("/documents/:id", deps.Documents.Show)
+		authed.Delete("/documents/:id", deps.Documents.Delete)
 	}
 }

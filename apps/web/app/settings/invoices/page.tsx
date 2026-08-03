@@ -1,7 +1,7 @@
 "use client";
 
 // /settings/invoices — riwayat invoice user dari sistem local invoices
-// (Phase 1 self-sufficient, canonical path). Sumber data: /api/v1/invoices/v2
+// (Phase 1 self-sufficient, canonical path). Sumber data: /api/v1/invoices
 // (wallet_local + invoices_local). Legacy proxy ke registrar-api sudah
 // tidak dipakai — component InvoicesList lama telah dihapus.
 
@@ -81,7 +81,7 @@ export default function InvoicesPage() {
     setLoading(true);
     try {
       const res = await api<{ items: Invoice[] }>(
-        `/api/v1/invoices/v2?page=${page}&limit=20`,
+        `/api/v1/invoices?page=${page}&limit=20`,
       );
       setItems(res.items || []);
     } catch (e: unknown) {
@@ -168,7 +168,7 @@ export default function InvoicesPage() {
                         {formatDate(inv.created_at)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link href={`/api/v1/invoices/v2/${inv.id}/pdf`} target="_blank">
+                        <Link href={`/api/v1/invoices/${inv.id}/pdf`} target="_blank">
                           <Button size="sm" variant="ghost" title="Cetak / preview PDF">
                             <Printer className="size-3.5" />
                             <span className="ml-1 hidden lg:inline">Cetak</span>

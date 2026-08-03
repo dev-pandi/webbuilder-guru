@@ -277,21 +277,20 @@ Ini penjelasan **end-to-end** dari user klik "Beli Domain" sampai domainnya bisa
 
 ### FASE 1 — Purchase (~5 menit, user-driven)
 
-**Yang terjadi:**
+**Yang terjadi (Phase 3 self-sufficient):**
 
 1. User buka `/sites/new-with-domain` → cari domain → pilih hasil
-2. Frontend POST `/api/v1/domains/purchase` dengan header `Idempotency-Key`
-3. Web-builder API proxy ke registrar-api `/v1/api/user/reseller/domain/register`
-4. Registrar bikin `reseller_domain_jobs` row + invoice + payment_url (Midtrans/Paylabs)
-5. Response `{ job_id, payment_url, status: "pending_payment" }`
-6. User redirect ke `/sites/pending/<job_id>` — polling status tiap 2 detik
-7. User klik "Buka halaman pembayaran" → bayar di Midtrans/Paylabs
-8. Payment gateway callback ke registrar → status `pending_payment` → `pending_provisioning`
+2. Frontend POST `/api/v1/domains/purchase/v2` dengan header `Idempotency-Key`
+3. Web-builder API: lookup harga dari `platform_prices` + bikin `invoices` row lokal + panggil paymentgw untuk CreateCharge
+4. Response `{ job_id, payment_url, status: "pending_payment" }` (untuk gateway) atau `status: "active"` (untuk `deposit_wallet` — sync flow)
+5. User redirect ke `/sites/pending/<job_id>` — polling status tiap 2 detik
+6. User klik "Buka halaman pembayaran" → bayar di Midtrans/Paylabs
+7. Payment gateway webhook → paymentwh mark invoice paid → `ExecuteAfterPayment` callback
 
 **Debug fase 1:**
 
 ```bash
-# Status job dari registrar
+# Status job dari local job tracker
 curl -H "Authorization: Bearer $USER_JWT" \
   https://api.example.com/api/v1/domains/purchases/<job_id>
 
@@ -301,36 +300,38 @@ sudo journalctl -u webbuilder-api -f | grep "domain_purchase"
 
 **Failure mode:**
 - 400 `idempotency_key_required` → frontend miss header, retry akan bikin double-charge kalau tidak fix
-- 409 dari registrar → job existing untuk domain sama masih pending, backend seharusnya resume via `FindResumableJob`
+- 402 `wallet_insufficient` → user pilih `deposit_wallet` tapi saldo kurang, redirect ke top-up
 
 ---
 
 ### FASE 2 — Provisioning EPP (~5 menit, otomatis)
 
-**Yang terjadi:**
+**Yang terjadi (Phase 3 self-sufficient):**
 
-1. Registrar-api background worker terima payment webhook → status `pending_provisioning`
-2. Worker jalankan EPP CREATE ke registry .id (PANDI) atau TLD lain
-3. Registry balik OK → status `active` + `expires_at` di-set
-4. Registrar-api fire webhook ke web-builder: `POST /webhooks/registrar/domain-status`
-5. Web-builder verify HMAC signature + timestamp (max 60 detik) → update `domain_purchases` row lokal ke `active`
+1. Payment gateway (Midtrans/Paylabs) fire webhook ke `/webhooks/payment/:code`
+2. Paymentwh handler verify signature + mark invoice paid
+3. `ExecuteAfterPayment` callback dispatch: `RegisterDomainDirect` ke api-registry lewat `/v1/domains/register` (HMAC-signed)
+4. api-registry jalankan EPP CREATE → registry .id (PANDI) atau TLD lain
+5. Response sync → web-builder update `domain_purchases` row lokal ke `active` + `expires_at`
+6. Auto-attach ke Cloudflare (kalau enabled) via `tryAttachToCloudflare`
 
 **Debug fase 2:**
 
 ```bash
-# Log webhook receiver
-sudo journalctl -u webbuilder-api -f | grep "webhook"
+# Log payment webhook receiver
+sudo journalctl -u webbuilder-api -f | grep "paymentwh"
+
+# Log EPP execute
+sudo journalctl -u webbuilder-api -f | grep "execute_after_payment"
 
 # Metric via Prometheus
-curl http://127.0.0.1:8080/metrics | grep domain_purchase_webhooks_total
+curl http://127.0.0.1:8080/metrics | grep domain_purchase
 ```
 
 **Failure mode:**
-- Webhook `invalid_signature` → `REGISTRAR_WEBHOOK_SECRET` beda antara registrar dan web-builder
-- Webhook `stale_timestamp` → clock skew server > 60s (fix: `sudo timedatectl set-ntp true`)
-- Registry EPP reject → status jadi `failed`, user lihat "Coba lagi" di pending page
-
-**Self-heal:** kalau webhook drop total, periodic sync goroutine di web-builder pull ground truth dari registrar tiap 6 jam. User juga bisa trigger manual via tombol "Sinkronkan" di `/settings/domains`.
+- Payment webhook `invalid_signature` → gateway secret salah, cek admin panel /admin/payment-methods
+- api-registry unreachable → `RegisterDomainDirect` return 502, job status = `failed`, user lihat "Coba lagi" di pending page
+- Registry EPP reject → status jadi `failed`, user retry via tombol "Coba lagi" (memanggil `POST /purchases/:job_id/retry/v2` — re-execute tanpa charge ulang)
 
 ---
 

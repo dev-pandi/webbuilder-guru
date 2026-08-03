@@ -54,7 +54,7 @@ export type PurchaseResp = {
   payment_url?: string;
 };
 
-// PurchaseV2Resp — shape response dari POST /api/v1/domains/purchase/v2
+// PurchaseV2Resp — shape response dari POST /api/v1/domains/purchase
 // (2-phase self-sufficient checkout). Extends PurchaseResp dengan info
 // invoice + total + due_at.
 export type PurchaseV2Resp = {

@@ -262,7 +262,7 @@ export default function PendingDomainPage() {
     setErr(null);
     setRetrying(true);
     try {
-      await api(`/api/v1/domains/purchases/${jobId}/retry/v2`, { method: "POST" });
+      await api(`/api/v1/domains/purchases/${jobId}/retry`, { method: "POST" });
       toast.success("Retry dikirim ke registrar — status akan update otomatis");
       // Force segera refresh; polling loop akan lanjut setelah ini.
       try {
@@ -784,7 +784,7 @@ function DocumentUpload({
     // Categories dari documents_local (V2). Section ini hanya render untuk
     // legacy job status="pending_document" — di V2 flow dokumen pre-attach
     // di purchase step, jadi state ini biasanya tidak ketemu.
-    api<DocCategory[]>("/api/v1/documents/v2/categories")
+    api<DocCategory[]>("/api/v1/documents/categories")
       .then((list) => {
         setCategories(list ?? []);
         if (list && list.length > 0) setCategoryID(list[0].id);
@@ -817,8 +817,11 @@ function DocumentUpload({
       const fd = new FormData();
       fd.append("file", file);
       fd.append("category_id", String(categoryID));
+      // Upload ke library dokumen lokal — di flow self-sufficient tidak ada
+      // "attach ke job" (dokumen di-review out-of-band oleh admin). File tetap
+      // tersimpan supaya bisa di-pre-attach di purchase berikutnya.
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/domains/purchases/${jobId}/documents`,
+        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
@@ -829,7 +832,7 @@ function DocumentUpload({
       if (!res.ok || body.error) {
         throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
       }
-      toast.success("Dokumen dikirim ke registrar");
+      toast.success("Dokumen tersimpan di library");
       // Reset form + biar caller refresh status.
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -852,8 +855,8 @@ function DocumentUpload({
       <CardContent>
         <p className="mb-4 text-sm text-muted-foreground">
           Domain <code>{domain}</code> butuh verifikasi identitas (KTP/NPWP sesuai
-          regulasi Kemenkominfo). Upload dokumen di bawah — file dikirim langsung
-          ke registrar tanpa disimpan di server kami.
+          regulasi Kemenkominfo). Upload dokumen di bawah — akan tersimpan di
+          library dokumen Anda + di-review oleh admin.
         </p>
 
         <form onSubmit={onSubmit} className="space-y-4">

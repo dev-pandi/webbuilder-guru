@@ -110,7 +110,7 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	// Wallet local admin — manual adjustment (refund, credit promo, koreksi
 	// bug). Full audit trail via ledger.
 	if deps.WalletLocal != nil {
-		g.Post("/wallet/v2/adjust", deps.WalletLocal.AdminAdjust)
+		g.Post("/wallet/adjust", deps.WalletLocal.AdminAdjust)
 	}
 
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF

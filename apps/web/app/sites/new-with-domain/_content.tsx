@@ -76,9 +76,9 @@ export function NewWithDomainContent() {
         const self = await api<Me & { role?: string }>("/api/v1/auth/me");
         setCallerRole(self.role || "");
         // Wallet — reseller/agent kedua-duanya punya wallet lokal di
-        // `/wallet/v2` (Phase 1 self-sufficient). Client tidak punya wallet.
+        // `/wallet` (Phase 1 self-sufficient). Client tidak punya wallet.
         if (self.role === "reseller" || self.role === "agent") {
-          api<{ balance: number }>("/api/v1/wallet/v2")
+          api<{ balance: number }>("/api/v1/wallet")
             .then((w) => setWalletBalance(w.balance))
             .catch(() => setWalletBalance(0));
         } else {
@@ -204,7 +204,7 @@ export function NewWithDomainContent() {
     setErr(null);
     setPurchasing(true);
     try {
-      const res = await api<PurchaseV2Resp>("/api/v1/domains/purchase/v2", {
+      const res = await api<PurchaseV2Resp>("/api/v1/domains/purchase", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({

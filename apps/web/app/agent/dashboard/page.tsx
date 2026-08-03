@@ -36,7 +36,7 @@ export default function AgentDashboardPage() {
     api<PurchaseRow[]>("/api/v1/agent/purchases?limit=10")
       .then((r) => setPurchases(r ?? []))
       .catch(() => setPurchases([]));
-    api<WalletSnapshot>("/api/v1/wallet/v2")
+    api<WalletSnapshot>("/api/v1/wallet")
       .then((w) => setWallet(w))
       .catch(() => setWallet({ balance: 0, currency: "IDR" }));
     api<Stats>("/api/v1/agent/stats")
