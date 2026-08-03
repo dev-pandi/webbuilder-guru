@@ -158,7 +158,7 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	// keputusan produk: user hanya boleh buat situs kalau sudah beli domain.
 	if h.purchases == nil {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "purchases_disabled",
-			"Fitur beli domain belum dikonfigurasi di server (REGISTRAR_API_URL kosong).")
+			"Fitur beli domain belum dikonfigurasi di server (API_REGISTRY_URL kosong).")
 	}
 	if req.JobID == "" {
 		return httpx.Err(c, fiber.StatusBadRequest, "job_id_required",

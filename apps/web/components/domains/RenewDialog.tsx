@@ -5,10 +5,9 @@
 // konsisten.
 
 import { useMemo, useState } from "react";
-import { AlertCircle, ArrowRight, Loader2, Tag } from "lucide-react";
+import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -29,8 +28,7 @@ export function RenewDialog({
   onCreated: (jobID: string) => void;
 }) {
   const [years, setYears] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs">("midtrans");
-  const [promoCode, setPromoCode] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs" | "deposit_wallet">("midtrans");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -47,17 +45,18 @@ export function RenewDialog({
     setErr(null);
     setSubmitting(true);
     try {
-      const res = await api<{ job_id: string }>("/api/v1/domains/renew", {
-        method: "POST",
-        headers: { "Idempotency-Key": idempotencyKey },
-        body: JSON.stringify({
-          domain,
-          years,
-          payment_method: paymentMethod,
-          promo_code: promoCode.trim() || undefined,
-          return_url: `${window.location.origin}/checkout/return`,
-        }),
-      });
+      const res = await api<{ job_id: string }>(
+        `/api/v1/domains/${encodeURIComponent(domain)}/renew/v2`,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify({
+            years,
+            payment_method: paymentMethod,
+            return_url: `${window.location.origin}/checkout/return`,
+          }),
+        },
+      );
       onCreated(res.job_id);
     } catch (e) {
       setErr((e as Error).message);
@@ -73,8 +72,7 @@ export function RenewDialog({
             Perpanjang <code className="text-sm">{domain}</code>
           </DialogTitle>
           <DialogDescription>
-            Pilih durasi + metode pembayaran. Kode promo opsional — kalau tidak
-            valid, tetap lanjut dengan harga normal.
+            Pilih durasi + metode pembayaran.
           </DialogDescription>
         </DialogHeader>
 
@@ -100,33 +98,13 @@ export function RenewDialog({
             <select
               id="renew-payment"
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as "midtrans" | "paylabs")}
+              onChange={(e) => setPaymentMethod(e.target.value as "midtrans" | "paylabs" | "deposit_wallet")}
               className="h-10 w-full rounded-md border bg-background px-3 text-sm"
             >
               <option value="midtrans">Midtrans (kartu / VA / e-wallet)</option>
               <option value="paylabs">Paylabs</option>
+              <option value="deposit_wallet">Wallet (saldo internal)</option>
             </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="renew-promo">
-              Kode promo{" "}
-              <span className="text-xs font-normal text-muted-foreground">(opsional)</span>
-            </Label>
-            <div className="relative">
-              <Tag className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="renew-promo"
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                placeholder="Kosongkan kalau tidak ada"
-                maxLength={32}
-                className="pl-9 uppercase tracking-wider"
-              />
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Silent fallback ke harga normal kalau kode invalid/expired.
-            </p>
           </div>
 
           {err && (

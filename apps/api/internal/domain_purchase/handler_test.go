@@ -1,9 +1,6 @@
 package domain_purchase
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -69,40 +66,6 @@ func TestMissingProfileFields(t *testing.T) {
 		})
 	}
 }
-
-func TestVerifyHMAC(t *testing.T) {
-	secret := "s3cret"
-	body := []byte(`{"job_id":"abc","status":"active"}`)
-
-	// Buat signature valid dulu.
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	validHex := hex.EncodeToString(mac.Sum(nil))
-
-	cases := []struct {
-		name   string
-		secret string
-		header string
-		body   []byte
-		want   bool
-	}{
-		{"valid signature", secret, "sha256=" + validHex, body, true},
-		{"wrong secret", "other", "sha256=" + validHex, body, false},
-		{"tampered body", secret, "sha256=" + validHex, []byte(`{"job_id":"tampered"}`), false},
-		{"missing prefix", secret, validHex, body, false},
-		{"non-hex signature", secret, "sha256=nothex!!", body, false},
-		{"empty header", secret, "", body, false},
-		{"empty body still verifiable", secret, "sha256=" + hexHMAC(secret, nil), nil, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := verifyHMAC(c.secret, c.header, c.body); got != c.want {
-				t.Errorf("verifyHMAC = %v, want %v", got, c.want)
-			}
-		})
-	}
-}
-
 func TestToResp(t *testing.T) {
 	uid := uuid.New()
 	exp := time.Date(2027, 3, 1, 10, 30, 0, 0, time.UTC)
@@ -135,12 +98,6 @@ func TestToResp(t *testing.T) {
 }
 
 // --- helpers ---
-
-func hexHMAC(secret string, body []byte) string {
-	m := hmac.New(sha256.New, []byte(secret))
-	m.Write(body)
-	return hex.EncodeToString(m.Sum(nil))
-}
 
 func equalStringSlice(a, b []string) bool {
 	if len(a) != len(b) {

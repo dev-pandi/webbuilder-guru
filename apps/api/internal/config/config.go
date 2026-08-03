@@ -92,31 +92,10 @@ type Config struct {
 	GoogleOAuthClientSecret string
 	GoogleOAuthRedirectURL  string
 
-	// Registrar API — service-to-service integration for domain purchase.
-	// Web builder acts as a reseller. Empty URL = disabled (domain purchase UI
-	// hidden). URL set requires KEY in production (see Validate).
-	RegistrarAPIURL     string
-	RegistrarAPIKey     string
-	RegistrarAPITimeout time.Duration
-	// RegistrarWebhookSecret adalah shared secret yang di-set ke
-	// registrar-api (`POST /api/user/reseller/config/webhook`). Dipakai
-	// untuk verify HMAC signature pada callback `POST /webhooks/registrar/*`.
-	// Empty = webhook receiver otomatis 503 (fail-closed).
-	RegistrarWebhookSecret string
-
-	// Kredensial reseller untuk auto-login + JWT refresh loop. Kalau di-set,
-	// main.go akan login saat startup (override REGISTRAR_API_KEY) dan re-login
-	// tiap ~25 hari (before JWT 30-day expire). Kalau kosong, pakai
-	// REGISTRAR_API_KEY apa adanya — operator harus rotate manual.
-	RegistrarResellerEmail    string
-	RegistrarResellerPassword string
-
-	// --- api-registry (Fase 1c: dual-backend switch) ---
+	// --- api-registry (self-sufficient EPP service) ---
 	//
-	// Kalau APIRegistryURL di-set, EPP-native call (check/register/renew/nameserver/
-	// contact/whois) route ke api-registry alih dari langsung ke registrar-api
-	// PANDI. Wallet/document/invoice/admin-config tetap ke registrar-api PANDI
-	// (belum di-implement di api-registry karena bukan concern EPP).
+	// APIRegistryURL wajib untuk enable domain flow (check/register/renew/
+	// nameserver/contact/whois). Empty = domain feature disabled.
 	//
 	// Kosong = fitur off, semua call tetap ke registrar-api PANDI (behavior lama).
 	APIRegistryURL        string
@@ -176,13 +155,6 @@ func Load() Config {
 		GoogleOAuthClientID:     env("GOOGLE_OAUTH_CLIENT_ID", ""),
 		GoogleOAuthClientSecret: env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 		GoogleOAuthRedirectURL:  env("GOOGLE_OAUTH_REDIRECT_URL", ""),
-
-		RegistrarAPIURL:           env("REGISTRAR_API_URL", ""),
-		RegistrarAPIKey:           env("REGISTRAR_API_KEY", ""),
-		RegistrarAPITimeout:       envDuration("REGISTRAR_API_TIMEOUT", 15*time.Second),
-		RegistrarWebhookSecret:    env("REGISTRAR_WEBHOOK_SECRET", ""),
-		RegistrarResellerEmail:    env("REGISTRAR_RESELLER_EMAIL", ""),
-		RegistrarResellerPassword: env("REGISTRAR_RESELLER_PASSWORD", ""),
 
 		APIRegistryURL:        env("API_REGISTRY_URL", ""),
 		APIRegistryHMACSecret: env("API_REGISTRY_HMAC_SECRET", ""),
@@ -278,12 +250,6 @@ func (c Config) Validate() error {
 		if c.SMTPHost == "" || c.SMTPFrom == "" {
 			errs = append(errs, "MAIL_DRIVER=smtp requires SMTP_HOST and SMTP_FROM")
 		}
-	}
-
-	// Registrar API: turning it on requires a real key. A public URL with no
-	// key means every request 401s and users see a broken domain-purchase UI.
-	if c.RegistrarAPIURL != "" && c.RegistrarAPIKey == "" {
-		errs = append(errs, "REGISTRAR_API_URL set but REGISTRAR_API_KEY empty (service account key required)")
 	}
 
 	if len(errs) > 0 {

@@ -8,9 +8,8 @@
 //   2. User bisa expand form upload → pilih kategori + file → POST.
 //   3. Setelah sukses, list refresh + toast.
 //
-// Web builder TIDAK simpan file — semua passthrough ke registrar via
-// /api/v1/documents (transparent proxy). Dokumen dipakai saat purchase domain
-// yang butuh verifikasi identitas (KTP/NPWP).
+// Phase 2 self-sufficient: file disimpan lokal (assets.Storage) via
+// /api/v1/documents/v2. Blob preview lewat data URI.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -44,12 +43,12 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const ALLOWED_MIMES = ["image/png", "image/jpeg", "image/jpg", "application/pdf"];
 
 type Document = {
-  id: number;
+  id: string;
   name: string;
   category_id: number;
   category_name?: string;
-  doc_url: string;
-  external_user_id?: string;
+  mime_type: string;
+  size_bytes: number;
   created_at: string;
 };
 
@@ -69,8 +68,8 @@ export function DocumentsCard() {
 
   useEffect(() => {
     Promise.allSettled([
-      api<Category[]>("/api/v1/documents/categories"),
-      api<{ items: Document[] }>("/api/v1/documents?all=true"),
+      api<Category[]>("/api/v1/documents/v2/categories"),
+      api<{ items: Document[] }>("/api/v1/documents/v2"),
     ])
       .then(([cats, list]) => {
         if (cats.status === "fulfilled") {
@@ -79,9 +78,9 @@ export function DocumentsCard() {
         if (list.status === "fulfilled") {
           setDocs(list.value?.items ?? []);
         } else if (list.status === "rejected") {
-          // 503 registrar_disabled → sembunyikan form upload, tunjukkan hint.
+          // 503 documents_disabled → sembunyikan form upload, tunjukkan hint.
           const msg = (list.reason as Error)?.message?.toLowerCase() ?? "";
-          if (msg.includes("registrar")) setDisabled(true);
+          if (msg.includes("storage") || msg.includes("503")) setDisabled(true);
         }
       })
       .finally(() => setLoading(false));
@@ -90,7 +89,7 @@ export function DocumentsCard() {
   async function refresh() {
     setRefreshing(true);
     try {
-      const list = await api<{ items: Document[] }>("/api/v1/documents?all=true");
+      const list = await api<{ items: Document[] }>("/api/v1/documents/v2");
       setDocs(list?.items ?? []);
     } catch (e) {
       toast.error((e as Error).message);
@@ -133,8 +132,8 @@ export function DocumentsCard() {
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               KTP/NPWP untuk registrasi domain yang butuh verifikasi identitas
-              (mis. <code>.id</code>). File dikirim langsung ke registrar &mdash;
-              tidak disimpan di server kami.
+              (mis. <code>.id</code>). File tersimpan aman di storage internal
+              platform.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -144,7 +143,7 @@ export function DocumentsCard() {
               onClick={refresh}
               disabled={refreshing || loading}
               className="gap-1.5"
-              title="Refresh dari registrar"
+              title="Refresh"
             >
               <RefreshCw className={refreshing ? "size-3.5 animate-spin" : "size-3.5"} />
               <span className="hidden sm:inline">Refresh</span>
@@ -244,10 +243,10 @@ function DocumentRow({ doc }: { doc: Document }) {
   );
 }
 
-// PreviewDialog fetch content via /api/v1/documents/:id (proxied ke registrar
-// dengan external_user_id di-inject dari JWT). Response `image` sudah data URI
-// (`data:image/png;base64,...` atau `data:application/pdf;base64,...`),
-// langsung set ke <img> / <iframe> tanpa transform.
+// PreviewDialog fetch content via /api/v1/documents/v2/:id. Response
+// `image` sudah data URI (`data:image/png;base64,...` atau
+// `data:application/pdf;base64,...`), langsung set ke <img> / <iframe>
+// tanpa transform.
 function PreviewDialog({ doc, onClose }: { doc: Document; onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<{ image: string; type: string } | null>(null);
@@ -255,7 +254,7 @@ function PreviewDialog({ doc, onClose }: { doc: Document; onClose: () => void })
 
   useEffect(() => {
     let cancelled = false;
-    api<{ id: number; type: string; image: string }>(`/api/v1/documents/${doc.id}`)
+    api<{ id: string; type: string; image: string }>(`/api/v1/documents/v2/${doc.id}`)
       .then((res) => {
         if (!cancelled) setPreview({ image: res.image, type: res.type });
       })
@@ -384,9 +383,9 @@ function UploadForm({
       const fd = new FormData();
       fd.append("file", file);
       fd.append("category_id", String(categoryID));
-      if (displayName) fd.append("name", displayName);
+      // displayName tidak dipakai backend V2 (nama dari file.name saja).
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents`,
+        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents/v2`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },

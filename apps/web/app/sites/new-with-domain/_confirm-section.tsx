@@ -5,10 +5,9 @@
 // Modernisasi: subsection dengan header kecil, total card gradient, CTA
 // besar full-width di mobile.
 
-import { ArrowRight, CheckCircle2, Loader2, Tag, Wallet as WalletIcon } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2, Wallet as WalletIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { CheckEntry, Me, PaymentMethod } from "./_types";
@@ -34,10 +33,8 @@ export function ConfirmSection(props: {
   setYears: (n: number) => void;
   paymentMethod: PaymentMethod;
   setPaymentMethod: (m: PaymentMethod) => void;
-  promoCode: string;
-  setPromoCode: (s: string) => void;
-  documentIds: number[];
-  setDocumentIds: (ids: number[]) => void;
+  documentIds: string[];
+  setDocumentIds: (ids: string[]) => void;
   purchasing: boolean;
   onPurchase: () => void;
   // Phase 3 on-behalf-of: kalau set, ProfileBlock tampilkan copy "klien".
@@ -51,7 +48,7 @@ export function ConfirmSection(props: {
   const {
     selected, me, profileComplete, missingProfile,
     years, setYears, paymentMethod, setPaymentMethod,
-    promoCode, setPromoCode, documentIds, setDocumentIds,
+    documentIds, setDocumentIds,
     purchasing, onPurchase, forClientID, onClientUpdated, walletBalance,
   } = props;
 
@@ -71,7 +68,7 @@ export function ConfirmSection(props: {
   const paymentOptions: Array<{ value: PaymentMethod; label: string; hint: string; icon?: React.ElementType; warn?: string }> = walletEnabled
     ? [
         {
-          value: "wallet",
+          value: "deposit_wallet",
           label: "Wallet",
           hint: balanceEnough
             ? `Saldo: ${formatIDR(walletBalance ?? 0, "IDR")} — instan tanpa gateway`
@@ -194,30 +191,12 @@ export function ConfirmSection(props: {
             </div>
           </div>
 
-          {/* Promo code — opsional. Kalau invalid, registrar silent-fallback ke
-              harga normal (bukan reject) — user boleh coba tanpa risk. */}
-          <div className="space-y-1.5">
-            <Label htmlFor="promo" className="text-xs uppercase tracking-wider text-muted-foreground">
-              Kode promo <span className="normal-case text-muted-foreground/70">(opsional)</span>
-            </Label>
-            <div className="relative">
-              <Tag className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="promo"
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                placeholder="Kosongkan kalau tidak ada"
-                maxLength={32}
-                className="pl-9 uppercase tracking-wider"
-              />
-            </div>
-          </div>
         </div>
 
         {/* Transparency line untuk reseller/agent (Phase 3.14) — tampilkan
             wholesale supaya reseller sadar margin per transaksi. Wallet method
             = debit dari saldo, gateway = bayar via Midtrans/Paylabs. */}
-        {walletEnabled && paymentMethod === "wallet" && selected.price && (
+        {walletEnabled && paymentMethod === "deposit_wallet" && selected.price && (
           <div className="rounded-md border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
             💡 Wallet Anda akan di-debit sesuai wholesale platform. Selisih ke
             kulakan agent atau harga jual ke client adalah margin Anda. Detail

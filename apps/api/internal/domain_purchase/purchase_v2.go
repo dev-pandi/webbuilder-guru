@@ -10,12 +10,11 @@
 // Phase B (EPP execute) di-trigger otomatis oleh paymentwh webhook via
 // ExecuteAfterPayment callback (sudah in-place).
 //
-// Scope minimum viable turn ini:
-//   - Register only (renew nanti — pattern sama)
-//   - Payment method: gateway (midtrans/paylabs) + manual (manual_bank)
-//   - Wallet: TIDAK (butuh internal wallet package — belum ada di web builder)
-//   - On-behalf-of: TIDAK (defer, tidak critical path)
-//   - Promo: TIDAK (defer — invoices.CreateForRegister sudah support kalau perlu)
+// Scope:
+//   - Register + renew (renew_v2.go pola sama)
+//   - Payment method: gateway (midtrans/paylabs) + manual (manual_bank) + wallet (deposit_wallet)
+//   - On-behalf-of: SUPPORTED (Phase 2 parity) — reseller/agent beli untuk klien
+//   - Promo: belum (butuh promo infrastructure — defer)
 
 package domain_purchase
 
@@ -26,6 +25,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
@@ -38,8 +38,16 @@ const metricPurchasesCreatedV2 = "domain_purchase_v2_created_total"
 type purchaseV2Req struct {
 	Domain        string `json:"domain"`
 	Years         int    `json:"years"`
-	PaymentMethod string `json:"payment_method"` // "midtrans" | "paylabs" | "manual_bank"
+	PaymentMethod string `json:"payment_method"` // "midtrans" | "paylabs" | "manual_bank" | "deposit_wallet"
 	ReturnURL     string `json:"return_url,omitempty"`
+	// OnBehalfOfUserID — kalau di-set, reseller/agent beli domain untuk client.
+	// Invoice.user_id = client_id, invoice.purchased_by = caller. Contact object
+	// diisi dari profil client (bukan caller). Kosong = self-purchase.
+	OnBehalfOfUserID string `json:"on_behalf_of_user_id,omitempty"`
+	// DocumentIDs — dokumen library (documents_local UUIDs) yang di-pre-attach
+	// ke purchase. V2 flow tidak punya status pending_document (dokumen review
+	// out-of-band), jadi ini murni audit trail + persiapan untuk manual review.
+	DocumentIDs []string `json:"document_ids,omitempty"`
 }
 
 // purchaseV2Resp — response.
@@ -100,13 +108,59 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	}
 
 	// Fetch caller profile — untuk contact + gateway customer info.
-	owner, err := h.users.GetByID(c.Context(), cl.UserID)
+	caller, err := h.users.GetByID(c.Context(), cl.UserID)
 	if err != nil {
 		return httpx.Internal(c, "user lookup failed")
 	}
+
+	// Default: self-purchase. Owner = caller, purchased_by = NULL.
+	owner := caller
+	var purchasedBy *uuid.UUID
+
+	// On-behalf-of branch — reseller/agent beli untuk klien yang mereka kelola.
+	// Mirror validation pola legacy Purchase supaya perilaku konsisten.
+	if strings.TrimSpace(req.OnBehalfOfUserID) != "" {
+		if !auth.CanRegisterForClient(caller) {
+			return httpx.Forbidden(c, "hanya reseller/agent aktif yang boleh beli untuk klien")
+		}
+		if h.assignments == nil {
+			return httpx.Err(c, fiber.StatusServiceUnavailable, "assignments_disabled",
+				"Fitur beli atas nama klien belum dikonfigurasi di server.")
+		}
+		clientID, err := uuid.Parse(req.OnBehalfOfUserID)
+		if err != nil {
+			return httpx.BadRequest(c, "on_behalf_of_user_id bukan UUID valid")
+		}
+		if clientID == caller.ID {
+			return httpx.BadRequest(c, "on_behalf_of_user_id tidak boleh sama dengan caller")
+		}
+		if err := h.assignments.HasActiveAssignment(c.Context(), caller.ID, clientID); err != nil {
+			return httpx.Forbidden(c, "Anda tidak mengelola klien ini")
+		}
+		clientUser, err := h.users.GetByID(c.Context(), clientID)
+		if err != nil {
+			return httpx.Internal(c, "client lookup failed")
+		}
+		owner = clientUser
+		id := caller.ID
+		purchasedBy = &id
+	}
+
+	// Wallet payment restriction: reseller/agent-only (wallet konsep khusus
+	// reseller). Client biasa tidak punya wallet. Selaras dengan legacy.
+	if req.PaymentMethod == "deposit_wallet" && !auth.IsResellerLike(caller.Role) {
+		return httpx.Forbidden(c, "payment_method 'deposit_wallet' hanya untuk reseller/agent")
+	}
+
 	if missing := missingProfileFields(owner); len(missing) > 0 {
+		who := "profil Anda"
+		path := "/settings/profile"
+		if purchasedBy != nil {
+			who = "profil klien"
+			path = "/reseller/clients"
+		}
 		return httpx.Err(c, fiber.StatusBadRequest, "profile_incomplete",
-			"Lengkapi profil Anda dulu di /settings/profile — field kosong: "+strings.Join(missing, ", "))
+			"Lengkapi "+who+" dulu di "+path+" — field kosong: "+strings.Join(missing, ", "))
 	}
 
 	// Extract TLD supaya bisa lookup zone + price.
@@ -142,6 +196,7 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	// Create invoice — service apply PPN via settings.
 	invoiceID, total, dueAt, err := h.invoicesSvc.CreateForRegister(c.Context(), InvoiceCreateInput{
 		UserID:        owner.ID,
+		PurchasedBy:   purchasedBy,
 		Domain:        req.Domain,
 		Years:         req.Years,
 		UnitPrice:     retailReg,
@@ -222,6 +277,7 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	// Save local Purchase.
 	local := &Purchase{
 		UserID:         owner.ID,
+		PurchasedBy:    purchasedBy,
 		RegistrarJobID: jobID,
 		Domain:         req.Domain,
 		Years:          req.Years,
@@ -242,7 +298,23 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 		"job_id", jobID, "invoice_id", invoiceID,
 		"domain", req.Domain, "total", total,
 		"gateway", req.PaymentMethod, "provider_ref", providerRef,
-		"is_wallet", isWalletGateway)
+		"is_wallet", isWalletGateway, "on_behalf_of", purchasedBy != nil)
+
+	// Audit trail — beda event untuk on-behalf-of supaya admin bisa filter.
+	auditEvt := EventPurchaseCreated
+	if purchasedBy != nil {
+		auditEvt = EventPurchaseOnBehalfOf
+	}
+	auditMeta := map[string]any{
+		"domain":         req.Domain,
+		"years":          req.Years,
+		"payment_method": req.PaymentMethod,
+		"owner_id":       owner.ID.String(),
+	}
+	if len(req.DocumentIDs) > 0 {
+		auditMeta["document_ids"] = req.DocumentIDs
+	}
+	h.logAudit(c.Context(), caller.ID, auditEvt, "domain_purchase", jobID, auditMeta)
 
 	// Wallet gateway = synchronous flow — mark paid + EPP execute inline.
 	// Kalau gagal, invoice tetap paid (money debited); admin/user retry

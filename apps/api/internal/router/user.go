@@ -120,22 +120,17 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/domains/:id/verify", mutateLimit, deps.Domains.Verify)
 	authed.Delete("/domains/:id", mutateLimit, deps.Domains.Delete)
 
-	// Domain purchase (proxy ke registrar-api). Nil-safe kalau feature disabled.
+	// Domain purchase — Phase 3 self-sufficient (semua flow lewat api-registry
+	// + local invoices/wallet/documents). Nil-safe kalau feature disabled.
 	if deps.DomainPurchase != nil {
 		authed.Post("/domains/check", mutateLimit, deps.DomainPurchase.Check)
 		// Purchase + renew guarded dengan limit lebih ketat (money-moving ops).
 		purchaseLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
-		authed.Post("/domains/purchase", purchaseLimit, deps.DomainPurchase.Purchase)
-		// PurchaseV2 — 2-phase self-sufficient checkout (Task 1.7). Berjalan
-		// paralel dengan endpoint lama; frontend migrate incremental. Butuh
-		// api-registry configured + pricing/invoices/gateway wired.
+		// PurchaseV2 — 2-phase self-sufficient checkout. Invoice + payment
+		// lokal, EPP execute lewat api-registry via ExecuteAfterPayment.
 		authed.Post("/domains/purchase/v2", purchaseLimit, deps.DomainPurchase.PurchaseV2)
-		// Renew existing domain — bikin job baru dengan kind=renew di job tracker
-		// lokal + di registrar. Response shape sama dengan purchase supaya
-		// frontend re-use pending page.
-		authed.Post("/domains/renew", purchaseLimit, deps.DomainPurchase.Renew)
-		// RenewV2 — 2-phase self-sufficient renew (Task 1.7). Path param
-		// `:name` untuk domain. Ownership check via GetLatestActiveByDomain.
+		// RenewV2 — 2-phase self-sufficient renew. Path param `:name` untuk
+		// domain. Ownership check via GetLatestActiveByDomain.
 		authed.Post("/domains/:name/renew/v2", purchaseLimit, deps.DomainPurchase.RenewV2)
 		// Domain management (nameservers + whois) — semua verify ownership.
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
@@ -147,34 +142,14 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/:name/dns", mutateLimit, deps.DomainPurchase.CreateDNSRecord)
 		authed.Patch("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.UpdateDNSRecord)
 		authed.Delete("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.DeleteDNSRecord)
+		// Local job tracker — list milik user + individual job status.
 		authed.Get("/domains/purchases", deps.DomainPurchase.List)
-		// Sinkronkan status semua job user dari registrar ground truth. User-triggered
-		// via tombol di /settings/domains — fix drift kalau webhook drop.
-		authed.Post("/domains/sync", mutateLimit, deps.DomainPurchase.Sync)
 		authed.Get("/domains/purchases/:job_id", deps.DomainPurchase.Status)
+		// Attach site ke job yang sudah active (link ke sites row lokal).
 		authed.Post("/domains/purchases/:job_id/attach", mutateLimit, deps.DomainPurchase.Attach)
-		// Retry EPP CREATE untuk job yang status=failed (tidak bayar ulang).
-		authed.Post("/domains/purchases/:job_id/retry", mutateLimit, deps.DomainPurchase.Retry)
-		// AttachDocument = multipart passthrough ke registrar. Web builder
-		// TIDAK simpan file — dokumen sensitif (KTP/NPWP) langsung di-forward.
-		// Pakai uploadLimit karena user-initiated file upload (bukan mutation).
-		uploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
-		authed.Post("/domains/purchases/:job_id/documents", uploadLimit, deps.DomainPurchase.AttachDocument)
-		// Categories dropdown untuk form upload. Read-only, no limit.
-		authed.Get("/documents/categories", deps.DomainPurchase.ListCategories)
-		// Reseller document library (pre-attach flow) — user upload dokumen
-		// SEBELUM checkout, dapat ID, kirim di POST /purchase document_ids[].
-		// Scoped by user UUID (external_user_id inject dari JWT, bukan trust
-		// client). Semua passthrough — web builder tidak simpan file.
-		authed.Get("/documents", deps.DomainPurchase.ListDocuments)
-		authed.Post("/documents", uploadLimit, deps.DomainPurchase.UploadDocument)
-		// Preview 1 dokumen (base64 data URI, ownership + external_user_id
-		// enforced di registrar + web builder proxy). Dipakai tombol "Lihat"
-		// di /settings/documents.
-		authed.Get("/documents/:id", deps.DomainPurchase.ShowDocument)
-		// Invoice list — proxy ke registrar dengan external_user_id inject
-		// dari JWT (isolation). Read-only, no rate limit.
-		authed.Get("/invoices", deps.DomainPurchase.ListInvoices)
+		// RetryV2 — re-run ExecuteAfterPayment untuk failed job (invoice
+		// paid tapi EPP CREATE gagal). Tidak bayar ulang.
+		authed.Post("/domains/purchases/:job_id/retry/v2", mutateLimit, deps.DomainPurchase.RetryV2)
 	}
 
 	// Products
@@ -252,33 +227,11 @@ func MountUser(app *fiber.App, deps Deps) {
 			authed.Get("/reseller/purchases", roleResellerOrAgent, deps.DomainPurchase.ListOnBehalfOf)
 			authed.Get("/reseller/purchases.csv", roleResellerOrAgent, deps.DomainPurchase.ExportOnBehalfOfCSV)
 			authed.Get("/agent/purchases", roleAgent, deps.DomainPurchase.ListOnBehalfOf)
-			// Aggregate invoice untuk portal reseller/agent — self + semua
-			// client yang di-manage. Cegah "invoice kosong" karena on-behalf-of
-			// tagged external_user_id = client.
-			authed.Get("/reseller/invoices", roleResellerOrAgent, deps.DomainPurchase.ListInvoicesForTeam)
-			authed.Get("/agent/invoices", roleAgent, deps.DomainPurchase.ListInvoicesForTeam)
 		}
 
-		// Phase 3.5 — reseller wallet proxy. Read-only endpoint dibuka untuk
-		// reseller/agent kedua-duanya (view balance induk); write endpoint
-		// (top-up, upload proof) reseller-only — di-enforce di handler.
-		if deps.Wallet != nil {
-			walletUploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
-			topupLimit := RateLimitUser(walletTopupPerWindow, walletTopupWindow)
-			// Reads (reseller + agent boleh)
-			authed.Get("/reseller/wallet", roleResellerOrAgent, deps.Wallet.GetWallet)
-			authed.Get("/reseller/wallet/ledger", roleResellerOrAgent, deps.Wallet.GetLedger)
-			authed.Get("/reseller/wallet/topup", roleResellerOrAgent, deps.Wallet.ListMyTopups)
-			authed.Get("/reseller/wallet/topup/banks", roleResellerOrAgent, deps.Wallet.ListBanks)
-			authed.Get("/reseller/wallet/topup/:topup_id/status", roleResellerOrAgent, deps.Wallet.GetTopupStatus)
-			// Writes (reseller-only via handler-side check).
-			authed.Post("/reseller/wallet/topup", roleResellerOrAgent, topupLimit, deps.Wallet.InitTopup)
-			authed.Post("/reseller/wallet/topup/:topup_id/proof", roleResellerOrAgent, walletUploadLimit, deps.Wallet.UploadProof)
-			// Mirror path shape untuk agent portal.
-			authed.Get("/agent/wallet", roleAgent, deps.Wallet.GetWallet)
-			authed.Get("/agent/wallet/ledger", roleAgent, deps.Wallet.GetLedger)
-			authed.Get("/agent/wallet/topup", roleAgent, deps.Wallet.ListMyTopups)
-		}
+		// Legacy /reseller/wallet + /agent/wallet + /reseller/wallet/topup*
+		// dihapus (Phase 1 self-sufficient). Frontend sekarang pakai `/wallet/v2`
+		// (deps.WalletLocal, lihat di bawah).
 
 		// Pricing (Phase 3.11-3.12).
 		if deps.Pricing != nil {
@@ -329,5 +282,18 @@ func MountUser(app *fiber.App, deps Deps) {
 	if deps.WalletLocal != nil {
 		authed.Get("/wallet/v2", deps.WalletLocal.GetBalance)
 		authed.Get("/wallet/v2/ledger", deps.WalletLocal.ListLedger)
+	}
+
+	// Documents local — Phase 2 self-sufficient. Versioned `/documents/v2`
+	// supaya coexist dengan legacy `/documents/*` (proxy) selama migration.
+	// Semua authenticated user boleh punya dokumen (dipakai saat register
+	// domain di TLD yang butuh verifikasi identitas mis. .id).
+	if deps.Documents != nil {
+		uploadLimit := RateLimitUser(uploadPerWindow, uploadWindow)
+		authed.Get("/documents/v2/categories", deps.Documents.ListCategories)
+		authed.Get("/documents/v2", deps.Documents.ListMine)
+		authed.Post("/documents/v2", uploadLimit, deps.Documents.Upload)
+		authed.Get("/documents/v2/:id", deps.Documents.Show)
+		authed.Delete("/documents/v2/:id", deps.Documents.Delete)
 	}
 }

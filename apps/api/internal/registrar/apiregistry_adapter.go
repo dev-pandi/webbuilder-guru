@@ -119,7 +119,7 @@ func (c *Client) updateNameserversViaAPIRegistry(ctx context.Context, name strin
 //
 // Requirement: `APIRegistryURL` di-set (kalau tidak, return error jelas).
 func (c *Client) RegisterDomainDirect(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {
-	if !c.useAPIRegistry() {
+	if c == nil || c.apiRegistry == nil {
 		return nil, &APIError{
 			Status: 501,
 			Code:   "api_registry_not_configured",
@@ -165,7 +165,7 @@ func (c *Client) RegisterDomainDirect(ctx context.Context, req RegisterRequest) 
 // RenewDomainDirect — direct EPP renew via api-registry. Sama dengan
 // RegisterDomainDirect pattern: ZERO payment coupling.
 func (c *Client) RenewDomainDirect(ctx context.Context, name string, req RenewRequest) (*RegisterResponse, error) {
-	if !c.useAPIRegistry() {
+	if c == nil || c.apiRegistry == nil {
 		return nil, &APIError{
 			Status: 501,
 			Code:   "api_registry_not_configured",

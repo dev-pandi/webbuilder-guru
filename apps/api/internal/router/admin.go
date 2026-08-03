@@ -36,12 +36,8 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Post("/resellers/:id/approve", deps.Admin.ApproveReseller)
 	g.Post("/resellers/:id/suspend", deps.Admin.SuspendReseller)
 
-	// Registrar webhook config — reseller-scoped di registrar, tapi dari sisi
-	// web builder ini pengaturan operator (bukan per-user). Hanya di-mount
-	// kalau DomainPurchase handler aktif (nil-safe = registrar disabled).
+	// Admin observability untuk domain purchases (read-only cross-user).
 	if deps.DomainPurchase != nil {
-		g.Get("/registrar/webhook", deps.DomainPurchase.AdminGetWebhookConfig)
-		g.Post("/registrar/webhook", deps.DomainPurchase.AdminSetWebhookConfig)
 		g.Get("/registrar/purchases", deps.DomainPurchase.AdminListPurchases)
 	}
 
@@ -74,8 +70,6 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/pricing/platform", deps.Pricing.AdminListPlatform)
 		g.Post("/pricing/platform", deps.Pricing.AdminUpsertPlatform)
 		g.Delete("/pricing/platform/:id", deps.Pricing.AdminDeletePlatform)
-		// Sync dari registrar-api: allowed zones + harga awal (wholesale).
-		g.Get("/pricing/registrar-tlds", deps.Pricing.AdminListRegistrarTLDs)
 	}
 
 	// Zones catalog (Phase 1 self-sufficient) — TLD supported + verification rules.

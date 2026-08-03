@@ -2,16 +2,11 @@
 
 // DocumentPicker — muncul di Step 2 (Konfirmasi) kalau zone.require_document
 // aktif dan tidak di-bypass NIK. User bisa:
-//   1. Pilih dokumen existing dari library registrar (sudah upload sebelumnya)
-//   2. Upload dokumen baru (multipart passthrough — TIDAK simpan di web builder)
+//   1. Pilih dokumen existing dari library (sudah upload sebelumnya)
+//   2. Upload dokumen baru (disimpan di storage internal)
 //
-// Behavior:
-//   - Kalau user pilih 1+ dokumen → dikirim di document_ids saat purchase →
-//     registrar auto-attach, job skip pending_document → langsung provisioning.
-//   - Kalau kosong (user skip picker) → purchase tetap jalan, job masuk
-//     pending_document, upload dilakukan di halaman /sites/pending/[jobId].
-//
-// Kita SENGAJA tidak memaksa pre-attach — beberapa user prefer upload nanti.
+// Phase 2 self-sufficient: /api/v1/documents/v2/* — dokumen tersimpan di
+// web builder assets storage (bukan proxy registrar).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -39,8 +34,8 @@ export function DocumentPicker({
   selectedIds,
   onChange,
 }: {
-  selectedIds: number[];
-  onChange: (ids: number[]) => void;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
 }) {
   const [categories, setCategories] = useState<DocumentCategory[]>([]);
   const [docs, setDocs] = useState<Document[]>([]);
@@ -50,8 +45,8 @@ export function DocumentPicker({
   useEffect(() => {
     // Load categories + existing library documents in parallel.
     Promise.allSettled([
-      api<DocumentCategory[]>("/api/v1/documents/categories"),
-      api<{ items: Document[] }>("/api/v1/documents?all=true"),
+      api<DocumentCategory[]>("/api/v1/documents/v2/categories"),
+      api<{ items: Document[] }>("/api/v1/documents/v2"),
     ])
       .then(([cats, list]) => {
         if (cats.status === "fulfilled") setCategories(cats.value ?? []);
@@ -62,14 +57,14 @@ export function DocumentPicker({
 
   async function refreshDocs() {
     try {
-      const list = await api<{ items: Document[] }>("/api/v1/documents?all=true");
+      const list = await api<{ items: Document[] }>("/api/v1/documents/v2");
       setDocs(list?.items ?? []);
     } catch (e) {
       toast.error((e as Error).message);
     }
   }
 
-  function toggle(id: number) {
+  function toggle(id: string) {
     if (selectedIds.includes(id)) {
       onChange(selectedIds.filter((x) => x !== id));
     } else {
@@ -260,9 +255,9 @@ function UploadForm({
       const fd = new FormData();
       fd.append("file", file);
       fd.append("category_id", String(categoryID));
-      if (suggestedName) fd.append("name", suggestedName);
+      // suggestedName tidak dipakai backend V2 (nama dari file.name saja).
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents`,
+        `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents/v2`,
         {
           method: "POST",
           headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },

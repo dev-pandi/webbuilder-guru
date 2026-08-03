@@ -48,8 +48,8 @@ import (
 	"github.com/webbuilder/api/internal/paymentgw"
 	"github.com/webbuilder/api/internal/payments"
 	"github.com/webbuilder/api/internal/paymentwh"
+	"github.com/webbuilder/api/internal/documents_local"
 	"github.com/webbuilder/api/internal/settings"
-	"github.com/webbuilder/api/internal/wallet"
 	"github.com/webbuilder/api/internal/wallet_local"
 	"github.com/webbuilder/api/internal/zones"
 )
@@ -209,9 +209,6 @@ func main() {
 	})
 
 	registrarClient, err := registrar.New(registrar.Config{
-		BaseURL:               cfg.RegistrarAPIURL,
-		APIKey:                cfg.RegistrarAPIKey,
-		Timeout:               cfg.RegistrarAPITimeout,
 		APIRegistryURL:        cfg.APIRegistryURL,
 		APIRegistryHMACSecret: cfg.APIRegistryHMACSecret,
 		APIRegistryTimeout:    cfg.APIRegistryTimeout,
@@ -221,67 +218,10 @@ func main() {
 		os.Exit(1)
 	}
 	if registrarClient != nil {
-		slog.Info("registrar client: enabled",
-			"legacy_base_url", cfg.RegistrarAPIURL, "timeout", cfg.RegistrarAPITimeout,
-			"api_registry_url", cfg.APIRegistryURL)
-		if cfg.APIRegistryURL != "" {
-			slog.Info("registrar client: EPP-native calls di-route ke api-registry (Fase 1c)",
-				"api_registry_url", cfg.APIRegistryURL, "timeout", cfg.APIRegistryTimeout,
-				"routed", "check/register/renew/nameserver/contact/whois",
-				"unrouted", "wallet/document/invoice/admin-config (tetap ke registrar-api PANDI)",
-			)
-		}
-
-		// Auto-login + JWT refresh — HANYA kalau legacy registrar-api backend
-		// di-configured (REGISTRAR_API_URL set). Kalau self-sufficient mode
-		// (API_REGISTRY_URL only), tidak ada endpoint /login yang mau di-hit.
-		if registrarClient.HasLegacyBackend() && cfg.RegistrarResellerEmail != "" && cfg.RegistrarResellerPassword != "" {
-			// Simpan credentials di client supaya `do` bisa auto-recover
-			// kalau JWT ditolak 401 di tengah siklus 25-day refresh (mis.
-			// registrar revoke). Client akan re-login sekali + retry request.
-			registrarClient.SetCredentials(cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
-
-			loginCtx, cancelLogin := context.WithTimeout(ctx, 15*time.Second)
-			jwt, err := registrarClient.Login(loginCtx, cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
-			cancelLogin()
-			if err != nil {
-				slog.Error("registrar login failed at startup", "error", err,
-					"hint", "cek REGISTRAR_RESELLER_EMAIL + REGISTRAR_RESELLER_PASSWORD, atau kosongkan REGISTRAR_API_URL kalau full self-sufficient (API_REGISTRY_URL only)")
-				os.Exit(1)
-			}
-			registrarClient.SetAPIKey(jwt)
-			slog.Info("registrar jwt: auto-login success (will refresh every 25d, auto-recover on 401)")
-
-			// Background refresh — tick tiap 25 hari (before 30-day expire).
-			// Kalau login gagal di refresh, log error tapi tetap coba lagi
-			// next tick — JWT lama masih valid ~5 hari.
-			go func() {
-				t := time.NewTicker(25 * 24 * time.Hour)
-				defer t.Stop()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-t.C:
-						rCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-						jwt, err := registrarClient.Login(rCtx, cfg.RegistrarResellerEmail, cfg.RegistrarResellerPassword)
-						cancel()
-						if err != nil {
-							slog.Error("registrar jwt refresh failed (will retry next tick)", "error", err)
-							continue
-						}
-						registrarClient.SetAPIKey(jwt)
-						slog.Info("registrar jwt: refreshed")
-					}
-				}
-			}()
-		} else if registrarClient.HasLegacyBackend() && cfg.RegistrarAPIKey == "" {
-			slog.Warn("registrar client: legacy backend set but no credentials + no static API key — reseller calls will 401")
-		} else if !registrarClient.HasLegacyBackend() {
-			slog.Info("registrar client: self-sufficient mode — legacy registrar-api backend disabled, EPP via api-registry only")
-		}
+		slog.Info("registrar client: enabled (self-sufficient, EPP via api-registry)",
+			"api_registry_url", cfg.APIRegistryURL, "timeout", cfg.APIRegistryTimeout)
 	} else {
-		slog.Info("registrar client: disabled (set REGISTRAR_API_URL untuk legacy proxy, atau API_REGISTRY_URL untuk self-sufficient mode)")
+		slog.Info("registrar client: disabled (set API_REGISTRY_URL untuk enable domain flow)")
 	}
 
 	// Zones — Phase 1 self-sufficient TLD catalog. Di-construct sebelum
@@ -300,14 +240,11 @@ func main() {
 		// Single source of truth = registrar.
 		purchaseHandler = domain_purchase.NewHandler(
 			purchaseRepo, registrarClient, authRepo, siteRepo, cloudflareRepo,
-			cfg.PlatformIPs, cfg.RegistrarWebhookSecret,
+			cfg.PlatformIPs,
 		)
 		// Inject local zones — filter TLD hasil check ke hanya yang active
 		// di zones catalog. Operator kontrol full via /admin/zones.
 		purchaseHandler.SetZones(zonesRepo)
-		if cfg.RegistrarWebhookSecret == "" {
-			slog.Warn("registrar webhook: REGISTRAR_WEBHOOK_SECRET kosong — endpoint akan 503 sampai di-set")
-		}
 
 		// Expiry notifier — scan tiap 24 jam, email user kalau domain aktif
 		// mendekati expire (≤ 30 hari). Dedup per domain via kolom
@@ -323,11 +260,6 @@ func main() {
 			AppBaseURL:  cfg.AppBaseURL,
 		})
 		go expiry.Run(ctx)
-
-		// Periodic sync — self-heal drift kalau webhook drop. 6 jam cukup untuk
-		// tetap responsive tanpa spam registrar. User bisa tetap trigger manual
-		// via tombol "Sinkronkan" di /settings/domains kalau perlu update segera.
-		go purchaseHandler.RunPeriodicSync(ctx, 6*time.Hour)
 	}
 
 	googleHandler := auth.NewGoogleHandler(
@@ -394,13 +326,6 @@ func main() {
 		resellerHandler.SetStatsProvider(resellerStatsAdapter{repo: purchaseRepo})
 	}
 
-	// Wallet proxy handler — Phase 3.5. Nil kalau registrar disabled
-	// (no client), otherwise wire penuh.
-	var walletHandler *wallet.Handler
-	if registrarClient != nil {
-		walletHandler = wallet.NewHandler(registrarClient, authRepo)
-	}
-
 	// Audit log — Phase 7 append-only event trail. Repo di-inject ke handler
 	// yang perlu record (auth reseller approve, invitation, purchase, dst.).
 	auditRepo := audit.NewRepo(pool)
@@ -410,17 +335,10 @@ func main() {
 	if purchaseHandler != nil {
 		purchaseHandler.SetAudit(auditRepo)
 	}
-	if walletHandler != nil {
-		walletHandler.SetAudit(auditRepo)
-	}
 
 	// Pricing — Phase 3.10+ 3-tier pricing model.
 	pricingRepo := pricing.NewRepo(pool)
 	pricingHandler := pricing.NewHandler(pricingRepo, authRepo)
-	if registrarClient != nil {
-		// Sync TLD list + wholesale awal dari registrar (admin panel).
-		pricingHandler.SetRegistrar(registrarClient)
-	}
 
 	// Settings — Phase 1 self-sufficient key-value store.
 	settingsRepo := settings.NewRepo(pool)
@@ -435,6 +353,15 @@ func main() {
 	// wallet.Handler yang proxy ke registrar-api).
 	walletLocalRepo := wallet_local.NewRepo(pool)
 	walletLocalHandler := wallet_local.NewHandler(walletLocalRepo)
+
+	// Documents local — Phase 2 self-sufficient. Blob di-simpan di
+	// assets.Storage (local disk atau S3), metadata di tabel documents.
+	// Nil kalau assetStorage nil (storage init gagal) → routes skip di router.
+	var documentsHandler *documents_local.Handler
+	if assetStorage != nil {
+		documentsRepo := documents_local.NewRepo(pool)
+		documentsHandler = documents_local.NewHandler(documentsRepo, assetStorage)
+	}
 
 	// Payment gateway registry — instansiasi Gateway concrete dari
 	// payment_methods.config JSONB. Konsumer (invoices, domain_purchase)
@@ -511,7 +438,6 @@ func main() {
 		Blog:         blog.NewHandler(blogRepo, siteRepo),
 		Snippets:     snippets.NewHandler(snippetRepo),
 		Reseller:     resellerHandler,
-		Wallet:       walletHandler,
 		Audit:        auditHandler,
 		EmailLog:     emailLogHandler,
 		Pricing:      pricingHandler,
@@ -521,6 +447,7 @@ func main() {
 		Invoices:       invoicesHandler,
 		PaymentWebhook: paymentWebhookHandler,
 		WalletLocal:    walletLocalHandler,
+		Documents:      documentsHandler,
 		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,
 	}

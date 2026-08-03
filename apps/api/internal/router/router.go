@@ -18,6 +18,7 @@ import (
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
+	"github.com/webbuilder/api/internal/documents_local"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/email_log"
@@ -38,7 +39,6 @@ import (
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
-	"github.com/webbuilder/api/internal/wallet"
 	"github.com/webbuilder/api/internal/wallet_local"
 	"github.com/webbuilder/api/internal/zones"
 
@@ -99,10 +99,6 @@ type Deps struct {
 	// only). Nil kalau feature belum di-wire.
 	Reseller *reseller.Handler
 
-	// Wallet — Phase 3.5 proxy ke registrar reseller wallet. Nil kalau
-	// registrar disabled (client wrapper nil).
-	Wallet *wallet.Handler
-
 	// Audit — Phase 7 admin audit log viewer. Nil-safe.
 	Audit *audit.Handler
 
@@ -139,6 +135,11 @@ type Deps struct {
 	// wallet.Handler yang proxy ke registrar-api). Endpoints versioned
 	// di /wallet/v2 supaya coexist dengan legacy sampai frontend migrate.
 	WalletLocal *wallet_local.Handler
+
+	// Documents — Phase 2 self-sufficient dokumen kepatuhan (KTP/NPWP/etc.)
+	// untuk domain register di TLD yang butuh verifikasi identitas. Nil
+	// kalau assetStorage tidak tersedia — routes skip.
+	Documents *documents_local.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

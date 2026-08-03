@@ -101,14 +101,7 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_OAUTH_REDIRECT_URL: ${GOOGLE_OAUTH_REDIRECT_URL:-http://api.localhost/api/v1/auth/google/callback}
-      # --- Registrar (reseller — kosongkan URL untuk disable) ---
-      REGISTRAR_API_URL: ${REGISTRAR_API_URL:-}
-      REGISTRAR_API_KEY: ${REGISTRAR_API_KEY:-}
-      REGISTRAR_API_TIMEOUT: ${REGISTRAR_API_TIMEOUT:-15s}
-      REGISTRAR_RESELLER_EMAIL: ${REGISTRAR_RESELLER_EMAIL:-}
-      REGISTRAR_RESELLER_PASSWORD: ${REGISTRAR_RESELLER_PASSWORD:-}
-      REGISTRAR_WEBHOOK_SECRET: ${REGISTRAR_WEBHOOK_SECRET:-}
-      # --- api-registry backend (PRIMARY — self-sufficient mode) ---
+      # --- api-registry backend (self-sufficient EPP service) ---
       # Default point ke api-registry service via internal network.
       # HMAC secret harus sama dengan api-registry INTERNAL_HMAC_SECRET.
       API_REGISTRY_URL: ${WEBBUILDER_API_REGISTRY_URL:-http://api-registry:5000}
@@ -161,25 +154,9 @@ services:
       EPP_INSECURE_SKIP_VERIFY: ${EPP_INSECURE_SKIP_VERIFY:-false}
       EPP_KEEPALIVE_INTERVAL: ${EPP_KEEPALIVE_INTERVAL:-5m}
 
-      # LEGACY: PANDI wrapper — reuse env yang sama dengan `api` supaya
-      # operator tidak perlu maintain 2 set credentials.
-      # Hanya dipakai kalau PROVIDER_MODE=pandi_wrapper.
-      PANDI_API_URL: ${REGISTRAR_API_URL:-}
-      PANDI_API_KEY: ${REGISTRAR_API_KEY:-}
-      PANDI_EMAIL: ${REGISTRAR_RESELLER_EMAIL:-}
-      PANDI_PASSWORD: ${REGISTRAR_RESELLER_PASSWORD:-}
-      PANDI_API_TIMEOUT: ${REGISTRAR_API_TIMEOUT:-15s}
-
-      # Internal HMAC — WAJIB sama dengan `api` sisi API_REGISTRY_HMAC_SECRET
-      # (nanti kita wire di api). Kosong = dev mode (skip auth).
+      # Internal HMAC — WAJIB sama dengan `api` sisi API_REGISTRY_HMAC_SECRET.
+      # Kosong = dev mode (skip auth).
       INTERNAL_HMAC_SECRET: ${API_REGISTRY_HMAC_SECRET:-}
-
-      # Webhook relay: verify inbound dari registrar upstream + forward ke
-      # web builder API. WEBHOOK_UPSTREAM_SECRET sama dengan
-      # REGISTRAR_WEBHOOK_SECRET yang dipakai `api` sekarang.
-      WEBHOOK_UPSTREAM_SECRET: ${REGISTRAR_WEBHOOK_SECRET:-}
-      WEBBUILDER_WEBHOOK_URL: ${API_REGISTRY_WEBHOOK_FORWARD_URL:-http://api:8080/internal/registrar/webhook}
-      WEBBUILDER_WEBHOOK_SECRET: ${API_REGISTRY_HMAC_SECRET:-}
 
       # Runtime tuning.
       REQUEST_TIMEOUT: ${API_REGISTRY_REQUEST_TIMEOUT:-30s}

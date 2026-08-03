@@ -262,7 +262,7 @@ export default function PendingDomainPage() {
     setErr(null);
     setRetrying(true);
     try {
-      await api(`/api/v1/domains/purchases/${jobId}/retry`, { method: "POST" });
+      await api(`/api/v1/domains/purchases/${jobId}/retry/v2`, { method: "POST" });
       toast.success("Retry dikirim ke registrar — status akan update otomatis");
       // Force segera refresh; polling loop akan lanjut setelah ini.
       try {
@@ -781,10 +781,10 @@ function DocumentUpload({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Categories dari registrar (proxy /api/v1/documents/categories).
-    // Kalau registrar disabled → 503, biarkan array kosong (user tidak bisa
-    // pilih kategori, submit akan gagal graceful).
-    api<DocCategory[]>("/api/v1/documents/categories")
+    // Categories dari documents_local (V2). Section ini hanya render untuk
+    // legacy job status="pending_document" — di V2 flow dokumen pre-attach
+    // di purchase step, jadi state ini biasanya tidak ketemu.
+    api<DocCategory[]>("/api/v1/documents/v2/categories")
       .then((list) => {
         setCategories(list ?? []);
         if (list && list.length > 0) setCategoryID(list[0].id);

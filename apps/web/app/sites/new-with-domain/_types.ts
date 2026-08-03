@@ -69,15 +69,15 @@ export type PurchaseV2Resp = {
   due_at: string;      // RFC3339
 };
 
-// Document = 1 baris di library registrar user tsb (proxied). ID dipakai
-// pre-attach di purchase → registrar auto-link, skip pending_document.
+// Document = 1 baris di library dokumen user (self-sufficient, disimpan
+// di storage internal). ID dipakai pre-attach di purchase.
 export type Document = {
-  id: number;
+  id: string;
   name: string;
   category_id: number;
   category_name?: string;
-  doc_url: string;
-  external_user_id?: string;
+  mime_type: string;
+  size_bytes: number;
   created_at: string;
 };
 
@@ -88,4 +88,4 @@ export type DocumentCategory = {
   parent_id?: number;
 };
 
-export type PaymentMethod = "midtrans" | "paylabs" | "wallet";
+export type PaymentMethod = "midtrans" | "paylabs" | "deposit_wallet";

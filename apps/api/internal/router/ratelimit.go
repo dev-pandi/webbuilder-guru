@@ -44,8 +44,6 @@ const (
 	// Money-moving ops (Phase 7) — tight per-user budgets untuk cegah spam
 	// spending. Reseller yang legit tidak butuh > 20 purchase/jam; kalau butuh,
 	// admin bisa raise via env override (out of scope MVP).
-	walletTopupPerWindow = 5                // 5 top-up
-	walletTopupWindow    = 24 * time.Hour   // per hari per reseller (plan 15.10)
 	purchasePerWindow    = 20               // 20 register/renew
 	purchaseWindow       = 60 * time.Minute // per jam per user
 

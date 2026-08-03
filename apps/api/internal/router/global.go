@@ -56,16 +56,9 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	// Caddy on_demand_tls.ask
 	app.Get("/internal/caddy/ask", deps.Caddy.Ask)
 
-	// Registrar webhook — HMAC-authed, no JWT. Registrar-api POST kesini
-	// setiap kali status job (register/renew) berubah. Rate-limit per source IP
-	// sebagai defence in depth — HMAC verify sudah menolak payload invalid,
-	// tapi tanpa limit CPU tetap terpakai per garbage request.
-	if deps.DomainPurchase != nil {
-		app.Post("/webhooks/registrar/domain-status",
-			RateLimitIP(webhookPerWindow, webhookWindow),
-			deps.DomainPurchase.Webhook,
-		)
-	}
+	// Registrar webhook receiver dihapus di Phase 3 self-sufficient — status
+	// update job V2 lewat ExecuteAfterPayment (payment webhook callback),
+	// bukan external registrar-api HMAC callback.
 
 	// Payment gateway webhook — Midtrans/Paylabs POST kesini setelah user
 	// bayar. Signature verify per-code di paymentgw.Gateway.HandleWebhook,

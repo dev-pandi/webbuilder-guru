@@ -51,6 +51,7 @@ type invoicesAdapter struct {
 func (a invoicesAdapter) CreateForRegister(ctx context.Context, in domain_purchase.InvoiceCreateInput) (uuid.UUID, int64, time.Time, error) {
 	inv, err := a.svc.CreateForRegister(ctx, invoices.CreateForRegisterInput{
 		UserID:        in.UserID,
+		PurchasedBy:   in.PurchasedBy,
 		Domain:        in.Domain,
 		Years:         in.Years,
 		UnitPrice:     in.UnitPrice,
