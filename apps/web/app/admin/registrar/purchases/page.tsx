@@ -42,8 +42,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RegistrarSectionNav } from "../_nav";
-
 type Row = {
   job_id: string;
   domain: string;
@@ -164,8 +162,6 @@ export default function AdminPurchasesPage() {
 
   return (
     <div className="space-y-6">
-      <RegistrarSectionNav />
-
       <div>
         <div className="mb-1 flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">

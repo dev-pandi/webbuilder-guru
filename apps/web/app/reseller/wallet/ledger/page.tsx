@@ -1,8 +1,10 @@
 "use client";
 
-// Ledger detail — paginated. Filter kind opsional (topup / debit / refund).
+// Ledger detail — paginated dari `/api/v1/wallet/v2/ledger` (Phase 1
+// self-sufficient). Filter kind client-side (backend belum support filter
+// per reason — bisa di-add nanti).
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -18,53 +20,55 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 type LedgerEntry = {
-  id: number;
-  kind: string;
-  amount: number;
+  id: string;
+  delta: number;
+  reason: string;
   balance_after: number;
-  description?: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 };
 
 type LedgerListResp = {
   items: LedgerEntry[];
-  pagination?: {
-    page: number;
-    per_page: number;
-    total: number;
-    total_pages: number;
-  };
+  page: number;
+  limit: number;
 };
 
-const KIND_FILTERS = [
+const REASON_FILTERS = [
   { value: "", label: "Semua" },
   { value: "topup", label: "Top-up" },
   { value: "debit_register", label: "Register" },
   { value: "debit_renew", label: "Renew" },
-  { value: "credit_refund_epp", label: "Refund" },
+  { value: "refund", label: "Refund" },
+  { value: "admin_adjust", label: "Adjust Admin" },
 ];
+
+const PAGE_LIMIT = 30;
 
 export default function LedgerPage() {
   const [items, setItems] = useState<LedgerEntry[]>([]);
-  const [kind, setKind] = useState("");
+  const [reason, setReason] = useState("");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setErr(null);
-    const q = new URLSearchParams({ page: String(page), page_size: "30" });
-    if (kind) q.set("kind", kind);
-    api<LedgerListResp>(`/api/v1/reseller/wallet/ledger?${q.toString()}`)
-      .then((res) => {
-        setItems(res.items ?? []);
-        setTotalPages(res.pagination?.total_pages ?? 1);
-      })
+    const q = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
+    api<LedgerListResp>(`/api/v1/wallet/v2/ledger?${q.toString()}`)
+      .then((res) => setItems(res.items ?? []))
       .catch((e) => setErr((e as Error).message))
       .finally(() => setLoading(false));
-  }, [kind, page]);
+  }, [page]);
+
+  // Client-side filter — backend belum expose `?reason=` param.
+  const filtered = useMemo(() => {
+    if (!reason) return items;
+    return items.filter((e) => e.reason === reason);
+  }, [items, reason]);
+
+  const hasMore = items.length >= PAGE_LIMIT;
 
   return (
     <div className="space-y-6">
@@ -87,19 +91,15 @@ export default function LedgerPage() {
         </p>
       </div>
 
-      {/* Filter chips */}
       <div className="flex flex-wrap gap-2">
-        {KIND_FILTERS.map((k) => (
+        {REASON_FILTERS.map((k) => (
           <button
             key={k.value}
             type="button"
-            onClick={() => {
-              setKind(k.value);
-              setPage(1);
-            }}
+            onClick={() => setReason(k.value)}
             className={cn(
               "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-              kind === k.value
+              reason === k.value
                 ? "border-primary bg-primary/10 text-primary"
                 : "hover:bg-muted",
             )}
@@ -123,13 +123,13 @@ export default function LedgerPage() {
               <Loader2 className="size-4 animate-spin" />
               Memuat…
             </div>
-          ) : items.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Tidak ada transaksi{kind ? ` untuk filter ${kind}` : ""}.
+              Tidak ada transaksi{reason ? ` untuk filter ${reason}` : ""}.
             </p>
           ) : (
             <ul className="divide-y">
-              {items.map((e) => (
+              {filtered.map((e) => (
                 <LedgerRow key={e.id} entry={e} />
               ))}
             </ul>
@@ -137,39 +137,34 @@ export default function LedgerPage() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            Halaman {page} dari {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Sebelumnya
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Berikutnya
-            </Button>
-          </div>
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">Halaman {page}</span>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Sebelumnya
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!hasMore || loading}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Berikutnya
+          </Button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {
-  const isCredit = entry.amount > 0;
-  const label = kindLabel(entry.kind);
+  const isCredit = entry.delta > 0;
+  const label = reasonLabel(entry.reason);
   return (
     <li className="flex items-center justify-between gap-3 py-3">
       <div className="flex min-w-0 items-center gap-3">
@@ -188,11 +183,6 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{label}</p>
-          {entry.description && (
-            <p className="truncate text-xs text-muted-foreground">
-              {entry.description}
-            </p>
-          )}
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {formatDate(entry.created_at)}
           </p>
@@ -207,7 +197,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
           }
         >
           {isCredit ? "+" : ""}
-          {formatIDR(entry.amount)}
+          {formatIDR(entry.delta)}
         </p>
         <p className="text-[11px] text-muted-foreground">
           sisa {formatIDR(entry.balance_after)}
@@ -217,16 +207,15 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
   );
 }
 
-function kindLabel(kind: string): string {
+function reasonLabel(reason: string): string {
   const map: Record<string, string> = {
     topup: "Top-up",
     debit_register: "Debit — Register Domain",
     debit_renew: "Debit — Renew Domain",
-    credit_refund_epp: "Refund — EPP gagal",
-    credit_refund_admin: "Refund — Admin",
-    debit_admin: "Debit — Admin",
+    refund: "Refund",
+    admin_adjust: "Adjustment Admin",
   };
-  return map[kind] || kind;
+  return map[reason] || reason;
 }
 
 function formatIDR(amount: number): string {

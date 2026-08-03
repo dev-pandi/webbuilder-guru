@@ -371,9 +371,8 @@ func (h *Handler) resolveAllowedZones(ctx context.Context, upstream []string) ([
 }
 
 func (h *Handler) Purchase(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Gunakan POST /api/v1/domains/purchase/v2 untuk flow self-sufficient.") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -930,9 +929,8 @@ type renewReq struct {
 }
 
 func (h *Handler) Renew(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Gunakan POST /api/v1/domains/:name/renew/v2 untuk flow self-sufficient.") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1021,9 +1019,8 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 // Ownership: job harus milik user (defence terhadap URL guessing).
 // Status: harus terminal-failed. Kalau status lain, registrar reject.
 func (h *Handler) Retry(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Retry di flow self-sufficient tidak diperlukan (EPP register sync via api-registry).") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1207,9 +1204,8 @@ func (h *Handler) ListOnBehalfOf(c *fiber.Ctx) error {
 //
 // Response: { scanned, updated } — untuk UX feedback singkat.
 func (h *Handler) Sync(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Sync-drift dari registrar-api tidak diperlukan di mode self-sufficient — status EPP domain langsung di web builder DB.") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1406,9 +1402,8 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 // Return: registrar's UploadDocumentResp (job_id, document_id di registrar,
 // status baru, flag status_advanced).
 func (h *Handler) AttachDocument(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Document flow di mode self-sufficient di-owned web builder — belum tersedia (butuh documents_local package).") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1497,9 +1492,8 @@ func (h *Handler) AttachDocument(c *fiber.Ctx) error {
 //
 // Response: passthrough envelope registrar (items[] + pagination).
 func (h *Handler) ListDocuments(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Document flow di mode self-sufficient di-owned web builder — belum tersedia (butuh documents_local package).") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1538,9 +1532,8 @@ func (h *Handler) ListDocuments(c *fiber.Ctx) error {
 // Setiap item punya jobs[] dengan (job_id, domain, kind, years, status) —
 // frontend bisa render tabel invoice + link ke pending page tanpa refetch.
 func (h *Handler) ListInvoices(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Gunakan GET /api/v1/invoices/v2 untuk invoice lokal (Fase 1 self-sufficient).") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1592,9 +1585,8 @@ func (h *Handler) ListInvoices(c *fiber.Ctx) error {
 // Filter status + search di-passthrough. Kalau salah satu fan-out call gagal,
 // skip client itu (log warn) — jangan block seluruh response.
 func (h *Handler) ListInvoicesForTeam(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Aggregate reseller/agent invoices belum di-migrate ke local /invoices/v2 — TBD.") {
+		return nil
 	}
 	if h.assignments == nil {
 		// Fallback ke self-scope kalau reseller module belum wired — daripada
@@ -1740,9 +1732,8 @@ func (h *Handler) ListInvoicesForTeam(c *fiber.Ctx) error {
 //   category_id : int (WAJIB, dari /documents/categories)
 //   name        : opsional label
 func (h *Handler) UploadDocument(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Document flow di mode self-sufficient di-owned web builder — belum tersedia (butuh documents_local package).") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1800,9 +1791,8 @@ func (h *Handler) UploadDocument(c *fiber.Ctx) error {
 // JWT claims — bukan trust client — supaya user A tidak preview KTP user B
 // via ID guessing. Registrar ownership check jadi defence-in-depth kedua.
 func (h *Handler) ShowDocument(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Document flow di mode self-sufficient di-owned web builder — belum tersedia.") {
+		return nil
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -1827,9 +1817,8 @@ func (h *Handler) ShowDocument(c *fiber.Ctx) error {
 //
 // Cache-able di CDN kalau nanti butuh — categories jarang berubah.
 func (h *Handler) ListCategories(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Document categories di mode self-sufficient di-owned web builder — belum tersedia.") {
+		return nil
 	}
 	cats, err := h.registrar.ListCategories(c.Context())
 	if err != nil {
@@ -1923,9 +1912,8 @@ func (h *Handler) AdminListPurchases(c *fiber.Ctx) error {
 }
 
 func (h *Handler) AdminGetWebhookConfig(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Webhook config di mode self-sufficient dikelola api-registry directly — bukan lagi rotate via registrar-api.") {
+		return nil
 	}
 	cfg, err := h.registrar.GetWebhookConfig(c.Context())
 	if err != nil {
@@ -1935,9 +1923,8 @@ func (h *Handler) AdminGetWebhookConfig(c *fiber.Ctx) error {
 }
 
 func (h *Handler) AdminSetWebhookConfig(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c, "Webhook config di mode self-sufficient dikelola api-registry directly.") {
+		return nil
 	}
 	var req registrar.WebhookConfigRequest
 	if err := c.BodyParser(&req); err != nil {

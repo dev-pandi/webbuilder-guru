@@ -114,7 +114,7 @@ export default function AdminPricingPage() {
       // ini bukan network error tapi config missing.
       if (e instanceof ApiError && e.status === 503) {
         setRegistrarErr(
-          "Registrar-api belum terhubung. Set REGISTRAR_API_URL + credentials di .env untuk enable sync.",
+          "Sync legacy registrar-api tidak tersedia di mode self-sufficient (default). Edit pricing manual per TLD di tabel di bawah.",
         );
       } else {
         setRegistrarErr((e as Error).message);

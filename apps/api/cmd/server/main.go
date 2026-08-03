@@ -22,7 +22,6 @@ import (
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
-	"github.com/webbuilder/api/internal/contactsync"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/email_log"
@@ -472,17 +471,16 @@ func main() {
 		gwRegistry.SetWalletDebiter(walletDebiterAdapter{repo: walletLocalRepo})
 	}
 
-	// Contact syncer — propagate profile update (self atau by reseller/agent)
-	// ke registrar contact per domain aktif user. Skip kalau registrar
-	// disabled (client nil). Async fire-and-forget.
-	if registrarClient != nil {
-		syncer := contactsync.New(registrarClient, purchaseRepo, authRepo)
-		authHandler.SetContactSyncer(syncer)
-		resellerHandler.SetContactSyncer(syncer)
-		slog.Info("contact syncer: enabled — profile update akan propagate ke registrar per domain aktif")
-	} else {
-		slog.Info("contact syncer: disabled (REGISTRAR_API_URL kosong)")
-	}
+	// Contact syncer — REMOVED (Fase 1 self-sufficient cleanup).
+	// Legacy behavior: propagate profile update ke registrar-api PANDI via
+	// UpdateResellerContactByID/UpdateResellerDomainContact.
+	// Alasan hapus: contactsync belum di-migrate ke api-registry contact
+	// endpoints (contact routing di-defer per plan-phase-1). Kalau butuh,
+	// implement ulang pakai registrar.RegisterDomainDirect flow atau via
+	// UpdateDomainContact via api-registry.
+	//
+	// authHandler + resellerHandler tetap nil-safe: `SetContactSyncer(nil)`
+	// = no propagation, profile update tetap tersimpan di web builder DB.
 
 	deps := router.Deps{
 		Cfg:          cfg,

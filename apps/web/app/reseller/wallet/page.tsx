@@ -1,8 +1,13 @@
 "use client";
 
-// Reseller wallet dashboard — balance + recent ledger + tombol top-up.
-// Ledger detail lengkap ada di /reseller/wallet/ledger. Top-up flow di
-// /reseller/wallet/topup.
+// Reseller wallet dashboard — balance + recent ledger.
+// Sumber data: `wallet_local` package (Phase 1 self-sufficient) via
+// `/api/v1/wallet/v2` endpoint. Legacy `/api/v1/reseller/wallet` (proxy ke
+// registrar-api) sudah tidak dipakai — di-guard return 503 di backend
+// kalau operator jalan di mode self-sufficient.
+//
+// Top-up flow di-defer sampai `wallet_local.Topup` di-implement. Untuk
+// sementara, admin credit manual via `/admin/wallet/v2/adjust`.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -12,30 +17,31 @@ import {
   ArrowUpRight,
   History,
   Loader2,
-  PlusCircle,
   Wallet as WalletIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
+// Shape dari GET /api/v1/wallet/v2/ledger — items[] dari wallet_local.
 type LedgerEntry = {
-  id: number;
-  kind: string;
-  amount: number;
+  id: string;       // uuid
+  delta: number;    // + credit, - debit (IDR minor unit)
+  reason: string;   // "topup" | "debit_register" | "debit_renew" | "refund" | "admin_adjust"
   balance_after: number;
-  description?: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 };
 
-type Wallet = {
+// Shape dari GET /api/v1/wallet/v2 — balance snapshot.
+type WalletBalance = {
   balance: number;
   currency: string;
-  recent_ledger: LedgerEntry[];
 };
 
 export default function ResellerWalletPage() {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [balance, setBalance] = useState<WalletBalance | null>(null);
+  const [recent, setRecent] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -43,8 +49,13 @@ export default function ResellerWalletPage() {
     setLoading(true);
     setErr(null);
     try {
-      const w = await api<Wallet>("/api/v1/reseller/wallet");
-      setWallet(w);
+      // Paralel fetch balance + last 5 ledger entries.
+      const [b, l] = await Promise.all([
+        api<WalletBalance>("/api/v1/wallet/v2"),
+        api<{ items: LedgerEntry[] }>("/api/v1/wallet/v2/ledger?limit=5"),
+      ]);
+      setBalance(b);
+      setRecent(l.items || []);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -86,23 +97,17 @@ export default function ResellerWalletPage() {
                 Saldo saat ini
               </p>
               <p className="mt-1 text-4xl font-bold tracking-tight">
-                {loading && wallet === null ? (
+                {loading && balance === null ? (
                   <Loader2 className="size-8 animate-spin text-muted-foreground" />
                 ) : (
-                  formatIDR(wallet?.balance ?? 0)
+                  formatIDR(balance?.balance ?? 0)
                 )}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {wallet?.currency || "IDR"}
+                {balance?.currency || "IDR"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button asChild className="gap-1.5">
-                <Link href="/reseller/wallet/topup">
-                  <PlusCircle className="size-4" />
-                  Top-up
-                </Link>
-              </Button>
               <Button variant="outline" asChild className="gap-1.5">
                 <Link href="/reseller/wallet/ledger">
                   <History className="size-4" />
@@ -117,22 +122,32 @@ export default function ResellerWalletPage() {
       <Card>
         <CardContent className="p-5">
           <h3 className="mb-3 text-sm font-semibold">Transaksi Terakhir</h3>
-          {loading && wallet === null ? (
+          {loading && recent.length === 0 ? (
             <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Memuat…
             </div>
-          ) : !wallet?.recent_ledger?.length ? (
+          ) : recent.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">
-              Belum ada transaksi. Klik <b>Top-up</b> untuk mulai.
+              Belum ada transaksi. Hubungi admin untuk top-up saldo pertama.
             </p>
           ) : (
             <ul className="divide-y">
-              {wallet.recent_ledger.map((e) => (
+              {recent.map((e) => (
                 <LedgerRow key={e.id} entry={e} />
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
+        <CardContent className="flex items-start gap-3 p-4 text-sm">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+          <div className="text-amber-900 dark:text-amber-200">
+            Fitur top-up mandiri sedang dalam pengembangan. Untuk isi saldo,
+            hubungi admin untuk credit manual.
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -140,8 +155,8 @@ export default function ResellerWalletPage() {
 }
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {
-  const isCredit = entry.amount > 0;
-  const label = kindLabel(entry.kind);
+  const isCredit = entry.delta > 0;
+  const label = reasonLabel(entry.reason);
   return (
     <li className="flex items-center justify-between gap-3 py-3">
       <div className="flex min-w-0 items-center gap-3">
@@ -160,11 +175,6 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{label}</p>
-          {entry.description && (
-            <p className="truncate text-xs text-muted-foreground">
-              {entry.description}
-            </p>
-          )}
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {formatDate(entry.created_at)}
           </p>
@@ -179,7 +189,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
           }
         >
           {isCredit ? "+" : ""}
-          {formatIDR(entry.amount)}
+          {formatIDR(entry.delta)}
         </p>
         <p className="text-[11px] text-muted-foreground">
           sisa {formatIDR(entry.balance_after)}
@@ -189,16 +199,15 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
   );
 }
 
-function kindLabel(kind: string): string {
+function reasonLabel(reason: string): string {
   const map: Record<string, string> = {
     topup: "Top-up",
     debit_register: "Debit — Register Domain",
     debit_renew: "Debit — Renew Domain",
-    credit_refund_epp: "Refund — EPP gagal",
-    credit_refund_admin: "Refund — Admin",
-    debit_admin: "Debit — Admin",
+    refund: "Refund",
+    admin_adjust: "Adjustment Admin",
   };
-  return map[kind] || kind;
+  return map[reason] || reason;
 }
 
 function formatIDR(amount: number): string {

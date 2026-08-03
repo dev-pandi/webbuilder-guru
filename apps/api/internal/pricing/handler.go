@@ -89,6 +89,10 @@ func (h *Handler) AdminListRegistrarTLDs(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
 			"Registrar client belum di-wire (set REGISTRAR_API_URL + credentials di .env).")
 	}
+	if !h.registrar.HasLegacyBackend() {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "self_sufficient_mode",
+			"Sync TLD dari registrar-api tidak tersedia di mode self-sufficient. Gunakan /admin/zones untuk manage TLD catalog lokal + /admin/pricing untuk set harga.")
+	}
 	tlds, err := h.registrar.ListRegistrarTLDs(c.Context())
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_lookup_failed",

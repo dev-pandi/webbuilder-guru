@@ -1,7 +1,11 @@
 "use client";
 
-// Agent wallet dashboard — view saldo induk reseller (read-only). Agent
-// tidak bisa top-up sendiri; kalau butuh dana, minta reseller.
+// Agent wallet dashboard — view saldo agent (read-only). Data dari
+// `wallet_local` via `/api/v1/wallet/v2` (Phase 1 self-sufficient).
+//
+// Note: di flow self-sufficient, tiap user (termasuk agent) punya balance
+// sendiri di `wallet_balances`. Top-up mandiri belum tersedia — admin
+// credit manual via /admin/wallet/v2/adjust.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -19,22 +23,22 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 type LedgerEntry = {
-  id: number;
-  kind: string;
-  amount: number;
+  id: string;
+  delta: number;
+  reason: string;
   balance_after: number;
-  description?: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 };
 
-type Wallet = {
+type WalletBalance = {
   balance: number;
   currency: string;
-  recent_ledger: LedgerEntry[];
 };
 
 export default function AgentWalletPage() {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [balance, setBalance] = useState<WalletBalance | null>(null);
+  const [recent, setRecent] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -42,8 +46,12 @@ export default function AgentWalletPage() {
     setLoading(true);
     setErr(null);
     try {
-      const w = await api<Wallet>("/api/v1/agent/wallet");
-      setWallet(w);
+      const [b, l] = await Promise.all([
+        api<WalletBalance>("/api/v1/wallet/v2"),
+        api<{ items: LedgerEntry[] }>("/api/v1/wallet/v2/ledger?limit=5"),
+      ]);
+      setBalance(b);
+      setRecent(l.items || []);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -64,8 +72,8 @@ export default function AgentWalletPage() {
             <h1 className="text-2xl font-bold tracking-tight">Wallet</h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            Saldo induk reseller — di-debit tiap Anda beli/perpanjang domain
-            atas nama klien. Read-only: minta reseller kalau butuh top-up.
+            Saldo prabayar Anda — di-debit tiap Anda beli/perpanjang domain
+            atas nama klien.
           </p>
         </div>
       </div>
@@ -82,17 +90,17 @@ export default function AgentWalletPage() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Saldo induk reseller
+                Saldo saat ini
               </p>
               <p className="mt-1 text-4xl font-bold tracking-tight">
-                {loading && wallet === null ? (
+                {loading && balance === null ? (
                   <Loader2 className="size-8 animate-spin text-muted-foreground" />
                 ) : (
-                  formatIDR(wallet?.balance ?? 0)
+                  formatIDR(balance?.balance ?? 0)
                 )}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {wallet?.currency || "IDR"}
+                {balance?.currency || "IDR"}
               </p>
             </div>
             <Button variant="outline" asChild className="gap-1.5">
@@ -108,26 +116,24 @@ export default function AgentWalletPage() {
       <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
         <Info className="size-4 shrink-0 translate-y-0.5 text-primary" />
         <span>
-          Anda tidak bisa top-up wallet ini secara langsung — saldonya milik
-          reseller induk. Kalau saldo hampir habis, koordinasikan dengan reseller.
+          Fitur top-up mandiri sedang dalam pengembangan. Untuk isi saldo,
+          hubungi admin untuk credit manual.
         </span>
       </div>
 
       <Card>
         <CardContent className="p-5">
           <h3 className="mb-3 text-sm font-semibold">Transaksi Terakhir</h3>
-          {loading && wallet === null ? (
+          {loading && recent.length === 0 ? (
             <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Memuat…
             </div>
-          ) : !wallet?.recent_ledger?.length ? (
-            <p className="py-4 text-sm text-muted-foreground">
-              Belum ada transaksi.
-            </p>
+          ) : recent.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">Belum ada transaksi.</p>
           ) : (
             <ul className="divide-y">
-              {wallet.recent_ledger.map((e) => (
+              {recent.map((e) => (
                 <LedgerRow key={e.id} entry={e} />
               ))}
             </ul>
@@ -139,8 +145,8 @@ export default function AgentWalletPage() {
 }
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {
-  const isCredit = entry.amount > 0;
-  const label = kindLabel(entry.kind);
+  const isCredit = entry.delta > 0;
+  const label = reasonLabel(entry.reason);
   return (
     <li className="flex items-center justify-between gap-3 py-3">
       <div className="flex min-w-0 items-center gap-3">
@@ -159,11 +165,6 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{label}</p>
-          {entry.description && (
-            <p className="truncate text-xs text-muted-foreground">
-              {entry.description}
-            </p>
-          )}
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {formatDate(entry.created_at)}
           </p>
@@ -178,7 +179,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
           }
         >
           {isCredit ? "+" : ""}
-          {formatIDR(entry.amount)}
+          {formatIDR(entry.delta)}
         </p>
         <p className="text-[11px] text-muted-foreground">
           sisa {formatIDR(entry.balance_after)}
@@ -188,16 +189,15 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
   );
 }
 
-function kindLabel(kind: string): string {
+function reasonLabel(reason: string): string {
   const map: Record<string, string> = {
     topup: "Top-up",
     debit_register: "Debit — Register Domain",
     debit_renew: "Debit — Renew Domain",
-    credit_refund_epp: "Refund — EPP gagal",
-    credit_refund_admin: "Refund — Admin",
-    debit_admin: "Debit — Admin",
+    refund: "Refund",
+    admin_adjust: "Adjustment Admin",
   };
-  return map[kind] || kind;
+  return map[reason] || reason;
 }
 
 function formatIDR(amount: number): string {

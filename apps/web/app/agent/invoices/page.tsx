@@ -1,14 +1,15 @@
 "use client";
 
-// Agent invoice list — pakai InvoicesList shared component.
-//
-// `endpoint` override ke /agent/invoices karena default /invoices scope by
-// external_user_id = caller — invoice on-behalf-of tagged external_user_id
-// = client. Endpoint /agent/invoices fan-out aggregate self + semua client
-// yang di-manage agent (bukan reseller induk atau agent lain).
+// Agent invoice list — redirect ke /settings/invoices canonical page.
+// Aggregate on-behalf-of belum di-implement di local invoices.
 
-import { InvoicesList } from "@/components/invoices/InvoicesList";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AgentInvoicesPage() {
-  return <InvoicesList endpoint="/api/v1/agent/invoices" />;
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/settings/invoices");
+  }, [router]);
+  return null;
 }

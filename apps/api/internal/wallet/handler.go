@@ -110,9 +110,8 @@ func (h *Handler) resolveActor(c *fiber.Ctx) (*actor, error) {
 // GetWallet — GET /api/v1/reseller/wallet
 // Reseller/agent view balance + last 20 ledger. Proxy passthrough.
 func (h *Handler) GetWallet(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	if _, err := h.resolveActor(c); err != nil {
 		return httpx.Forbidden(c, err.Error())
@@ -126,9 +125,8 @@ func (h *Handler) GetWallet(c *fiber.Ctx) error {
 
 // GetLedger — GET /api/v1/reseller/wallet/ledger?kind=&page=&page_size=
 func (h *Handler) GetLedger(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	if _, err := h.resolveActor(c); err != nil {
 		return httpx.Forbidden(c, err.Error())
@@ -160,9 +158,8 @@ type topupReq struct {
 }
 
 func (h *Handler) InitTopup(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	a, err := h.resolveActor(c)
 	if err != nil {
@@ -214,9 +211,8 @@ func (h *Handler) InitTopup(c *fiber.Ctx) error {
 
 // GetTopupStatus — GET /api/v1/reseller/wallet/topup/:topup_id/status
 func (h *Handler) GetTopupStatus(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	if _, err := h.resolveActor(c); err != nil {
 		return httpx.Forbidden(c, err.Error())
@@ -234,9 +230,8 @@ func (h *Handler) GetTopupStatus(c *fiber.Ctx) error {
 
 // ListMyTopups — GET /api/v1/reseller/wallet/topup?status=&page=&page_size=
 func (h *Handler) ListMyTopups(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	if _, err := h.resolveActor(c); err != nil {
 		return httpx.Forbidden(c, err.Error())
@@ -260,9 +255,8 @@ func (h *Handler) ListMyTopups(c *fiber.Ctx) error {
 // ListBanks — GET /api/v1/reseller/wallet/topup/banks
 // Read-only, safe untuk reseller/agent kedua-duanya (info publik: bank tujuan).
 func (h *Handler) ListBanks(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	if _, err := h.resolveActor(c); err != nil {
 		return httpx.Forbidden(c, err.Error())
@@ -278,9 +272,8 @@ func (h *Handler) ListBanks(c *fiber.Ctx) error {
 // Reseller-only. File di-forward ke registrar tanpa disimpan di web-builder.
 // MIME whitelist + size limit di-enforce di sini + registrar (defence in depth).
 func (h *Handler) UploadProof(c *fiber.Ctx) error {
-	if h.registrar == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
-			"Registrar API belum dikonfigurasi.")
+	if !h.requireLegacyBackend(c) {
+		return nil
 	}
 	a, err := h.resolveActor(c)
 	if err != nil {

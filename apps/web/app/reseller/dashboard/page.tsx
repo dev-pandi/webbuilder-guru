@@ -50,7 +50,7 @@ export default function ResellerDashboardPage() {
     api<PurchaseRow[]>("/api/v1/reseller/purchases?limit=10")
       .then((r) => setPurchases(r ?? []))
       .catch(() => setPurchases([]));
-    api<WalletSnapshot>("/api/v1/reseller/wallet")
+    api<WalletSnapshot>("/api/v1/wallet/v2")
       .then((w) => setWallet(w))
       .catch(() => setWallet({ balance: 0, currency: "IDR" }));
     api<Stats>("/api/v1/reseller/stats")
