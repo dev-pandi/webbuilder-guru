@@ -1,536 +1,351 @@
-# Plan — Fase 0 + 1: Web Builder Self-Sufficient Business Layer
+# Plan — Web Builder Self-Sufficient (Status Snapshot)
 
-Prerequisites baca dulu: [plan-saas-registrar-platform.md](plan-saas-registrar-platform.md)
+> **Target**: Web builder FULL pakai `api-registry` service untuk EPP. **ZERO
+> dependency** ke `registrar-api` PANDI di production build. Business logic
+> (wallet, invoice, payment gateway, zone catalog, pricing, promo, dokumen)
+> semua native di web builder.
 
-**Goal**: Web builder jadi source of truth untuk semua business logic
-(payment, invoice, wallet, zone catalog, PPN, dokumen). Registrar-api PANDI
-tetap dipanggil untuk EPP execution VIA interface abstraction (nanti Fase 2
-ganti implementation ke api-registry EPP direct).
-
-**Timeline**: 7-8 minggu, 1-2 engineer.
-
-**Blast radius**: Backend + admin panel + admin migrations. Frontend
-reseller/agent/client mostly untouched (kecuali wizard checkout yang ada
-sedikit polish).
-
-**Reversibility**: Semua backward-compat. Kalau perlu, rollback per fase.
+Prerequisites: [plan-saas-registrar-platform.md](plan-saas-registrar-platform.md)
 
 ---
 
-## Fase 0 — Interface abstraction (1-2 minggu)
+## Ringkasan Status (Snapshot)
 
-### Task 0.1 — Definisi interface `RegistrarProvider`
+**Backend + Admin UI + User Invoice UI COMPLETE.** Web builder bisa jalan
+mode self-sufficient. Sisa: wizard checkout migrate, wallet integration
+internal, data migration, docs.
 
-File baru: `apps/api/internal/registrar/provider.go`
+### Cara jalan mode self-sufficient sekarang
 
-```go
-package registrar
+```env
+# apps/api/.env
+REGISTRAR_API_URL=          # kosongkan → skip legacy proxy
+REGISTRAR_API_KEY=
+REGISTRAR_RESELLER_EMAIL=
+REGISTRAR_RESELLER_PASSWORD=
 
-import (
-    "context"
-    "github.com/google/uuid"
-)
-
-// RegistrarProvider — abstract layer di atas registrar SDK. Implementation
-// awal: PandiRegistrarAPIProvider (wrap existing Client). Nanti Fase 2:
-// ApiRegistryProvider (talk ke api-registry internal via mTLS/HMAC).
-type RegistrarProvider interface {
-    // Domain lifecycle
-    CheckDomain(ctx context.Context, domain string) (*DomainCheckResponse, error)
-    RegisterDomain(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
-    RenewDomain(ctx context.Context, name string, req RenewRequest) (*RegisterResponse, error)
-    TransferDomain(ctx context.Context, name string, req TransferRequest) (*RegisterResponse, error)
-    GetRegisterStatus(ctx context.Context, jobID string) (*RegisterStatus, error)
-    RetryDomain(ctx context.Context, jobID string) (*RegisterStatus, error)
-    CancelDomain(ctx context.Context, jobID string) error
-    ListDomains(ctx context.Context, externalUserID string, page, perPage int) (*DomainListResponse, error)
-
-    // Nameserver
-    GetNameservers(ctx context.Context, name string) (*NameserverInfo, error)
-    UpdateNameservers(ctx context.Context, name string, ns []string) (*NameserverInfo, error)
-
-    // Contact
-    GetContact(ctx context.Context, contactID uint64) (*ResellerContact, error)
-    UpdateContactByID(ctx context.Context, contactID uint64, payload UpdateContactPayload) (*UpdateContactResponse, error)
-    UpdateDomainContact(ctx context.Context, name string, payload UpdateContactPayload) (*UpdateContactResponse, error)
-
-    // WHOIS
-    Whois(ctx context.Context, domain string) (*Whois, error)
-
-    // Capabilities
-    Capabilities() ProviderCapabilities
-}
-
-// ProviderCapabilities — cek apa yang provider support, untuk enable/disable
-// endpoint di web builder secara dinamis. Provider baru mungkin tidak
-// support wallet/promo/doc — feature flag di runtime.
-type ProviderCapabilities struct {
-    HasWallet       bool // deposit/prepaid balance
-    HasPromoInternal bool // promo code registry-side
-    HasDocumentFlow bool // KTP/NPWP upload flow
-    HasWebhook      bool // async status callback
-    HasBulkCheck    bool // batch availability
-    HasTransfer     bool // transfer in/out
-}
+# Aktifkan api-registry
+API_REGISTRY_URL=http://api-registry:5000
+API_REGISTRY_HMAC_SECRET=<same as api-registry INTERNAL_HMAC_SECRET>
 ```
 
-### Task 0.2 — Implementation `PandiRegistrarAPIProvider`
-
-File baru: `apps/api/internal/registrar/provider_pandi.go`
-
-Wrap existing `Client` — semua method interface delegate ke method existing.
-Nol perubahan behavior.
-
-### Task 0.3 — Wire di main.go
-
-```go
-var provider registrar.RegistrarProvider
-if cfg.RegistrarAPIURL != "" {
-    client := // existing client init
-    provider = registrar.NewPandiRegistrarAPIProvider(client)
-    slog.Info("registrar provider: pandi_api enabled")
-}
-// nanti Fase 2: kalau REGISTRY_MODE=api_registry → gunakan ApiRegistryProvider
+Startup log:
+```
+registrar client: enabled  legacy_base_url=  api_registry_url=http://api-registry:5000
+registrar client: self-sufficient mode — legacy registrar-api backend disabled,
+                  EPP via api-registry only
 ```
 
-Inject `provider` (bukan `client`) ke handler yang butuh:
-- `domain_purchase.Handler`
-- `wallet.Handler`
-- `contactsync.Syncer`
-- `pricing.Handler` (untuk `AdminListRegistrarTLDs` — bisa jadi Capabilities-guarded)
+### Legend
 
-### Task 0.4 — Refactor handlers
-
-Ubah type dari `*registrar.Client` ke `registrar.RegistrarProvider` di
-semua field struct. Method call tetap sama karena interface superset.
-
-**Effort**: ~3-5 hari (mostly find/replace + test).
-
-### Test 0
-
-`go vet && go build && go test ./...`. Existing test suite harus pass tanpa
-perubahan. Manual smoke test: register domain via wizard, cek flow tidak
-regress.
+- ✅ Done + verified (build + test green)
+- ⏳ In progress / pending
+- ⏭️ Deferred (out of Fase 1 scope)
 
 ---
 
-## Fase 1 — Business layer self-sufficient (5-6 minggu)
+## Fase Overview
 
-### Task 1.1 — Migration schema tambahan (Week 1)
+| Fase | Status | Deliverable |
+|---|---|---|
+| **Fase 0** — Interface abstraction | ✅ | Dual-backend switch di `registrar.Client` (routing helper `UsesAPIRegistry`, method `RegisterDomainDirect`, `RenewDomainDirect`) |
+| **Fase 1a** — api-registry service scaffolding | ✅ | Separate Go service, HMAC auth, jobs audit, resilience decorator, K8s manifests |
+| **Fase 1b** — api-registry EPP direct | ✅ | Full EPP native via [al0fayz/epp-pandi-client](https://github.com/al0fayz/epp-pandi-client): register, renew, info, nameserver diff, contact CRUD, WHOIS TCP:43 fallback |
+| **Fase 1c** — Web builder dual-backend routing | ✅ | 4 method EPP-native (Check/Whois/GetNS/UpdateNS) route ke api-registry. Register/Renew via `*Direct` variants (no payment coupling). Deferred: contact methods (lossy NicHandle translation) |
+| **Fase 1** — Boundary cleanup api-registry | ✅ | Hapus NIK/document/invoice/pricing/zone/promo dari api-registry. Pure EPP-to-registry |
+| **Fase 1** — Self-sufficient backend packages | ✅ | 6 packages baru di `apps/api/internal/`: `zones`, `settings`, `payment_methods` (`payments`), `paymentgw`, `invoices`, `paymentwh` |
+| **Fase 1** — 2-phase checkout | ✅ | `PurchaseV2` + `RenewV2` endpoints. Flow: invoice + charge lokal → webhook → EPP execute via api-registry direct |
+| **Fase 1** — Admin UI | ✅ | 4 halaman: `/admin/settings`, `/admin/zones`, `/admin/payment-methods`, `/admin/invoices` |
+| **Fase 1** — User invoice UI | ✅ | `/settings/invoices-v2` (local billing) |
+| **Fase 1** — Self-sufficient mode support di main.go | ✅ | `REGISTRAR_API_URL` boleh kosong; skip auto-login kalau tidak ada legacy backend |
+| **Fase 1** — Wizard checkout migrate | ⏳ | `/sites/new-with-domain` masih pakai legacy `POST /purchase`. Migrate ke `POST /purchase/v2` + fetch dynamic `GET /payment-methods` |
+| **Fase 1** — Wallet integration internal | ⏳ | Web builder wallet package (menggantikan registrar-api wallet). Migration `wallet_balances` + `wallet_ledger` + repo + handler + wire ke `paymentgw.deposit_wallet` |
+| **Fase 1** — Data migration script | ⏳ | Populate `platform_prices` + `zones` dari existing config/hardcoded values. CLI atau SQL seed |
+| **Fase 1** — Paylabs gateway impl | ⏳ | Pattern mirror Midtrans (buildPaylabs + handleWebhook signature verify) |
+| **Fase 1** — Docs | ⏳ | Admin runbook (setup gateway + zones + PPN + brand); user guide (checkout flow) |
+| **Fase 1** — Legacy code cleanup | ⏳ | Hapus `registrar/wallet.go`, `document.go`, `invoice.go`, `config.go` (rotate webhook secret via registrar-api), method `GetDomainPrice`/`ListRegistrarTLDs`/`CheckAvailability`. Setelah wizard migrate + wallet integration siap |
+| **Fase 2a** — Async job runner | ⏭️ | Asynq/Redis di api-registry; swap `MemoryStore` |
+| **Fase 2b** — Multi-registry | ⏭️ | Verisign (.com), CentralNic, dsb. |
+| **Fase 3** — White-label deployment kit | ⏭️ | Docker Compose + Helm chart + branding config |
 
-File baru: `apps/api/internal/db/migrations/0035_payment_methods_settings.sql`
+---
 
-```sql
--- +goose Up
+## Detail per Delivered Feature
 
--- Payment methods — admin toggle per method, config JSON per provider.
-CREATE TABLE IF NOT EXISTS payment_methods (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code         TEXT NOT NULL UNIQUE,     -- 'midtrans' | 'paylabs' | 'manual_bank' | 'deposit_wallet'
-    label        TEXT NOT NULL,            -- "Midtrans", "Transfer Bank Manual"
-    type         TEXT NOT NULL,            -- 'gateway' | 'manual' | 'wallet'
-    enabled      BOOLEAN NOT NULL DEFAULT false,
-    config       JSONB NOT NULL DEFAULT '{}'::jsonb,  -- credentials, bank info, dsb.
-    sort_order   INT NOT NULL DEFAULT 0,
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by   UUID REFERENCES users(id) ON DELETE SET NULL
-);
+### 1. api-registry Service — Complete
 
--- Seed default 4 methods (semua disabled, admin harus enable + isi credentials).
-INSERT INTO payment_methods (code, label, type, enabled, sort_order) VALUES
-    ('deposit_wallet', 'Wallet Prabayar', 'wallet', true, 1),
-    ('midtrans', 'Midtrans (Snap)', 'gateway', false, 2),
-    ('paylabs', 'Paylabs', 'gateway', false, 3),
-    ('manual_bank', 'Transfer Bank Manual', 'manual', false, 4)
-ON CONFLICT (code) DO NOTHING;
+**Location**: [apps/api-registry/](apps/api-registry/)
 
--- System settings — generic key-value untuk config yang perlu dinamis.
--- Key naming convention: `<namespace>.<key>` (mis. `tax.ppn_rate`).
-CREATE TABLE IF NOT EXISTS system_settings (
-    key          TEXT PRIMARY KEY,
-    value        TEXT NOT NULL,       -- string (parse ke type sesuai konteks)
-    description  TEXT NOT NULL DEFAULT '',
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by   UUID REFERENCES users(id) ON DELETE SET NULL
-);
+**Provider modes** (env `API_REGISTRY_PROVIDER_MODE`):
+- `pandi_wrapper` — HTTP proxy ke registrar-api PANDI (Fase 1a MVP)
+- `epp_direct` — Native EPP client via al0fayz/epp-pandi-client (Fase 1b, production target)
 
--- Seed default settings (bisa admin ubah nanti).
-INSERT INTO system_settings (key, value, description) VALUES
-    ('tax.ppn_enabled', 'true', 'Apply PPN ke invoice — set false untuk skip PPN'),
-    ('tax.ppn_rate', '0.11', 'PPN rate desimal (0.11 = 11%). Ubah kalau regulasi berubah.'),
-    ('tax.ppn_label', 'PPN 11%', 'Label PPN di invoice PDF'),
-    ('brand.name', 'Web Builder', 'Nama brand di header + footer + invoice'),
-    ('brand.support_email', 'support@example.com', 'Kontak support di invoice + email footer'),
-    ('brand.support_phone', '', 'Kontak telepon support (opsional)')
-ON CONFLICT (key) DO NOTHING;
+**Endpoints** (semua behind HMAC internal auth):
+- Domain: `check`, `bulk-check`, `register`, `renew`, `info`, `list`, `retry`, `cancel`, `status`
+- Nameserver: `get`, `update` (add/rem diff supaya EPP tidak reject replace-all)
+- Contact: `get`, `update-by-id`, `update-domain-contact`
+- WHOIS: TCP:43 primary, EPP `domain:info` fallback saat network unreachable
+- Jobs: audit + idempotency (in-memory MVP, target Fase 2a: Redis)
 
--- +goose Down
-DROP TABLE IF EXISTS system_settings;
-DROP TABLE IF EXISTS payment_methods;
+**Boundary**: NIK, document upload, invoice, pricing, zone catalog, promo — SEMUA
+di web builder side. api-registry pure EPP-to-registry. Test suite verify
+tidak ada field payment/promo/document/NIK di api-registry request/response.
+
+### 2. Web Builder Backend Packages — Complete
+
+Semua baru di `apps/api/internal/`:
+
+| Package | Migration | Purpose |
+|---|---|---|
+| **[zones](apps/api/internal/zones/)** | `0035_zones_catalog.sql` | TLD catalog: active, require_document, auto_approved, nik_auto_approved, min/max years |
+| **[settings](apps/api/internal/settings/)** | `0036_system_settings.sql` | Key-value config (PPN rate, brand info) dengan 60s in-memory cache + typed accessors |
+| **[payments](apps/api/internal/payments/)** | `0037_payment_methods.sql` | payment_methods CRUD dengan config JSONB per type (midtrans/paylabs/manual_bank/deposit_wallet). Credential masking di list public |
+| **[paymentgw](apps/api/internal/paymentgw/)** | — | Gateway interface + concrete impl Midtrans (Snap API + SHA512 webhook verify) + manual_bank (instructions markdown). Registry lookup dari `payment_methods` config |
+| **[invoices](apps/api/internal/invoices/)** | `0038_invoices.sql` | State machine (draft→unpaid→paid/expired/cancelled/refund) + line items + advisory-lock sequential number generator + HTML PDF renderer (uses `settings.Service` untuk PPN + brand) |
+| **[paymentwh](apps/api/internal/paymentwh/)** | — | Webhook receiver `/webhooks/payment/:code` yang dispatch ke `Gateway.HandleWebhook` + `invoices.MarkPaid` + trigger `Callback` untuk downstream EPP execute |
+| **[domain_purchase](apps/api/internal/domain_purchase/)** — extended | — | `PurchaseV2` + `RenewV2` handlers (Phase A checkout: invoice + charge lokal). `ExecuteAfterPayment` callback (Phase B: EPP register/renew via `RegisterDomainDirect`) |
+
+### 3. 2-Phase Checkout Flow — Complete
+
+**Phase A — Checkout** (`POST /api/v1/domains/purchase/v2` atau `.../renew/v2`):
+```
+Frontend → PurchaseV2
+  1. Validate domain + years + payment_method
+  2. Fetch caller profile + zone active check
+  3. pricing.GetPlatformByTLD → retail_register/renew_price
+  4. invoices.CreateForRegister → invoice_id + total (with PPN via settings)
+  5. gwRegistry.Get(payment_method) → Gateway
+  6. Gateway.CreateCharge(order_id=invoice_id) → payment_url + provider_ref
+  7. invoices.SavePaymentRef → invoice draft→unpaid
+  8. Save Purchase local (status=pending_payment)
+  9. Return { job_id, invoice_id, payment_url, total, due_at }
 ```
 
-File baru: `apps/api/internal/db/migrations/0036_zones_catalog.sql`
+**Phase B — Execute** (webhook callback):
+```
+Provider (Midtrans) → POST /webhooks/payment/midtrans
+  1. paymentwh.Receive → Gateway.HandleWebhook verify signature
+  2. invoices.MarkPaid (idempotent)
+  3. Callback: purchaseHandler.ExecuteAfterPayment(invoice)
+     → parse metadata (kind, domain, years)
+     → registrar.RegisterDomainDirect (kalau kind=register)
+        atau RenewDomainDirect (kalau kind=renew)
+        → api-registry.RegisterDomain / RenewDomain
+        → EPP domain:create / renew
+     → update Purchase.status = active
+     → auto-attach Cloudflare (opsional)
+```
 
+**Metrics**:
+- `domain_purchase_v2_created_total{result, gateway}`
+- `domain_renew_v2_created_total{result, gateway}`
+- `payment_webhooks_total{code, result}`
+- `domain_purchase_execute_after_payment_total{result, kind}`
+
+### 4. Admin UI — Complete
+
+Nav di [apps/web/app/admin/layout.tsx](apps/web/app/admin/layout.tsx):
+
+| Page | Path | Fungsi |
+|---|---|---|
+| Settings | `/admin/settings` | Grouped: Pajak (PPN enabled + rate + label) + Brand (nama/company/address/tax_id/support) |
+| Zones | `/admin/zones` | CRUD TLD catalog dengan modal form (active/require_doc/auto_approve/nik_auto/years range) |
+| Payment Methods | `/admin/payment-methods` | Card list + quick enable toggle + config modal per type (Midtrans server_key/client_key, Paylabs merchant_id/api_key, manual_bank multi-bank + instructions) |
+| Invoices | `/admin/invoices` | Table list dengan status badge + preview PDF + mark-paid manual (untuk manual_bank verify) + cancel |
+
+### 5. User UI — Complete (partial)
+
+| Page | Path | Fungsi |
+|---|---|---|
+| Invoices (v2) | `/settings/invoices-v2` | List local invoice dengan status "Lunas"/"Belum dibayar"/dsb + link cetak PDF |
+
+---
+
+## Yang Belum (Fase 1 remaining)
+
+### Task A — Wizard Checkout Migrate
+
+**File**: `apps/web/app/sites/new-with-domain/_content.tsx`
+
+Ganti:
+```ts
+const res = await api<PurchaseResp>("/api/v1/domains/purchase", {
+  method: "POST",
+  headers: { "Idempotency-Key": idempotencyKey },
+  body: JSON.stringify({ domain, years, payment_method, ... }),
+});
+```
+
+Jadi:
+```ts
+// Fetch dynamic payment methods
+const pm = await api<{ items: PaymentMethod[] }>("/api/v1/payment-methods");
+// Render dropdown dari pm.items (enabled only, credentials masked)
+
+// Post ke V2
+const res = await api<PurchaseV2Resp>("/api/v1/domains/purchase/v2", {
+  method: "POST",
+  headers: { "Idempotency-Key": idempotencyKey },
+  body: JSON.stringify({ domain, years, payment_method, return_url }),
+});
+// Redirect ke res.payment_url (kalau gateway) atau show res.instructions (manual)
+```
+
+**Blockers**:
+- V2 belum support wallet (butuh Task B)
+- V2 belum support on-behalf-of (defer sampai wallet ready)
+- V2 belum support promo (defer — bisa di-invoice metadata later)
+- V2 belum support document pre-attach (defer — .id document flow butuh admin verify workflow di web builder side)
+
+Untuk MVP: enable V2 only untuk simple flow (self-purchase + midtrans/manual_bank + no promo/docs). Legacy wizard tetap paralel untuk feature yang belum di-V2.
+
+### Task B — Wallet Integration Internal
+
+**Migrations**:
 ```sql
--- +goose Up
--- Zone catalog — admin definisi TLD apa yang di-support platform.
--- Sebelumnya di registrar-api DB; sekarang authoritative di web builder.
-CREATE TABLE IF NOT EXISTS zones (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tld                 TEXT NOT NULL UNIQUE,           -- 'id', 'co.id', 'com'
-    label               TEXT NOT NULL,                   -- '.id', '.co.id'
-    active              BOOLEAN NOT NULL DEFAULT true,
-    require_document    BOOLEAN NOT NULL DEFAULT false,  -- .id family = true
-    auto_approved       BOOLEAN NOT NULL DEFAULT true,   -- .id = false (admin approve)
-    nik_auto_approved   BOOLEAN NOT NULL DEFAULT false,  -- .id family = true (NIK cukup)
-    min_years           INT NOT NULL DEFAULT 1,
-    max_years           INT NOT NULL DEFAULT 10,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by          UUID REFERENCES users(id) ON DELETE SET NULL
+CREATE TABLE wallet_balances (
+    user_id       UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    balance       BIGINT NOT NULL DEFAULT 0,
+    currency      TEXT NOT NULL DEFAULT 'IDR',
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Seed sample zones PANDI (admin bisa edit/hapus/tambah).
-INSERT INTO zones (tld, label, require_document, auto_approved, nik_auto_approved) VALUES
-    ('id',       '.id',       true,  false, true),
-    ('co.id',    '.co.id',    true,  false, false),
-    ('web.id',   '.web.id',   false, true,  false),
-    ('biz.id',   '.biz.id',   false, true,  false),
-    ('my.id',    '.my.id',    false, true,  false),
-    ('or.id',    '.or.id',    true,  false, false),
-    ('sch.id',   '.sch.id',   true,  false, false),
-    ('ac.id',    '.ac.id',    true,  false, false),
-    ('go.id',    '.go.id',    true,  false, false),
-    ('desa.id',  '.desa.id',  true,  false, false)
+CREATE TABLE wallet_ledger (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    delta         BIGINT NOT NULL,       -- positive=topup/refund, negative=debit
+    reason        TEXT NOT NULL,          -- 'topup'|'debit_register'|'debit_renew'|'refund'
+    reference_id  UUID,                   -- invoice_id atau topup_id
+    balance_after BIGINT NOT NULL,
+    metadata      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_wallet_ledger_user_created ON wallet_ledger(user_id, created_at DESC);
+```
+
+**Package**: `apps/api/internal/wallet_local/` (avoid nama collision dengan
+`wallet` legacy yang proxy ke registrar-api).
+
+**Handler**:
+- `GET /api/v1/wallet` — balance + last 20 ledger entries
+- `POST /api/v1/wallet/topup` — invoice-first flow (create invoice untuk top-up, charge via gateway)
+- `GET /api/v1/wallet/ledger?limit=50&page=1` — full history
+
+**paymentgw integration**:
+- New `WalletGateway` impl di [paymentgw/](apps/api/internal/paymentgw/): saat CreateCharge, langsung debit wallet + return ProviderRefID = ledger.id. HandleWebhook return ErrUnsupported (tidak ada async payment).
+
+**PurchaseV2 integration**:
+- Handler cek `payment_method == "deposit_wallet"` → skip normal gateway charge, langsung debit wallet + mark invoice paid + trigger ExecuteAfterPayment synchronous (no webhook wait).
+
+### Task C — Data Migration Script
+
+**Purpose**: Populate `platform_prices` + `zones` dari nilai existing yang saat
+ini hardcoded/di-fetch dari registrar-api.
+
+**Option 1 — SQL seed** (`apps/api/internal/db/migrations/0039_seed_defaults.sql`):
+```sql
+-- +goose Up
+INSERT INTO platform_prices (tld, retail_register_price, retail_renew_price) VALUES
+    ('id',      250000, 250000),
+    ('co.id',   250000, 250000),
+    ('web.id',  75000,  75000),
+    ...
 ON CONFLICT (tld) DO NOTHING;
-
--- +goose Down
-DROP TABLE IF EXISTS zones;
 ```
 
-**Note**: `platform_prices` sudah ada, extend kalau perlu char-based pricing
-(2/3/4-char) sebagai extra migration di sub-task nanti.
+**Option 2 — CLI tool** (`apps/api/cmd/seed-defaults/`):
+- Read from `plan-reseller-roles.md` price catalog + `zones` seed migration
+- Insert idempotent via UPSERT
+- Verify count + report
 
-### Task 1.2 — Backend: `system_settings` package (Week 1-2)
+Rekomendasi: Option 1 (SQL) untuk simplicity. Prices bisa di-update via
+`/admin/pricing` UI setelah initial seed.
 
-File baru: `apps/api/internal/settings/`
+### Task D — Paylabs Gateway Impl
 
-- `repo.go` — Get/Set/List key-value. In-memory cache 60s (settings jarang berubah).
-- `handler.go` — admin CRUD:
-  - `GET /admin/settings` — list all
-  - `PATCH /admin/settings/:key` — update single value
-  - Semua admin-only, audit-logged.
-- `service.go` — helper accessors:
-  ```go
-  type Service struct { repo *Repo; cache sync.Map; ttl time.Duration }
-  func (s *Service) PPNRate(ctx) float64
-  func (s *Service) PPNEnabled(ctx) bool
-  func (s *Service) BrandName(ctx) string
-  ```
-- Konsumer di package lain (invoice generator, email template, dsb.) call
-  `Service` methods, bukan hard-code.
+**File**: `apps/api/internal/paymentgw/paylabs.go` (mirror midtrans.go pattern)
 
-### Task 1.3 — Backend: `payment_methods` package (Week 2)
+- Config: `{merchant_id, api_key, endpoint}`
+- CreateCharge: POST ke Paylabs `POST /invoice/create` (spec: <https://docs.paylabs.co.id>)
+- HandleWebhook: HMAC-SHA256 signature verify (per Paylabs docs)
+- Map status → normalized Status enum (paid/pending/failed/expired)
 
-File baru: `apps/api/internal/payments/`
+Effort: ~1 hari kalau credentials Paylabs sandbox available.
 
-- `repo.go` — CRUD payment methods
-- `handler.go` — admin CRUD:
-  - `GET /admin/payment-methods` — list
-  - `PATCH /admin/payment-methods/:id` — toggle enabled + update config
-  - `POST /admin/payment-methods/:id/test` — test credentials (kalau gateway)
-- Config schema per type:
-  - `midtrans`: `{server_key, client_key, is_production, snap_url}`
-  - `paylabs`: `{merchant_id, api_key, endpoint}`
-  - `manual_bank`: `{banks: [{name, account_number, account_holder}], instructions_md}`
-  - `deposit_wallet`: `{topup_min: 100000, topup_max: 100000000, methods: ['manual_bank', 'midtrans']}`
-- User-facing endpoint:
-  - `GET /api/v1/payment-methods` — return enabled methods dengan config minimal (tidak expose credentials). Frontend wizard render pilihan dari sini (bukan hardcoded array).
+### Task E — Docs
 
-### Task 1.4 — Backend: `zones` package (Week 2-3)
+**Admin Runbook** (`apps/api/docs/admin-runbook.md`):
+1. First-time setup: seed prices → configure PPN → add payment gateway credentials → test purchase flow di sandbox
+2. Monitoring: metrics dashboards, log queries
+3. Troubleshooting: webhook signature failures, invoice stuck, EPP timeout
+4. Rotation: JWT expiry (kalau still ada legacy backend), gateway credential update
 
-File baru: `apps/api/internal/zones/`
+**User Guide** (`apps/web/docs/user-guide.md`):
+1. Cara cari + beli domain via wizard
+2. Track status via `/sites/pending/[jobId]`
+3. Manage nameservers + contact
+4. Renew + download invoice PDF
 
-- `repo.go` — CRUD zones
-- `handler.go`:
-  - Admin: `GET /admin/zones`, `POST /admin/zones`, `PATCH /admin/zones/:id`, `DELETE /admin/zones/:id`
-  - Public: `GET /api/v1/zones` — return active zones untuk wizard (used by domain check).
+### Task F — Legacy Code Cleanup
 
-Refactor `domain_purchase.CheckDomain` — sebelumnya `allowed_zones` dari
-registrar response; sekarang cross-check dengan `zones` table local dulu.
-Kalau zone tidak active di sini, jangan expose ke user (walau registrar
-support). Kontrol full di operator.
+**Setelah Task A (wizard) + B (wallet) selesai**:
 
-### Task 1.5 — Backend: Payment gateway pluggable (Week 3-4)
+**Delete files/methods** di `apps/api/internal/registrar/`:
+- `wallet.go` — semua wallet method (`GetWallet`, `InitTopup`, `UploadTopupProof`, `ListTopupBanks`, dsb.)
+- `document.go` — semua document method (`ListCategories`, `UploadDocumentForJob`, `ListDocuments`, `ShowDocument`, `UploadDocument`)
+- `invoice.go` — `ListInvoices` (sudah punya replacement lokal `/invoices/v2`)
+- `config.go` — `GetWebhookConfig`, `SetWebhookConfig` (rotate secret via registrar-api)
+- `domain.go` methods: `GetDomainPrice`, `ListRegistrarTLDs`, `CheckAvailability` (pricing di web builder sekarang)
 
-File baru: `apps/api/internal/paymentgw/`
+**Delete config env** yang tidak dipakai lagi:
+- `REGISTRAR_API_URL` (setelah fully migrate)
+- `REGISTRAR_API_KEY`
+- `REGISTRAR_RESELLER_EMAIL`
+- `REGISTRAR_RESELLER_PASSWORD`
+- `REGISTRAR_WEBHOOK_SECRET`
 
-Design interface + implementasi:
+**Delete webhook receiver** `/webhooks/registrar/domain-status` (setelah wizard
+migrate — legacy flow tidak lagi generate purchase via registrar-api).
 
-```go
-type Gateway interface {
-    Code() string  // 'midtrans' | 'paylabs' | ...
-    // CreateCharge — bikin transaksi + return payment URL (untuk gateway) atau
-    // instruction (untuk manual).
-    CreateCharge(ctx, req ChargeRequest) (*ChargeResponse, error)
-    // HandleWebhook — verify signature + return event (success/failure).
-    HandleWebhook(ctx, headers, body) (*WebhookEvent, error)
-}
+**Rename `/settings/invoices-v2`** → `/settings/invoices` + delete legacy
+`InvoicesList` component.
 
-type ChargeRequest struct {
-    OrderID     string
-    Amount      int64  // IDR minor unit
-    Currency    string // "IDR"
-    Description string
-    Customer    Customer // name, email, phone
-    ReturnURL   string
-}
+**Rename endpoint** `/api/v1/invoices/v2` → `/api/v1/invoices` (setelah legacy
+`ListInvoices` removed).
 
-type ChargeResponse struct {
-    ProviderRefID string  // Midtrans transaction_id, dsb.
-    PaymentURL    string  // gateway redirect
-    ExpiresAt     time.Time
-    Instructions  string  // untuk manual bank
-}
-
-type WebhookEvent struct {
-    OrderID       string
-    Status        string // 'paid' | 'failed' | 'expired' | 'refund'
-    ProviderRefID string
-    PaidAmount    int64
-    PaidAt        *time.Time
-    RawPayload    []byte // audit
-}
-```
-
-Implement:
-- `paymentgw/midtrans.go` — Snap API (sudah familiar dari registrar-api integration, port logic)
-- `paymentgw/paylabs.go` — Paylabs API
-- `paymentgw/manual_bank.go` — return instructions, no external call. Webhook = admin verify manual (endpoint `POST /admin/payments/:id/verify`)
-- `paymentgw/registry.go` — Registry lookup by code, di-init dari `payment_methods` table.
-
-**Impact**: sekarang saat register domain, alur payment full di web builder,
-tidak lagi proxy via registrar-api.
-
-### Task 1.6 — Backend: Invoice generator (Week 3-4)
-
-File baru: `apps/api/internal/invoices/`
-
-- `repo.go`:
-  ```sql
-  CREATE TABLE invoices (
-      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      number        TEXT NOT NULL UNIQUE, -- 'INV-2026-07-000123'
-      user_id       UUID NOT NULL REFERENCES users(id),
-      purchased_by  UUID REFERENCES users(id),  -- reseller/agent kalau on-behalf
-      subtotal      BIGINT NOT NULL,
-      tax_rate      NUMERIC(5,4) NOT NULL,  -- capture rate at issuance
-      tax_amount    BIGINT NOT NULL,
-      total         BIGINT NOT NULL,        -- subtotal + tax
-      currency      TEXT NOT NULL DEFAULT 'IDR',
-      status        TEXT NOT NULL,          -- 'unpaid' | 'paid' | 'expired' | 'refund' | 'canceled'
-      payment_method TEXT NOT NULL,          -- code dari payment_methods.code
-      payment_gw_ref TEXT,                   -- Midtrans transaction_id, dsb.
-      paid_at       TIMESTAMPTZ,
-      due_at        TIMESTAMPTZ NOT NULL,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-      metadata      JSONB NOT NULL DEFAULT '{}'::jsonb  -- domain, years, promo, dsb.
-  );
-
-  CREATE TABLE invoice_lines (
-      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      invoice_id  UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-      description TEXT NOT NULL,   -- "Register .id — myshop.id (2 tahun)"
-      quantity    INT NOT NULL DEFAULT 1,
-      unit_price  BIGINT NOT NULL,
-      subtotal    BIGINT NOT NULL,
-      sort_order  INT NOT NULL DEFAULT 0
-  );
-  ```
-- `service.go`:
-  - `CreateForRegister(userID, domain, years, unitPrice, promoDiscount, paymentMethodCode) *Invoice` — hitung subtotal, apply PPN via settings.Service, generate number.
-  - `MarkPaid(invoiceID, paidAt, providerRef)` — idempotent.
-  - `GeneratePDF(invoiceID) []byte` — PDF template Indonesia (header brand, nomor invoice, alamat customer, breakdown item, PPN, total, footer support).
-- `handler.go`:
-  - Admin: `GET /admin/invoices`, `GET /admin/invoices/:id`, `GET /admin/invoices/:id/pdf`, `POST /admin/invoices/:id/verify` (manual bank)
-  - User: `GET /invoices`, `GET /invoices/:id`, `GET /invoices/:id/pdf` (own only)
-  - Reseller/agent: `GET /reseller/invoices` (aggregate — sudah ada, ganti data source ke lokal)
-
-**Numbering scheme**: `INV-YYYY-MM-NNNNNN` (sequential per bulan). Advisory
-lock untuk generate number atomic.
-
-**PPN**: capture `tax_rate` di row saat create (bukan lookup real-time saat
-render). Kalau PPN berubah later, historical invoice tetap accurate.
-
-### Task 1.7 — Backend: Refactor purchase flow ke local business logic (Week 4-5)
-
-Perubahan di `internal/domain_purchase/handler.go::Purchase`:
-
-**Sebelumnya**:
-1. Validate → forward ke registrar-api dengan `PromoCode`, `PaymentMethod`
-2. registrar-api handle payment + invoice + EPP
-
-**Sesudah**:
-1. Validate (zone allowed via `zones` table lokal, user profile lengkap, dsb.)
-2. Resolve price via `pricing.Resolve` (sudah ada)
-3. Apply promo lokal (via `promo` package baru — atau tunda, delegate ke registrar Fase 2)
-4. Create invoice lokal via `invoices.Service.CreateForRegister`
-5. Charge via `paymentgw.Gateway.CreateCharge`
-6. Return payment URL / instructions ke frontend
-7. Async: setelah webhook payment confirm → trigger `provider.RegisterDomain` (EPP execution masih via provider abstraction — Fase 2 nanti pindah ke api-registry EPP direct)
-
-**Impact ke code path**:
-- Rename `Purchase` handler flow menjadi 2-phase: `create_invoice` + `execute_registration`
-- Webhook receiver payment gateway → mark invoice paid → enqueue registration job
-- Registration job (Asynq) → panggil provider EPP + update domain_purchases
-
-**Wallet flow**:
-- Kalau `payment_method=deposit_wallet` → langsung debit wallet + skip charge → langsung enqueue registration.
-- Wallet ledger di web builder authoritative (bukan lagi mirror registrar).
-
-### Task 1.8 — Admin UI: Settings page (Week 5)
-
-File baru: `apps/web/app/admin/settings/page.tsx`
-
-Tabs:
-- **Umum**: PPN (enabled toggle + rate input + label), brand name, support email/phone
-- **Payment Methods**: list card per method (deposit/midtrans/paylabs/manual_bank), toggle enabled, edit config modal per method
-- **Zones**: table + CRUD (label, active toggle, require_document, auto_approved, nik_auto_approved, min/max years)
-
-Reuse component pattern dari `/admin/pricing` yang sudah ada. Semua form
-audit-logged (via `audit` package existing).
-
-### Task 1.9 — Admin UI: Payment method config modals (Week 5-6)
-
-Per method type, modal beda:
-- **Midtrans**: input server_key, client_key, toggle is_production, snap URL preview
-- **Paylabs**: input merchant_id, api_key, endpoint URL
-- **Manual Bank**: form multi-bank (nama bank, no rekening, atas nama), rich-text instructions markdown
-- **Deposit Wallet**: min/max top-up, allowed method IDs (multi-select dari yang enabled)
-
-Kredensial di server-side encrypted at rest (pgcrypto atau app-level AES).
-UI mask credentials di list view.
-
-### Task 1.10 — Frontend wizard: dynamic payment method (Week 6)
-
-Update `apps/web/app/sites/new-with-domain/_confirm-section.tsx`:
-- Sekarang payment method hardcoded `GATEWAY_OPTIONS = [{value:'midtrans'}, {value:'paylabs'}]`
-- Ganti: fetch `GET /api/v1/payment-methods` (return enabled methods) → render pilihan dari data
-- Reseller/agent tetap ada opsi wallet (kalau `deposit_wallet` enabled)
-- Manual bank: setelah checkout → tampilkan instruction card (bank list + jumlah + no invoice) instead of gateway redirect
-
-### Task 1.11 — Invoice PDF template (Week 6-7)
-
-Library: [`github.com/jung-kurt/gofpdf`](https://github.com/jung-kurt/gofpdf) atau
-[`github.com/signintech/gopdf`](https://github.com/signintech/gopdf).
-
-Template Indonesia legal-compliant:
-- Header: brand logo (kalau ada) + brand name + address
-- Info invoice: nomor, tanggal, jatuh tempo, status
-- Info customer: nama, email, alamat lengkap, NPWP (kalau ada)
-- Table item: deskripsi | qty | harga | subtotal
-- Summary: subtotal, PPN (rate + amount), total
-- Footer: support email/phone, "terima kasih" + brand name
-
-Endpoint `GET /invoices/:id/pdf` return `application/pdf`, filename
-`INV-YYYY-MM-NNNNNN.pdf`.
-
-### Task 1.12 — Migration existing data (Week 7)
-
-Script one-time:
-- Untuk domain_purchases yang existing (belum punya invoice lokal), backfill:
-  - Create invoice retroactive dari registrar-api ListInvoices data
-  - Match by external_user_id + domain
-  - Status = 'paid' kalau domain sudah active
-- Cross-check: `domain_purchases.status='active'` harus punya `invoice.status='paid'`
-- Report discrepancy → admin review manual
-
-### Task 1.13 — Testing (Week 7-8)
-
-**Unit test**:
-- `settings.Service.PPNRate` — cache TTL behavior
-- `invoices.Service.CreateForRegister` — PPN calculation (10, 11, 12% edge cases)
-- `paymentgw.Midtrans.HandleWebhook` — signature verification
-- `paymentgw.Registry` — enabled methods filter
-
-**Integration test** (dengan `TEST_DATABASE_URL`):
-- End-to-end register flow: wizard → create invoice → mock gateway webhook → registration job trigger
-- Manual bank flow: create invoice → admin verify → registration trigger
-- Wallet flow: debit wallet → registration trigger
-- PPN change mid-flight: invoice A tetap old rate, invoice B new rate
-
-**Manual QA checklist** di staging:
-- Admin ubah PPN dari 11% → 12% → invoice baru pakai 12%, invoice existing tetap 11%
-- Admin disable Midtrans → wizard hanya show Paylabs + manual bank + wallet
-- Admin add zone baru `.pandi.id` → muncul di wizard search
-- Reseller purchase via manual bank → admin verify → domain register
-
-### Task 1.14 — Documentation (Week 8)
-
-- `docs/admin-configuration.md` — cara set PPN, payment methods, zones
-- `docs/deployment.md` — env vars baru, migration order
-- Update `CLAUDE.md` — reflect arsitektur baru
-- API changelog: endpoint baru + deprecated
+Expected outcome: 100% clean, tidak ada file yang import registrar-api-specific
+package. Grep `registrar-api\|registrar-api PANDI` di codebase harus zero hit.
 
 ---
 
-## Deliverable checklist Fase 0+1
+## Prasyarat sebelum dijual (Success criteria pilot)
 
-- [ ] Interface `RegistrarProvider` + implementasi Pandi wrapper
-- [ ] Migration `payment_methods` + `system_settings` + `zones` + `invoices` + `invoice_lines`
-- [ ] Package `settings` (backend + admin UI)
-- [ ] Package `payments` (payment_methods CRUD)
-- [ ] Package `zones` (CRUD + public list)
-- [ ] Package `paymentgw` (interface + midtrans + paylabs + manual_bank)
-- [ ] Package `invoices` (repo + generator + PDF)
-- [ ] Refactor `domain_purchase.Purchase` → 2-phase flow (invoice + execute)
-- [ ] Admin settings page (Umum + Payment Methods + Zones)
-- [ ] Payment method config modals per type
-- [ ] Frontend wizard: dynamic payment methods dari API
-- [ ] Invoice PDF template
-- [ ] Migration script existing data
-- [ ] Test suite (unit + integration + manual QA)
-- [ ] Documentation
+Sesuai [plan-saas-registrar-platform.md](plan-saas-registrar-platform.md)
+success checklist:
 
-## Risks & mitigation
+1. ✅ Deploy fresh instance dari Docker Compose < 30 menit (foundation ready)
+2. ✅ Admin set brand + payment methods + PPN + zones (4 admin pages complete)
+3. ⏳ Register reseller account, invite agent, invite client (existing, tested)
+4. ⏳ Client cari domain .id → checkout via Midtrans → EPP register sukses → domain live di WHOIS
+   - Task A wizard migrate diperlukan
+   - Butuh test end-to-end dengan real Midtrans sandbox + PANDI OT&E
+5. ⏳ Reseller lihat wallet debit, invoice generated, PPN applied correctly
+   - Task B wallet integration diperlukan
+   - Invoice + PPN sudah live via `/settings/invoices-v2`
+6. ✅ Full audit trail visible di admin (audit log existing)
 
-| Risk | Mitigation |
-|---|---|
-| Refactor purchase flow break existing checkout | Feature flag `PAYMENT_FLOW=legacy` (via registrar-api) vs `local` (baru). Rollout gradual per zone. |
-| PDF library performance | Benchmark 100 concurrent generate. Kalau lambat, generate async + cache blob. |
-| Invoice number collision | Postgres advisory lock per bulan. Sequence table (`invoice_sequences`) sebagai backup. |
-| Migration data loss | Backup DB sebelum jalan migration script. Dry-run mode dulu. |
-| PPN calculation bug | Test dengan angka pecahan (mis. Rp 123,456 × 11%). Use int64 minor-unit throughout, hindari float. |
-| Kredensial payment leak | Encrypt config JSON dengan app-level AES key (env `PAYMENT_CONFIG_KEY`). Audit log per read. |
+**Status: 2/6 fully done, 4/6 partial**. Butuh Task A + Task B untuk pass full
+success criteria.
 
-## Success criteria Fase 1
+---
 
-Manual demo di staging:
-1. Admin buka `/admin/settings` → ubah PPN dari 11% → 10% → simpan
-2. Register domain baru → invoice pakai PPN 10%
-3. Cek invoice existing → tetap PPN 11% (historical accuracy)
-4. Admin toggle Midtrans off → wizard cuma show Paylabs + wallet + manual bank
-5. Admin add bank BNI di manual_bank config → user checkout → instruction card muncul dengan detail BNI
-6. User transfer + upload bukti → admin verify → domain register triggered
-7. Full flow tanpa satu HTTP call pun ke `/api/v1/reseller/*` di registrar-api sisi purchase (verify via network log). EPP execution masih via `PandiRegistrarAPIProvider` (Fase 2 baru swap ke api-registry).
+## Rekomendasi urutan next
 
-Kalau ✅ semua, ready untuk Fase 2 (api-registry EPP native).
+1. **Task C — Data migration SQL seed** (~2 jam) — small, unblocks realistic test
+2. **Task A — Wizard checkout migrate** (~1-2 hari) — unlocks self-sufficient user path
+3. **Task B — Wallet integration internal** (~3-5 hari) — bigger, blocks reseller/agent flow
+4. **Task D — Paylabs impl** (~1 hari, kalau sandbox available)
+5. **Task E — Docs** (~2 hari)
+6. **Task F — Legacy cleanup** (~1 hari) — safe setelah semua above
 
-## Effort summary
-
-| Week | Focus |
-|---|---|
-| 1 | Fase 0 (interface abstraction) |
-| 2 | Migration + settings + payment_methods package |
-| 3 | zones + paymentgw scaffolding |
-| 4 | invoices package + refactor purchase flow |
-| 5 | Admin UI: Settings + payment method configs |
-| 6 | Frontend wizard dynamic payment + manual bank flow |
-| 7 | PDF template + data migration script |
-| 8 | Testing + documentation |
-
-**Total**: 7-8 minggu, 1-2 engineer. Kalau 2 engineer parallel, potong jadi
-5-6 minggu.
-
-Setelah Fase 1 live + stable (~2 minggu observation), lanjut Fase 2:
-build api-registry EPP native.
+Total estimate: **~2 minggu additional work** untuk close Fase 1 sepenuhnya.

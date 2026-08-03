@@ -221,7 +221,9 @@ func main() {
 		os.Exit(1)
 	}
 	if registrarClient != nil {
-		slog.Info("registrar client: enabled", "base_url", cfg.RegistrarAPIURL, "timeout", cfg.RegistrarAPITimeout)
+		slog.Info("registrar client: enabled",
+			"legacy_base_url", cfg.RegistrarAPIURL, "timeout", cfg.RegistrarAPITimeout,
+			"api_registry_url", cfg.APIRegistryURL)
 		if cfg.APIRegistryURL != "" {
 			slog.Info("registrar client: EPP-native calls di-route ke api-registry (Fase 1c)",
 				"api_registry_url", cfg.APIRegistryURL, "timeout", cfg.APIRegistryTimeout,
@@ -230,10 +232,10 @@ func main() {
 			)
 		}
 
-		// Auto-login + JWT refresh loop. Kalau credentials di-set, override
-		// REGISTRAR_API_KEY dengan JWT hasil login (30-day TTL) + refresh
-		// tiap 25 hari sebelum expire.
-		if cfg.RegistrarResellerEmail != "" && cfg.RegistrarResellerPassword != "" {
+		// Auto-login + JWT refresh — HANYA kalau legacy registrar-api backend
+		// di-configured (REGISTRAR_API_URL set). Kalau self-sufficient mode
+		// (API_REGISTRY_URL only), tidak ada endpoint /login yang mau di-hit.
+		if registrarClient.HasLegacyBackend() && cfg.RegistrarResellerEmail != "" && cfg.RegistrarResellerPassword != "" {
 			// Simpan credentials di client supaya `do` bisa auto-recover
 			// kalau JWT ditolak 401 di tengah siklus 25-day refresh (mis.
 			// registrar revoke). Client akan re-login sekali + retry request.
@@ -244,7 +246,7 @@ func main() {
 			cancelLogin()
 			if err != nil {
 				slog.Error("registrar login failed at startup", "error", err,
-					"hint", "cek REGISTRAR_RESELLER_EMAIL + REGISTRAR_RESELLER_PASSWORD, atau kosongkan supaya pakai REGISTRAR_API_KEY apa adanya")
+					"hint", "cek REGISTRAR_RESELLER_EMAIL + REGISTRAR_RESELLER_PASSWORD, atau kosongkan REGISTRAR_API_URL kalau full self-sufficient (API_REGISTRY_URL only)")
 				os.Exit(1)
 			}
 			registrarClient.SetAPIKey(jwt)
@@ -273,11 +275,13 @@ func main() {
 					}
 				}
 			}()
-		} else if cfg.RegistrarAPIKey == "" {
-			slog.Warn("registrar client: no credentials + no static API key — all reseller calls will 401")
+		} else if registrarClient.HasLegacyBackend() && cfg.RegistrarAPIKey == "" {
+			slog.Warn("registrar client: legacy backend set but no credentials + no static API key — reseller calls will 401")
+		} else if !registrarClient.HasLegacyBackend() {
+			slog.Info("registrar client: self-sufficient mode — legacy registrar-api backend disabled, EPP via api-registry only")
 		}
 	} else {
-		slog.Info("registrar client: disabled (set REGISTRAR_API_URL + REGISTRAR_API_KEY to enable)")
+		slog.Info("registrar client: disabled (set REGISTRAR_API_URL untuk legacy proxy, atau API_REGISTRY_URL untuk self-sufficient mode)")
 	}
 
 	// Zones — Phase 1 self-sufficient TLD catalog. Di-construct sebelum

@@ -74,20 +74,41 @@ sekali di production build.
 - `TAX_PPN_RATE=0.11` (dijalankan dari admin panel — lihat plan Phase 1)
 - `BRAND_NAME`, `BRAND_LOGO_URL`, `PRIMARY_COLOR` (white-label)
 
-## Roadmap (revised, skip accreditation)
+## Roadmap (revised, skip accreditation) — STATUS SNAPSHOT
 
-| Fase | Deliverable | Effort | Team |
-|---|---|---|---|
-| **Fase 0** | Interface abstraction di web builder | 1-2 minggu | 1 eng |
-| **Fase 1** | Business layer full self-sufficient (payment, invoice, zone, PPN, wallet, dokumen) | 5-6 minggu | 1-2 eng |
-| **Fase 2** | api-registry EPP service | 3-5 bulan | 1-2 eng |
-| **Fase 3** | White-label deployment kit + docs | 2-3 minggu | 1 eng + DevOps |
-| **Fase 4 (opsional)** | Multi-tenant SaaS mode, multi-registry expand, advanced analytics | 3-6 bulan | 2-3 eng |
+| Fase | Status | Deliverable |
+|---|---|---|
+| **Fase 0** | ✅ **DONE** | Interface abstraction (`registrar.Client.UsesAPIRegistry` + `*Direct` variants) |
+| **Fase 1a** | ✅ **DONE** | api-registry service scaffolding + `pandi_wrapper` provider |
+| **Fase 1b** | ✅ **DONE** | api-registry EPP direct via [al0fayz/epp-pandi-client](https://github.com/al0fayz/epp-pandi-client) |
+| **Fase 1c** | ✅ **DONE** | Web builder dual-backend routing (Check/Whois/GetNS/UpdateNS route ke api-registry; Register/Renew via `*Direct` no payment coupling) |
+| **Fase 1 (business layer)** | 🟡 **~80% DONE** | Backend + Admin UI + User invoice UI complete. Sisa: wizard migrate + wallet internal + data seed + Paylabs + docs. Lihat [plan-phase-1-webbuilder-selfsufficient.md](plan-phase-1-webbuilder-selfsufficient.md) |
+| **Fase 2a** | ⏭️ Deferred | Async job runner (Asynq/Redis) di api-registry |
+| **Fase 2b** | ⏭️ Deferred | Multi-registry (Verisign, CentralNic) |
+| **Fase 3** | ⏭️ Deferred | White-label deployment kit (Docker Compose + Helm + branding config) |
+| **Fase 4** | ⏭️ Optional | Multi-tenant SaaS mode, advanced analytics |
 
-**Total MVP** (Fase 0-3): ~4-6 bulan dengan 1-2 engineer dedicated.
-Bisa parallel Fase 1 + Fase 2 → potong jadi ~3-4 bulan kalau tim > 1 eng.
+**Progress ringkas**: Fase 0 + 1a + 1b + 1c full done. Fase 1 (self-sufficient
+business layer) ~80% — backend + admin UI + user invoice UI complete, sisa 6
+task (~2 minggu). Setelah Fase 1 close, produk **siap dipasarkan ke pilot
+customer** (Fase 3 nice-to-have untuk deployment ergonomics, tidak block sales).
 
-Sesudah Fase 3, produk **siap dipasarkan ke pilot customer**.
+### Cara verifikasi self-sufficient mode aktif
+
+Set env:
+```bash
+REGISTRAR_API_URL=          # kosong → skip legacy
+API_REGISTRY_URL=http://api-registry:5000
+```
+
+Startup log:
+```
+registrar client: self-sufficient mode — legacy registrar-api backend disabled,
+                  EPP via api-registry only
+```
+
+Kalau muncul → produk sudah decoupled dari registrar-api PANDI di production
+build.
 
 ## Design decisions yang perlu di-lock
 

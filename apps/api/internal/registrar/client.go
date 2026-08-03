@@ -163,16 +163,22 @@ func (c *Client) tryReauth(ctx context.Context, staleKey string) bool {
 	return true
 }
 
-// New returns nil if BaseURL is empty (feature disabled). Otherwise it
-// validates the URL is absolute + returns a ready-to-use client.
+// New returns nil kalau BaseURL DAN APIRegistryURL sama-sama kosong (feature
+// disabled). Kalau salah satu di-set, return client aktif:
 //
-// Kalau APIRegistryURL di-set, construct juga backend api-registry SDK
-// supaya EPP-native call bisa di-route ke sana (Fase 1c).
+//   - Legacy mode: BaseURL only (tanpa APIRegistryURL) → semua call ke
+//     registrar-api PANDI (backward compat).
+//   - Self-sufficient mode: APIRegistryURL only (tanpa BaseURL) → EPP call
+//     ke api-registry, legacy method (wallet/document/invoice) akan error
+//     "not configured" karena BaseURL kosong. Cocok untuk deployment yang
+//     sudah full-migrate ke self-sufficient stack.
+//   - Hybrid: keduanya di-set → EPP ke api-registry (via Fase 1c routing),
+//     wallet/document/invoice tetap ke registrar-api.
 func New(cfg Config) (*Client, error) {
-	if cfg.BaseURL == "" {
+	if cfg.BaseURL == "" && cfg.APIRegistryURL == "" {
 		return nil, nil
 	}
-	if !strings.HasPrefix(cfg.BaseURL, "http://") && !strings.HasPrefix(cfg.BaseURL, "https://") {
+	if cfg.BaseURL != "" && !strings.HasPrefix(cfg.BaseURL, "http://") && !strings.HasPrefix(cfg.BaseURL, "https://") {
 		return nil, fmt.Errorf("registrar: BaseURL must be absolute (got %q)", cfg.BaseURL)
 	}
 	if cfg.Timeout <= 0 {
@@ -224,6 +230,13 @@ func (c *Client) useAPIRegistry() bool {
 // cek untuk gate flow 2-phase self-sufficient (butuh EPP execute via
 // api-registry).
 func (c *Client) UsesAPIRegistry() bool { return c.useAPIRegistry() }
+
+// HasLegacyBackend — true kalau BaseURL registrar-api PANDI di-configured.
+// Main.go pakai untuk decide auto-login/JWT refresh (tidak masuk akal kalau
+// registrar-api tidak ada).
+func (c *Client) HasLegacyBackend() bool {
+	return c != nil && c.baseURL != ""
+}
 
 // APIError is the typed error returned when registrar-api responds with a
 // non-2xx status. Callers can `errors.As(err, &apiErr)` to branch on Status
