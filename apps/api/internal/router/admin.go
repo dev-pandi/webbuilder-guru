@@ -94,6 +94,15 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Patch("/settings/:key", deps.Settings.Update)
 	}
 
+	// Payment methods (Phase 1 self-sufficient) — CRUD + toggle enable +
+	// config credentials. Include semua config (unmasked) untuk admin.
+	if deps.Payments != nil {
+		g.Get("/payment-methods", deps.Payments.ListAdmin)
+		g.Post("/payment-methods", deps.Payments.Create)
+		g.Patch("/payment-methods/:id", deps.Payments.Update)
+		g.Delete("/payment-methods/:id", deps.Payments.Delete)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {

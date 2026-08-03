@@ -45,6 +45,8 @@ import (
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
+	"github.com/webbuilder/api/internal/paymentgw"
+	"github.com/webbuilder/api/internal/payments"
 	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/wallet"
 	"github.com/webbuilder/api/internal/zones"
@@ -414,6 +416,16 @@ func main() {
 	settingsSvc := settings.NewService(settingsRepo)
 	settingsHandler := settings.NewHandler(settingsRepo, settingsSvc)
 
+	// Payments — Phase 1 self-sufficient payment_methods catalog.
+	paymentsRepo := payments.NewRepo(pool)
+	paymentsHandler := payments.NewHandler(paymentsRepo)
+
+	// Payment gateway registry — instansiasi Gateway concrete dari
+	// payment_methods.config JSONB. Konsumer (invoices, domain_purchase)
+	// call `gwRegistry.Get(ctx, "midtrans")` untuk build fresh Gateway.
+	gwRegistry := paymentgw.NewRegistry(paymentsRepo)
+	_ = gwRegistry // used by future invoices/domain_purchase refactor
+
 	// Contact syncer — propagate profile update (self atau by reseller/agent)
 	// ke registrar contact per domain aktif user. Skip kalau registrar
 	// disabled (client nil). Async fire-and-forget.
@@ -461,6 +473,7 @@ func main() {
 		Pricing:      pricingHandler,
 		Zones:        zonesHandler,
 		Settings:     settingsHandler,
+		Payments:     paymentsHandler,
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,
 	}

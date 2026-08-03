@@ -25,6 +25,7 @@ import (
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/payments"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/public"
@@ -117,6 +118,11 @@ type Deps struct {
 	// Admin CRUD untuk PPN rate, brand name, support contact, dsb. Konsumer
 	// di package lain call *settings.Service accessor, bukan lewat Handler.
 	Settings *settings.Handler
+
+	// Payments — payment_methods catalog (Phase 1 self-sufficient). Admin
+	// CRUD + toggle enable/disable + config credentials. Public endpoint
+	// (enabled only, credentials masked) dipakai wizard render.
+	Payments *payments.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

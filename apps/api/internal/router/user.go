@@ -297,4 +297,11 @@ func MountUser(app *fiber.App, deps Deps) {
 	if deps.Zones != nil {
 		authed.Get("/zones", deps.Zones.ListPublic)
 	}
+
+	// Payment methods public — dipakai wizard checkout untuk render pilihan
+	// pembayaran (hanya enabled, credentials masked). Wizard tidak butuh
+	// tahu credentials — hanya `code`, `label`, `type`, `config.snap_url`, dsb.
+	if deps.Payments != nil {
+		authed.Get("/payment-methods", deps.Payments.ListPublic)
+	}
 }
