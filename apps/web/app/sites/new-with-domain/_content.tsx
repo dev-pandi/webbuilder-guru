@@ -138,6 +138,46 @@ export function NewWithDomainContent() {
   const [documentIds, setDocumentIds] = useState<string[]>([]);
   const [purchasing, setPurchasing] = useState(false);
 
+  // Promo state — validate on-demand (bukan on-blur) supaya user paham
+  // "kode berhasil" atau "kode invalid" lewat feedback explicit.
+  const [promoCode, setPromoCode] = useState("");
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [validatingPromo, setValidatingPromo] = useState(false);
+
+  async function onApplyPromo() {
+    if (!selected?.price || !promoCode.trim()) return;
+    setValidatingPromo(true);
+    setPromoError(null);
+    try {
+      const res = await api<{ code: string; description?: string; discount: number }>(
+        "/api/v1/promos/validate",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            code: promoCode.trim(),
+            tld: selected.tld ?? "",
+            kind: "register",
+            subtotal: selected.price.register * years,
+          }),
+        },
+      );
+      setPromoDiscount(res.discount);
+      toast.success(`Diskon ${res.description || "promo"} diterapkan`);
+    } catch (e) {
+      setPromoDiscount(0);
+      setPromoError((e as Error).message);
+    } finally {
+      setValidatingPromo(false);
+    }
+  }
+
+  function onClearPromo() {
+    setPromoCode("");
+    setPromoDiscount(0);
+    setPromoError(null);
+  }
+
   // Idempotency key = 1 UUID per mount wizard. Double-click "Beli" → backend
   // dedup ke job existing bukan bikin dobel invoice.
   const idempotencyKey = useMemo(
@@ -214,6 +254,7 @@ export function NewWithDomainContent() {
           return_url: `${window.location.origin}/checkout/return`,
           on_behalf_of_user_id: forClientID || undefined,
           document_ids: documentIds.length > 0 ? documentIds : undefined,
+          promo_code: promoDiscount > 0 && promoCode.trim() ? promoCode.trim() : undefined,
         }),
       });
       toast.success("Job pembelian dibuat");
@@ -294,6 +335,20 @@ export function NewWithDomainContent() {
             setPaymentMethod={setPaymentMethod}
             documentIds={documentIds}
             setDocumentIds={setDocumentIds}
+            promoCode={promoCode}
+            setPromoCode={(s) => {
+              setPromoCode(s);
+              // Reset discount + error kalau user edit code setelah apply.
+              if (promoDiscount > 0 || promoError) {
+                setPromoDiscount(0);
+                setPromoError(null);
+              }
+            }}
+            promoDiscount={promoDiscount}
+            promoError={promoError}
+            onApplyPromo={onApplyPromo}
+            onClearPromo={onClearPromo}
+            validatingPromo={validatingPromo}
             purchasing={purchasing}
             onPurchase={onPurchase}
             forClientID={forClientID || undefined}

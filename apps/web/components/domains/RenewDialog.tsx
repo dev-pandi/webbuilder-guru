@@ -5,9 +5,11 @@
 // konsisten.
 
 import { useMemo, useState } from "react";
-import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowRight, Loader2, Tag, X } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -17,6 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+// tld helper — "myshop.co.id" → "co.id"
+function extractTLD(domain: string): string {
+  const parts = domain.toLowerCase().split(".");
+  if (parts.length < 2) return "";
+  return parts.slice(1).join(".");
+}
 
 export function RenewDialog({
   domain,
@@ -29,6 +38,10 @@ export function RenewDialog({
 }) {
   const [years, setYears] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<"midtrans" | "paylabs" | "deposit_wallet">("midtrans");
+  const [promoCode, setPromoCode] = useState("");
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [validatingPromo, setValidatingPromo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -40,6 +53,42 @@ export function RenewDialog({
         : Math.random().toString(36).slice(2) + Date.now().toString(36),
     [],
   );
+
+  async function onApplyPromo() {
+    if (!promoCode.trim()) return;
+    setValidatingPromo(true);
+    setPromoError(null);
+    try {
+      const res = await api<{ code: string; description?: string; discount: number }>(
+        "/api/v1/promos/validate",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            code: promoCode.trim(),
+            tld: extractTLD(domain),
+            kind: "renew",
+            // Renew: subtotal tidak diketahui client (harga per TLD di-lookup
+            // backend). Pass 0 supaya validate skip min_subtotal check;
+            // backend akan hitung actual discount saat renew.
+            subtotal: 0,
+          }),
+        },
+      );
+      setPromoDiscount(res.discount);
+      toast.success(`Diskon ${res.description || "promo"} diterapkan`);
+    } catch (e) {
+      setPromoDiscount(0);
+      setPromoError((e as Error).message);
+    } finally {
+      setValidatingPromo(false);
+    }
+  }
+
+  function onClearPromo() {
+    setPromoCode("");
+    setPromoDiscount(0);
+    setPromoError(null);
+  }
 
   async function onSubmit() {
     setErr(null);
@@ -54,6 +103,7 @@ export function RenewDialog({
             years,
             payment_method: paymentMethod,
             return_url: `${window.location.origin}/checkout/return`,
+            promo_code: promoDiscount > 0 && promoCode.trim() ? promoCode.trim() : undefined,
           }),
         },
       );
@@ -105,6 +155,55 @@ export function RenewDialog({
               <option value="paylabs">Paylabs</option>
               <option value="deposit_wallet">Wallet (saldo internal)</option>
             </select>
+          </div>
+
+          {/* Promo code */}
+          <div className="space-y-1.5">
+            <Label htmlFor="renew-promo" className="text-xs">
+              Kode promo <span className="text-muted-foreground">(opsional)</span>
+            </Label>
+            {promoDiscount > 0 ? (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-50 px-3 py-2 text-sm dark:bg-emerald-950/30">
+                <Tag className="size-4 text-emerald-600" />
+                <span className="flex-1 font-mono font-semibold text-emerald-700 dark:text-emerald-300">
+                  {promoCode}
+                </span>
+                <button
+                  type="button"
+                  onClick={onClearPromo}
+                  className="rounded p-1 text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Tag className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="renew-promo"
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    placeholder="Kosongkan kalau tidak ada"
+                    maxLength={32}
+                    disabled={validatingPromo}
+                    className="pl-9 uppercase tracking-wider"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onApplyPromo}
+                  disabled={!promoCode.trim() || validatingPromo}
+                  className="shrink-0"
+                >
+                  {validatingPromo ? <Loader2 className="size-4 animate-spin" /> : "Terapkan"}
+                </Button>
+              </div>
+            )}
+            {promoError && (
+              <p className="text-xs text-destructive">{promoError}</p>
+            )}
           </div>
 
           {err && (

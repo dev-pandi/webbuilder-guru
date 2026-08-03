@@ -5,9 +5,10 @@
 // Modernisasi: subsection dengan header kecil, total card gradient, CTA
 // besar full-width di mobile.
 
-import { ArrowRight, CheckCircle2, Loader2, Wallet as WalletIcon } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2, Tag, Wallet as WalletIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import type { CheckEntry, Me, PaymentMethod } from "./_types";
@@ -35,6 +36,14 @@ export function ConfirmSection(props: {
   setPaymentMethod: (m: PaymentMethod) => void;
   documentIds: string[];
   setDocumentIds: (ids: string[]) => void;
+  // Promo — value + setter + hasil validate dari backend (nullable).
+  promoCode: string;
+  setPromoCode: (s: string) => void;
+  promoDiscount: number;      // IDR minor, 0 = no promo applied
+  promoError: string | null;  // pesan kalau validate gagal
+  onApplyPromo: () => void;   // trigger POST /promos/validate
+  onClearPromo: () => void;
+  validatingPromo: boolean;
   purchasing: boolean;
   onPurchase: () => void;
   // Phase 3 on-behalf-of: kalau set, ProfileBlock tampilkan copy "klien".
@@ -49,10 +58,13 @@ export function ConfirmSection(props: {
     selected, me, profileComplete, missingProfile,
     years, setYears, paymentMethod, setPaymentMethod,
     documentIds, setDocumentIds,
+    promoCode, setPromoCode, promoDiscount, promoError,
+    onApplyPromo, onClearPromo, validatingPromo,
     purchasing, onPurchase, forClientID, onClientUpdated, walletBalance,
   } = props;
 
-  const total = selected.price ? selected.price.register * years : 0;
+  const subtotal = selected.price ? selected.price.register * years : 0;
+  const total = Math.max(0, subtotal - promoDiscount);
   const currency = selected.price?.currency ?? "IDR";
   const showKtpHint = selected.zone?.require_document && !selected.zone.nik_auto_approved;
   // Zone butuh NIK — mis. .id family. Kalau nik_auto_approved false + zone
@@ -204,6 +216,61 @@ export function ConfirmSection(props: {
           </div>
         )}
 
+        {/* Promo code — opsional. Validate on-demand via backend. */}
+        <div className="space-y-1.5">
+          <Label htmlFor="promo" className="text-xs uppercase tracking-wider text-muted-foreground">
+            Kode promo <span className="normal-case text-muted-foreground/70">(opsional)</span>
+          </Label>
+          {promoDiscount > 0 ? (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-50 px-3 py-2 text-sm dark:bg-emerald-950/30">
+              <Tag className="size-4 text-emerald-600" />
+              <div className="flex-1">
+                <div className="font-mono font-semibold text-emerald-700 dark:text-emerald-300">
+                  {promoCode}
+                </div>
+                <div className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                  Diskon {formatIDR(promoDiscount, currency)}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onClearPromo}
+                className="rounded p-1 text-emerald-700 hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                title="Hapus promo"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Tag className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="promo"
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                  placeholder="Kosongkan kalau tidak ada"
+                  maxLength={32}
+                  disabled={validatingPromo}
+                  className="pl-9 uppercase tracking-wider"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onApplyPromo}
+                disabled={!promoCode.trim() || validatingPromo}
+                className="shrink-0"
+              >
+                {validatingPromo ? <Loader2 className="size-4 animate-spin" /> : "Terapkan"}
+              </Button>
+            </div>
+          )}
+          {promoError && (
+            <p className="text-xs text-destructive">{promoError}</p>
+          )}
+        </div>
+
         {/* Total — prominent gradient card */}
         {selected.price && (
           <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 sm:p-5">
@@ -214,9 +281,19 @@ export function ConfirmSection(props: {
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   {formatIDR(selected.price.register, currency)} × {years} tahun
+                  {promoDiscount > 0 && (
+                    <span className="ml-1 text-emerald-600">
+                      − {formatIDR(promoDiscount, currency)} promo
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="text-right">
+                {promoDiscount > 0 && (
+                  <div className="text-xs text-muted-foreground line-through">
+                    {formatIDR(subtotal, currency)}
+                  </div>
+                )}
                 <div className="text-2xl font-bold tracking-tight sm:text-3xl">
                   {formatIDR(total, currency)}
                 </div>

@@ -66,6 +66,7 @@ type Handler struct {
 	pricingRepo PricingLookup     // fetch retail price per TLD
 	invoicesSvc InvoiceCreator    // create invoice + apply PPN
 	gwRegistry  GatewayRegistry   // resolve payment gateway by code
+	promos      PromoValidator    // validate + redeem promo (nil = feature off)
 }
 
 // PricingLookup — abstraksi minimal: dapatkan retail price per TLD.
@@ -98,6 +99,10 @@ type InvoiceCreateInput struct {
 	PaymentMethod string
 	Kind          string // "register" | "renew"
 	JobID         string
+	// Promo — opsional. Kalau di-apply, subtotal invoice berkurang. Code
+	// disimpan di metadata untuk audit; discount di-line item.
+	PromoCode     string
+	PromoDiscount int64
 }
 
 // GatewayRegistry — abstraksi resolve gateway.
@@ -126,6 +131,20 @@ type GatewayChargeRequest struct {
 	ExpiresAt   time.Time
 }
 
+// PromoValidator — abstraksi validate + redeem promo. Nil = promo feature
+// disabled (code apapun akan di-abaikan). Diimplementasi oleh
+// promos.Service via adapter di main.go.
+type PromoValidator interface {
+	// Validate — cek constraint promo terhadap konteks. Return discount
+	// yang boleh di-apply + promo ID untuk redemption trail. Error yang
+	// user-facing sudah di-map di service.
+	Validate(ctx context.Context, code string, userID uuid.UUID, tld, kind string, subtotal int64) (promoID uuid.UUID, discount int64, err error)
+	// Redeem — commit redemption (insert row promo_redemptions). Dipanggil
+	// setelah invoice created supaya invoice_id available. Idempotent via
+	// unique(invoice_id).
+	Redeem(ctx context.Context, promoID, userID, invoiceID uuid.UUID, discount int64) error
+}
+
 // SetZones inject local zones source. Kalau di-set, handler filter
 // hasil check untuk hanya expose TLD yang active di local table (per
 // arsitektur self-sufficient — operator kontrol full atas zone yang expose).
@@ -139,6 +158,10 @@ func (h *Handler) SetInvoices(i InvoiceCreator) { h.invoicesSvc = i }
 
 // SetGatewayRegistry inject payment gateway registry untuk Purchase.
 func (h *Handler) SetGatewayRegistry(g GatewayRegistry) { h.gwRegistry = g }
+
+// SetPromos inject promo validator/redeem. Nil = fitur promo disabled
+// (semua code akan return "not found" saat validate).
+func (h *Handler) SetPromos(p PromoValidator) { h.promos = p }
 
 // SetAudit inject audit repo untuk record purchase / retry / renew (Phase 7).
 func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }

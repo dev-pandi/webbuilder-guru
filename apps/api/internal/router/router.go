@@ -31,6 +31,7 @@ import (
 	"github.com/webbuilder/api/internal/paymentwh"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
+	"github.com/webbuilder/api/internal/promos"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/reseller"
@@ -139,6 +140,9 @@ type Deps struct {
 	// untuk domain register di TLD yang butuh verifikasi identitas. Nil
 	// kalau assetStorage tidak tersedia — routes skip.
 	Documents *documents_local.Handler
+
+	// Promos — Phase 3 kupon diskon. Admin CRUD + user validate endpoint.
+	Promos *promos.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

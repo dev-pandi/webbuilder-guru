@@ -35,6 +35,7 @@ import (
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
+	"github.com/webbuilder/api/internal/promos"
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/reseller"
@@ -363,6 +364,12 @@ func main() {
 		documentsHandler = documents_local.NewHandler(documentsRepo, assetStorage)
 	}
 
+	// Promos — Phase 3 kupon diskon (validate + redeem saat purchase/renew).
+	// Admin CRUD di /admin/promos, user validate di /promos/validate.
+	promosRepo := promos.NewRepo(pool)
+	promosSvc := promos.NewService(promosRepo)
+	promosHandler := promos.NewHandler(promosRepo, promosSvc)
+
 	// Payment gateway registry — instansiasi Gateway concrete dari
 	// payment_methods.config JSONB. Konsumer (invoices, domain_purchase)
 	// call `gwRegistry.Get(ctx, "midtrans")` untuk build fresh Gateway.
@@ -390,6 +397,7 @@ func main() {
 		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo})
 		purchaseHandler.SetInvoices(invoicesAdapter{svc: invoicesSvc, repo: invoicesRepo})
 		purchaseHandler.SetGatewayRegistry(gatewayRegistryAdapter{reg: gwRegistry})
+		purchaseHandler.SetPromos(promosAdapter{svc: promosSvc})
 
 		// Inject wallet debiter ke gateway registry supaya `deposit_wallet`
 		// gateway tersedia untuk PurchaseV2 flow. WalletGateway sync-debit
@@ -448,6 +456,7 @@ func main() {
 		PaymentWebhook: paymentWebhookHandler,
 		WalletLocal:    walletLocalHandler,
 		Documents:      documentsHandler,
+		Promos:         promosHandler,
 		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,
 	}

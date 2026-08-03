@@ -289,4 +289,10 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/documents/:id", deps.Documents.Show)
 		authed.Delete("/documents/:id", deps.Documents.Delete)
 	}
+
+	// Promos — user validate endpoint (dipakai wizard preview discount).
+	// Admin CRUD di admin.go.
+	if deps.Promos != nil {
+		authed.Post("/promos/validate", mutateLimit, deps.Promos.Validate)
+	}
 }

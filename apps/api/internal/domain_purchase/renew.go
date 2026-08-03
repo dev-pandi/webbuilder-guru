@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
@@ -31,12 +32,13 @@ type renewReq struct {
 	Years         int    `json:"years"`
 	PaymentMethod string `json:"payment_method"`
 	ReturnURL     string `json:"return_url,omitempty"`
+	PromoCode     string `json:"promo_code,omitempty"`
 }
 
 // Renew — Phase A checkout untuk renew.
 //
 // POST /api/v1/domains/:name/renew
-// Body: renewV2Req
+// Body: renewReq
 // Header: Idempotency-Key wajib.
 func (h *Handler) Renew(c *fiber.Ctx) error {
 	if h.pricingRepo == nil || h.invoicesSvc == nil || h.gwRegistry == nil {
@@ -121,6 +123,25 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 			fmt.Sprintf("Harga renew TLD .%s belum di-set admin.", tld))
 	}
 
+	// Promo — validate + hitung discount sebelum invoice creation.
+	var (
+		promoID       uuid.UUID
+		promoDiscount int64
+	)
+	if promoCode := strings.TrimSpace(req.PromoCode); promoCode != "" {
+		if h.promos == nil {
+			return httpx.Err(c, fiber.StatusServiceUnavailable, "promo_disabled",
+				"Fitur promo belum aktif di server.")
+		}
+		subtotal := int64(req.Years) * retailRenew
+		pid, disc, err := h.promos.Validate(c.Context(), promoCode, owner.ID, tld, KindRenew, subtotal)
+		if err != nil {
+			return httpx.Err(c, fiber.StatusBadRequest, "promo_invalid", err.Error())
+		}
+		promoID = pid
+		promoDiscount = disc
+	}
+
 	// Invoice.
 	invoiceID, total, dueAt, err := h.invoicesSvc.CreateForRegister(c.Context(), InvoiceCreateInput{
 		UserID:        owner.ID,
@@ -129,6 +150,8 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		UnitPrice:     retailRenew,
 		PaymentMethod: req.PaymentMethod,
 		Kind:          KindRenew,
+		PromoCode:     req.PromoCode,
+		PromoDiscount: promoDiscount,
 	})
 	if err != nil {
 		slog.Error("renew: create invoice failed",
@@ -136,6 +159,14 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		return httpx.Internal(c, "gagal membuat invoice")
 	}
 	jobID := invoiceID.String()
+
+	// Redeem promo — audit trail. Non-fatal kalau gagal.
+	if promoDiscount > 0 && h.promos != nil {
+		if err := h.promos.Redeem(c.Context(), promoID, owner.ID, invoiceID, promoDiscount); err != nil {
+			slog.Warn("renew: promo redeem failed",
+				"invoice_id", invoiceID, "promo_id", promoID, "error", err)
+		}
+	}
 
 	// Gateway charge.
 	gw, err := h.gwRegistry.Get(c.Context(), req.PaymentMethod)

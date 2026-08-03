@@ -48,6 +48,9 @@ type purchaseReq struct {
 	// ke purchase. V2 flow tidak punya status pending_document (dokumen review
 	// out-of-band), jadi ini murni audit trail + persiapan untuk manual review.
 	DocumentIDs []string `json:"document_ids,omitempty"`
+	// PromoCode — opsional. Validate via promos service; kalau invalid,
+	// return 400 (bukan silent-fallback — user pasti mau tau code-nya salah).
+	PromoCode string `json:"promo_code,omitempty"`
 }
 
 // purchaseCreatedResp — response.
@@ -193,6 +196,26 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 			fmt.Sprintf("Harga TLD .%s belum di-set admin. Hubungi support.", tld))
 	}
 
+	// Promo — validate + hitung discount sebelum invoice.CreateForRegister.
+	// Redemption tersimpan setelah invoice created (butuh invoice.ID).
+	var (
+		promoID       uuid.UUID
+		promoDiscount int64
+	)
+	if promoCode := strings.TrimSpace(req.PromoCode); promoCode != "" {
+		if h.promos == nil {
+			return httpx.Err(c, fiber.StatusServiceUnavailable, "promo_disabled",
+				"Fitur promo belum aktif di server.")
+		}
+		subtotal := int64(req.Years) * retailReg
+		pid, disc, err := h.promos.Validate(c.Context(), promoCode, owner.ID, tld, KindRegister, subtotal)
+		if err != nil {
+			return httpx.Err(c, fiber.StatusBadRequest, "promo_invalid", err.Error())
+		}
+		promoID = pid
+		promoDiscount = disc
+	}
+
 	// Create invoice — service apply PPN via settings.
 	invoiceID, total, dueAt, err := h.invoicesSvc.CreateForRegister(c.Context(), InvoiceCreateInput{
 		UserID:        owner.ID,
@@ -203,6 +226,8 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		PaymentMethod: req.PaymentMethod,
 		Kind:          KindRegister,
 		JobID:         "", // will use invoice.ID as job_id — no separate id
+		PromoCode:     req.PromoCode,
+		PromoDiscount: promoDiscount,
 	})
 	if err != nil {
 		slog.Error("purchase: create invoice failed",
@@ -213,6 +238,16 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	// update metadata after create. Simplify by using invoice.ID as job_id
 	// downstream — no separate UUID needed.
 	jobID := invoiceID.String()
+
+	// Redeem promo — insert row promo_redemptions. Non-fatal kalau gagal
+	// (invoice sudah dibuat dengan diskon; redemption cuma untuk audit +
+	// enforce limits di call berikutnya). Unique index cegah dobel-redeem.
+	if promoDiscount > 0 && h.promos != nil {
+		if err := h.promos.Redeem(c.Context(), promoID, owner.ID, invoiceID, promoDiscount); err != nil {
+			slog.Warn("purchase: promo redeem failed",
+				"invoice_id", invoiceID, "promo_id", promoID, "error", err)
+		}
+	}
 
 	// Resolve gateway.
 	gw, err := h.gwRegistry.Get(c.Context(), req.PaymentMethod)

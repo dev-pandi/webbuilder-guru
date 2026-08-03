@@ -20,6 +20,7 @@ import (
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/paymentgw"
 	"github.com/webbuilder/api/internal/pricing"
+	"github.com/webbuilder/api/internal/promos"
 	"github.com/webbuilder/api/internal/wallet_local"
 )
 
@@ -58,6 +59,8 @@ func (a invoicesAdapter) CreateForRegister(ctx context.Context, in domain_purcha
 		PaymentMethod: in.PaymentMethod,
 		Kind:          in.Kind,
 		JobID:         in.JobID,
+		PromoCode:     in.PromoCode,
+		PromoDiscount: in.PromoDiscount,
 	})
 	if err != nil {
 		return uuid.Nil, 0, time.Time{}, err
@@ -75,6 +78,32 @@ func (a invoicesAdapter) MarkPaid(ctx context.Context, id uuid.UUID, paidAt time
 
 func (a invoicesAdapter) GetInvoiceForCallback(ctx context.Context, id uuid.UUID) (*invoices.Invoice, error) {
 	return a.repo.GetWithLines(ctx, id)
+}
+
+// --- promosAdapter: promos.Service → domain_purchase.PromoValidator ---
+//
+// Bridge supaya Purchase/Renew handler tidak import promos package langsung
+// (keep consumer testable + interface-driven).
+
+type promosAdapter struct{ svc *promos.Service }
+
+func (a promosAdapter) Validate(ctx context.Context, code string, userID uuid.UUID, tld, kind string, subtotal int64) (uuid.UUID, int64, error) {
+	res, err := a.svc.Validate(ctx, promos.ValidateInput{
+		Code:     code,
+		UserID:   userID,
+		TLD:      tld,
+		Kind:     kind,
+		Subtotal: subtotal,
+	})
+	if err != nil {
+		return uuid.Nil, 0, err
+	}
+	return res.Promo.ID, res.Discount, nil
+}
+
+func (a promosAdapter) Redeem(ctx context.Context, promoID, userID, invoiceID uuid.UUID, discount int64) error {
+	_, err := a.svc.Redeem(ctx, promoID, userID, invoiceID, discount)
+	return err
 }
 
 // --- walletDebiterAdapter: wallet_local.Repo → paymentgw.WalletDebiter ---
