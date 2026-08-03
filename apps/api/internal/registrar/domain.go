@@ -39,6 +39,9 @@ func (c *Client) GetDomainPrice(ctx context.Context, domain string) (*DomainPric
 // we normalise both to (nil, nil) so callers can branch cleanly. Any other
 // error propagates.
 func (c *Client) Whois(ctx context.Context, domain string) (*Whois, error) {
+	if c.useAPIRegistry() {
+		return c.whoisViaAPIRegistry(ctx, domain)
+	}
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
 		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
@@ -72,6 +75,9 @@ func (c *Client) Whois(ctx context.Context, domain string) (*Whois, error) {
 // Wajib reseller auth (Bearer). `Price`/`Zone` per entry silent-absent kalau
 // tidak ter-config (bukan error).
 func (c *Client) CheckDomain(ctx context.Context, domain string) (*DomainCheckResponse, error) {
+	if c.useAPIRegistry() {
+		return c.checkDomainViaAPIRegistry(ctx, domain)
+	}
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
 		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
@@ -222,6 +228,9 @@ type NameserverInfo struct {
 // Domain harus milik reseller yang login — registrar enforce ownership,
 // tapi web builder juga verify di caller (defence in depth).
 func (c *Client) GetNameservers(ctx context.Context, name string) (*NameserverInfo, error) {
+	if c.useAPIRegistry() {
+		return c.getNameserversViaAPIRegistry(ctx, name)
+	}
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
@@ -239,6 +248,9 @@ func (c *Client) GetNameservers(ctx context.Context, name string) (*NameserverIn
 //	POST /v1/api/user/reseller/domain/:name/nameservers
 //	body: {"nameservers": ["ns1.example.com", "ns2.example.com"]}
 func (c *Client) UpdateNameservers(ctx context.Context, name string, ns []string) (*NameserverInfo, error) {
+	if c.useAPIRegistry() {
+		return c.updateNameserversViaAPIRegistry(ctx, name, ns)
+	}
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}

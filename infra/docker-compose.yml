@@ -108,6 +108,12 @@ services:
       REGISTRAR_RESELLER_EMAIL: ${REGISTRAR_RESELLER_EMAIL:-}
       REGISTRAR_RESELLER_PASSWORD: ${REGISTRAR_RESELLER_PASSWORD:-}
       REGISTRAR_WEBHOOK_SECRET: ${REGISTRAR_WEBHOOK_SECRET:-}
+      # --- api-registry backend (Fase 1c dual-backend, opsional) ---
+      # Set API_REGISTRY_URL untuk route EPP-native call ke internal service.
+      # HMAC secret harus sama dengan api-registry INTERNAL_HMAC_SECRET.
+      API_REGISTRY_URL: ${WEBBUILDER_API_REGISTRY_URL:-}
+      API_REGISTRY_HMAC_SECRET: ${API_REGISTRY_HMAC_SECRET:-}
+      API_REGISTRY_TIMEOUT: ${WEBBUILDER_API_REGISTRY_TIMEOUT:-30s}
       # --- Observability ---
       SENTRY_DSN: ${SENTRY_DSN:-}
       PPROF_ENABLED: ${PPROF_ENABLED:-false}

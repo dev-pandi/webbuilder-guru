@@ -45,7 +45,9 @@ import (
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
+	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/wallet"
+	"github.com/webbuilder/api/internal/zones"
 )
 
 func main() {
@@ -203,9 +205,12 @@ func main() {
 	})
 
 	registrarClient, err := registrar.New(registrar.Config{
-		BaseURL: cfg.RegistrarAPIURL,
-		APIKey:  cfg.RegistrarAPIKey,
-		Timeout: cfg.RegistrarAPITimeout,
+		BaseURL:               cfg.RegistrarAPIURL,
+		APIKey:                cfg.RegistrarAPIKey,
+		Timeout:               cfg.RegistrarAPITimeout,
+		APIRegistryURL:        cfg.APIRegistryURL,
+		APIRegistryHMACSecret: cfg.APIRegistryHMACSecret,
+		APIRegistryTimeout:    cfg.APIRegistryTimeout,
 	})
 	if err != nil {
 		slog.Error("registrar client init failed", "error", err)
@@ -213,6 +218,13 @@ func main() {
 	}
 	if registrarClient != nil {
 		slog.Info("registrar client: enabled", "base_url", cfg.RegistrarAPIURL, "timeout", cfg.RegistrarAPITimeout)
+		if cfg.APIRegistryURL != "" {
+			slog.Info("registrar client: EPP-native calls di-route ke api-registry (Fase 1c)",
+				"api_registry_url", cfg.APIRegistryURL, "timeout", cfg.APIRegistryTimeout,
+				"routed", "check/register/renew/nameserver/contact/whois",
+				"unrouted", "wallet/document/invoice/admin-config (tetap ke registrar-api PANDI)",
+			)
+		}
 
 		// Auto-login + JWT refresh loop. Kalau credentials di-set, override
 		// REGISTRAR_API_KEY dengan JWT hasil login (30-day TTL) + refresh
@@ -393,6 +405,15 @@ func main() {
 		pricingHandler.SetRegistrar(registrarClient)
 	}
 
+	// Zones — Phase 1 self-sufficient TLD catalog.
+	zonesRepo := zones.NewRepo(pool)
+	zonesHandler := zones.NewHandler(zonesRepo)
+
+	// Settings — Phase 1 self-sufficient key-value store.
+	settingsRepo := settings.NewRepo(pool)
+	settingsSvc := settings.NewService(settingsRepo)
+	settingsHandler := settings.NewHandler(settingsRepo, settingsSvc)
+
 	// Contact syncer — propagate profile update (self atau by reseller/agent)
 	// ke registrar contact per domain aktif user. Skip kalau registrar
 	// disabled (client nil). Async fire-and-forget.
@@ -438,6 +459,8 @@ func main() {
 		Audit:        auditHandler,
 		EmailLog:     emailLogHandler,
 		Pricing:      pricingHandler,
+		Zones:        zonesHandler,
+		Settings:     settingsHandler,
 		AssetStorage: assetStorage,
 		ErrorTracker: tracker,
 	}

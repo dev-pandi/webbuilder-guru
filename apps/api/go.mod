@@ -1,6 +1,6 @@
 module github.com/webbuilder/api
 
-go 1.25.0
+go 1.26
 
 require (
 	github.com/gofiber/fiber/v2 v2.52.5
@@ -11,7 +11,8 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/minio/minio-go/v7 v7.0.79
 	github.com/pressly/goose/v3 v3.21.1
-	golang.org/x/crypto v0.28.0
+	github.com/webbuilder/api-registry v0.0.0-00010101000000-000000000000
+	golang.org/x/crypto v0.43.0
 	golang.org/x/image v0.20.0
 	golang.org/x/oauth2 v0.36.0
 )
@@ -41,8 +42,10 @@ require (
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/net v0.46.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
 )
+
+replace github.com/webbuilder/api-registry => ../api-registry

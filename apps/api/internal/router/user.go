@@ -291,4 +291,10 @@ func MountUser(app *fiber.App, deps Deps) {
 	if deps.Pricing != nil {
 		authed.Get("/pricing/resolve/:tld", deps.Pricing.Resolve)
 	}
+
+	// Zones public — dipakai wizard cari domain untuk render TLD chip
+	// (hanya zone active). Available untuk semua authenticated users.
+	if deps.Zones != nil {
+		authed.Get("/zones", deps.Zones.ListPublic)
+	}
 }

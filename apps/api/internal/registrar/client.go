@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	apiregistry "github.com/webbuilder/api-registry/client"
 	"github.com/webbuilder/api/internal/metrics"
 )
 
@@ -40,6 +41,17 @@ type Config struct {
 	// HTTPClient is optional. Provide your own for testing or if you need
 	// custom transport (proxy, mTLS). Nil = built-in http.Client with Timeout.
 	HTTPClient *http.Client
+
+	// APIRegistryURL — kalau di-set, EPP-native call (check/register/renew/
+	// nameserver/contact/whois) diarahkan ke internal api-registry service
+	// via `apps/api-registry/client` SDK, alih-alih direct-call ke
+	// registrar-api PANDI. Wallet/document/invoice/admin-config tetap ke
+	// registrar-api PANDI (bukan concern EPP — belum di api-registry).
+	//
+	// Kosong = behavior lama, semua route ke registrar-api PANDI.
+	APIRegistryURL        string
+	APIRegistryHMACSecret string        // shared dengan api-registry INTERNAL_HMAC_SECRET
+	APIRegistryTimeout    time.Duration // default 30s
 }
 
 // Client is the typed handle over registrar-api. Concurrency-safe.
@@ -65,6 +77,11 @@ type Client struct {
 
 	http    *http.Client
 	retries int
+
+	// apiRegistry — kalau non-nil, EPP-native method delegate ke sini.
+	// Constructed di New() saat Config.APIRegistryURL di-set. Nil = tetap
+	// direct-call registrar-api PANDI (behavior lama).
+	apiRegistry *apiregistry.Client
 }
 
 // APIKey returns the current JWT (thread-safe read).
@@ -148,6 +165,9 @@ func (c *Client) tryReauth(ctx context.Context, staleKey string) bool {
 
 // New returns nil if BaseURL is empty (feature disabled). Otherwise it
 // validates the URL is absolute + returns a ready-to-use client.
+//
+// Kalau APIRegistryURL di-set, construct juga backend api-registry SDK
+// supaya EPP-native call bisa di-route ke sana (Fase 1c).
 func New(cfg Config) (*Client, error) {
 	if cfg.BaseURL == "" {
 		return nil, nil
@@ -165,12 +185,39 @@ func New(cfg Config) (*Client, error) {
 	if hc == nil {
 		hc = &http.Client{Timeout: cfg.Timeout}
 	}
-	return &Client{
+	c := &Client{
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		apiKey:  cfg.APIKey,
 		http:    hc,
 		retries: cfg.Retries,
-	}, nil
+	}
+
+	if cfg.APIRegistryURL != "" {
+		if !strings.HasPrefix(cfg.APIRegistryURL, "http://") && !strings.HasPrefix(cfg.APIRegistryURL, "https://") {
+			return nil, fmt.Errorf("registrar: APIRegistryURL must be absolute (got %q)", cfg.APIRegistryURL)
+		}
+		timeout := cfg.APIRegistryTimeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
+		ac, err := apiregistry.New(apiregistry.Config{
+			BaseURL: cfg.APIRegistryURL,
+			Secret:  cfg.APIRegistryHMACSecret,
+			Timeout: timeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("registrar: build api-registry client: %w", err)
+		}
+		c.apiRegistry = ac
+	}
+	return c, nil
+}
+
+// useAPIRegistry — true kalau EPP-native call harus di-route ke internal
+// api-registry service. False = tetap direct-call ke registrar-api PANDI
+// (behavior lama, backward compatible).
+func (c *Client) useAPIRegistry() bool {
+	return c != nil && c.apiRegistry != nil
 }
 
 // APIError is the typed error returned when registrar-api responds with a

@@ -110,6 +110,18 @@ type Config struct {
 	// REGISTRAR_API_KEY apa adanya — operator harus rotate manual.
 	RegistrarResellerEmail    string
 	RegistrarResellerPassword string
+
+	// --- api-registry (Fase 1c: dual-backend switch) ---
+	//
+	// Kalau APIRegistryURL di-set, EPP-native call (check/register/renew/nameserver/
+	// contact/whois) route ke api-registry alih dari langsung ke registrar-api
+	// PANDI. Wallet/document/invoice/admin-config tetap ke registrar-api PANDI
+	// (belum di-implement di api-registry karena bukan concern EPP).
+	//
+	// Kosong = fitur off, semua call tetap ke registrar-api PANDI (behavior lama).
+	APIRegistryURL        string
+	APIRegistryHMACSecret string        // must match api-registry INTERNAL_HMAC_SECRET
+	APIRegistryTimeout    time.Duration // default 30s
 }
 
 func Load() Config {
@@ -171,6 +183,10 @@ func Load() Config {
 		RegistrarWebhookSecret:    env("REGISTRAR_WEBHOOK_SECRET", ""),
 		RegistrarResellerEmail:    env("REGISTRAR_RESELLER_EMAIL", ""),
 		RegistrarResellerPassword: env("REGISTRAR_RESELLER_PASSWORD", ""),
+
+		APIRegistryURL:        env("API_REGISTRY_URL", ""),
+		APIRegistryHMACSecret: env("API_REGISTRY_HMAC_SECRET", ""),
+		APIRegistryTimeout:    envDuration("API_REGISTRY_TIMEOUT", 30*time.Second),
 
 		DBMaxConns:           envInt("DB_MAX_CONNS", 10),
 		DBMinConns:           envInt("DB_MIN_CONNS", 2),

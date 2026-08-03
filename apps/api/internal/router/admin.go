@@ -78,6 +78,22 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/pricing/registrar-tlds", deps.Pricing.AdminListRegistrarTLDs)
 	}
 
+	// Zones catalog (Phase 1 self-sufficient) — TLD supported + verification rules.
+	if deps.Zones != nil {
+		g.Get("/zones", deps.Zones.ListAdmin)
+		g.Post("/zones", deps.Zones.Create)
+		g.Patch("/zones/:id", deps.Zones.Update)
+		g.Delete("/zones/:id", deps.Zones.Delete)
+	}
+
+	// System settings (Phase 1 self-sufficient) — key-value config store
+	// (PPN rate, brand name, support contact). Semua admin-only.
+	if deps.Settings != nil {
+		g.Get("/settings", deps.Settings.List)
+		g.Get("/settings/:key", deps.Settings.Get)
+		g.Patch("/settings/:key", deps.Settings.Update)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {

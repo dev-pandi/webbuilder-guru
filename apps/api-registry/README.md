@@ -312,9 +312,13 @@ Coverage (55+ tests, all `-race` safe):
   - [x] Contact create/read/update via deterministic NIC handle
   - [x] WHOIS TCP:43 client + parser + EPP `domain:info` fallback
   - [x] Unit test: error mapping + response parsing + capability shape + validation guards
-  - [ ] Follow-up: PANDI NIK extension (`user_nik` field untuk .id — currently workaround via street line 2)
   - [ ] Follow-up: integration test terhadap PANDI OT&E sandbox real (butuh credentials)
-- [ ] Fase 1c: web builder swap dari langsung ke registrar-api → ke api-registry
+- [x] **Fase 1c (initial)**: web builder dual-backend switch untuk EPP-native read-heavy call — [apps/api/internal/registrar/apiregistry_adapter.go](../api/internal/registrar/apiregistry_adapter.go)
+  - [x] Config: `API_REGISTRY_URL` + `API_REGISTRY_HMAC_SECRET` + `API_REGISTRY_TIMEOUT` (env off = behavior lama)
+  - [x] Routed: `CheckDomain`, `Whois`, `GetNameservers`, `UpdateNameservers` (4 method EPP-native murni)
+  - [x] Test: 8 test — routing switch, type translation, error mapping, legacy-mode compatibility
+  - [ ] Follow-up: route `RegisterDomain` + `RenewDomain` + `GetRegisterStatus` + `RetryDomain` — perlu Phase 1 self-sufficient dulu (payment/invoice pindah ke web builder supaya tidak coupling ke registrar-api PANDI)
+  - [ ] Follow-up: route contact methods (`GetResellerContact`, `UpdateResellerContactByID`, `UpdateResellerDomainContact`) — perlu NicHandle + CountryID exposed di api-registry response ATAU refactor consumer supaya tidak tergantung field tersebut
 - [ ] Fase 2a: async job runner (Asynq/Redis) — swap `MemoryStore`
 - [ ] Fase 2b: multi-registry support (Verisign untuk .com, dsb.)
 

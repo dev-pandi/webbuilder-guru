@@ -30,11 +30,13 @@ import (
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/reseller"
+	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
 	"github.com/webbuilder/api/internal/wallet"
+	"github.com/webbuilder/api/internal/zones"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -106,6 +108,15 @@ type Deps struct {
 	// Pricing — Phase 3.10+ 3-tier pricing (admin platform CRUD + reseller
 	// list + wizard resolve). Nil = feature disabled.
 	Pricing *pricing.Handler
+
+	// Zones — TLD catalog (Phase 1 self-sufficient). Admin CRUD + public list
+	// untuk wizard cari domain. Nil-safe.
+	Zones *zones.Handler
+
+	// Settings — system_settings key-value store (Phase 1 self-sufficient).
+	// Admin CRUD untuk PPN rate, brand name, support contact, dsb. Konsumer
+	// di package lain call *settings.Service accessor, bukan lewat Handler.
+	Settings *settings.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil
