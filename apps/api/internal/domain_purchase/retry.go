@@ -1,4 +1,4 @@
-// retry_v2.go — Phase 3 self-sufficient retry untuk job yang gagal di
+// retry.go — Phase 3 self-sufficient retry untuk job yang gagal di
 // EPP CREATE/RENEW step. Invoice + payment sudah paid; kita cuma re-run
 // ExecuteAfterPayment (yang dispatch ke RegisterDomainDirect / RenewDomainDirect
 // via api-registry) tanpa charge ulang.

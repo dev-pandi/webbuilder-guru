@@ -1,5 +1,5 @@
-// renew_v2.go — Phase A checkout untuk renew (2-phase self-sufficient).
-// Pattern reuse penuh dari purchase_v2.go — beda hanya:
+// renew.go — Phase A checkout untuk renew (2-phase self-sufficient).
+// Pattern reuse penuh dari purchase.go — beda hanya:
 //   - Ownership check (domain harus milik caller via GetLatestActiveByDomain)
 //   - Path param `:name` untuk domain (bukan body)
 //   - Kind=renew, pakai retail_renew_price (bukan retail_register_price)
@@ -206,14 +206,22 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 			"invoice_id", invoiceID, "error", err)
 	}
 
-	// Save local Purchase — kind=renew, status=pending_payment.
+	// Wallet gateway = sync flow (langsung active tanpa tunggu webhook).
+	// Selaras dengan Purchase — UX konsisten untuk deposit_wallet.
+	isWalletGateway := gw.Type() == "wallet"
+	initialStatus := StatusPendingPayment
+	if isWalletGateway {
+		initialStatus = StatusPendingProvisioning
+	}
+
+	// Save local Purchase — kind=renew.
 	local := &Purchase{
 		UserID:         owner.ID,
 		RegistrarJobID: jobID,
 		Domain:         domain,
 		Years:          req.Years,
 		Kind:           KindRenew,
-		Status:         StatusPendingPayment,
+		Status:         initialStatus,
 		PaymentMethod:  req.PaymentMethod,
 		PaymentURL:     paymentURL,
 	}
@@ -227,14 +235,40 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 	)
 	slog.Info("renew: checkout accepted",
 		"job_id", jobID, "invoice_id", invoiceID,
-		"domain", domain, "years", req.Years, "total", total)
+		"domain", domain, "years", req.Years, "total", total,
+		"is_wallet", isWalletGateway)
+
+	// Wallet gateway = sync flow. MarkPaid + ExecuteAfterPayment inline supaya
+	// response bisa langsung return status=active tanpa client polling.
+	finalStatus := initialStatus
+	respPaymentURL := paymentURL
+	if isWalletGateway {
+		if err := h.invoicesSvc.MarkPaid(c.Context(), invoiceID, time.Now(), providerRef); err != nil {
+			slog.Error("renew (wallet): MarkPaid failed",
+				"invoice_id", invoiceID, "error", err)
+		}
+		inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
+		if err != nil {
+			slog.Error("renew (wallet): fetch invoice for execute failed",
+				"invoice_id", invoiceID, "error", err)
+		} else if inv != nil {
+			if execErr := h.ExecuteAfterPayment(c.Context(), inv); execErr != nil {
+				slog.Error("renew (wallet): ExecuteAfterPayment failed",
+					"invoice_id", invoiceID, "error", execErr)
+				finalStatus = StatusFailed
+			} else {
+				finalStatus = StatusActive
+			}
+		}
+		respPaymentURL = "" // no redirect untuk wallet
+	}
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseCreatedResp{
 		JobID:      jobID,
 		InvoiceID:  invoiceID.String(),
 		Domain:     domain,
-		Status:     StatusPendingPayment,
-		PaymentURL: paymentURL,
+		Status:     finalStatus,
+		PaymentURL: respPaymentURL,
 		Total:      total,
 		Currency:   "IDR",
 		DueAt:      dueAt.Format(time.RFC3339),

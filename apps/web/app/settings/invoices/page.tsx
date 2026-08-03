@@ -1,9 +1,6 @@
 "use client";
 
-// /settings/invoices — riwayat invoice user dari sistem local invoices
-// (Phase 1 self-sufficient, canonical path). Sumber data: /api/v1/invoices
-// (wallet_local + invoices_local). Legacy proxy ke registrar-api sudah
-// tidak dipakai — component InvoicesList lama telah dihapus.
+// /settings/invoices — riwayat invoice user. Sumber data: /api/v1/invoices.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";

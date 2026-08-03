@@ -11,6 +11,7 @@ import (
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/reseller"
 	"github.com/webbuilder/api/internal/templates"
 )
@@ -23,9 +24,13 @@ type Handler struct {
 	purchases *domain_purchase.Repo  // nil = domain tab kosong
 	templates *templates.Repo        // nil = template CRUD 503
 	storage   assets.Storage         // nil = admin upload endpoint 503
+	mailer    mail.Sender            // nil = notif email skipped
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
+
+// SetMailer inject mailer untuk notif reseller approve/suspend. Nil-safe.
+func (h *Handler) SetMailer(m mail.Sender) { h.mailer = m }
 
 // SetAuthRepo inject auth repo untuk reseller management. Optional — kalau
 // nil, endpoint reseller-management return 503 (feature disabled). Simplifies

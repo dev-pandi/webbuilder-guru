@@ -1,10 +1,6 @@
 "use client";
 
-// Reseller wallet dashboard — balance + recent ledger.
-// Sumber data: `wallet_local` package (Phase 1 self-sufficient) via
-// `/api/v1/wallet` endpoint. Legacy `/api/v1/reseller/wallet` (proxy ke
-// registrar-api) sudah tidak dipakai — di-guard return 503 di backend
-// kalau operator jalan di mode self-sufficient.
+// Reseller wallet dashboard — balance + recent ledger via /api/v1/wallet.
 //
 // Top-up flow di-defer sampai `wallet_local.Topup` di-implement. Untuk
 // sementara, admin credit manual via `/admin/wallet/adjust`.

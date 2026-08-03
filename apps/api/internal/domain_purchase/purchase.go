@@ -1,4 +1,4 @@
-// purchase_v2.go — Phase A checkout untuk flow 2-phase self-sufficient.
+// purchase.go — Phase A checkout untuk flow 2-phase self-sufficient.
 //
 // 2-phase self-sufficient checkout:
 //   - Price lookup dari platform_prices lokal (bukan trust registrar response)
@@ -11,10 +11,10 @@
 // ExecuteAfterPayment callback (sudah in-place).
 //
 // Scope:
-//   - Register + renew (renew_v2.go pola sama)
+//   - Register + renew (renew.go pola sama)
 //   - Payment method: gateway (midtrans/paylabs) + manual (manual_bank) + wallet (deposit_wallet)
-//   - On-behalf-of: SUPPORTED (Phase 2 parity) — reseller/agent beli untuk klien
-//   - Promo: belum (butuh promo infrastructure — defer)
+//   - On-behalf-of: reseller/agent beli untuk klien (validated via assignments)
+//   - Promo: validate + redeem via promos.Service (kode di request payload)
 
 package domain_purchase
 
@@ -46,8 +46,8 @@ type purchaseReq struct {
 	// diisi dari profil client (bukan caller). Kosong = self-purchase.
 	OnBehalfOfUserID string `json:"on_behalf_of_user_id,omitempty"`
 	// DocumentIDs — dokumen library (documents_local UUIDs) yang di-pre-attach
-	// ke purchase. V2 flow tidak punya status pending_document (dokumen review
-	// out-of-band), jadi ini murni audit trail + persiapan untuk manual review.
+	// ke purchase. Tidak ada status pending_document di flow ini (dokumen
+	// review out-of-band), jadi ini murni audit trail + persiapan manual review.
 	DocumentIDs []string `json:"document_ids,omitempty"`
 	// PromoCode — opsional. Validate via promos service; kalau invalid,
 	// return 400 (bukan silent-fallback — user pasti mau tau code-nya salah).
@@ -104,7 +104,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "payment_method wajib")
 	}
 
-	// Idempotency key wajib — sama pola dengan Purchase legacy.
+	// Idempotency key wajib — cegah double-charge saat browser retry.
 	idem := strings.TrimSpace(c.Get("Idempotency-Key"))
 	if idem == "" {
 		return httpx.Err(c, fiber.StatusBadRequest, "idempotency_key_required",
@@ -122,7 +122,6 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	var purchasedBy *uuid.UUID
 
 	// On-behalf-of branch — reseller/agent beli untuk klien yang mereka kelola.
-	// Mirror validation pola legacy Purchase supaya perilaku konsisten.
 	if strings.TrimSpace(req.OnBehalfOfUserID) != "" {
 		if !auth.CanRegisterForClient(caller) {
 			return httpx.Forbidden(c, "hanya reseller/agent aktif yang boleh beli untuk klien")
@@ -151,7 +150,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	}
 
 	// Wallet payment restriction: reseller/agent-only (wallet konsep khusus
-	// reseller). Client biasa tidak punya wallet. Selaras dengan legacy.
+	// reseller). Client biasa tidak punya wallet.
 	if req.PaymentMethod == "deposit_wallet" && !auth.IsResellerLike(caller.Role) {
 		return httpx.Forbidden(c, "payment_method 'deposit_wallet' hanya untuk reseller/agent")
 	}
@@ -367,17 +366,17 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	respPaymentURL := paymentURL
 	if isWalletGateway {
 		if err := h.invoicesSvc.MarkPaid(c.Context(), invoiceID, time.Now(), providerRef); err != nil {
-			slog.Error("purchase_v2 (wallet): MarkPaid failed",
+			slog.Error("purchase (wallet): MarkPaid failed",
 				"invoice_id", invoiceID, "error", err)
 			// Non-fatal for response — invoice biasanya bisa di-mark via admin panel.
 		}
 		inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
 		if err != nil {
-			slog.Error("purchase_v2 (wallet): fetch invoice for execute failed",
+			slog.Error("purchase (wallet): fetch invoice for execute failed",
 				"invoice_id", invoiceID, "error", err)
 		} else if inv != nil {
 			if execErr := h.ExecuteAfterPayment(c.Context(), inv); execErr != nil {
-				slog.Error("purchase_v2 (wallet): ExecuteAfterPayment failed",
+				slog.Error("purchase (wallet): ExecuteAfterPayment failed",
 					"invoice_id", invoiceID, "error", execErr)
 				// Purchase status akan updated ke failed via ExecuteAfterPayment.
 				finalStatus = StatusFailed

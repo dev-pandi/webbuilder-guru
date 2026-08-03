@@ -1,11 +1,8 @@
 "use client";
 
-// Agent wallet dashboard — view saldo agent (read-only). Data dari
-// `wallet_local` via `/api/v1/wallet` (Phase 1 self-sufficient).
-//
-// Note: di flow self-sufficient, tiap user (termasuk agent) punya balance
-// sendiri di `wallet_balances`. Top-up mandiri belum tersedia — admin
-// credit manual via /admin/wallet/adjust.
+// Agent wallet dashboard — view saldo agent via /api/v1/wallet.
+// Tiap user (termasuk agent) punya balance sendiri di `wallet_balances`.
+// Top-up mandiri belum tersedia — admin credit manual via /admin/wallet/adjust.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";

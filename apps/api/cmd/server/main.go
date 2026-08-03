@@ -295,6 +295,7 @@ func main() {
 	adminHandler := admin.NewHandler(adminRepo)
 	adminHandler.SetAuthRepo(authRepo)
 	adminHandler.SetTemplates(templateRepo)
+	adminHandler.SetMailer(mailer)
 	if assetStorage != nil {
 		// Storage untuk admin-scoped uploads (template thumbnail Phase 7).
 		adminHandler.SetStorage(assetStorage)

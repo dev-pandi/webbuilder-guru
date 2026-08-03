@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -11,6 +14,7 @@ import (
 	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/mail"
 )
 
 // resellerListItem — payload slim untuk admin panel list. Beda dari user
@@ -252,6 +256,58 @@ func (h *Handler) setResellerStatus(c *fiber.Ctx, status string) error {
 		"display_name":  u.ResellerDisplayName,
 		"status_before": status, // status target adalah status akhir
 	})
-	// TODO Phase 2+: kirim email notification ke reseller (approved/suspended)
+	// Fire notif email (fire-and-forget goroutine — status update tidak boleh
+	// gagal karena SMTP lambat/down). Kalau mailer nil, skip diam-diam.
+	if h.mailer != nil {
+		go sendResellerStatusEmail(h.mailer, u.Email, u.Name, u.ResellerDisplayName, status)
+	}
 	return httpx.OK(c, toResellerListItem(u))
+}
+
+// sendResellerStatusEmail — kirim notif approved/suspended ke reseller.
+// Non-blocking (dipanggil di goroutine) supaya SMTP latency tidak block
+// response admin. Timeout 10s dari context baru.
+func sendResellerStatusEmail(m mail.Sender, email, name, businessName, status string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var subject, body string
+	if status == auth.ResellerStatusActive {
+		subject = "Akun Reseller Web Builder Aktif ✓"
+		body = "Halo " + displayName(name, email) + ",\n\n" +
+			"Kabar baik! Aplikasi reseller Anda sudah di-approve oleh tim kami.\n" +
+			"Nama bisnis: " + businessName + "\n\n" +
+			"Silakan login untuk mulai:\n" +
+			"  - Undang agent ke tim Anda\n" +
+			"  - Daftarkan klien + beli domain atas nama mereka\n" +
+			"  - Kelola pricing per-TLD di dashboard reseller\n\n" +
+			"Best regards,\nTim Web Builder"
+	} else if status == auth.ResellerStatusSuspended {
+		subject = "Akun Reseller Anda Di-suspend"
+		body = "Halo " + displayName(name, email) + ",\n\n" +
+			"Kami menghentikan sementara akun reseller Anda untuk sementara.\n" +
+			"Nama bisnis: " + businessName + "\n\n" +
+			"Login berikutnya akan diblokir. Klien + situs Anda tetap ada,\n" +
+			"tapi tidak bisa dikelola dari akun ini sampai admin re-approve.\n\n" +
+			"Kalau Anda merasa ini kesalahan, hubungi support kami untuk klarifikasi.\n\n" +
+			"Best regards,\nTim Web Builder"
+	} else {
+		return // status lain (mis. pending_approval) — tidak notify.
+	}
+
+	if err := m.Send(ctx, mail.Message{
+		To:      email,
+		Subject: subject,
+		Body:    body,
+	}); err != nil {
+		slog.Warn("reseller status email failed", "email", email, "status", status, "err", err)
+	}
+}
+
+// displayName — pakai Name kalau non-empty, fallback ke email.
+func displayName(name, email string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	return email
 }

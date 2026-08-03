@@ -1,8 +1,7 @@
 "use client";
 
-// Ledger detail — paginated dari `/api/v1/wallet/ledger` (Phase 1
-// self-sufficient). Filter kind client-side (backend belum support filter
-// per reason — bisa di-add nanti).
+// Ledger detail — paginated dari `/api/v1/wallet/ledger`. Filter kind
+// client-side (backend belum support filter per reason — bisa di-add nanti).
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
