@@ -47,21 +47,13 @@ export type CheckResp = {
   results: CheckEntry[];
 };
 
+// PurchaseResp — shape response dari POST /api/v1/domains/purchase
+// (2-phase self-sufficient checkout).
 export type PurchaseResp = {
-  job_id: string;
-  domain: string;
-  status: string;
-  payment_url?: string;
-};
-
-// PurchaseV2Resp — shape response dari POST /api/v1/domains/purchase
-// (2-phase self-sufficient checkout). Extends PurchaseResp dengan info
-// invoice + total + due_at.
-export type PurchaseV2Resp = {
   job_id: string;      // = invoice_id string
   invoice_id: string;
   domain: string;
-  status: string;      // "pending_payment"
+  status: string;      // "pending_payment" | "pending_provisioning" | "active" | "failed"
   payment_url?: string;
   instructions?: string; // untuk manual_bank
   total: number;       // IDR minor unit

@@ -14,9 +14,6 @@ package registrar
 // Yang di-route:
 //   check / register / renew / info / nameserver-get/update / whois / contact
 //
-// Yang TIDAK di-route (tetap direct-call registrar-api PANDI):
-//   wallet, document, invoice, admin config, category, TLD listing
-//   (semua ini bukan EPP concern per arsitektur — api-registry tidak expose).
 
 import (
 	"context"
@@ -112,10 +109,7 @@ func (c *Client) updateNameserversViaAPIRegistry(ctx context.Context, name strin
 // payment/invoice sendiri lewat paymentgw + invoices; setelah invoice paid
 // (webhook), ExecuteAfterPayment panggil method ini untuk trigger EPP.
 //
-// Beda dari `RegisterDomain` yang legacy (forward ke registrar-api PANDI
-// termasuk payment): method ini API-registry only, sync EPP execute, return
-// job_id + status. Tidak ada payment_method/return_url/promo_code — semua
-// concern payment di sisi caller.
+// Direct EPP register via api-registry. Payment concern di caller side.
 //
 // Requirement: `APIRegistryURL` di-set (kalau tidak, return error jelas).
 func (c *Client) RegisterDomainDirect(ctx context.Context, req RegisterRequest) (*RegisterResponse, error) {

@@ -1,5 +1,5 @@
 // Package domain_purchase menyimpan tracker beli-domain lokal + repo untuk
-// query by user/job. Source of truth status tetap di registrar-api; kolom
+// query by user/job. Status update-nya lewat ExecuteAfterPayment callback;
 // `status` di sini adalah cache dari webhook update.
 package domain_purchase
 
@@ -45,7 +45,7 @@ const (
 	KindRenew    = "renew"
 )
 
-// Status constants — mirror registrar-api models.JobStatus*.
+// Status constants — mirror api-registry job status enum.
 const (
 	StatusPendingPayment      = "pending_payment"
 	StatusPendingDocument     = "pending_document"
@@ -88,7 +88,7 @@ func scan(row pgx.Row, p *Purchase) error {
 }
 
 // Create inserts a new pending purchase. Called setelah panggilan sukses ke
-// registrar-api `/domain/register` — kita simpan job_id + payment_url + status
+// api-registry `/domains/register` — kita simpan job_id + payment_url + status
 // awal supaya frontend bisa polling tanpa hit registrar lagi.
 func (r *Repo) Create(ctx context.Context, p *Purchase) error {
 	if p.Kind == "" {
@@ -352,7 +352,7 @@ func (r *Repo) AttachSite(ctx context.Context, jobID string, userID, siteID uuid
 	return nil
 }
 
-// UpdatePaymentURL dipanggil oleh webhook / poll saat registrar-api sudah
+// UpdatePaymentURL dipanggil oleh payment webhook saat gateway sudah
 // generate URL Midtrans/Paylabs (biasanya second update setelah register).
 func (r *Repo) UpdatePaymentURL(ctx context.Context, jobID, paymentURL string) error {
 	_, err := r.pool.Exec(ctx,

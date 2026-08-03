@@ -7,8 +7,8 @@
 -- billing separation). `is_default=true` di-pick otomatis saat auto-attach.
 -- Unique partial index memastikan hanya SATU config default aktif.
 --
--- api_token disimpan plain text — konsisten dengan REGISTRAR_API_KEY yang
--- juga plain di env. Akses restricted via admin route + JWT role=admin.
+-- api_token disimpan plain text — akses restricted via admin route + JWT
+-- role=admin. Row-level protection via handler ownership check.
 CREATE TABLE IF NOT EXISTS cloudflare_configs (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name        TEXT NOT NULL,

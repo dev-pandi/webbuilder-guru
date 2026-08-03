@@ -1,7 +1,6 @@
 -- +goose Up
 -- Zone catalog — admin definisi TLD apa yang di-support platform.
--- Sebelumnya di registrar-api DB (ZoneInfo di response CheckDomain);
--- sekarang authoritative di web builder DB per arsitektur self-sufficient.
+-- Authoritative di web builder DB; operator kontrol full lewat /admin/zones.
 --
 -- Setiap TLD punya rules:
 --   require_document   — user harus upload KTP/NPWP untuk register di zone ini

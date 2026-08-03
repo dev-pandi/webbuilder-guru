@@ -1,7 +1,6 @@
 // Package registrar is a thin, typed wrapper around the internal
-// api-registry EPP service (`apps/api-registry`). Web builder no longer
-// talks to registrar-api PANDI directly — semua flow domain lifecycle
-// (check/register/renew/nameserver/contact/whois) di-route lewat sini.
+// api-registry EPP service (`apps/api-registry`). Semua flow domain lifecycle
+// (check/register/renew/nameserver/whois) di-route lewat sini.
 package registrar
 
 import (

@@ -39,17 +39,16 @@ type AssignmentChecker interface {
 	ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error)
 }
 
-// Handler menjembatani frontend web builder ↔ registrar-api.
+// Handler untuk domain purchase flow (2-phase self-sufficient).
 //
 // User-facing endpoints (JWT):
-//   POST /api/v1/domains/check                 — availability + harga
-//   POST /api/v1/domains/purchase              — trigger register at registrar
-//   GET  /api/v1/domains/purchases/:job_id     — poll status (owned by user)
-//   GET  /api/v1/domains/purchases             — list milik user
+//   POST /api/v1/domains/check                    — availability + harga
+//   POST /api/v1/domains/purchase                 — trigger register via api-registry
+//   POST /api/v1/domains/:name/renew              — trigger renew via api-registry
+//   GET  /api/v1/domains/purchases/:job_id        — poll job status
+//   GET  /api/v1/domains/purchases                — list milik user
 //   POST /api/v1/domains/purchases/:job_id/attach — link ke site_id existing
-//
-// Global (webhook — NO JWT, HMAC-signed):
-//   POST /webhooks/registrar/domain-status     — callback dari registrar-api
+//   POST /api/v1/domains/purchases/:job_id/retry  — re-run EPP CREATE untuk failed job
 type Handler struct {
 	repo          *Repo
 	registrar     *registrar.Client
@@ -61,8 +60,8 @@ type Handler struct {
 	audit         *audit.Repo       // nil = audit disabled
 	zonesRepo     *zones.Repo       // nil = trust upstream AllowedZones (legacy)
 
-	// --- 2-phase self-sufficient dependencies (PurchaseV2 flow) ---
-	// Semua nil-safe: kalau salah satu belum di-wire, PurchaseV2 endpoint
+	// --- 2-phase self-sufficient dependencies (Purchase flow) ---
+	// Semua nil-safe: kalau salah satu belum di-wire, Purchase endpoint
 	// return 503 dengan pesan jelas mana yang missing.
 	pricingRepo PricingLookup     // fetch retail price per TLD
 	invoicesSvc InvoiceCreator    // create invoice + apply PPN
@@ -88,7 +87,7 @@ type InvoiceCreator interface {
 	GetInvoiceForCallback(ctx context.Context, id uuid.UUID) (*invoices.Invoice, error)
 }
 
-// InvoiceCreateInput — subset yang PurchaseV2 butuh; abstract dari
+// InvoiceCreateInput — subset yang Purchase butuh; abstract dari
 // invoices.CreateForRegisterInput supaya package tidak import cycle.
 type InvoiceCreateInput struct {
 	UserID        uuid.UUID
@@ -106,7 +105,7 @@ type GatewayRegistry interface {
 	Get(ctx context.Context, code string) (PaymentGateway, error)
 }
 
-// PaymentGateway — subset dari paymentgw.Gateway yang PurchaseV2 pakai.
+// PaymentGateway — subset dari paymentgw.Gateway yang Purchase pakai.
 type PaymentGateway interface {
 	Code() string
 	Type() string // "gateway" | "manual" | "wallet" — dipakai handler untuk
@@ -132,13 +131,13 @@ type GatewayChargeRequest struct {
 // arsitektur self-sufficient — operator kontrol full atas zone yang expose).
 func (h *Handler) SetZones(z *zones.Repo) { h.zonesRepo = z }
 
-// SetPricing inject pricing lookup untuk PurchaseV2 flow.
+// SetPricing inject pricing lookup untuk Purchase flow.
 func (h *Handler) SetPricing(p PricingLookup) { h.pricingRepo = p }
 
-// SetInvoices inject invoice creator untuk PurchaseV2 flow.
+// SetInvoices inject invoice creator untuk Purchase flow.
 func (h *Handler) SetInvoices(i InvoiceCreator) { h.invoicesSvc = i }
 
-// SetGatewayRegistry inject payment gateway registry untuk PurchaseV2.
+// SetGatewayRegistry inject payment gateway registry untuk Purchase.
 func (h *Handler) SetGatewayRegistry(g GatewayRegistry) { h.gwRegistry = g }
 
 // SetAudit inject audit repo untuk record purchase / retry / renew (Phase 7).
@@ -213,27 +212,14 @@ type priceBlock struct {
 	Transfer float64 `json:"transfer"`
 }
 
-// zoneBlock — flag dari registrar-api's zones table. Frontend pakai untuk
-// tentukan flow post-payment (kalau require_document=true, tampilkan
-// document picker; kalau nik_auto_approved=true, NIK cukup tanpa upload).
+// zoneBlock — flag dari zones catalog lokal. Frontend pakai untuk tentukan
+// flow post-payment (kalau require_document=true, tampilkan document picker;
+// kalau nik_auto_approved=true, NIK cukup tanpa upload).
 type zoneBlock struct {
 	Name            string `json:"name"`
 	RequireDocument bool   `json:"require_document"`
 	AutoApproved    bool   `json:"auto_approved"`
 	NikAutoApproved bool   `json:"nik_auto_approved"`
-}
-
-type purchaseReq struct {
-	Domain        string   `json:"domain"`
-	Years         int      `json:"years"`
-	PaymentMethod string   `json:"payment_method"`
-	ReturnURL     string   `json:"return_url"`
-	PromoCode     string   `json:"promo_code,omitempty"`   // forwarded ke registrar
-	DocumentIDs   []uint64 `json:"document_ids,omitempty"` // pre-attach docs
-	// OnBehalfOfUserID — kalau di-set, reseller/agent beli domain untuk client.
-	// user_id purchase = client_id, purchased_by = caller. Contact object diisi
-	// dari profil client (bukan reseller). Reseller/agent role required.
-	OnBehalfOfUserID string `json:"on_behalf_of_user_id,omitempty"`
 }
 
 type purchaseResp struct {
@@ -267,8 +253,8 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "domain kosong")
 	}
 
-	// Reseller check: batch EPP untuk 1..N zone dalam 1 call. Response include
-	// `allowed_zones` supaya UI bisa hint TLD yang tersedia untuk reseller ini.
+	// Batch EPP check untuk 1..N zone dalam 1 call ke api-registry. Response
+	// include `allowed_zones` supaya UI bisa hint TLD yang tersedia.
 	res, err := h.registrar.CheckDomain(c.Context(), req.Domain)
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
@@ -276,7 +262,7 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 	// Cross-check dengan local zones catalog: kalau zonesRepo di-set,
 	// operator kontrol TLD apa yang expose ke user (bukan trust upstream).
 	// Zone yang active=false di local akan drop dari response walau
-	// registrar-api masih support.
+	// upstream masih support.
 	allowedLocal, allowedSet := h.resolveAllowedZones(c.Context(), res.AllowedZones)
 
 	out := checkResp{
@@ -336,7 +322,7 @@ func (h *Handler) resolveAllowedZones(ctx context.Context, upstream []string) ([
 		localSet[strings.ToLower(z.TLD)] = struct{}{}
 	}
 	// Intersect: hanya TLD yang muncul di kedua source.
-	// Kalau upstream empty (mis. registrar-api tidak return zones), fallback
+	// Kalau upstream empty (mis. api-registry tidak return zones), fallback
 	// pakai semua local active.
 	if len(upstream) == 0 {
 		out := make([]string, 0, len(local))
@@ -384,7 +370,7 @@ func (h *Handler) Status(c *fiber.Ctx) error {
 	}
 
 	// Self-sufficient: local DB authoritative. Status update via
-	// ExecuteAfterPayment (webhook) atau RetryV2 langsung tulis ke DB —
+	// ExecuteAfterPayment (webhook) atau Retry langsung tulis ke DB —
 	// tidak butuh refresh dari external source.
 	return httpx.OK(c, toResp(local))
 }
@@ -694,28 +680,6 @@ func (h *Handler) Whois(c *fiber.Ctx) error {
 		return httpx.OK(c, map[string]string{"domain": name, "status": "unknown"})
 	}
 	return httpx.OK(c, w)
-}
-
-// Renew — POST /api/v1/domains/renew
-//
-// Body: { domain, years, payment_method, promo_code?, return_url? }
-// Header (opsional): Idempotency-Key
-//
-// Ownership: domain harus punya active register-job milik user (via
-// GetLatestActiveByDomain). Kalau tidak, 404 — user tidak boleh perpanjang
-// domain orang lain.
-//
-// Flow:
-//  1. Verify user pemilik domain.
-//  2. Forward ke registrar RenewDomain → dapat job_id + payment_url.
-//  3. Simpan local dengan kind=renew (site_id nil — site sudah exist).
-//  4. Return sama shape dengan purchase (frontend re-use pending page).
-type renewReq struct {
-	Domain        string `json:"domain"`
-	Years         int    `json:"years"`
-	PaymentMethod string `json:"payment_method"`
-	ReturnURL     string `json:"return_url"`
-	PromoCode     string `json:"promo_code,omitempty"` // forwarded ke registrar
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {

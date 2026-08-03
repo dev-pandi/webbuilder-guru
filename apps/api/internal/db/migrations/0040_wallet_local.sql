@@ -1,6 +1,5 @@
 -- +goose Up
--- Wallet internal — authoritative deposit balance per user di web builder.
--- Menggantikan legacy wallet yang proxy ke registrar-api PANDI.
+-- Wallet internal — authoritative deposit balance per user.
 --
 -- Design:
 --   - wallet_balances: 1 row per user (idempotent UPSERT saat first topup).

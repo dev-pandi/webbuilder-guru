@@ -2,8 +2,8 @@
 -- Platform-level pricing (plan-reseller-roles.md 16.3).
 -- Layer 1 dari 3-tier pricing:
 --   retail_*    = yang dibayar client self-purchase via wizard
---   wholesale_* = cost dari registrar-api (nullable — kalau NULL, backend
---                 fetch actual per query untuk display always-fresh)
+--   wholesale_* = cost per TLD (nullable — kalau NULL, admin set manual
+--                 saat setup, atau derive dari reseller_price_lists)
 --
 -- Split register vs renew (keputusan #1 — sesuai standard industri PANDI/
 -- GoDaddy/Namecheap di mana register dan renew umumnya harga beda).

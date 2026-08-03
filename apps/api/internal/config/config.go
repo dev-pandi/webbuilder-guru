@@ -92,12 +92,10 @@ type Config struct {
 	GoogleOAuthClientSecret string
 	GoogleOAuthRedirectURL  string
 
-	// --- api-registry (self-sufficient EPP service) ---
+	// --- api-registry (EPP service) ---
 	//
 	// APIRegistryURL wajib untuk enable domain flow (check/register/renew/
 	// nameserver/contact/whois). Empty = domain feature disabled.
-	//
-	// Kosong = fitur off, semua call tetap ke registrar-api PANDI (behavior lama).
 	APIRegistryURL        string
 	APIRegistryHMACSecret string        // must match api-registry INTERNAL_HMAC_SECRET
 	APIRegistryTimeout    time.Duration // default 30s

@@ -350,7 +350,7 @@ func main() {
 	paymentsHandler := payments.NewHandler(paymentsRepo)
 
 	// Wallet local — Phase 1 self-sufficient wallet (menggantikan legacy
-	// wallet.Handler yang proxy ke registrar-api).
+	// legacy proxy).
 	walletLocalRepo := wallet_local.NewRepo(pool)
 	walletLocalHandler := wallet_local.NewHandler(walletLocalRepo)
 
@@ -386,7 +386,7 @@ func main() {
 		slog.Info("payment webhook: callback wired ke domain_purchase.ExecuteAfterPayment")
 
 		// PurchaseV2 dependencies — inject via adapters. Bikin 2-phase flow
-		// (invoice + charge lokal) available di POST /purchases/v2.
+		// (invoice + charge lokal) available di POST /domains/purchase.
 		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo})
 		purchaseHandler.SetInvoices(invoicesAdapter{svc: invoicesSvc, repo: invoicesRepo})
 		purchaseHandler.SetGatewayRegistry(gatewayRegistryAdapter{reg: gwRegistry})
@@ -399,7 +399,7 @@ func main() {
 	}
 
 	// Contact syncer — REMOVED (Fase 1 self-sufficient cleanup).
-	// Legacy behavior: propagate profile update ke registrar-api PANDI via
+	// Removed: profile update propagation via
 	// UpdateResellerContactByID/UpdateResellerDomainContact.
 	// Alasan hapus: contactsync belum di-migrate ke api-registry contact
 	// endpoints (contact routing di-defer per plan-phase-1). Kalau butuh,

@@ -24,23 +24,23 @@ import (
 	"github.com/webbuilder/api/internal/metrics"
 )
 
-const metricRenewsCreatedV2 = "domain_renew_v2_created_total"
+const metricRenewsCreated = "domain_renew_created_total"
 
-// renewV2Req — body untuk RenewV2. `domain` diambil dari path param, bukan body.
-type renewV2Req struct {
+// renewReq — body untuk Renew. `domain` diambil dari path param, bukan body.
+type renewReq struct {
 	Years         int    `json:"years"`
 	PaymentMethod string `json:"payment_method"`
 	ReturnURL     string `json:"return_url,omitempty"`
 }
 
-// RenewV2 — Phase A checkout untuk renew.
+// Renew — Phase A checkout untuk renew.
 //
 // POST /api/v1/domains/:name/renew
 // Body: renewV2Req
 // Header: Idempotency-Key wajib.
-func (h *Handler) RenewV2(c *fiber.Ctx) error {
+func (h *Handler) Renew(c *fiber.Ctx) error {
 	if h.pricingRepo == nil || h.invoicesSvc == nil || h.gwRegistry == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "renew_v2_not_ready",
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "renew_not_ready",
 			"Fitur renew 2-phase belum aktif — dependencies pricing/invoices/gateway belum wired.")
 	}
 	if h.registrar == nil || !h.registrar.UsesAPIRegistry() {
@@ -63,7 +63,7 @@ func (h *Handler) RenewV2(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "domain full FQDN wajib")
 	}
 
-	var req renewV2Req
+	var req renewReq
 	if err := c.BodyParser(&req); err != nil {
 		return httpx.BadRequest(c, "invalid json")
 	}
@@ -131,7 +131,7 @@ func (h *Handler) RenewV2(c *fiber.Ctx) error {
 		Kind:          KindRenew,
 	})
 	if err != nil {
-		slog.Error("renew_v2: create invoice failed",
+		slog.Error("renew: create invoice failed",
 			"user_id", owner.ID, "domain", domain, "error", err)
 		return httpx.Internal(c, "gagal membuat invoice")
 	}
@@ -154,15 +154,15 @@ func (h *Handler) RenewV2(c *fiber.Ctx) error {
 		ExpiresAt:     dueAt,
 	})
 	if err != nil {
-		metrics.Default.CounterInc(metricRenewsCreatedV2,
-			"RenewV2 checkout by outcome",
+		metrics.Default.CounterInc(metricRenewsCreated,
+			"Renew checkout by outcome",
 			map[string]string{"result": "charge_failed", "gateway": req.PaymentMethod},
 		)
 		return httpx.Err(c, fiber.StatusBadGateway, "charge_failed", err.Error())
 	}
 
 	if err := h.invoicesSvc.SavePaymentRef(c.Context(), invoiceID, providerRef); err != nil {
-		slog.Warn("renew_v2: save payment ref failed",
+		slog.Warn("renew: save payment ref failed",
 			"invoice_id", invoiceID, "error", err)
 	}
 
@@ -178,18 +178,18 @@ func (h *Handler) RenewV2(c *fiber.Ctx) error {
 		PaymentURL:     paymentURL,
 	}
 	if err := h.repo.Create(c.Context(), local); err != nil {
-		slog.Error("renew_v2: local save failed", "job_id", jobID, "error", err)
+		slog.Error("renew: local save failed", "job_id", jobID, "error", err)
 	}
 
-	metrics.Default.CounterInc(metricRenewsCreatedV2,
-		"RenewV2 checkout by outcome",
+	metrics.Default.CounterInc(metricRenewsCreated,
+		"Renew checkout by outcome",
 		map[string]string{"result": "success", "gateway": req.PaymentMethod},
 	)
-	slog.Info("renew_v2: checkout accepted",
+	slog.Info("renew: checkout accepted",
 		"job_id", jobID, "invoice_id", invoiceID,
 		"domain", domain, "years", req.Years, "total", total)
 
-	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseV2Resp{
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseCreatedResp{
 		JobID:      jobID,
 		InvoiceID:  invoiceID.String(),
 		Domain:     domain,

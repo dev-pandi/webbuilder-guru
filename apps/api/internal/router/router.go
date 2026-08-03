@@ -131,7 +131,7 @@ type Deps struct {
 	PaymentWebhook *paymentwh.Handler
 
 	// WalletLocal — Phase 1 self-sufficient wallet (menggantikan legacy
-	// wallet.Handler yang proxy ke registrar-api). Endpoints versioned
+	// wallet.Handler proxy). Endpoints canonical.
 	// di /wallet/v2 supaya coexist dengan legacy sampai frontend migrate.
 	WalletLocal *wallet_local.Handler
 

@@ -16,18 +16,18 @@ import (
 	"github.com/webbuilder/api/internal/httpx"
 )
 
-// RetryV2 — POST /api/v1/domains/purchases/:job_id/retry
+// Retry — POST /api/v1/domains/purchases/:job_id/retry
 //
 // Prereq: job status=failed AND invoice status=paid. Kalau invoice belum paid,
 // user harus lunasi via /invoices dulu (webhook otomatis trigger execute).
-func (h *Handler) RetryV2(c *fiber.Ctx) error {
+func (h *Handler) Retry(c *fiber.Ctx) error {
 	if h.invoicesSvc == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "retry_v2_not_ready",
-			"Retry V2 butuh invoices service ter-wire.")
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "retry_not_ready",
+			"Retry butuh invoices service ter-wire.")
 	}
 	if h.registrar == nil || !h.registrar.UsesAPIRegistry() {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "api_registry_required",
-			"Retry V2 butuh API_REGISTRY_URL di-set.")
+			"Retry butuh API_REGISTRY_URL di-set.")
 	}
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {
@@ -46,11 +46,10 @@ func (h *Handler) RetryV2(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "retry hanya untuk job status=failed")
 	}
 
-	// Untuk V2 flow, job_id = invoice.ID. Kalau parse gagal, ini job legacy —
-	// tolak explicit (bukan crash).
+	// job_id = invoice.ID (canonical). Kalau parse gagal, invalid job.
 	invoiceID, err := uuid.Parse(jobID)
 	if err != nil {
-		return httpx.BadRequest(c, "job ini bukan V2 flow — hubungi admin")
+		return httpx.BadRequest(c, "job_id tidak valid")
 	}
 	inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
 	if err != nil || inv == nil {

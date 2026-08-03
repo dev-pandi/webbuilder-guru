@@ -2,7 +2,7 @@
 
 Panduan operator untuk setup + monitoring + troubleshooting web builder di
 mode self-sufficient (full pakai `api-registry` service, tanpa dependency
-ke `registrar-api` PANDI).
+legacy proxy).
 
 ---
 
@@ -141,15 +141,14 @@ Buka `/admin/pricing`:
 
 ### 2.2 Metrics (Prometheus text format)
 
-`GET /metrics` — semua counter Phase 1 self-sufficient:
+`GET /metrics` — semua counter self-sufficient:
 
 | Metric | Label | Meaning |
 |---|---|---|
-| `domain_purchase_v2_created_total` | `result`, `gateway` | PurchaseV2 checkout by outcome |
-| `domain_renew_v2_created_total` | `result`, `gateway` | RenewV2 checkout by outcome |
+| `domain_purchase_created_total` | `result`, `gateway` | Purchase checkout by outcome |
+| `domain_renew_created_total` | `result`, `gateway` | Renew checkout by outcome |
 | `payment_webhooks_total` | `code`, `result` | Webhook receiver hits |
 | `domain_purchase_execute_after_payment_total` | `result`, `kind` | EPP execute trigger |
-| `domain_purchases_created_total` | `kind` | Legacy purchase (fallback) |
 
 ### 2.3 Log queries
 

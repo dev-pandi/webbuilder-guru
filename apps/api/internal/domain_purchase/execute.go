@@ -2,7 +2,7 @@
 //
 // Callback yang di-hook ke paymentwh.SetPaidCallback. Alur:
 //
-//   Frontend → POST /purchases/v2 → invoices.CreateForRegister + paymentgw.CreateCharge
+//   Frontend → POST /domains/purchase → invoices.CreateForRegister + paymentgw.CreateCharge
 //   → return payment_url ke user
 //   User bayar → Provider webhook → paymentwh.Receive → invoices.MarkPaid
 //   → ExecuteAfterPayment(inv) → registrar.RegisterDomainDirect (via api-registry)

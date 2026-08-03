@@ -1,6 +1,6 @@
 // purchase_v2.go — Phase A checkout untuk flow 2-phase self-sufficient.
 //
-// Beda dengan legacy Purchase (yang forward payment ke registrar-api PANDI):
+// 2-phase self-sufficient checkout:
 //   - Price lookup dari platform_prices lokal (bukan trust registrar response)
 //   - Zone active check dari zones lokal (operator control)
 //   - Invoice dibuat lokal via invoices.Service (dengan PPN via settings)
@@ -32,10 +32,10 @@ import (
 	"github.com/webbuilder/api/internal/metrics"
 )
 
-const metricPurchasesCreatedV2 = "domain_purchase_v2_created_total"
+const metricPurchasesCreated = "domain_purchase_created_total"
 
-// purchaseV2Req — payload frontend baru untuk 2-phase flow.
-type purchaseV2Req struct {
+// purchaseReq — payload untuk checkout 2-phase.
+type purchaseReq struct {
 	Domain        string `json:"domain"`
 	Years         int    `json:"years"`
 	PaymentMethod string `json:"payment_method"` // "midtrans" | "paylabs" | "manual_bank" | "deposit_wallet"
@@ -50,8 +50,8 @@ type purchaseV2Req struct {
 	DocumentIDs []string `json:"document_ids,omitempty"`
 }
 
-// purchaseV2Resp — response.
-type purchaseV2Resp struct {
+// purchaseCreatedResp — response.
+type purchaseCreatedResp struct {
 	JobID       string `json:"job_id"`      // = invoice_id string (single source of truth)
 	InvoiceID   string `json:"invoice_id"`
 	Domain      string `json:"domain"`
@@ -63,16 +63,16 @@ type purchaseV2Resp struct {
 	DueAt       string `json:"due_at"`      // RFC3339
 }
 
-// PurchaseV2 — Phase A checkout. Endpoint terpisah dari Purchase lama supaya
-// frontend bisa migrate incremental + backward compat 100%.
+// Purchase — Phase A checkout. Bikin invoice + payment charge lokal;
+// EPP execute lewat api-registry di ExecuteAfterPayment callback.
 //
-// POST /api/v1/purchases/v2
-// Body: purchaseV2Req
+// POST /api/v1/domains/purchase
+// Body: purchaseReq
 // Header: Idempotency-Key (wajib untuk cegah double-charge).
-func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
+func (h *Handler) Purchase(c *fiber.Ctx) error {
 	// Dependency check — kalau ada yang belum wired, kasih hint clear.
 	if h.pricingRepo == nil || h.invoicesSvc == nil || h.gwRegistry == nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "purchase_v2_not_ready",
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "purchase_not_ready",
 			"Fitur checkout 2-phase belum aktif — dependencies pricing/invoices/gateway belum wired.")
 	}
 	if h.registrar == nil || !h.registrar.UsesAPIRegistry() {
@@ -84,7 +84,7 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	if cl == nil {
 		return httpx.Unauthorized(c, "no claims")
 	}
-	var req purchaseV2Req
+	var req purchaseReq
 	if err := c.BodyParser(&req); err != nil {
 		return httpx.BadRequest(c, "invalid json")
 	}
@@ -205,7 +205,7 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 		JobID:         "", // will use invoice.ID as job_id — no separate id
 	})
 	if err != nil {
-		slog.Error("purchase_v2: create invoice failed",
+		slog.Error("purchase: create invoice failed",
 			"user_id", owner.ID, "domain", req.Domain, "error", err)
 		return httpx.Internal(c, "gagal membuat invoice")
 	}
@@ -242,16 +242,16 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 		// Detect wallet insufficient — return 402 dengan message spesifik.
 		if strings.Contains(strings.ToLower(err.Error()), "saldo") ||
 			strings.Contains(strings.ToLower(err.Error()), "insufficient") {
-			metrics.Default.CounterInc(metricPurchasesCreatedV2,
-				"PurchaseV2 checkout by outcome",
+			metrics.Default.CounterInc(metricPurchasesCreated,
+				"Purchase checkout by outcome",
 				map[string]string{"result": "wallet_insufficient", "gateway": req.PaymentMethod},
 			)
 			return httpx.Err(c, fiber.StatusPaymentRequired, "wallet_insufficient", err.Error())
 		}
-		slog.Error("purchase_v2: charge failed",
+		slog.Error("purchase: charge failed",
 			"gateway", req.PaymentMethod, "invoice_id", invoiceID, "error", err)
-		metrics.Default.CounterInc(metricPurchasesCreatedV2,
-			"PurchaseV2 checkout by outcome",
+		metrics.Default.CounterInc(metricPurchasesCreated,
+			"Purchase checkout by outcome",
 			map[string]string{"result": "charge_failed", "gateway": req.PaymentMethod},
 		)
 		return httpx.Err(c, fiber.StatusBadGateway, "charge_failed", err.Error())
@@ -261,7 +261,7 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 	// draft → unpaid.
 	if err := h.invoicesSvc.SavePaymentRef(c.Context(), invoiceID, providerRef); err != nil {
 		// Non-fatal — invoice tetap ada (status draft). Log + lanjut.
-		slog.Warn("purchase_v2: save payment ref failed",
+		slog.Warn("purchase: save payment ref failed",
 			"invoice_id", invoiceID, "provider_ref", providerRef, "error", err)
 	}
 
@@ -286,15 +286,15 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 		PaymentURL:     paymentURL,
 	}
 	if err := h.repo.Create(c.Context(), local); err != nil {
-		slog.Error("purchase_v2: local save failed", "job_id", jobID, "error", err)
+		slog.Error("purchase: local save failed", "job_id", jobID, "error", err)
 		// Non-fatal — invoice + charge sudah jalan. User bisa cek /invoices/:id.
 	}
 
-	metrics.Default.CounterInc(metricPurchasesCreatedV2,
-		"PurchaseV2 checkout by outcome",
+	metrics.Default.CounterInc(metricPurchasesCreated,
+		"Purchase checkout by outcome",
 		map[string]string{"result": "success", "gateway": req.PaymentMethod},
 	)
-	slog.Info("purchase_v2: checkout accepted",
+	slog.Info("purchase: checkout accepted",
 		"job_id", jobID, "invoice_id", invoiceID,
 		"domain", req.Domain, "total", total,
 		"gateway", req.PaymentMethod, "provider_ref", providerRef,
@@ -344,7 +344,7 @@ func (h *Handler) PurchaseV2(c *fiber.Ctx) error {
 		respPaymentURL = "" // no redirect untuk wallet
 	}
 
-	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseV2Resp{
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseCreatedResp{
 		JobID:      jobID,
 		InvoiceID:  invoiceID.String(),
 		Domain:     req.Domain,

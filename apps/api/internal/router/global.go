@@ -58,7 +58,7 @@ func MountGlobal(app *fiber.App, deps Deps) {
 
 	// Registrar webhook receiver dihapus di Phase 3 self-sufficient — status
 	// update job V2 lewat ExecuteAfterPayment (payment webhook callback),
-	// bukan external registrar-api HMAC callback.
+	// bukan external HMAC callback.
 
 	// Payment gateway webhook — Midtrans/Paylabs POST kesini setelah user
 	// bayar. Signature verify per-code di paymentgw.Gateway.HandleWebhook,

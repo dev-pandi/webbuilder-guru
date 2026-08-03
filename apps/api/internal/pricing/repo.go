@@ -2,7 +2,7 @@
 //
 //	Layer 1 — platform_prices  (admin set, per TLD)
 //	  retail_*    = client self-purchase via wizard
-//	  wholesale_* = cost dari registrar-api (untuk wallet debit reseller/agent)
+//	  wholesale_* = cost per TLD (untuk wallet debit reseller/agent)
 //
 //	Layer 2 — reseller_price_lists (reseller set, per TLD)
 //	  agent_*   = kulakan agent (settlement out-of-system)

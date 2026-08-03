@@ -128,10 +128,10 @@ func MountUser(app *fiber.App, deps Deps) {
 		purchaseLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
 		// Purchase — 2-phase self-sufficient checkout. Invoice + payment
 		// lokal, EPP execute lewat api-registry via ExecuteAfterPayment.
-		authed.Post("/domains/purchase", purchaseLimit, deps.DomainPurchase.PurchaseV2)
+		authed.Post("/domains/purchase", purchaseLimit, deps.DomainPurchase.Purchase)
 		// Renew — 2-phase self-sufficient. Path param `:name` untuk domain.
 		// Ownership check via GetLatestActiveByDomain.
-		authed.Post("/domains/:name/renew", purchaseLimit, deps.DomainPurchase.RenewV2)
+		authed.Post("/domains/:name/renew", purchaseLimit, deps.DomainPurchase.Renew)
 		// Domain management (nameservers + whois) — semua verify ownership.
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
@@ -149,7 +149,7 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/purchases/:job_id/attach", mutateLimit, deps.DomainPurchase.Attach)
 		// Retry — re-run ExecuteAfterPayment untuk failed job (invoice paid
 		// tapi EPP CREATE gagal). Tidak bayar ulang.
-		authed.Post("/domains/purchases/:job_id/retry", mutateLimit, deps.DomainPurchase.RetryV2)
+		authed.Post("/domains/purchases/:job_id/retry", mutateLimit, deps.DomainPurchase.Retry)
 	}
 
 	// Products

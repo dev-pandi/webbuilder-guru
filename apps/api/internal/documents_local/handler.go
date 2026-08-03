@@ -1,6 +1,5 @@
-// handler.go — endpoint dokumen kepatuhan (self-sufficient, tanpa proxy
-// ke registrar-api PANDI). Blob disimpan di assets.Storage, metadata di
-// tabel documents.
+// handler.go — endpoint dokumen kepatuhan (self-sufficient). Blob disimpan
+// di assets.Storage, metadata di tabel documents.
 
 package documents_local
 

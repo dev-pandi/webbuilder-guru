@@ -1,6 +1,6 @@
 // Package wallet_local — internal deposit wallet di web builder side (Phase 1
 // self-sufficient). Menggantikan legacy wallet package yang proxy ke
-// registrar-api PANDI.
+// external service.
 //
 // Design invariants:
 //   - Balance monotone-consistent: sum(ledger.delta) == balances.balance

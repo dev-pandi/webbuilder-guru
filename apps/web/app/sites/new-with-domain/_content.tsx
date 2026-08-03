@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import { api, getAccessToken, clearTokens, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-import type { CheckEntry, CheckResp, Me, PaymentMethod, PurchaseV2Resp } from "./_types";
+import type { CheckEntry, CheckResp, Me, PaymentMethod, PurchaseResp } from "./_types";
 import { friendlyError, missingProfileFields } from "./_helpers";
 import { Stepper, type StepIdx } from "./_stepper";
 import { SearchSection } from "./_search-section";
@@ -204,7 +204,7 @@ export function NewWithDomainContent() {
     setErr(null);
     setPurchasing(true);
     try {
-      const res = await api<PurchaseV2Resp>("/api/v1/domains/purchase", {
+      const res = await api<PurchaseResp>("/api/v1/domains/purchase", {
         method: "POST",
         headers: { "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({

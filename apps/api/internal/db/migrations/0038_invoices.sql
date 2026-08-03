@@ -1,7 +1,5 @@
 -- +goose Up
 -- Invoice state machine — authoritative source untuk billing di web builder.
--- Sebelumnya di registrar-api DB; sekarang authoritative di sini per
--- arsitektur self-sufficient.
 --
 -- Numbering scheme: 'INV-YYYY-MM-NNNNNN' (sequential per bulan).
 -- Generate atomic pakai advisory lock (di service layer).

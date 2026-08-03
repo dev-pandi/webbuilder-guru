@@ -1,16 +1,16 @@
 -- +goose Up
 -- domain_purchases — local tracker per user checkout attempt untuk beli domain.
--- Mirror shallow dari registrar_domain_jobs di registrar-api; source of truth
--- untuk status tetap di registrar-api, kolom local dipakai untuk:
+-- Status update via ExecuteAfterPayment callback (payment webhook). Kolom
+-- lokal dipakai untuk:
 --   - link ke sites.id setelah user create situs
---   - filter "domain sudah saya beli" tanpa hit registrar API tiap request
---   - webhook idempotency (satu job_id hanya boleh diproses sekali)
+--   - filter "domain sudah saya beli"
+--   - idempotency di executor (satu job_id hanya boleh diproses sekali)
 CREATE TABLE IF NOT EXISTS domain_purchases (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     site_id          UUID REFERENCES sites(id) ON DELETE SET NULL,
-    -- job_id dari registrar-api (job_<hex>), unique per (registrar, job_id).
-    -- Karena web builder hanya bicara ke satu registrar, unique global aman.
+    -- job_id = invoice.ID string untuk V2 flow (canonical). Unique per web
+    -- builder instance.
     registrar_job_id TEXT NOT NULL UNIQUE,
     domain           TEXT NOT NULL,
     years            INT NOT NULL DEFAULT 1,
