@@ -1,9 +1,8 @@
 "use client";
 
-// Admin template detail — Phase 4 planned: full editor (metadata + theme +
-// pages via block editor). Sekarang minimal metadata form supaya admin bisa
-// rename/rewrite meta + tweak thumbnail sebelum publish. Block editor visual
-// menyusul di Phase 5.
+// Admin template detail — full editor: metadata + theme (ThemeEditor) +
+// pages (TemplatePagesEditor dengan block editor 3-panel + undo/redo).
+// Publish/archive/republish action + preview link ke renderer.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";

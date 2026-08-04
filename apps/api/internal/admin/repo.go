@@ -336,35 +336,90 @@ func (r *Repo) DeleteSite(ctx context.Context, id uuid.UUID) error {
 // ---------- Stats ----------
 
 type Stats struct {
-	UserCount         int   `json:"user_count"`
-	AdminCount        int   `json:"admin_count"`
-	SiteCount         int   `json:"site_count"`
-	PublishedSites    int   `json:"published_sites"`
-	PageCount         int   `json:"page_count"`
-	DomainCount       int   `json:"domain_count"`
-	VerifiedDomains   int   `json:"verified_domains"`
+	// User & role breakdown
+	UserCount        int `json:"user_count"`
+	AdminCount       int `json:"admin_count"`
+	ActiveResellers  int `json:"active_resellers"`
+	TotalAgents      int `json:"total_agents"`
+	ManagedClients   int `json:"managed_clients"`
+
+	// Site & content
+	SiteCount      int `json:"site_count"`
+	PublishedSites int `json:"published_sites"`
+	PageCount      int `json:"page_count"`
+
+	// Custom hostname (tabel domains) — SSL / DNS mapping
+	CustomHostnames  int `json:"custom_hostnames"`
+	VerifiedDomains  int `json:"verified_domains"`
+
+	// Registered domains (tabel registered_domains) — EPP-owned domain
+	RegisteredDomains int `json:"registered_domains"`
+	ExpiringIn30Days  int `json:"expiring_30d"`
+
+	// Financial
+	TotalRevenueIDR      int64 `json:"total_revenue_idr"`
+	RevenueThisMonthIDR  int64 `json:"revenue_this_month_idr"`
+	UnpaidInvoices       int   `json:"unpaid_invoices"`
+	TotalWalletBalanceIDR int64 `json:"total_wallet_balance_idr"`
+
+	// Actionable alerts — butuh admin intervention
+	TopupsAwaitingReview      int `json:"topups_awaiting_review"`        // manual_bank + proof uploaded
+	StuckPendingProvisioning  int `json:"stuck_pending_provisioning"`    // > 10 min in pending_provisioning
+	FailedPurchasesToday      int `json:"failed_purchases_today"`
+
+	// Assets & storage
 	AssetCount        int   `json:"asset_count"`
 	TotalStorageBytes int64 `json:"total_storage_bytes"`
 }
 
 func (r *Repo) PlatformStats(ctx context.Context) (Stats, error) {
 	var s Stats
+	// Kombinasi query — 1 roundtrip. Subquery per metric supaya NULL-safe
+	// (COALESCE untuk SUM), dan filter status di WHERE bukan HAVING (index
+	// friendly).
 	err := r.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT COUNT(*) FROM users),
 			(SELECT COUNT(*) FROM users WHERE role = 'admin'),
+			(SELECT COUNT(*) FROM users WHERE role = 'reseller' AND reseller_status = 'active'),
+			(SELECT COUNT(*) FROM users WHERE role = 'agent'),
+			(SELECT COUNT(DISTINCT client_id) FROM client_assignments WHERE access_status != 'revoked'),
+
 			(SELECT COUNT(*) FROM sites),
 			(SELECT COUNT(*) FROM sites WHERE status = 'published'),
 			(SELECT COUNT(*) FROM pages),
+
 			(SELECT COUNT(*) FROM domains),
 			(SELECT COUNT(*) FROM domains WHERE status = 'verified'),
+
+			(SELECT COUNT(*) FROM registered_domains WHERE status = 'active'),
+			(SELECT COUNT(*) FROM registered_domains
+			  WHERE status = 'active' AND expires_at IS NOT NULL
+			    AND expires_at <= now() + interval '30 days'),
+
+			(SELECT COALESCE(SUM(total), 0) FROM invoices WHERE status = 'paid'),
+			(SELECT COALESCE(SUM(total), 0) FROM invoices
+			  WHERE status = 'paid' AND paid_at >= date_trunc('month', now())),
+			(SELECT COUNT(*) FROM invoices WHERE status = 'unpaid'),
+			(SELECT COALESCE(SUM(balance), 0) FROM wallet_balances),
+
+			(SELECT COUNT(*) FROM wallet_topups
+			  WHERE status = 'pending_payment' AND proof_uploaded_at IS NOT NULL),
+			(SELECT COUNT(*) FROM domain_purchases
+			  WHERE status = 'pending_provisioning'
+			    AND updated_at < now() - interval '10 minutes'),
+			(SELECT COUNT(*) FROM domain_purchases
+			  WHERE status = 'failed' AND created_at >= current_date),
+
 			(SELECT COUNT(*) FROM assets),
 			(SELECT COALESCE(SUM(size), 0) FROM assets)
 	`).Scan(
-		&s.UserCount, &s.AdminCount,
-		&s.SiteCount, &s.PublishedSites,
-		&s.PageCount,
-		&s.DomainCount, &s.VerifiedDomains,
+		&s.UserCount, &s.AdminCount, &s.ActiveResellers, &s.TotalAgents, &s.ManagedClients,
+		&s.SiteCount, &s.PublishedSites, &s.PageCount,
+		&s.CustomHostnames, &s.VerifiedDomains,
+		&s.RegisteredDomains, &s.ExpiringIn30Days,
+		&s.TotalRevenueIDR, &s.RevenueThisMonthIDR, &s.UnpaidInvoices, &s.TotalWalletBalanceIDR,
+		&s.TopupsAwaitingReview, &s.StuckPendingProvisioning, &s.FailedPurchasesToday,
 		&s.AssetCount, &s.TotalStorageBytes,
 	)
 	if err != nil {
