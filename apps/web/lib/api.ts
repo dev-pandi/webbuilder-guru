@@ -58,3 +58,34 @@ export async function api<T>(
   }
   return (body as { data: T }).data;
 }
+
+// openBlob — fetch endpoint yang return binary (PDF, image) dengan Bearer
+// token, lalu buka blob URL di tab baru. Dipakai untuk tombol "Cetak PDF"
+// yang tidak bisa pakai <a href> biasa karena butuh Authorization header.
+export async function openBlob(path: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const t = getAccessToken();
+  if (t) headers["Authorization"] = `Bearer ${t}`;
+  const res = await fetch(`${BASE}${path}`, { headers, cache: "no-store" });
+  if (!res.ok) {
+    // Coba parse error envelope JSON — kalau PDF endpoint return error,
+    // biasanya JSON envelope, bukan binary.
+    let msg = `HTTP ${res.status}`;
+    let code = "";
+    try {
+      const body = (await res.json()) as ApiResult<unknown>;
+      if ("error" in body) {
+        msg = body.error.message;
+        code = body.error.code;
+      }
+    } catch {
+      // ignore — body bukan JSON
+    }
+    throw new ApiError(res.status, code, msg);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  // Revoke setelah 60 detik — browser sudah cache blob di tab baru.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

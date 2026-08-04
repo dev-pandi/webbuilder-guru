@@ -438,6 +438,11 @@ func main() {
 	walletLocalHandler.SetInvoicesService(walletInvoicesAdapter{svc: invoicesSvc})
 	walletLocalHandler.SetGatewayRegistry(walletGatewayAdapter{reg: gwRegistry})
 	walletLocalHandler.SetUserProfile(walletUserAdapter{repo: authRepo})
+	// Storage — untuk upload bukti transfer manual_bank. Nil-safe kalau
+	// storage init gagal (handler return 503).
+	if assetStorage != nil {
+		walletLocalHandler.SetStorage(assetStorage)
+	}
 
 	// Contact syncer — REMOVED (Fase 1 self-sufficient cleanup).
 	// Removed: profile update propagation via

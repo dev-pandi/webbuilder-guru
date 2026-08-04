@@ -121,6 +121,13 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	// bug). Full audit trail via ledger.
 	if deps.WalletLocal != nil {
 		g.Post("/wallet/adjust", deps.WalletLocal.AdminAdjust)
+		// Approve/reject top-up requests dari user (manual_bank flow: admin
+		// verify bukti transfer dulu di rekening, lalu approve untuk trigger
+		// wallet credit).
+		g.Get("/wallet/topups", deps.WalletLocal.AdminListTopups)
+		g.Get("/wallet/topups/:id/proof", deps.WalletLocal.AdminGetProof)
+		g.Post("/wallet/topups/:id/approve", deps.WalletLocal.AdminApprove)
+		g.Post("/wallet/topups/:id/reject", deps.WalletLocal.AdminReject)
 	}
 
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF

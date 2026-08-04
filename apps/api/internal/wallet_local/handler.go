@@ -1,10 +1,14 @@
 package wallet_local
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -69,12 +73,21 @@ type UserProfile interface {
 	GetCustomerInfo(ctx context.Context, userID uuid.UUID) (name, email, phone string, err error)
 }
 
+// ProofStorage — subset assets.Storage untuk simpan bukti transfer.
+// Sengaja small interface supaya avoid direct dep ke assets package.
+type ProofStorage interface {
+	Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) (string, error)
+	Get(ctx context.Context, key string) (io.ReadCloser, error)
+	Delete(ctx context.Context, key string) error
+}
+
 // Handler — user-facing wallet endpoints.
 type Handler struct {
 	repo        *Repo
 	invoicesSvc InvoiceForTopup
 	gwRegistry  GatewayForTopup
 	users       UserProfile
+	storage     ProofStorage
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
@@ -87,6 +100,9 @@ func (h *Handler) SetGatewayRegistry(g GatewayForTopup) { h.gwRegistry = g }
 
 // SetUserProfile wire user lookup — optional (gateway customer info).
 func (h *Handler) SetUserProfile(u UserProfile) { h.users = u }
+
+// SetStorage wire blob storage — required untuk upload bukti transfer.
+func (h *Handler) SetStorage(s ProofStorage) { h.storage = s }
 
 // --- GET /api/v1/wallet ---
 func (h *Handler) GetBalance(c *fiber.Ctx) error {
@@ -321,6 +337,363 @@ func (h *Handler) ListTopups(c *fiber.Ctx) error {
 		return httpx.Internal(c, err.Error())
 	}
 	return httpx.OK(c, fiber.Map{"items": items, "page": page, "limit": limit})
+}
+
+// --- Upload bukti transfer (manual_bank flow) ---
+
+// Max 5 MiB — bukti transfer biasanya screenshot mobile banking; 5 MiB
+// lebih dari cukup. Bigger cap = bigger risk untuk storage abuse.
+const maxProofBytes = 5 * 1024 * 1024
+
+// allowedProofMime — image + PDF. Screenshot m-banking + foto struk +
+// PDF e-statement adalah 99% use case.
+var allowedProofMime = map[string]string{
+	"image/png":       ".png",
+	"image/jpeg":      ".jpg",
+	"image/jpg":       ".jpg",
+	"application/pdf": ".pdf",
+}
+
+// UploadProof — POST /api/v1/wallet/topup/:id/proof (multipart)
+// Fields: file (image/PDF, max 5 MiB), note (optional, max 500 char).
+//
+// Ownership-scoped (user_id from JWT). Status guard: hanya boleh upload
+// kalau topup masih pending_payment. Setelah credited/failed → 409.
+func (h *Handler) UploadProof(c *fiber.Ctx) error {
+	if h.storage == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "storage_disabled",
+			"Fitur upload bukti belum aktif — storage belum dikonfigurasi.")
+	}
+	uid := auth.UserIDFrom(c)
+	if uid == uuid.Nil {
+		return httpx.Unauthorized(c, "unauthenticated")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+
+	// Pre-check ownership + status supaya kita tidak upload blob dulu kalau
+	// row tidak valid.
+	t, err := h.repo.GetTopup(c.Context(), id, uid)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "topup tidak ditemukan")
+		}
+		return httpx.Internal(c, err.Error())
+	}
+	if t.Status != TopupStatusPendingPayment {
+		return httpx.Conflict(c,
+			"Bukti transfer tidak bisa di-upload — status topup: "+t.Status)
+	}
+
+	fh, err := c.FormFile("file")
+	if err != nil {
+		return httpx.BadRequest(c, "field 'file' wajib")
+	}
+	if fh.Size <= 0 {
+		return httpx.BadRequest(c, "file kosong")
+	}
+	if fh.Size > maxProofBytes {
+		return httpx.BadRequest(c, "file terlalu besar (max 5 MB)")
+	}
+
+	// MIME detection: prefer Content-Type header; fallback ke extension.
+	mime := strings.ToLower(fh.Header.Get("Content-Type"))
+	ext, ok := allowedProofMime[mime]
+	if !ok {
+		switch strings.ToLower(filepath.Ext(fh.Filename)) {
+		case ".jpg", ".jpeg":
+			ext, mime = ".jpg", "image/jpeg"
+		case ".png":
+			ext, mime = ".png", "image/png"
+		case ".pdf":
+			ext, mime = ".pdf", "application/pdf"
+		default:
+			return httpx.BadRequest(c, "hanya JPG/PNG/PDF yang diterima")
+		}
+	}
+
+	f, err := fh.Open()
+	if err != nil {
+		return httpx.Internal(c, "open file gagal")
+	}
+	defer f.Close()
+	body, err := io.ReadAll(io.LimitReader(f, maxProofBytes+1))
+	if err != nil {
+		return httpx.Internal(c, "read file gagal")
+	}
+	if int64(len(body)) > maxProofBytes {
+		return httpx.BadRequest(c, "file terlalu besar")
+	}
+
+	note := strings.TrimSpace(c.FormValue("note"))
+	if len(note) > 500 {
+		note = note[:500]
+	}
+
+	// Storage key — opaque, tidak leak identitas via URL scan.
+	key := fmt.Sprintf("wallet-topup-proofs/%s/%d-%s%s",
+		uid.String(), time.Now().UnixNano(), uuid.NewString(), ext)
+
+	if _, err := h.storage.Put(c.Context(), key,
+		bytes.NewReader(body), int64(len(body)), mime); err != nil {
+		return httpx.Internal(c, "upload gagal: "+err.Error())
+	}
+
+	// Kalau ada bukti lama, delete blob-nya setelah update sukses.
+	oldKey := t.ProofKey
+
+	if err := h.repo.SetTopupProof(c.Context(), id, uid,
+		key, mime, int64(len(body)), note); err != nil {
+		// Best-effort cleanup blob yang baru di-put.
+		_ = h.storage.Delete(c.Context(), key)
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "topup tidak ditemukan / status berubah")
+		}
+		return httpx.Internal(c, "simpan metadata bukti gagal: "+err.Error())
+	}
+
+	// Cleanup blob lama best-effort (idempotent).
+	if oldKey != "" {
+		_ = h.storage.Delete(c.Context(), oldKey)
+	}
+
+	slog.Info("topup: proof uploaded",
+		"topup_id", id, "user_id", uid, "size", len(body), "mime", mime)
+
+	return httpx.OK(c, fiber.Map{
+		"topup_id":          id.String(),
+		"proof_mime":        mime,
+		"proof_size":        len(body),
+		"proof_note":        note,
+		"proof_uploaded_at": time.Now().Format(time.RFC3339),
+	})
+}
+
+// GetProof — GET /api/v1/wallet/topup/:id/proof
+// Return base64 data URI supaya frontend bisa preview inline (pattern sama
+// dengan documents_local.Show).
+func (h *Handler) GetProof(c *fiber.Ctx) error {
+	if h.storage == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "storage_disabled",
+			"Fitur bukti belum aktif")
+	}
+	uid := auth.UserIDFrom(c)
+	if uid == uuid.Nil {
+		return httpx.Unauthorized(c, "unauthenticated")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	t, err := h.repo.GetTopup(c.Context(), id, uid)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "topup tidak ditemukan")
+		}
+		return httpx.Internal(c, err.Error())
+	}
+	if t.ProofKey == "" {
+		return httpx.NotFound(c, "belum ada bukti transfer")
+	}
+	rc, err := h.storage.Get(c.Context(), t.ProofKey)
+	if err != nil {
+		return httpx.Internal(c, "read blob gagal: "+err.Error())
+	}
+	defer rc.Close()
+	raw, err := io.ReadAll(io.LimitReader(rc, maxProofBytes+1))
+	if err != nil {
+		return httpx.Internal(c, "read blob gagal: "+err.Error())
+	}
+	return httpx.OK(c, fiber.Map{
+		"topup_id": t.ID.String(),
+		"type":     t.ProofMime,
+		"image":    "data:" + t.ProofMime + ";base64," + base64.StdEncoding.EncodeToString(raw),
+		"note":     t.ProofNote,
+	})
+}
+
+// --- Admin: manage top-up requests ---
+
+// AdminListTopups — GET /api/v1/admin/wallet/topups
+// Query: status, has_proof (true/false), page, limit.
+func (h *Handler) AdminListTopups(c *fiber.Ctx) error {
+	status := strings.TrimSpace(c.Query("status"))
+	hasProofRaw := strings.TrimSpace(c.Query("has_proof"))
+	var hasProof *bool
+	if hasProofRaw == "true" {
+		v := true
+		hasProof = &v
+	} else if hasProofRaw == "false" {
+		v := false
+		hasProof = &v
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	page, _ := strconv.Atoi(c.Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	items, total, err := h.repo.AdminListTopups(c.Context(), AdminListFilter{
+		Status:   status,
+		HasProof: hasProof,
+		Limit:    limit,
+		Offset:   (page - 1) * limit,
+	})
+	if err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	return httpx.OK(c, fiber.Map{
+		"items": items,
+		"page":  page,
+		"limit": limit,
+		"total": total,
+	})
+}
+
+// AdminGetProof — GET /api/v1/admin/wallet/topups/:id/proof
+// Sama dengan GetProof user tapi tanpa ownership check.
+func (h *Handler) AdminGetProof(c *fiber.Ctx) error {
+	if h.storage == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "storage_disabled",
+			"Fitur bukti belum aktif")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	t, err := h.repo.AdminGetTopup(c.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "topup tidak ditemukan")
+		}
+		return httpx.Internal(c, err.Error())
+	}
+	if t.ProofKey == "" {
+		return httpx.NotFound(c, "belum ada bukti transfer")
+	}
+	rc, err := h.storage.Get(c.Context(), t.ProofKey)
+	if err != nil {
+		return httpx.Internal(c, "read blob gagal: "+err.Error())
+	}
+	defer rc.Close()
+	raw, err := io.ReadAll(io.LimitReader(rc, maxProofBytes+1))
+	if err != nil {
+		return httpx.Internal(c, "read blob gagal: "+err.Error())
+	}
+	return httpx.OK(c, fiber.Map{
+		"topup_id": t.ID.String(),
+		"type":     t.ProofMime,
+		"image":    "data:" + t.ProofMime + ";base64," + base64.StdEncoding.EncodeToString(raw),
+		"note":     t.ProofNote,
+	})
+}
+
+// AdminApprove — POST /api/v1/admin/wallet/topups/:id/approve
+// Admin sudah verify bukti transfer di rekening → 2-step:
+//  1. invoicesSvc.MarkPaid — update invoices.status=paid + paid_at.
+//  2. repo.MarkTopupCredited — atomically credit wallet_balances +
+//     insert wallet_ledger + update topup.status=credited.
+//
+// invoicesSvc.MarkPaid TIDAK auto-trigger ExecuteAfterPayment (itu cuma
+// jalan di paymentwh webhook path), jadi kita harus call MarkTopupCredited
+// eksplisit di sini. Idempotent — kalau webhook duluan credit, step 2
+// return existing tanpa double-credit.
+func (h *Handler) AdminApprove(c *fiber.Ctx) error {
+	if h.invoicesSvc == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "invoices_disabled",
+			"Fitur invoice belum aktif")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	t, err := h.repo.AdminGetTopup(c.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "topup tidak ditemukan")
+		}
+		return httpx.Internal(c, err.Error())
+	}
+	if t.Status == TopupStatusCredited {
+		return httpx.OK(c, t) // idempotent — sudah credited
+	}
+	if t.Status != TopupStatusPendingPayment {
+		return httpx.Conflict(c,
+			"Topup tidak bisa di-approve — status: "+t.Status)
+	}
+
+	adminID := auth.UserIDFrom(c)
+	providerRef := "manual_approved:" + adminID.String()
+
+	// Step 1: MarkPaid invoice. Idempotent — kalau webhook tiba sebelum
+	// admin approve, no-op.
+	if err := h.invoicesSvc.MarkPaid(c.Context(), t.InvoiceID, time.Now(), providerRef); err != nil {
+		slog.Error("admin approve topup: mark paid failed",
+			"topup_id", id, "invoice_id", t.InvoiceID, "admin_id", adminID, "error", err)
+		return httpx.Internal(c, "gagal tandai invoice paid: "+err.Error())
+	}
+
+	// Step 2: MarkTopupCredited — credit wallet_balances + wallet_ledger +
+	// update topup.status=credited. Idempotent via SELECT FOR UPDATE inside
+	// tx; kalau sudah credited (webhook race), return existing ledger.
+	if _, _, err := h.repo.MarkTopupCredited(c.Context(), id); err != nil {
+		slog.Error("admin approve topup: mark credited failed",
+			"topup_id", id, "invoice_id", t.InvoiceID, "admin_id", adminID, "error", err)
+		return httpx.Internal(c, "gagal credit wallet: "+err.Error())
+	}
+
+	slog.Info("admin approve topup",
+		"topup_id", id, "invoice_id", t.InvoiceID, "amount", t.Amount, "admin_id", adminID)
+
+	// Refetch supaya response reflect status baru (credited).
+	updated, _ := h.repo.AdminGetTopup(c.Context(), id)
+	return httpx.OK(c, updated)
+}
+
+// AdminReject — POST /api/v1/admin/wallet/topups/:id/reject
+// Body: {"reason":"..."} — required.
+type adminRejectReq struct {
+	Reason string `json:"reason"`
+}
+
+func (h *Handler) AdminReject(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	var req adminRejectReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "payload tidak valid")
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		return httpx.BadRequest(c, "reason wajib diisi")
+	}
+
+	t, err := h.repo.AdminGetTopup(c.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "topup tidak ditemukan")
+		}
+		return httpx.Internal(c, err.Error())
+	}
+	if t.Status != TopupStatusPendingPayment {
+		return httpx.Conflict(c,
+			"Topup tidak bisa di-reject — status: "+t.Status)
+	}
+	if err := h.repo.UpdateTopupStatus(c.Context(), id, TopupStatusFailed, req.Reason); err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	adminID := auth.UserIDFrom(c)
+	slog.Info("admin reject topup",
+		"topup_id", id, "reason", req.Reason, "admin_id", adminID)
+
+	updated, _ := h.repo.AdminGetTopup(c.Context(), id)
+	return httpx.OK(c, updated)
 }
 
 // --- Admin endpoint: POST /api/v1/admin/wallet/adjust ---

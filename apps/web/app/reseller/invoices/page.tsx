@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Loader2, Printer, Receipt, User } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, openBlob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -195,12 +195,21 @@ export default function ResellerInvoicesPage() {
                         {formatDate(inv.created_at)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link href={`/api/v1/invoices/${inv.id}/pdf`} target="_blank">
-                          <Button size="sm" variant="ghost" title="Cetak / preview PDF">
-                            <Printer className="size-3.5" />
-                            <span className="ml-1 hidden lg:inline">Cetak</span>
-                          </Button>
-                        </Link>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Cetak / preview PDF"
+                          onClick={() =>
+                            openBlob(`/api/v1/invoices/${inv.id}/pdf`).catch((e) =>
+                              toast.error("Gagal buka PDF", {
+                                description: (e as Error).message,
+                              }),
+                            )
+                          }
+                        >
+                          <Printer className="size-3.5" />
+                          <span className="ml-1 hidden lg:inline">Cetak</span>
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );

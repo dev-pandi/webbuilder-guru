@@ -4,10 +4,9 @@
 // via row action.
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { CheckCircle2, ExternalLink, Loader2, Receipt, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, openBlob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -171,11 +170,20 @@ export default function AdminInvoicesPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
-                    <Link href={`/api/v1/admin/invoices/${inv.id}/pdf`} target="_blank">
-                      <Button size="sm" variant="ghost" title="Preview PDF">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Button>
-                    </Link>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Preview PDF"
+                      onClick={() =>
+                        openBlob(`/api/v1/admin/invoices/${inv.id}/pdf`).catch((e) =>
+                          toast.error("Gagal buka PDF", {
+                            description: (e as Error).message,
+                          }),
+                        )
+                      }
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
                     {(inv.status === "unpaid" || inv.status === "draft") && (
                       <>
                         <Button

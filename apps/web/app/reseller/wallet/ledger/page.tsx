@@ -10,10 +10,12 @@ import {
   ArrowDownRight,
   ArrowLeft,
   ArrowUpRight,
+  Clock,
   History,
   Loader2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,20 @@ type LedgerListResp = {
   limit: number;
 };
 
+type Topup = {
+  id: string;
+  amount: number;
+  payment_method: string;
+  status: string; // pending_payment | credited | failed | expired | cancelled
+  created_at: string;
+};
+
+type TopupListResp = {
+  items: Topup[];
+  page: number;
+  limit: number;
+};
+
 const REASON_FILTERS = [
   { value: "", label: "Semua" },
   { value: "topup", label: "Top-up" },
@@ -46,6 +62,7 @@ const PAGE_LIMIT = 30;
 
 export default function LedgerPage() {
   const [items, setItems] = useState<LedgerEntry[]>([]);
+  const [pendingTopups, setPendingTopups] = useState<Topup[]>([]);
   const [reason, setReason] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -55,9 +72,25 @@ export default function LedgerPage() {
     setLoading(true);
     setErr(null);
     const q = new URLSearchParams({ page: String(page), limit: String(PAGE_LIMIT) });
-    api<LedgerListResp>(`/api/v1/wallet/ledger?${q.toString()}`)
-      .then((res) => setItems(res.items ?? []))
-      .catch((e) => setErr((e as Error).message))
+    Promise.allSettled([
+      api<LedgerListResp>(`/api/v1/wallet/ledger?${q.toString()}`),
+      // Ambil top-up pending supaya user tahu ada yang belum credited.
+      // Kalau endpoint gagal (mis. topup feature disabled), skip diam-diam.
+      api<TopupListResp>(`/api/v1/wallet/topup?limit=20`),
+    ])
+      .then(([ledger, topups]) => {
+        if (ledger.status === "fulfilled") {
+          setItems(ledger.value.items ?? []);
+        } else {
+          setErr((ledger.reason as Error).message);
+        }
+        if (topups.status === "fulfilled" && page === 1) {
+          const pending = (topups.value.items ?? []).filter(
+            (t) => t.status === "pending_payment",
+          );
+          setPendingTopups(pending);
+        }
+      })
       .finally(() => setLoading(false));
   }, [page]);
 
@@ -115,6 +148,48 @@ export default function LedgerPage() {
         </div>
       )}
 
+      {pendingTopups.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="space-y-3 p-5">
+            <div className="flex items-start gap-2">
+              <Clock className="size-4 shrink-0 translate-y-0.5 text-amber-600" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold">
+                  Top-up belum selesai ({pendingTopups.length})
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Saldo di-credit otomatis setelah pembayaran dikonfirmasi
+                  gateway. Klik untuk lanjut bayar atau lihat instruksi.
+                </p>
+              </div>
+            </div>
+            <ul className="divide-y">
+              {pendingTopups.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Badge variant="warning" className="gap-1 text-[10px]">
+                      <Clock className="size-3" />
+                      Menunggu bayar
+                    </Badge>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {formatIDR(t.amount)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {t.payment_method} · {formatDate(t.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/reseller/wallet/topup/${t.id}`}>Lihat</Link>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className={loading ? "p-5 opacity-60" : "p-5"}>
           {loading && items.length === 0 ? (
@@ -123,9 +198,19 @@ export default function LedgerPage() {
               Memuat…
             </div>
           ) : filtered.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Tidak ada transaksi{reason ? ` untuk filter ${reason}` : ""}.
-            </p>
+            <div className="py-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                {reason
+                  ? `Tidak ada transaksi untuk filter ${reason}.`
+                  : "Belum ada transaksi credit/debit."}
+              </p>
+              {!reason && pendingTopups.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Ada {pendingTopups.length} top-up menunggu pembayaran di atas —
+                  saldo di-credit otomatis setelah gateway konfirmasi.
+                </p>
+              )}
+            </div>
           ) : (
             <ul className="divide-y">
               {filtered.map((e) => (

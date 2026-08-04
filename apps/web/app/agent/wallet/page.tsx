@@ -10,6 +10,7 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
+  Clock,
   History,
   Info,
   Loader2,
@@ -17,6 +18,7 @@ import {
   Wallet as WalletIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -34,9 +36,18 @@ type WalletBalance = {
   currency: string;
 };
 
+type Topup = {
+  id: string;
+  amount: number;
+  payment_method: string;
+  status: string; // pending_payment | credited | failed | expired | cancelled
+  created_at: string;
+};
+
 export default function AgentWalletPage() {
   const [balance, setBalance] = useState<WalletBalance | null>(null);
   const [recent, setRecent] = useState<LedgerEntry[]>([]);
+  const [pendingTopups, setPendingTopups] = useState<Topup[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -44,12 +55,16 @@ export default function AgentWalletPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [b, l] = await Promise.all([
+      const [b, l, t] = await Promise.all([
         api<WalletBalance>("/api/v1/wallet"),
         api<{ items: LedgerEntry[] }>("/api/v1/wallet/ledger?limit=5"),
+        api<{ items: Topup[] }>("/api/v1/wallet/topup?limit=10"),
       ]);
       setBalance(b);
       setRecent(l.items || []);
+      setPendingTopups(
+        (t.items || []).filter((x) => x.status === "pending_payment"),
+      );
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -103,7 +118,7 @@ export default function AgentWalletPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild className="gap-1.5">
-                <Link href="/reseller/wallet/topup">
+                <Link href="/agent/wallet/topup">
                   <Plus className="size-4" />
                   Top-up
                 </Link>
@@ -126,6 +141,48 @@ export default function AgentWalletPage() {
           via Midtrans/Paylabs otomatis credit dalam beberapa detik.
         </span>
       </div>
+
+      {pendingTopups.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="space-y-3 p-5">
+            <div className="flex items-start gap-2">
+              <Clock className="size-4 shrink-0 translate-y-0.5 text-amber-600" />
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold">
+                  Top-up belum selesai ({pendingTopups.length})
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Saldo di-credit otomatis setelah pembayaran dikonfirmasi
+                  gateway. Klik untuk lanjut bayar atau lihat instruksi transfer.
+                </p>
+              </div>
+            </div>
+            <ul className="divide-y">
+              {pendingTopups.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Badge variant="warning" className="gap-1 text-[10px]">
+                      <Clock className="size-3" />
+                      Menunggu bayar
+                    </Badge>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {formatIDR(t.amount)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {t.payment_method} · {formatDate(t.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={`/agent/wallet/topup/${t.id}`}>Lihat</Link>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-5">

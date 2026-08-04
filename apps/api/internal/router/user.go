@@ -290,6 +290,11 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/wallet/topup", topupLimit, deps.WalletLocal.CreateTopup)
 		authed.Get("/wallet/topup", deps.WalletLocal.ListTopups)
 		authed.Get("/wallet/topup/:id", deps.WalletLocal.GetTopup)
+		// Bukti transfer (manual_bank flow). Upload multipart; preview inline
+		// pakai base64 data URI (pattern documents_local.Show).
+		uploadProofLimit := RateLimitUser(uploadPerWindow, uploadWindow)
+		authed.Post("/wallet/topup/:id/proof", uploadProofLimit, deps.WalletLocal.UploadProof)
+		authed.Get("/wallet/topup/:id/proof", deps.WalletLocal.GetProof)
 	}
 
 	// Documents — dokumen kepatuhan (KTP/NPWP/dll.) untuk domain register
