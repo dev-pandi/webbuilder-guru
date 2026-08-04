@@ -341,6 +341,7 @@ func (h *Handler) ListAgentClients(c *fiber.Ctx) error {
 		AccessStatus  string `json:"access_status"`
 		EmailVerified bool   `json:"email_verified"`
 		CreatedAt     string `json:"created_at"`
+		DomainCount   int    `json:"domain_count"`
 	}
 	out := make([]clientResp, 0, len(items))
 	for _, r := range items {
@@ -352,6 +353,7 @@ func (h *Handler) ListAgentClients(c *fiber.Ctx) error {
 			AccessStatus:  r.Assignment.AccessStatus,
 			EmailVerified: r.EmailVerified,
 			CreatedAt:     r.CreatedAt.Format(time.RFC3339),
+			DomainCount:   r.DomainCount,
 		})
 	}
 	return httpx.OK(c, out)
@@ -512,6 +514,7 @@ func (h *Handler) ListClients(c *fiber.Ctx) error {
 		AccessStatus  string `json:"access_status"`
 		EmailVerified bool   `json:"email_verified"`
 		CreatedAt     string `json:"created_at"`
+		DomainCount   int    `json:"domain_count"`
 	}
 	out := make([]clientResp, 0, len(items))
 	for _, r := range items {
@@ -523,6 +526,7 @@ func (h *Handler) ListClients(c *fiber.Ctx) error {
 			AccessStatus:  r.Assignment.AccessStatus,
 			EmailVerified: r.EmailVerified,
 			CreatedAt:     r.CreatedAt.Format(time.RFC3339),
+			DomainCount:   r.DomainCount,
 		})
 	}
 	return httpx.OK(c, out)

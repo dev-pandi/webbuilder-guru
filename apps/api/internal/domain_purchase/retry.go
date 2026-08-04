@@ -18,8 +18,17 @@ import (
 
 // Retry — POST /api/v1/domains/purchases/:job_id/retry
 //
-// Prereq: job status=failed AND invoice status=paid. Kalau invoice belum paid,
-// user harus lunasi via /invoices dulu (webhook otomatis trigger execute).
+// Prereq: invoice status=paid + job status ∈ {failed, pending_provisioning}.
+//
+//   - failed: EPP execute gagal → retry rerun ExecuteAfterPayment
+//   - pending_provisioning: invoice paid tapi EPP execute nyangkut / silent
+//     drop (mis. api-registry crash mid-request) → retry re-invoke ExecuteAfterPayment
+//
+// Kalau invoice belum paid, user harus lunasi via /invoices dulu (webhook
+// otomatis trigger execute).
+//
+// Idempotent: ExecuteAfterPayment cek `p.Status == StatusActive` di awal —
+// kalau race dengan sukses paralel, no-op.
 func (h *Handler) Retry(c *fiber.Ctx) error {
 	if h.invoicesSvc == nil {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "retry_not_ready",
@@ -42,8 +51,9 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.NotFound(c, "job tidak ditemukan")
 	}
-	if job.Status != StatusFailed {
-		return httpx.BadRequest(c, "retry hanya untuk job status=failed")
+	if job.Status != StatusFailed && job.Status != StatusPendingProvisioning {
+		return httpx.BadRequest(c,
+			"retry hanya untuk job status=failed atau pending_provisioning (invoice udah paid)")
 	}
 
 	// job_id = invoice.ID (canonical). Kalau parse gagal, invalid job.

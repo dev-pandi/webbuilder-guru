@@ -267,24 +267,90 @@ func streetLines(address string) []string {
 	return lines
 }
 
-// normalizePhoneE164 — format sederhana: kalau tidak ada prefix "+", assume
-// Indonesia (+62). Strip whitespace + dashes. Registry validate format
-// strict — kalau salah, mapEPPErr code 2004.
+// normalizePhoneE164 — format per RFC 5733 §2.5: "+CC.NUMBER" (dotted).
+// PANDI EPP validate strict — kalau tidak titiknya, registry return 2004.
+//
+// Contoh:
+//   "081234567890"    → "+62.81234567890"
+//   "6281234567890"   → "+62.81234567890"
+//   "+6281234567890"  → "+62.81234567890"
+//   "+62.81234567890" → "+62.81234567890" (unchanged)
+//   "+1 555 1234"     → "+1.5551234" (country code 1)
+//
+// Registry Indonesia-only → default country code 62 kalau input national.
 func normalizePhoneE164(phone string) string {
-	p := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(phone), " ", ""), "-", "")
+	// Strip whitespace, dash, paren, dan karakter non-digit selain "+".
+	p := strings.TrimSpace(phone)
 	if p == "" {
 		return ""
 	}
-	if strings.HasPrefix(p, "+") {
-		return p
+	// Kalau sudah dotted (contains "."), assume operator provide E164 valid.
+	// Cukup normalize whitespace/dash saja.
+	cleaned := stripPhoneChars(p)
+	if strings.Contains(cleaned, ".") {
+		return cleaned
 	}
-	if strings.HasPrefix(p, "0") {
-		return "+62" + p[1:]
+	// Extract digits saja + track apakah ada "+" prefix.
+	hasPlus := strings.HasPrefix(cleaned, "+")
+	digits := onlyDigits(cleaned)
+	if digits == "" {
+		return ""
 	}
-	if strings.HasPrefix(p, "62") {
-		return "+" + p
+	// Kalau ada prefix "+", digit awal adalah country code. Deteksi CC:
+	// Indonesia = "62", 2 digit. Country code lain kita coba 1-3 digit
+	// pertama — untuk MVP hardcode "62" karena registry ID-only.
+	if hasPlus {
+		if strings.HasPrefix(digits, "62") {
+			return "+62." + digits[2:]
+		}
+		// Non-62 country: assume 1-3 digit CC. Simple heuristic: 1 digit
+		// (US=1) kalau starts with "1", else 2-3 digit — biarkan operator
+		// input dengan format eksplisit dot.
+		if strings.HasPrefix(digits, "1") {
+			return "+1." + digits[1:]
+		}
+		// Fallback: assume 2-digit CC (majority of world) — bukan ideal
+		// tapi cukup untuk edge case.
+		if len(digits) > 2 {
+			return "+" + digits[:2] + "." + digits[2:]
+		}
+		return "+" + digits
 	}
-	return "+" + p
+	// Tidak ada "+": treat sebagai national ID number. "0812..." → "+62.812..."
+	// "6281..." → "+62.81...".
+	if strings.HasPrefix(digits, "0") {
+		return "+62." + digits[1:]
+	}
+	if strings.HasPrefix(digits, "62") {
+		return "+62." + digits[2:]
+	}
+	return "+62." + digits
+}
+
+// stripPhoneChars — buang whitespace, dash, paren, tapi keep +, ., digit.
+func stripPhoneChars(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '+' && i == 0:
+			out = append(out, c)
+		case c == '.', c >= '0' && c <= '9':
+			out = append(out, c)
+		}
+	}
+	return string(out)
+}
+
+// onlyDigits — extract 0-9 saja.
+func onlyDigits(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			out = append(out, s[i])
+		}
+	}
+	return string(out)
 }
 
 // defaultAuthInfo — random-ish password untuk contact:create authInfo.

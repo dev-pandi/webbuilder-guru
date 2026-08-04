@@ -275,6 +275,10 @@ type purchaseResp struct {
 	Reason     string  `json:"reason,omitempty"`
 	PaymentURL string  `json:"payment_url,omitempty"`
 	ExpiresAt  string  `json:"expires_at,omitempty"` // RFC3339 saat kind=register && status=active
+	// UpdatedAt — timestamp last state transition. Frontend pakai buat
+	// detect "stuck": kalau pending_provisioning > 60 detik, offer retry
+	// manual.
+	UpdatedAt string `json:"updated_at,omitempty"`
 	// SiteID di-set kalau user sudah attach purchase ini ke sites row (via
 	// POST /sites/from-template/:slug atau /purchases/:job_id/attach).
 	// Nil = domain aktif tapi belum ada situs → frontend prompt user pilih
@@ -1268,6 +1272,7 @@ func toResp(p *Purchase) purchaseResp {
 		Kind:       p.Kind,
 		Reason:     p.Reason,
 		PaymentURL: p.PaymentURL,
+		UpdatedAt:  p.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if p.ExpiresAt != nil {
 		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)

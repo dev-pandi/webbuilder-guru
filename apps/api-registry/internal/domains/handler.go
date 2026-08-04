@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/webbuilder/api-registry/internal/httpx"
@@ -34,7 +35,13 @@ func mustJSON(v any) []byte {
 }
 
 // mapErr — helper: konversi sentinel error → HTTP response.
+//
+// Semua kasus yang ke-map jadi 4xx/5xx di-log dulu supaya root cause
+// visible di stdout (fiber log cuma tampilkan status code, bukan message).
+// Debugging: cek stdout untuk pesan asli sebelum di-envelope.
 func mapErr(c *fiber.Ctx, err error) error {
+	slog.Error("domains: request failed",
+		"path", c.Path(), "method", c.Method(), "err", err.Error())
 	switch {
 	case errors.Is(err, provider.ErrNotFound):
 		return httpx.NotFound(c, err.Error())

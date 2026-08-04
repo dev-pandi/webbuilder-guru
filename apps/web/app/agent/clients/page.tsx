@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
+  ArrowRight,
   CheckCircle2,
   Clock,
   Globe2,
@@ -48,6 +49,7 @@ type Client = {
   access_status: "setup" | "active" | "revoked";
   email_verified: boolean;
   created_at: string;
+  domain_count: number;
 };
 
 export default function AgentClientsPage() {
@@ -165,16 +167,24 @@ export default function AgentClientsPage() {
                       {formatDate(c.created_at)}
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1.5">
-                        <Button size="sm" variant="ghost" asChild className="gap-1 whitespace-nowrap">
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        {c.domain_count === 0 ? (
+                          <Button size="sm" asChild className="gap-1 whitespace-nowrap">
+                            <Link href={`/sites/new-with-domain?for_client=${c.client_id}`}>
+                              <Globe2 className="size-3" />
+                              Beli Domain
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Badge variant="secondary" className="gap-1 text-[10px]">
+                            <Globe2 className="size-2.5" />
+                            {c.domain_count} domain
+                          </Badge>
+                        )}
+                        <Button size="sm" variant="outline" asChild className="gap-1 whitespace-nowrap">
                           <Link href={`/agent/clients/${c.client_id}`}>
                             Detail
-                          </Link>
-                        </Button>
-                        <Button size="sm" variant="outline" asChild className="gap-1 whitespace-nowrap">
-                          <Link href={`/sites/new-with-domain?for_client=${c.client_id}`}>
-                            <Globe2 className="size-3" />
-                            Beli Domain
+                            <ArrowRight className="size-3" />
                           </Link>
                         </Button>
                       </div>

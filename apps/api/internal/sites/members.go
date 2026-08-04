@@ -202,6 +202,54 @@ type SiteWithRole struct {
 	Role string `json:"role"`
 }
 
+// SiteCollaboration = 1 row untuk halaman "situs yang saya bantu kelola"
+// (agent/reseller view). Include owner info + role caller supaya UI bisa
+// tampilkan "editor dari <klien>".
+type SiteCollaboration struct {
+	SiteID     uuid.UUID `json:"site_id"`
+	SiteName   string    `json:"site_name"`
+	SiteSlug   string    `json:"site_slug"`
+	OwnerID    uuid.UUID `json:"owner_id"`
+	OwnerEmail string    `json:"owner_email"`
+	OwnerName  string    `json:"owner_name"`
+	Role       string    `json:"role"` // 'editor' | 'viewer'
+	AddedAt    time.Time `json:"added_at"`
+}
+
+// ListMyCollaborations — sites di mana userID adalah non-owner member.
+// Kebalikan dari ListCollaboratorsOwnedBy: return dari sudut pandang
+// COLLABORATOR (bukan owner). Dipakai agent/reseller portal untuk lihat
+// situs klien yang mereka bantu kelola.
+func (r *Repo) ListMyCollaborations(ctx context.Context, userID uuid.UUID) ([]SiteCollaboration, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT s.id, s.name, s.slug,
+		       s.user_id, COALESCE(ou.email, ''), COALESCE(ou.name, ''),
+		       sm.role, sm.added_at
+		  FROM sites s
+		  JOIN site_members sm ON sm.site_id = s.id
+		  LEFT JOIN users ou ON ou.id = s.user_id
+		 WHERE sm.user_id = $1 AND sm.role <> 'owner'
+		 ORDER BY s.name ASC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SiteCollaboration{}
+	for rows.Next() {
+		var c SiteCollaboration
+		if err := rows.Scan(
+			&c.SiteID, &c.SiteName, &c.SiteSlug,
+			&c.OwnerID, &c.OwnerEmail, &c.OwnerName,
+			&c.Role, &c.AddedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // CollaboratorAccess = 1 row untuk halaman /settings/collaborators (client-side).
 // Query: semua site yang owned by userID + semua non-owner member di dalamnya.
 // Cross-join di SQL supaya bisa render nested list (per-site → list of collabs).

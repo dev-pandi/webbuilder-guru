@@ -23,6 +23,9 @@ import {
   ArrowRight,
   RefreshCw,
   AlertCircle,
+  Sparkles,
+  User,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -39,6 +42,15 @@ type Purchase = {
   reason?: string;
   payment_url?: string;
   expires_at?: string;
+  // site_id di-set kalau register purchase sudah di-attach ke sites row
+  // (via template picker di /sites/pending/[job_id]). Kalau nil untuk
+  // register aktif → user belum pilih template.
+  site_id?: string;
+  // client_* diisi kalau endpoint = /agent/purchases atau /reseller/purchases
+  // (on-behalf-of view). Untuk /settings/domains (self-purchase), nil.
+  client_id?: string;
+  client_name?: string;
+  client_email?: string;
 };
 
 const STATUS_LABEL: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "success" }> = {
@@ -265,11 +277,15 @@ function ActiveRow({
 }) {
   const expiryInfo = useMemo(() => formatExpiry(p.expires_at), [p.expires_at]);
   const detailHref = `${basePath}/${encodeURIComponent(p.domain)}`;
+  // Register active tanpa site_id → user belum pilih template. Tampilkan
+  // CTA supaya mereka lanjut ke template picker di /sites/pending/[job_id]
+  // (yang sudah handle "active + no site" branch dengan TemplatePicker).
+  const needsTemplate = p.kind === "register" && !p.site_id;
   return (
     <li className="flex flex-wrap items-center gap-3 py-3">
       <Globe2 className="size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href={detailHref}
             className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
@@ -279,6 +295,12 @@ function ActiveRow({
           <Badge variant="success" className="text-xs">
             Aktif
           </Badge>
+          {needsTemplate && (
+            <Badge variant="warning" className="gap-1 text-[10px]">
+              <Sparkles className="size-2.5" />
+              Belum ada situs
+            </Badge>
+          )}
           {isRenewing && (
             <Badge variant="secondary" className="gap-1 text-[10px]">
               <Loader2 className="size-2.5 animate-spin" />
@@ -286,12 +308,16 @@ function ActiveRow({
             </Badge>
           )}
         </div>
-        {expiryInfo && (
-          <div className={`mt-0.5 text-xs ${expiryInfo.urgent ? "text-destructive" : "text-muted-foreground"}`}>
-            Expire: {expiryInfo.label}
-          </div>
-        )}
+        <RowMeta owner={ownerLabel(p)} expiry={expiryInfo} />
       </div>
+      {needsTemplate && (
+        <Button asChild size="sm" className="gap-1.5">
+          <Link href={`/sites/pending/${p.job_id}`}>
+            <Sparkles className="size-3.5" />
+            Pilih template
+          </Link>
+        </Button>
+      )}
       <Button asChild variant="ghost" size="sm" className="gap-1.5">
         <Link href={detailHref}>
           Kelola
@@ -316,13 +342,54 @@ function ActiveRow({
   );
 }
 
+// ownerLabel — kalau backend kirim client info (on-behalf-of view), return
+// display name/email. Nil kalau self-purchase → RowMeta skip render owner.
+function ownerLabel(p: Purchase): string | null {
+  if (!p.client_id && !p.client_email && !p.client_name) return null;
+  return p.client_name || p.client_email || null;
+}
+
+// RowMeta — 2 line info (owner + expiry) di bawah nama domain. Skip line
+// kosong supaya row tetap compact.
+function RowMeta({
+  owner,
+  expiry,
+}: {
+  owner: string | null;
+  expiry: { label: string; urgent: boolean } | null;
+}) {
+  if (!owner && !expiry) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+      {owner && (
+        <span className="inline-flex items-center gap-1 text-muted-foreground">
+          <User className="size-3" />
+          <span>Milik {owner}</span>
+        </span>
+      )}
+      {expiry && (
+        <span
+          className={
+            "inline-flex items-center gap-1 " +
+            (expiry.urgent ? "text-destructive" : "text-muted-foreground")
+          }
+        >
+          <CalendarClock className="size-3" />
+          <span>Expire: {expiry.label}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function PendingRow({ p }: { p: Purchase }) {
   const info = STATUS_LABEL[p.status] ?? { label: p.status, variant: "secondary" as const };
+  const owner = ownerLabel(p);
   return (
     <li className="flex flex-wrap items-center gap-3 py-3">
       <Loader2 className="size-4 shrink-0 animate-spin text-amber-500" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
           <code className="text-sm font-medium">{p.domain}</code>
           <Badge variant={info.variant} className="text-xs">
             {info.label}
@@ -333,6 +400,7 @@ function PendingRow({ p }: { p: Purchase }) {
             </Badge>
           )}
         </div>
+        <RowMeta owner={owner} expiry={null} />
       </div>
       <Button asChild variant="ghost" size="sm" className="gap-1.5">
         <Link href={`/sites/pending/${p.job_id}`}>
@@ -346,18 +414,20 @@ function PendingRow({ p }: { p: Purchase }) {
 
 function TerminalRow({ p }: { p: Purchase }) {
   const info = STATUS_LABEL[p.status] ?? { label: p.status, variant: "destructive" as const };
+  const owner = ownerLabel(p);
   return (
     <li className="flex flex-wrap items-center gap-3 py-3">
       <XCircle className="size-4 shrink-0 text-destructive" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
           <code className="text-sm font-medium">{p.domain}</code>
           <Badge variant={info.variant} className="text-xs">
             {info.label}
           </Badge>
         </div>
+        <RowMeta owner={owner} expiry={null} />
         {p.reason && (
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          <div className="truncate text-xs text-muted-foreground">
             {p.reason}
           </div>
         )}

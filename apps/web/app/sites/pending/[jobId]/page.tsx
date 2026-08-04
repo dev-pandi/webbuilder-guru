@@ -45,8 +45,14 @@ type Purchase = {
   payment_url?: string;
   reason?: string; // diisi kalau status=failed (dari registrar)
   expires_at?: string;
+  updated_at?: string; // RFC3339 — buat detect "stuck"
   site_id?: string; // set kalau domain sudah di-attach ke sites row
 };
+
+// Threshold "stuck" — pending_provisioning yang > STUCK_MS berarti EPP
+// execute silent-drop (api-registry crash / timeout tidak keburu propagate).
+// User boleh manual retry setelahnya.
+const STUCK_MS = 60_000;
 
 type Template = {
   slug: string;
@@ -399,6 +405,43 @@ export default function PendingDomainPage() {
                       Menunggu link pembayaran dari gateway… halaman akan refresh otomatis.
                     </p>
                   )}
+
+                  {/* Pending provisioning stuck (>60s) → offer manual retry.
+                      Invoice sudah paid, kita cuma re-invoke ExecuteAfterPayment
+                      supaya EPP execute jalan lagi. Idempotent di backend. */}
+                  {purchase.status === "pending_provisioning" &&
+                    purchase.updated_at &&
+                    Date.now() - new Date(purchase.updated_at).getTime() > STUCK_MS && (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs text-amber-700 dark:text-amber-500">
+                          Proses lebih lama dari biasanya (
+                          {Math.round(
+                            (Date.now() - new Date(purchase.updated_at).getTime()) /
+                              60000,
+                          )}{" "}
+                          menit). Kalau tidak berubah, coba retry manual —
+                          registrar rerun proses tanpa bayar ulang.
+                        </p>
+                        <Button
+                          onClick={onRetry}
+                          disabled={retrying}
+                          variant="outline"
+                          className="gap-2"
+                        >
+                          {retrying ? (
+                            <>
+                              <Loader2 className="size-4 animate-spin" />
+                              Retry…
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="size-4" />
+                              Retry proses
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
 
                   {/* Retry — hanya saat status=failed. TIDAK bayar ulang;
                       invoice lama tetap valid, registrar re-run EPP CREATE.

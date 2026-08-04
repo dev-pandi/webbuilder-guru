@@ -49,14 +49,18 @@ func TestStreetLines_StripsBlankLines(t *testing.T) {
 }
 
 func TestNormalizePhoneE164(t *testing.T) {
+	// Per RFC 5733 §2.5 dotted form: "+CC.NUMBER"
 	cases := []struct{ in, want string }{
 		{"", ""},
-		{"08123456789", "+628123456789"}, // ID mobile local → +62 prefix
-		{"628123456789", "+628123456789"},
-		{"+628123456789", "+628123456789"},
-		{"+1 555-123-4567", "+15551234567"}, // strip spaces/dashes
-		{"  0812 3456 789  ", "+628123456789"},
-		{"5551234", "+5551234"}, // fallback: assume international
+		{"08123456789", "+62.8123456789"}, // ID mobile local → +62. prefix
+		{"628123456789", "+62.8123456789"},
+		{"+628123456789", "+62.8123456789"},
+		{"+62.8123456789", "+62.8123456789"}, // dotted preserved
+		{"+62 812 3456 789", "+62.8123456789"},
+		{"+1 555-123-4567", "+1.5551234567"},   // US country code
+		{"  0812 3456 789  ", "+62.8123456789"}, // strip whitespace
+		{"(021) 555-1234", "+62.215551234"},    // paren + area code
+		{"5551234", "+62.5551234"},              // no CC → default ID
 	}
 	for _, tc := range cases {
 		if got := normalizePhoneE164(tc.in); got != tc.want {

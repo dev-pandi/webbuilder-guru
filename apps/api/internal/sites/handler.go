@@ -352,6 +352,19 @@ func (h *Handler) RemoveMember(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 
+// ListMyCollaborations — GET /api/v1/collaborations
+// Kebalikan dari /collaborators — return sites di mana caller adalah
+// non-owner member (agent/reseller view). Include owner info supaya UI
+// bisa tampil "editor di situs klien <nama>".
+func (h *Handler) ListMyCollaborations(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	items, err := h.repo.ListMyCollaborations(c.Context(), uid)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, items)
+}
+
 // ListMyCollaborators — GET /api/v1/collaborators
 // Halaman /settings/collaborators (client-side). Return semua non-owner
 // member di sites yang caller own. Grouped by site di response supaya

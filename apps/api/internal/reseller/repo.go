@@ -28,11 +28,15 @@ type ClientAssignment struct {
 // ClientRow — payload untuk list-clients query dengan JOIN users (biar
 // frontend bisa langsung display email + nama tanpa second-fetch).
 type ClientRow struct {
-	Assignment ClientAssignment
-	Email      string
-	Name       string
-	CreatedAt  time.Time
+	Assignment    ClientAssignment
+	Email         string
+	Name          string
+	CreatedAt     time.Time
 	EmailVerified bool
+	// DomainCount — jumlah domain aktif milik klien (semua register purchases
+	// yang status=active). Dipakai frontend untuk hide "Beli Domain" button
+	// kalau klien sudah punya domain.
+	DomainCount int
 }
 
 // AgentRow — payload untuk list-agents. Agent = user role='agent' yang
@@ -156,13 +160,24 @@ func (r *Repo) FindActiveAssignmentByClient(ctx context.Context, clientID uuid.U
 
 // ListClientsByManager — reseller/agent lihat klien yang mereka kelola.
 // Filter status 'setup'/'active' default (exclude revoked).
+//
+// Include COUNT domain aktif per klien (LEFT JOIN + subquery aggregate)
+// supaya frontend bisa render CTA "Beli Domain" hanya kalau klien belum
+// punya domain.
 func (r *Repo) ListClientsByManager(ctx context.Context, managerID uuid.UUID) ([]ClientRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ca.id, ca.manager_id, ca.client_id, ca.manager_role, ca.access_status,
 		       ca.created_at, ca.handed_off_at, ca.revoked_at,
-		       u.email, u.name, u.created_at, u.email_verified_at IS NOT NULL
+		       u.email, u.name, u.created_at, u.email_verified_at IS NOT NULL,
+		       COALESCE(dc.cnt, 0) AS domain_count
 		  FROM client_assignments ca
 		  JOIN users u ON u.id = ca.client_id
+		  LEFT JOIN (
+		       SELECT user_id, COUNT(*) AS cnt
+		         FROM domain_purchases
+		        WHERE status = 'active' AND kind = 'register'
+		        GROUP BY user_id
+		  ) dc ON dc.user_id = ca.client_id
 		 WHERE ca.manager_id = $1 AND ca.access_status != 'revoked'
 		 ORDER BY ca.created_at DESC
 	`, managerID)
@@ -177,7 +192,7 @@ func (r *Repo) ListClientsByManager(ctx context.Context, managerID uuid.UUID) ([
 			&r.Assignment.ID, &r.Assignment.ManagerID, &r.Assignment.ClientID,
 			&r.Assignment.ManagerRole, &r.Assignment.AccessStatus,
 			&r.Assignment.CreatedAt, &r.Assignment.HandedOffAt, &r.Assignment.RevokedAt,
-			&r.Email, &r.Name, &r.CreatedAt, &r.EmailVerified,
+			&r.Email, &r.Name, &r.CreatedAt, &r.EmailVerified, &r.DomainCount,
 		); err != nil {
 			return nil, err
 		}
@@ -243,10 +258,17 @@ func (r *Repo) ListClientsForReseller(ctx context.Context, resellerID uuid.UUID)
 	rows, err := r.pool.Query(ctx, `
 		SELECT ca.id, ca.manager_id, ca.client_id, ca.manager_role, ca.access_status,
 		       ca.created_at, ca.handed_off_at, ca.revoked_at,
-		       u.email, u.name, u.created_at, u.email_verified_at IS NOT NULL
+		       u.email, u.name, u.created_at, u.email_verified_at IS NOT NULL,
+		       COALESCE(dc.cnt, 0) AS domain_count
 		  FROM client_assignments ca
 		  JOIN users u ON u.id = ca.client_id
 		  LEFT JOIN users mgr ON mgr.id = ca.manager_id
+		  LEFT JOIN (
+		       SELECT user_id, COUNT(*) AS cnt
+		         FROM domain_purchases
+		        WHERE status = 'active' AND kind = 'register'
+		        GROUP BY user_id
+		  ) dc ON dc.user_id = ca.client_id
 		 WHERE ca.access_status != 'revoked'
 		   AND (ca.manager_id = $1 OR mgr.parent_reseller_id = $1)
 		 ORDER BY ca.created_at DESC
@@ -262,7 +284,7 @@ func (r *Repo) ListClientsForReseller(ctx context.Context, resellerID uuid.UUID)
 			&r.Assignment.ID, &r.Assignment.ManagerID, &r.Assignment.ClientID,
 			&r.Assignment.ManagerRole, &r.Assignment.AccessStatus,
 			&r.Assignment.CreatedAt, &r.Assignment.HandedOffAt, &r.Assignment.RevokedAt,
-			&r.Email, &r.Name, &r.CreatedAt, &r.EmailVerified,
+			&r.Email, &r.Name, &r.CreatedAt, &r.EmailVerified, &r.DomainCount,
 		); err != nil {
 			return nil, err
 		}

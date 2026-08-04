@@ -83,6 +83,10 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Post("/sites/:id/leave", mutateLimit, deps.Sites.LeaveSite)
 	// Phase 5 — aggregate list untuk halaman /settings/collaborators.
 	authed.Get("/collaborators", deps.Sites.ListMyCollaborators)
+	// Sisi kebalikan: sites di mana caller adalah non-owner member.
+	// Dipakai agent/reseller portal untuk lihat situs klien yang mereka
+	// bantu kelola (mereka bukan owner).
+	authed.Get("/collaborations", deps.Sites.ListMyCollaborations)
 	authed.Post("/sites/:id/export", mutateLimit, deps.Export.Export)
 	authed.Get("/sites/:id/usage", deps.Usage.Current)
 	authed.Get("/sites/:id/usage/history", deps.Usage.History)
