@@ -88,8 +88,10 @@ func (c *Client) Connect(ctx context.Context) error {
 // connectLocked — assumes lock held.
 func (c *Client) connectLocked(ctx context.Context) error {
 	// Build TLS config berdasarkan opsi credentials.
+	// TLS 1.2 minimum — PANDI EPP sandbox biasanya belum support 1.3.
+	// Naikkan ke 1.3 kalau operator konfirmasi registry mendukung.
 	tlsCfg := &tls.Config{
-		MinVersion:         tls.VersionTLS13,
+		MinVersion:         tls.VersionTLS12,
 		InsecureSkipVerify: c.cfg.InsecureSkipVerify, // #nosec G402 — opt-in per config
 	}
 	if c.cfg.CertFile != "" && c.cfg.KeyFile != "" {

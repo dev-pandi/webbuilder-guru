@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -296,9 +298,10 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "domain kosong")
 	}
 
-	// Batch EPP check untuk 1..N zone dalam 1 call ke api-registry. Response
-	// include `allowed_zones` supaya UI bisa hint TLD yang tersedia.
-	res, err := h.registrar.CheckDomain(c.Context(), req.Domain)
+	// api-registry (epp_direct mode) hanya terima FQDN. Kalau user cuma
+	// input SLD (mis. "myshop"), expand ke N FQDN dari zones catalog + fan-out
+	// parallel check per-zone → aggregate response.
+	res, err := h.checkDomain(c.Context(), req.Domain)
 	if err != nil {
 		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
 	}
@@ -345,6 +348,94 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		out.Results = append(out.Results, e)
 	}
 	return httpx.OK(c, out)
+}
+
+// checkDomain — wrapper around registrar.CheckDomain yang handle SLD input.
+//
+// api-registry hanya terima FQDN. Kalau user input:
+//   - FQDN ("myshop.id"): forward as-is
+//   - SLD ("myshop"): expand ke N FQDN via active zones, fan-out parallel,
+//     aggregate results
+//
+// Kalau zonesRepo nil + input SLD → error (frontend harus provide TLD).
+func (h *Handler) checkDomain(ctx context.Context, input string) (*registrar.DomainCheckResponse, error) {
+	if strings.Contains(input, ".") {
+		return h.registrar.CheckDomain(ctx, input)
+	}
+	// SLD path — butuh zones catalog untuk expand.
+	if h.zonesRepo == nil {
+		return nil, fmt.Errorf("input harus FQDN (mis. %s.id) — zones catalog belum aktif", input)
+	}
+	activeZones, err := h.zonesRepo.ListActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("gagal ambil zones: %w", err)
+	}
+	if len(activeZones) == 0 {
+		return nil, fmt.Errorf("belum ada zone aktif — admin harus konfigurasi TLD dulu")
+	}
+
+	// Fan-out parallel — 1 goroutine per zone. Cap timeout via ctx dari
+	// caller. Kalau ada zone yang error, log + skip (partial result lebih
+	// baik dari total fail).
+	type slot struct {
+		entry registrar.DomainCheckEntry
+		ok    bool
+	}
+	slots := make([]slot, len(activeZones))
+	allowedZones := make([]string, 0, len(activeZones))
+	for _, z := range activeZones {
+		allowedZones = append(allowedZones, z.TLD)
+	}
+
+	var wg sync.WaitGroup
+	for i, z := range activeZones {
+		i, z := i, z
+		fqdn := input + "." + z.TLD
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := h.registrar.CheckDomain(ctx, fqdn)
+			if err != nil {
+				slog.Warn("check: zone fan-out failed",
+					"domain", fqdn, "tld", z.TLD, "error", err)
+				return
+			}
+			// api-registry return array of 1 entry untuk FQDN input.
+			for _, r := range res.Results {
+				if strings.EqualFold(r.Domain, fqdn) {
+					slots[i] = slot{entry: r, ok: true}
+					return
+				}
+			}
+			// Fallback: kalau backend tidak return domain yang match,
+			// bikin entry "unknown" supaya user tetap lihat TLD di grid.
+			slots[i] = slot{
+				entry: registrar.DomainCheckEntry{
+					Domain:    fqdn,
+					TLD:       z.TLD,
+					Available: false,
+					Reason:    "check gagal",
+				},
+				ok: true,
+			}
+		}()
+	}
+	wg.Wait()
+
+	out := &registrar.DomainCheckResponse{
+		Query:        input,
+		AllowedZones: allowedZones,
+		Results:      make([]registrar.DomainCheckEntry, 0, len(slots)),
+	}
+	for _, s := range slots {
+		if s.ok {
+			out.Results = append(out.Results, s.entry)
+		}
+	}
+	if len(out.Results) == 0 {
+		return nil, fmt.Errorf("semua zone check gagal — cek koneksi ke registry")
+	}
+	return out, nil
 }
 
 // resolveAllowedZones — kalau zonesRepo di-set, intersect upstream zones
