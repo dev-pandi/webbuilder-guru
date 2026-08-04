@@ -62,12 +62,8 @@ func (p *EPPDirectProvider) Name() string { return "epp_direct" }
 
 func (p *EPPDirectProvider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
-		HasWallet:        false, // wallet di web builder
-		HasBulkCheck:     true,  // EPP domain:check native batch
-		HasTransfer:      false, // out-of-scope (Provider interface belum expose Transfer*)
-		HasDNSSEC:        false, // out-of-scope (Provider interface belum expose secDNS)
-		HasPromoInternal: false, // promo di web builder
-		HasContact:       true,  // EPP contact:*
+		HasBulkCheck: true, // EPP domain:check native batch
+		HasContact:   true, // EPP contact:*
 	}
 }
 

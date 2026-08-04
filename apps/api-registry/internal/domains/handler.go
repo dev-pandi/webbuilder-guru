@@ -45,7 +45,7 @@ func mapErr(c *fiber.Ctx, err error) error {
 	case errors.Is(err, provider.ErrRateLimit):
 		return httpx.Err(c, fiber.StatusTooManyRequests, "rate_limited", err.Error())
 	case errors.Is(err, provider.ErrCapabilityMissing):
-		return httpx.ServiceUnavailable(c, "capability_missing", err.Error())
+		return httpx.NotImplemented(c, "capability_missing", err.Error())
 	case errors.Is(err, provider.ErrUnauthorized):
 		return httpx.BadGateway(c, "provider auth failed: "+err.Error())
 	default:

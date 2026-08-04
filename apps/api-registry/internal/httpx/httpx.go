@@ -61,3 +61,9 @@ func BadGateway(c *fiber.Ctx, msg string) error {
 func ServiceUnavailable(c *fiber.Ctx, code, msg string) error {
 	return Err(c, fiber.StatusServiceUnavailable, code, msg)
 }
+
+// NotImplemented — dipakai untuk operasi yang provider tidak support secara
+// permanen (bukan temporary overload). Retry tidak akan berhasil.
+func NotImplemented(c *fiber.Ctx, code, msg string) error {
+	return Err(c, fiber.StatusNotImplemented, code, msg)
+}

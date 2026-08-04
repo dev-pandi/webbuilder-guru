@@ -79,7 +79,7 @@ func Load() *Config {
 		AppEnv:   getEnv("APP_ENV", "dev"),
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 
-		ProviderMode: getEnv("PROVIDER_MODE", "pandi_wrapper"),
+		ProviderMode: getEnv("PROVIDER_MODE", "epp_direct"),
 
 		PandiAPIURL:     getEnv("PANDI_API_URL", ""),
 		PandiAPIKey:     getEnv("PANDI_API_KEY", ""),

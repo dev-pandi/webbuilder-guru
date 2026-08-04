@@ -90,18 +90,9 @@ func TestParseResponse_MalformedXMLReturnsError(t *testing.T) {
 func TestCapabilities_EPPDirectShape(t *testing.T) {
 	p := &EPPDirectProvider{}
 	caps := p.Capabilities()
-	// EPP direct: wallet + promo di web builder — bukan EPP concern.
-	// (HasDocumentFlow sudah dihapus dari struct karena dokumen 100% di web builder.)
-	if caps.HasWallet || caps.HasPromoInternal {
-		t.Errorf("EPP direct seharusnya delegate wallet/promo ke web builder, dapat: %+v", caps)
-	}
 	// Yang harus tersedia via EPP native (interface currently exposes):
 	if !caps.HasBulkCheck || !caps.HasContact {
 		t.Errorf("EPP direct seharusnya support check+contact, dapat: %+v", caps)
-	}
-	// Transfer + DNSSEC belum di Provider interface — flag harus jujur false.
-	if caps.HasTransfer || caps.HasDNSSEC {
-		t.Errorf("HasTransfer/HasDNSSEC harus false selama interface belum expose method-nya, dapat: %+v", caps)
 	}
 }
 

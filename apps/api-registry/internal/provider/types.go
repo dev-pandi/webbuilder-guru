@@ -12,19 +12,14 @@ import (
 )
 
 // Capabilities — feature flags per provider. Runtime cek supaya handler bisa
-// return 501 Not Implemented untuk fitur yang provider ini tidak support
-// (mis. `deposit_wallet` cuma ada di PANDI wrapper legacy, tidak di EPP direct).
+// return 501 Not Implemented untuk fitur yang provider ini tidak support.
 //
 // Documents/invoice/wallet/promo/zone/pricing SEMUA di web builder side per
 // arsitektur SaaS — bukan concern api-registry. Field di sini reflect
 // dukungan EPP-native saja.
 type Capabilities struct {
-	HasWallet        bool // legacy deposit/prepaid balance (pandi_wrapper only)
-	HasBulkCheck     bool // 1 request check banyak domain
-	HasTransfer      bool // transfer in/out
-	HasDNSSEC        bool // DS record management
-	HasPromoInternal bool // legacy promo code (pandi_wrapper only)
-	HasContact       bool // contact create/update/info via EPP
+	HasBulkCheck bool // 1 request check banyak domain (native batch vs sequential)
+	HasContact   bool // contact create/update/info via EPP
 }
 
 // Provider — kontrak inti. Semua method context-aware + return typed error.

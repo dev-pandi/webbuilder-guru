@@ -77,12 +77,8 @@ func (p *FakeProvider) Capabilities() Capabilities {
 		return *p.CapsOverride
 	}
 	return Capabilities{
-		HasWallet:        false,
-		HasBulkCheck:     true,
-		HasTransfer:      false,
-		HasDNSSEC:        false,
-		HasPromoInternal: false,
-		HasContact:       true,
+		HasBulkCheck: true,
+		HasContact:   true,
 	}
 }
 

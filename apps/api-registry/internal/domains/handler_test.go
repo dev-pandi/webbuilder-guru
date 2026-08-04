@@ -187,11 +187,12 @@ func TestCancel_Success(t *testing.T) {
 }
 
 func TestInfo_CapabilityMissing(t *testing.T) {
-	// Fake default InfoDomain return ErrCapabilityMissing.
+	// Fake default InfoDomain return ErrCapabilityMissing → 501 Not Implemented
+	// (permanent: retry tidak akan berhasil).
 	app, _ := buildApp(provider.NewFake())
 	status, _ := doJSON(t, app, "GET", "/domains/foo.id/info", nil)
-	if status != 503 {
-		t.Errorf("expected 503 capability missing, got %d", status)
+	if status != 501 {
+		t.Errorf("expected 501 capability missing, got %d", status)
 	}
 }
 

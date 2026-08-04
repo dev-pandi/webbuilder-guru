@@ -55,7 +55,7 @@ func mapErr(c *fiber.Ctx, err error) error {
 	case errors.Is(err, provider.ErrValidation):
 		return httpx.BadRequest(c, err.Error())
 	case errors.Is(err, provider.ErrCapabilityMissing):
-		return httpx.ServiceUnavailable(c, "capability_missing", err.Error())
+		return httpx.NotImplemented(c, "capability_missing", err.Error())
 	default:
 		return httpx.BadGateway(c, err.Error())
 	}
