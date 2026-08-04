@@ -51,6 +51,27 @@ type Purchase = {
   client_id?: string;
   client_name?: string;
   client_email?: string;
+  // contact_id + registered_at + last_renewed_at di-populate dari tabel
+  // domains (aggregate view), bukan dari purchases table. Bantu tampilkan
+  // detail domain tanpa second fetch.
+  contact_id?: string;
+  registered_at?: string;
+  last_renewed_at?: string;
+};
+
+// Shape dari /api/v1/domains (aggregate current-state per FQDN).
+type DomainRow = {
+  name: string;
+  status: string;
+  expires_at?: string;
+  contact_id?: string;
+  registered_at?: string;
+  last_renewed_at?: string;
+  site_id?: string;
+  registrar_job_id?: string;
+  client_id?: string;
+  client_name?: string;
+  client_email?: string;
 };
 
 const STATUS_LABEL: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "success" }> = {
@@ -66,33 +87,47 @@ const STATUS_LABEL: Record<string, { label: string; variant: "default" | "second
 };
 
 // DomainsList — shared component untuk halaman daftar domain user.
-// `basePath` mengatur URL detail page — supaya reseller/settings pakai
-// prefix yang sesuai (dan sidebar layout tidak lompat).
-// `endpoint` bebas — default `/api/v1/domains/purchases` (self-scope
-// via user_id). Reseller/agent portal WAJIB override ke
-// `/api/v1/reseller/purchases` atau `/api/v1/agent/purchases` supaya
-// purchase yang di-trigger on-behalf-of client (user_id != caller) tetap
-// muncul; scope backend-nya `purchased_by`, bukan `user_id`.
+//
+// Data source:
+//   - Aktif → /api/v1/domains (tabel `domains` aggregate current-state,
+//     1 row per FQDN, contact_id + expires_at akurat dari EPP)
+//   - Pending / Failed / Expired → `endpoint` (default /purchases,
+//     transaction log — pending job hidup di sini, belum sampai `domains`)
+//
+// `basePath` mengatur URL detail page. `endpoint` untuk purchases (pending
+// section), `domainsEndpoint` untuk aggregate (active section) — keduanya
+// bisa di-override di reseller/agent portal untuk team scope.
 export function DomainsList({
   basePath = "/settings/domains",
   endpoint = "/api/v1/domains/purchases?limit=100",
+  domainsEndpoint = "/api/v1/domains",
 }: {
   basePath?: string;
   endpoint?: string;
+  domainsEndpoint?: string;
 }) {
   const router = useRouter();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [domains, setDomains] = useState<DomainRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [renewTarget, setRenewTarget] = useState<Purchase | null>(null);
 
   async function refresh() {
     setLoading(true);
+    setErr(null);
     try {
-      const list = await api<Purchase[]>(endpoint);
-      setPurchases(list ?? []);
-    } catch (e) {
-      setErr((e as Error).message);
+      const [ds, ps] = await Promise.allSettled([
+        api<DomainRow[]>(domainsEndpoint),
+        api<Purchase[]>(endpoint),
+      ]);
+      if (ds.status === "fulfilled") setDomains(ds.value ?? []);
+      if (ps.status === "fulfilled") setPurchases(ps.value ?? []);
+      // Only bubble error kalau BOTH fail — kalau salah satu jalan, page
+      // masih usable.
+      if (ds.status === "rejected" && ps.status === "rejected") {
+        setErr((ds.reason as Error).message);
+      }
     } finally {
       setLoading(false);
     }
@@ -101,18 +136,18 @@ export function DomainsList({
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endpoint]);
+  }, [endpoint, domainsEndpoint]);
 
-  // Group by status: active dulu (dedupe per domain — kalau ada register +
-  // renew keduanya active, tampilkan satu row dengan expires_at terbaru),
-  // lalu pending (hanya truly pending — active renew sudah selesai, masuk ke
-  // aktif via dedupe), lalu terminal (failed/expired).
+  // Group data:
+  //   - active: dari tabel `domains` (no dedupe needed — UNIQUE by name)
+  //   - pending / failed: dari `/purchases` (transaction log)
+  //
   // Split pending: register-kind = domain BARU yang belum bisa dipakai
   // (blocking). Renew-kind = perpanjangan domain existing (non-blocking,
   // domain tetap aktif selama proses). Split supaya user tidak panik
   // lihat "sedang diproses" mengira domain-nya offline.
   const grouped = useMemo(() => {
-    const active = latestActivePerDomain(purchases);
+    const active: Purchase[] = domains.map(domainToPurchase);
     const pendingNew = purchases.filter(
       (p) => p.status.startsWith("pending_") && p.kind !== "renew",
     );
@@ -120,10 +155,9 @@ export function DomainsList({
       (p) => p.status.startsWith("pending_") && p.kind === "renew",
     );
     const terminal = purchases.filter((p) => p.status === "failed" || p.status === "expired");
-    // Set domain-domain yang sedang di-perpanjang — buat badge di ActiveRow.
     const renewingDomains = new Set(pendingRenew.map((p) => p.domain));
     return { active, pendingNew, pendingRenew, renewingDomains, terminal };
-  }, [purchases]);
+  }, [domains, purchases]);
 
   return (
     <div className="space-y-6">
@@ -446,9 +480,33 @@ function TerminalRow({ p }: { p: Purchase }) {
 
 // -------------- helpers --------------
 
+// domainToPurchase — convert DomainRow (aggregate view) ke Purchase shape
+// supaya ActiveRow tetap re-usable. `job_id` = registrar_job_id canonical
+// (untuk deep-link ke /sites/pending/[id] atau detail view). kind="register"
+// hard-coded karena domains table hanya berisi active register (renew hanya
+// extend row existing, tidak buat entry baru).
+function domainToPurchase(d: DomainRow): Purchase {
+  return {
+    job_id: d.registrar_job_id ?? "",
+    domain: d.name,
+    status: d.status,
+    kind: "register",
+    expires_at: d.expires_at,
+    site_id: d.site_id,
+    contact_id: d.contact_id,
+    registered_at: d.registered_at,
+    last_renewed_at: d.last_renewed_at,
+    client_id: d.client_id,
+    client_name: d.client_name,
+    client_email: d.client_email,
+  };
+}
+
 // latestActivePerDomain — dedupe active purchases by domain, ambil expires_at
 // paling akhir. Sinkron dengan dashboard + backend notifier (DISTINCT ON per
 // domain). Menghindari 1 domain muncul 2x (register + renew) di UI.
+// DEPRECATED: sejak tabel `domains` aggregate ada, active section langsung
+// dari sana. Helper tetap ada untuk backward-compat (dipakai dashboard).
 function latestActivePerDomain(items: Purchase[]): Purchase[] {
   const byDomain = new Map<string, Purchase>();
   for (const p of items) {

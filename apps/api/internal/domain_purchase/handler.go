@@ -1009,6 +1009,118 @@ func (h *Handler) ExportOnBehalfOfCSV(c *fiber.Ctx) error {
 	return c.Send(buf.Bytes())
 }
 
+// domainResp — response shape untuk endpoint /domains (aggregate view).
+// Beda dari purchaseResp yang purchase-transaction oriented — ini current
+// state per FQDN dengan expires_at + contact_id yg di-cache dari EPP info.
+type domainResp struct {
+	Name           string  `json:"name"`
+	UserID         string  `json:"user_id"`
+	PurchasedBy    *string `json:"purchased_by,omitempty"`
+	ContactID      string  `json:"contact_id,omitempty"`
+	ExpiresAt      string  `json:"expires_at,omitempty"`     // RFC3339
+	RegisteredAt   string  `json:"registered_at"`
+	LastRenewedAt  string  `json:"last_renewed_at,omitempty"`
+	Status         string  `json:"status"`
+	SiteID         *string `json:"site_id,omitempty"`
+	RegistrarJobID string  `json:"registrar_job_id,omitempty"`
+	// Optional enrichment untuk team view (agent/reseller):
+	ClientName  string `json:"client_name,omitempty"`
+	ClientEmail string `json:"client_email,omitempty"`
+}
+
+func domainToResp(d *Domain) domainResp {
+	out := domainResp{
+		Name:           d.Name,
+		UserID:         d.UserID.String(),
+		ContactID:      d.ContactID,
+		RegisteredAt:   d.RegisteredAt.UTC().Format(time.RFC3339),
+		Status:         d.Status,
+		RegistrarJobID: d.RegistrarJobID,
+	}
+	if d.ExpiresAt != nil {
+		out.ExpiresAt = d.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if d.LastRenewedAt != nil {
+		out.LastRenewedAt = d.LastRenewedAt.UTC().Format(time.RFC3339)
+	}
+	if d.PurchasedBy != nil {
+		s := d.PurchasedBy.String()
+		out.PurchasedBy = &s
+	}
+	if d.SiteID != nil {
+		s := d.SiteID.String()
+		out.SiteID = &s
+	}
+	return out
+}
+
+// ListDomains — GET /api/v1/domains. Return current-state domain aggregate
+// user (dari tabel `domains`, bukan domain_purchases). Sort by expires_at
+// ASC (nearest expiry first).
+func (h *Handler) ListDomains(c *fiber.Ctx) error {
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	items, err := h.repo.ListDomainsByUser(c.Context(), cl.UserID)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	out := make([]domainResp, 0, len(items))
+	for i := range items {
+		out = append(out, domainToResp(&items[i]))
+	}
+	return httpx.OK(c, out)
+}
+
+// ListTeamDomains — GET /api/v1/reseller/domains atau /agent/domains.
+// Team scope: reseller include agent-agent nya. Enrich dengan client info
+// (owner name/email) supaya UI bisa show "milik X".
+func (h *Handler) ListTeamDomains(c *fiber.Ctx) error {
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	// Team scope: kumpulkan client IDs (owner sites) dari assignments.
+	// Reseller: include agent's clients. Agent: direct only.
+	if h.assignments == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "assignments_disabled",
+			"Fitur team domain belum di-wire.")
+	}
+	clientIDs, err := h.assignments.ListManagedClientIDs(c.Context(), cl.UserID)
+	if err != nil {
+		return httpx.Internal(c, "list managed clients failed")
+	}
+	// Include caller sendiri kalau reseller/agent juga own domain.
+	userIDs := append([]uuid.UUID{cl.UserID}, clientIDs...)
+	items, err := h.repo.ListDomainsByUsers(c.Context(), userIDs)
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	// Enrich client info via cache.
+	out := make([]domainResp, 0, len(items))
+	cache := map[uuid.UUID]*auth.User{}
+	for i := range items {
+		p := &items[i]
+		r := domainToResp(p)
+		if p.UserID != cl.UserID {
+			u, ok := cache[p.UserID]
+			if !ok {
+				if lookup, err := h.users.GetByID(c.Context(), p.UserID); err == nil {
+					cache[p.UserID] = lookup
+					u = lookup
+				}
+			}
+			if u != nil {
+				r.ClientName = u.Name
+				r.ClientEmail = u.Email
+			}
+		}
+		out = append(out, r)
+	}
+	return httpx.OK(c, out)
+}
+
 // ListOnBehalfOf — reseller/agent lihat purchase yang mereka trigger untuk
 // client (bukan self-purchase). Enrich dengan client email + name supaya UI
 // bisa langsung display "domain X untuk klien Y" tanpa second fetch.
@@ -1184,6 +1296,72 @@ func (h *Handler) AdminListPurchases(c *fiber.Ctx) error {
 		if it.SiteID != nil {
 			s := it.SiteID.String()
 			r.SiteID = &s
+		}
+		out = append(out, r)
+	}
+	return httpx.OK(c, httpx.MakePaginated(out, p, total))
+}
+
+// AdminListDomains — GET /api/v1/admin/domains
+// Aggregate view lintas user — 1 row per FQDN dari tabel registered_domains.
+// Beda dari AdminListPurchases yang transaction log.
+//
+// Filter: q (name/email), status, expiring_days.
+// Pagination: page, page_size.
+func (h *Handler) AdminListDomains(c *fiber.Ctx) error {
+	p := httpx.ParsePagination(c)
+	expiringDays, _ := strconv.Atoi(c.Query("expiring_days", "0"))
+	f := AdminDomainFilter{
+		Q:            strings.TrimSpace(c.Query("q")),
+		Status:       strings.TrimSpace(c.Query("status")),
+		ExpiringDays: expiringDays,
+		Page:         p.Page,
+		PageSize:     p.PageSize,
+	}
+	items, total, err := h.repo.AdminListDomains(c.Context(), f)
+	if err != nil {
+		slog.Error("admin list domains failed", "error", err)
+		return httpx.Internal(c, "list failed")
+	}
+	type row struct {
+		Name           string  `json:"name"`
+		Status         string  `json:"status"`
+		ContactID      string  `json:"contact_id,omitempty"`
+		ExpiresAt      string  `json:"expires_at,omitempty"`
+		RegisteredAt   string  `json:"registered_at"`
+		LastRenewedAt  string  `json:"last_renewed_at,omitempty"`
+		SiteID         *string `json:"site_id,omitempty"`
+		RegistrarJobID string  `json:"registrar_job_id,omitempty"`
+		UserID         string  `json:"user_id"`
+		UserEmail      string  `json:"user_email"`
+		UserName       string  `json:"user_name"`
+		PurchasedBy    *string `json:"purchased_by,omitempty"`
+	}
+	out := make([]row, 0, len(items))
+	for _, it := range items {
+		r := row{
+			Name:           it.Name,
+			Status:         it.Status,
+			ContactID:      it.ContactID,
+			RegisteredAt:   it.RegisteredAt.UTC().Format(time.RFC3339),
+			RegistrarJobID: it.RegistrarJobID,
+			UserID:         it.UserID.String(),
+			UserEmail:      it.OwnerEmail,
+			UserName:       it.OwnerName,
+		}
+		if it.ExpiresAt != nil {
+			r.ExpiresAt = it.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+		if it.LastRenewedAt != nil {
+			r.LastRenewedAt = it.LastRenewedAt.UTC().Format(time.RFC3339)
+		}
+		if it.SiteID != nil {
+			s := it.SiteID.String()
+			r.SiteID = &s
+		}
+		if it.PurchasedBy != nil {
+			s := it.PurchasedBy.String()
+			r.PurchasedBy = &s
 		}
 		out = append(out, r)
 	}

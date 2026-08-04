@@ -180,6 +180,41 @@ func (h *Handler) executeRegister(
 		}
 	}
 
+	// Sync current-state ke tabel `domains` — fetch expires_at + contact_id
+	// dari EPP info. Best-effort: kalau info fail, purchase tetap active,
+	// user bisa re-sync manual via detail page (fallback ke WHOIS live).
+	info, infoErr := h.registrar.InfoDomain(ctx, domain)
+	if infoErr != nil {
+		slog.Warn("execute_after_payment: info domain gagal (skip domain sync)",
+			"domain", domain, "error", infoErr)
+	} else if info != nil {
+		d := Domain{
+			UserID:         inv.UserID,
+			PurchasedBy:    inv.PurchasedBy,
+			Name:           domain,
+			ContactID:      info.Registrant,
+			Status:         "active",
+			RegistrarJobID: resp.JobID,
+		}
+		if !info.ExpiresAt.IsZero() {
+			exp := info.ExpiresAt
+			d.ExpiresAt = &exp
+		}
+		if !info.CreatedAt.IsZero() {
+			d.RegisteredAt = info.CreatedAt
+		}
+		if _, err := h.repo.UpsertDomain(ctx, d); err != nil {
+			slog.Error("execute_after_payment: upsert domain gagal",
+				"domain", domain, "error", err)
+		}
+		// Juga sync expires_at ke purchase row supaya list/dashboard yg
+		// masih baca dari domain_purchases tetap up-to-date.
+		if d.ExpiresAt != nil {
+			exp := *d.ExpiresAt
+			_, _ = h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", &exp)
+		}
+	}
+
 	// Trigger Cloudflare auto-attach best-effort — same pattern dengan
 	// legacy webhook flow.
 	if h.cloudflare != nil {
@@ -240,6 +275,22 @@ func (h *Handler) executeRenew(
 			}
 		}
 	}
+	// Sync new expiry ke tabel `domains` — extend expires_at + record
+	// last_renewed_at. Bukan bikin row baru (renew hanya extend).
+	info, infoErr := h.registrar.InfoDomain(ctx, domain)
+	if infoErr != nil {
+		slog.Warn("execute_after_payment: info domain (renew) gagal",
+			"domain", domain, "error", infoErr)
+	} else if info != nil && !info.ExpiresAt.IsZero() {
+		if err := h.repo.UpdateDomainExpiry(ctx, domain, info.ExpiresAt); err != nil {
+			slog.Warn("execute_after_payment: update domain expiry gagal",
+				"domain", domain, "error", err)
+		}
+		// Sync juga ke purchase row (kind=renew) buat konsistensi.
+		exp := info.ExpiresAt
+		_, _ = h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", &exp)
+	}
+
 	metrics.Default.CounterInc(metricExecuteAfterPayment,
 		"EPP execute triggers after invoice paid",
 		map[string]string{"result": "success", "kind": KindRenew},

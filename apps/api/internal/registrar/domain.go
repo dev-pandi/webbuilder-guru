@@ -20,6 +20,13 @@ func (c *Client) CheckDomain(ctx context.Context, domain string) (*DomainCheckRe
 	return c.checkDomainViaAPIRegistry(ctx, domain)
 }
 
+// InfoDomain — EPP domain:info via api-registry. Dipakai post-register
+// / post-renew untuk fetch expires_at + registrant contact handle supaya
+// bisa di-cache di tabel `domains`.
+func (c *Client) InfoDomain(ctx context.Context, domain string) (*DomainInfo, error) {
+	return c.infoDomainViaAPIRegistry(ctx, domain)
+}
+
 // NameserverInfo — response shape untuk nameserver get/update.
 type NameserverInfo struct {
 	Domain      string   `json:"domain"`

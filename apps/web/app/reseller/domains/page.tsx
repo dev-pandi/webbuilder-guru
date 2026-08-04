@@ -16,6 +16,7 @@ export default function ResellerDomainsPage() {
     <DomainsList
       basePath="/reseller/domains"
       endpoint="/api/v1/reseller/purchases?limit=100"
+      domainsEndpoint="/api/v1/reseller/domains"
     />
   );
 }

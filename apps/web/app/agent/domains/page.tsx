@@ -16,6 +16,7 @@ export default function AgentDomainsPage() {
     <DomainsList
       basePath="/agent/domains"
       endpoint="/api/v1/agent/purchases?limit=100"
+      domainsEndpoint="/api/v1/agent/domains"
     />
   );
 }

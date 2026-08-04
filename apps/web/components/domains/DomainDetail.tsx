@@ -37,12 +37,18 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RenewDialog } from "@/components/domains/RenewDialog";
 
-type Purchase = {
-  job_id: string;
-  domain: string;
+// DomainRow — aggregate current-state per FQDN dari tabel `domains`.
+// Beda dari Purchase (transaction log): satu row per domain, include
+// contact_id + registered_at + last_renewed_at yang di-cache post-register/renew.
+type DomainRow = {
+  name: string;
   status: string;
-  kind: string;
+  contact_id?: string;
   expires_at?: string;
+  registered_at?: string;
+  last_renewed_at?: string;
+  site_id?: string;
+  registrar_job_id?: string;
 };
 
 type Whois = {
@@ -60,18 +66,17 @@ type NameserverInfo = {
 };
 
 // DomainDetail — shared component untuk halaman kelola 1 domain.
-// `basePath` mengatur back-link supaya user tetap di layout yang benar
-// (settings vs reseller vs agent).
-// `listEndpoint` mengatur endpoint fetch untuk ownership check +
-// expiry — default `/api/v1/domains/purchases` (self-scope by user_id).
-// Reseller/agent portal WAJIB override ke /reseller/purchases atau
-// /agent/purchases supaya on-behalf-of purchase (user_id = client,
-// purchased_by = caller) muncul. Backend endpoint WHOIS + Nameserver
-// sudah support ownership via `user_id OR purchased_by`, jadi cukup
-// swap endpoint di sini.
+//
+// Data source: /api/v1/domains (aggregate `domains` table) — one row per
+// FQDN, include contact_id + expires_at + last_renewed_at yang di-cache
+// post-register/renew. Ownership scope by user_id di backend (query dari
+// tabel `domains`).
+//
+// `basePath` mengatur back-link (settings vs reseller vs agent).
+// `listEndpoint` override untuk team scope (reseller/agent portal).
 export function DomainDetail({
   basePath = "/settings/domains",
-  listEndpoint = "/api/v1/domains/purchases?limit=100",
+  listEndpoint = "/api/v1/domains",
 }: {
   basePath?: string;
   listEndpoint?: string;
@@ -80,7 +85,7 @@ export function DomainDetail({
   const params = useParams<{ name: string }>();
   const domain = decodeURIComponent(params.name ?? "").toLowerCase();
 
-  const [purchase, setPurchase] = useState<Purchase | null>(null);
+  const [row, setRow] = useState<DomainRow | null>(null);
   const [whois, setWhois] = useState<Whois | null>(null);
   const [ns, setNs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,18 +96,15 @@ export function DomainDetail({
     setLoading(true);
     setErr(null);
     try {
-      // 1) Purchase ownership check + expiry — dari list purchases, filter
-      //    by domain. Alternatif: bikin GET /purchases/by-domain/:name.
-      const list = await api<Purchase[]>(listEndpoint);
-      const found = (list ?? []).find(
-        (p) => p.domain === domain && p.status === "active" && p.kind === "register",
-      );
+      // 1) Ownership check + info — dari /api/v1/domains, filter by name.
+      const list = await api<DomainRow[]>(listEndpoint);
+      const found = (list ?? []).find((d) => d.name === domain);
       if (!found) {
         setErr("Domain tidak ditemukan di akun Anda.");
         setLoading(false);
         return;
       }
-      setPurchase(found);
+      setRow(found);
 
       // 2 + 3) WHOIS + Nameservers parallel. Kalau salah satu gagal, non-fatal
       //         — tampilkan yang berhasil, error inline.
@@ -124,7 +126,7 @@ export function DomainDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain, listEndpoint]);
 
-  const expiryInfo = useMemo(() => formatExpiry(purchase?.expires_at), [purchase?.expires_at]);
+  const expiryInfo = useMemo(() => formatExpiry(row?.expires_at), [row?.expires_at]);
 
   return (
     <div className="space-y-6">
@@ -138,7 +140,7 @@ export function DomainDetail({
         <h1 className="flex flex-wrap items-center gap-3 text-2xl font-bold tracking-tight">
           <Globe2 className="size-6 text-primary" />
           <code>{domain}</code>
-          {purchase && (
+          {row && (
             <Badge variant="success" className="text-xs">
               Aktif
             </Badge>
@@ -146,7 +148,7 @@ export function DomainDetail({
         </h1>
       </div>
 
-      {loading && !purchase ? (
+      {loading && !row ? (
         <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Memuat…
         </div>
@@ -156,7 +158,7 @@ export function DomainDetail({
           <span>{err}</span>
         </div>
       ) : (
-        purchase && (
+        row && (
           <>
             {/* Overview card */}
             <Card>
@@ -193,6 +195,33 @@ export function DomainDetail({
                     </Button>
                   </div>
                 )}
+                {/* Info tambahan dari tabel domains (aggregate). */}
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  {row.contact_id && (
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Contact ID (EPP handle)
+                      </div>
+                      <div className="mt-0.5 font-mono text-xs">{row.contact_id}</div>
+                    </div>
+                  )}
+                  {row.registered_at && (
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Terdaftar sejak
+                      </div>
+                      <div className="mt-0.5 text-xs">{formatDate(row.registered_at)}</div>
+                    </div>
+                  )}
+                  {row.last_renewed_at && (
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Perpanjangan terakhir
+                      </div>
+                      <div className="mt-0.5 text-xs">{formatDate(row.last_renewed_at)}</div>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -215,9 +244,9 @@ export function DomainDetail({
         )
       )}
 
-      {renewOpen && purchase && (
+      {renewOpen && row && (
         <RenewDialog
-          domain={purchase.domain}
+          domain={row.name}
           onClose={() => setRenewOpen(false)}
           onCreated={(jobID) => {
             setRenewOpen(false);

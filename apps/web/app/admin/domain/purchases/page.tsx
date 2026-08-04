@@ -1,14 +1,15 @@
 "use client";
 
-// Admin observability untuk domain purchases lintas user.
+// Admin observability untuk domain purchases (transaction log) lintas user.
+// Beda dari /admin/domain yang aggregate current-state — di sini setiap
+// event register/renew punya baris sendiri.
 //
 // Use case:
 //   - "User X bilang domainnya stuck" → filter status=pending_document, cari email
 //   - "Ada webhook yg failed batch semalam?" → sort=expires_soon status=failed
 //   - "Berapa banyak yang stuck di pending_payment?" → filter status + lihat total
 //
-// Read-only: admin tidak boleh mutasi purchase dari sini (webhook + registrar
-// harus tetap authoritative). Kalau perlu retry, arahkan ke user.
+// Read-only: mutasi (retry, cancel) tetap dari sisi user.
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   Mail,
   ExternalLink,
+  ChevronLeft,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Pagination, useDebounced, type PaginatedResult } from "@/components/Pagination";
@@ -42,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 type Row = {
   job_id: string;
   domain: string;
@@ -59,7 +62,6 @@ type Row = {
   site_id?: string | null;
 };
 
-// Semua status yang ada — sinkron dengan status constants backend.
 const STATUS_OPTIONS = [
   { value: "all", label: "Semua status" },
   { value: "pending_payment", label: "Menunggu bayar" },
@@ -77,7 +79,7 @@ const KIND_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
-  { value: "", label: "Terbaru (default)" },
+  { value: "default", label: "Terbaru (default)" },
   { value: "created_asc", label: "Terlama" },
   { value: "expires_soon", label: "Segera expire" },
   { value: "domain_asc", label: "Domain A-Z" },
@@ -102,13 +104,12 @@ export default function AdminPurchasesPage() {
   const debouncedQ = useDebounced(q, 300);
   const [status, setStatus] = useState("all");
   const [kind, setKind] = useState("all");
-  const [sort, setSort] = useState("");
+  const [sort, setSort] = useState("default");
 
   const [data, setData] = useState<PaginatedResult<Row> | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // Reset ke page 1 saat filter/search berubah.
   useEffect(() => {
     setPage(1);
   }, [debouncedQ, status, kind, sort]);
@@ -125,7 +126,7 @@ export default function AdminPurchasesPage() {
       if (debouncedQ) params.set("q", debouncedQ);
       if (status !== "all") params.set("status", status);
       if (kind !== "all") params.set("kind", kind);
-      if (sort) params.set("sort", sort);
+      if (sort && sort !== "default") params.set("sort", sort);
       try {
         const res = await api<PaginatedResult<Row>>(
           `/api/v1/admin/registrar/purchases?${params.toString()}`,
@@ -149,7 +150,7 @@ export default function AdminPurchasesPage() {
     if (debouncedQ) n++;
     if (status !== "all") n++;
     if (kind !== "all") n++;
-    if (sort) n++;
+    if (sort && sort !== "default") n++;
     return n;
   }, [debouncedQ, status, kind, sort]);
 
@@ -157,12 +158,18 @@ export default function AdminPurchasesPage() {
     setQ("");
     setStatus("all");
     setKind("all");
-    setSort("");
+    setSort("default");
   }
 
   return (
     <div className="space-y-6">
       <div>
+        <Button variant="ghost" size="sm" asChild className="mb-2 gap-1.5 -ml-3">
+          <Link href="/admin/domain">
+            <ChevronLeft className="size-4" />
+            Domain Aktif
+          </Link>
+        </Button>
         <div className="mb-1 flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">
             <ListChecks className="size-4 text-primary" />
@@ -171,11 +178,11 @@ export default function AdminPurchasesPage() {
             Ops Observability
           </span>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Domain Purchases</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Riwayat Transaksi Domain</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Semua pembelian domain lintas user — read-only. Filter berdasarkan
-          status untuk cari yang stuck di pending atau failed. Retry / restart
-          adalah aksi user, bukan admin.
+          Semua event register / renew lintas user — transaction log. Untuk
+          list domain aktif per FQDN (1 baris per domain), lihat halaman
+          Domain Aktif.
         </p>
       </div>
 
@@ -227,7 +234,7 @@ export default function AdminPurchasesPage() {
             </SelectTrigger>
             <SelectContent>
               {SORT_OPTIONS.map((o) => (
-                <SelectItem key={o.value || "default"} value={o.value}>
+                <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
               ))}
@@ -267,7 +274,7 @@ export default function AdminPurchasesPage() {
                   <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
                     {activeFilterCount > 0
                       ? "Tidak ada hasil untuk filter tersebut."
-                      : "Belum ada purchase — mulai dari user."}
+                      : "Belum ada transaksi."}
                   </TableCell>
                 </TableRow>
               ) : (

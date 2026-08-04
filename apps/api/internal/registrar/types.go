@@ -1,5 +1,7 @@
 package registrar
 
+import "time"
+
 // Types di-share antara client + api-registry adapter + konsumer di
 // domain_purchase. Phase 3 self-sufficient: shape yang tersisa hanya untuk
 // EPP-native flow (check/register/renew/nameserver/whois) yang route lewat
@@ -17,6 +19,18 @@ type Whois struct {
 	CreatedAt   string `json:"created_at,omitempty"`   // RFC3339
 	ExpiresAt   string `json:"expires_at,omitempty"`   // RFC3339
 	OwnerMasked string `json:"owner_masked,omitempty"` // partial redaction untuk privacy
+}
+
+// DomainInfo — authoritative state dari EPP domain:info. Dipakai post-register
+// untuk cache expires_at + contact_id ke tabel `domains`.
+type DomainInfo struct {
+	Domain      string    `json:"domain"`
+	Status      []string  `json:"status"`      // EPP statuses (ok, clientHold, dsb.)
+	Registrant  string    `json:"registrant"`  // NIC handle (contact_id)
+	Nameservers []string  `json:"nameservers"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 // --- Domain check ---

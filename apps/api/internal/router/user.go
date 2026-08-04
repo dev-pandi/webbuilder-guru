@@ -147,6 +147,10 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/:name/dns", mutateLimit, deps.DomainPurchase.CreateDNSRecord)
 		authed.Patch("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.UpdateDNSRecord)
 		authed.Delete("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.DeleteDNSRecord)
+		// Aggregate current-state per FQDN (tabel `domains`) — replacement
+		// untuk /purchases list yang campur register + renew per domain.
+		// Cocok untuk "domain saya" view. Detail transaksi tetap di /purchases.
+		authed.Get("/domains", deps.DomainPurchase.ListDomains)
 		// Local job tracker — list milik user + individual job status.
 		authed.Get("/domains/purchases", deps.DomainPurchase.List)
 		authed.Get("/domains/purchases/:job_id", deps.DomainPurchase.Status)
@@ -232,6 +236,10 @@ func MountUser(app *fiber.App, deps Deps) {
 			authed.Get("/reseller/purchases", roleResellerOrAgent, deps.DomainPurchase.ListOnBehalfOf)
 			authed.Get("/reseller/purchases.csv", roleResellerOrAgent, deps.DomainPurchase.ExportOnBehalfOfCSV)
 			authed.Get("/agent/purchases", roleAgent, deps.DomainPurchase.ListOnBehalfOf)
+			// Team-scope aggregate domain list (per FQDN) untuk portal
+			// reseller/agent. Beda dari /purchases yang transaksi log.
+			authed.Get("/reseller/domains", roleResellerOrAgent, deps.DomainPurchase.ListTeamDomains)
+			authed.Get("/agent/domains", roleAgent, deps.DomainPurchase.ListTeamDomains)
 		}
 
 		// Aggregate invoices — reseller/agent lihat invoice sendiri + client

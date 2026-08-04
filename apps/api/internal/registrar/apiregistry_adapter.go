@@ -258,3 +258,27 @@ func (c *Client) checkDomainViaAPIRegistry(ctx context.Context, domain string) (
 	}
 	return out, nil
 }
+
+// infoDomainViaAPIRegistry — EPP domain:info lewat api-registry. Dipakai
+// post-register / post-renew untuk cache expires_at + contact_id di tabel
+// domains. Return ErrNotFound (via translateAPIRegistryErr) kalau domain
+// tidak ada di registry.
+func (c *Client) infoDomainViaAPIRegistry(ctx context.Context, domain string) (*DomainInfo, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
+	}
+	res, err := c.apiRegistry.InfoDomain(ctx, domain)
+	if err != nil {
+		return nil, translateAPIRegistryErr(err)
+	}
+	return &DomainInfo{
+		Domain:      res.Domain,
+		Status:      res.Status,
+		Registrant:  res.Registrant,
+		Nameservers: res.Nameservers,
+		CreatedAt:   res.CreatedAt,
+		UpdatedAt:   res.UpdatedAt,
+		ExpiresAt:   res.ExpiresAt,
+	}, nil
+}
