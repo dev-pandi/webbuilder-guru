@@ -31,10 +31,18 @@ type AssetCleaner interface {
 	CleanupSite(ctx context.Context, siteID uuid.UUID)
 }
 
+// TeamScopeResolver — resolve team member IDs (reseller + agent-agent nya).
+// Dipakai `ListMyCollaborations` supaya reseller lihat sites yang agent nya
+// bantu kelola. Nil = fallback ke caller-only scope.
+type TeamScopeResolver interface {
+	ListTeamActorIDs(ctx context.Context, callerID uuid.UUID) ([]uuid.UUID, error)
+}
+
 type Handler struct {
 	repo         *Repo
-	purger       CachePurger  // nil = purge no-op
-	assetCleaner AssetCleaner // nil = skip storage cleanup (dev tanpa storage)
+	purger       CachePurger       // nil = purge no-op
+	assetCleaner AssetCleaner      // nil = skip storage cleanup (dev tanpa storage)
+	teamScope    TeamScopeResolver // nil = collaborations scoped ke caller saja
 }
 
 func NewHandler(r *Repo) *Handler { return &Handler{repo: r} }
@@ -44,6 +52,9 @@ func (h *Handler) SetPurger(p CachePurger) { h.purger = p }
 
 // SetAssetCleaner inject storage cleaner post-construction.
 func (h *Handler) SetAssetCleaner(c AssetCleaner) { h.assetCleaner = c }
+
+// SetTeamScope inject resolver untuk team-scoped collaboration list.
+func (h *Handler) SetTeamScope(t TeamScopeResolver) { h.teamScope = t }
 
 // slugRe = validasi kalau client kirim slug custom (opsional). Kalau tidak
 // kirim, backend auto-generate via Slugify(name). Slug tidak lagi jadi URL
@@ -353,12 +364,20 @@ func (h *Handler) RemoveMember(c *fiber.Ctx) error {
 }
 
 // ListMyCollaborations — GET /api/v1/collaborations
-// Kebalikan dari /collaborators — return sites di mana caller adalah
-// non-owner member (agent/reseller view). Include owner info supaya UI
-// bisa tampil "editor di situs klien <nama>".
+// Kebalikan dari /collaborators — return sites di mana caller (atau agent
+// di bawahnya kalau caller reseller) adalah non-owner member. Include
+// owner info supaya UI bisa tampil "editor di situs klien <nama>".
 func (h *Handler) ListMyCollaborations(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
-	items, err := h.repo.ListMyCollaborations(c.Context(), uid)
+	// Team scope: reseller lihat sites yang dia + agent-nya kelola.
+	// Fallback ke caller-only kalau teamScope belum wired.
+	actorIDs := []uuid.UUID{uid}
+	if h.teamScope != nil {
+		if team, err := h.teamScope.ListTeamActorIDs(c.Context(), uid); err == nil && len(team) > 0 {
+			actorIDs = team
+		}
+	}
+	items, err := h.repo.ListCollaborationsForActors(c.Context(), actorIDs)
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}

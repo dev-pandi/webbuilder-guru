@@ -312,6 +312,9 @@ func main() {
 	// Reseller portal handler — Phase 2.
 	resellerRepo := reseller.NewRepo(pool)
 	resellerHandler := reseller.NewHandler(resellerRepo, authRepo, mailer, cfg.AppBaseURL)
+	// Team-scope resolver — reseller repo implements ListTeamActorIDs.
+	// Enable reseller portal untuk lihat collaborations agent-agent nya.
+	sitesHandler.SetTeamScope(resellerRepo)
 	adminHandler.SetReseller(resellerRepo)
 
 	// Wire reseller assignment checker ke domain purchase handler (Phase 3

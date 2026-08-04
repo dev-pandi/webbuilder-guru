@@ -253,12 +253,18 @@ type TeamInvoice struct {
 	UserName  string `json:"user_name"`
 }
 
-func (r *Repo) ListForTeam(ctx context.Context, callerID uuid.UUID, managedClientIDs []uuid.UUID, limit, offset int) ([]TeamInvoice, error) {
+func (r *Repo) ListForTeam(ctx context.Context, callerID uuid.UUID, managedClientIDs, teamActorIDs []uuid.UUID, limit, offset int) ([]TeamInvoice, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	// Build IN clause untuk user_id set (self + managed clients).
+	// user_ids = self + managed clients (client-owned invoices).
 	userIDs := append([]uuid.UUID{callerID}, managedClientIDs...)
+	// actor_ids = caller + agent-agent (untuk match purchased_by field).
+	// Kalau kosong (missing dep), fallback ke [callerID] saja.
+	actorIDs := teamActorIDs
+	if len(actorIDs) == 0 {
+		actorIDs = []uuid.UUID{callerID}
+	}
 
 	q := `
 		SELECT i.id, i.number, i.user_id, i.purchased_by,
@@ -268,11 +274,11 @@ func (r *Repo) ListForTeam(ctx context.Context, callerID uuid.UUID, managedClien
 		       u.email, u.name
 		FROM invoices i
 		JOIN users u ON u.id = i.user_id
-		WHERE i.user_id = ANY($1) OR i.purchased_by = $2
+		WHERE i.user_id = ANY($1) OR i.purchased_by = ANY($2)
 		ORDER BY i.created_at DESC
 		LIMIT $3 OFFSET $4
 	`
-	rows, err := r.pool.Query(ctx, q, userIDs, callerID, limit, offset)
+	rows, err := r.pool.Query(ctx, q, userIDs, actorIDs, limit, offset)
 	if err != nil {
 		return nil, err
 	}

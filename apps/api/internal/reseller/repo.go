@@ -92,16 +92,44 @@ func (r *Repo) HasActiveAssignment(ctx context.Context, managerID, clientID uuid
 	return err
 }
 
-// ListManagedClientIDs — implementasi lain untuk interface
-// `domain_purchase.AssignmentChecker`. Kembalikan hanya client_id yang
-// di-assign LANGSUNG ke managerID (status != revoked). Dipakai team
-// invoice fan-out supaya aggregate scope match dengan ListClientsByManager.
+// ListManagedClientIDs — kembalikan semua client_id yang di-manage caller
+// atau agent di bawahnya. Semantik team-scoped:
+//   - caller reseller → direct clients + clients dari agent-agent nya
+//   - caller agent    → direct clients saja
+//
+// Dipakai aggregate view (invoices, purchases) di reseller/agent portal.
 func (r *Repo) ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT DISTINCT client_id
-		  FROM client_assignments
-		 WHERE manager_id = $1 AND access_status != 'revoked'
+		SELECT DISTINCT ca.client_id
+		  FROM client_assignments ca
+		  LEFT JOIN users mgr ON mgr.id = ca.manager_id
+		 WHERE ca.access_status != 'revoked'
+		   AND (ca.manager_id = $1 OR mgr.parent_reseller_id = $1)
 	`, managerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// ListTeamActorIDs — return caller.ID + agent-agent di bawah caller (kalau
+// caller reseller). Untuk caller agent, return [callerID] saja. Dipakai
+// aggregate view di reseller portal supaya invoice/purchase yang di-trigger
+// agent (purchased_by=agent) juga muncul di reseller side.
+func (r *Repo) ListTeamActorIDs(ctx context.Context, callerID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id FROM users
+		 WHERE id = $1 OR (role = 'agent' AND parent_reseller_id = $1)
+	`, callerID)
 	if err != nil {
 		return nil, err
 	}

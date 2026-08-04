@@ -495,14 +495,19 @@ func (h *Handler) CreateClient(c *fiber.Ctx) error {
 // ---------------- List Clients ----------------
 
 // ListClients — GET /api/v1/reseller/clients ATAU /api/v1/agent/clients.
-// Reseller lihat semua yang dia manage (direct + agent-nya... untuk MVP
-// cukup direct saja). Agent lihat yang dia manage.
+//   - reseller → direct clients + clients dari agent-agent nya (team scope)
+//   - agent    → direct clients saja
 func (h *Handler) ListClients(c *fiber.Ctx) error {
 	caller, err := h.resolveCaller(c)
 	if err != nil {
 		return httpx.Forbidden(c, err.Error())
 	}
-	items, err := h.repo.ListClientsByManager(c.Context(), caller.User.ID)
+	var items []ClientRow
+	if caller.User.Role == auth.RoleReseller {
+		items, err = h.repo.ListClientsForReseller(c.Context(), caller.User.ID)
+	} else {
+		items, err = h.repo.ListClientsByManager(c.Context(), caller.User.ID)
+	}
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}

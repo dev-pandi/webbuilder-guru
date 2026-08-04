@@ -39,6 +39,9 @@ type AssignmentChecker interface {
 	// Dipakai team invoice fan-out (aggregate self + client invoices di
 	// portal reseller/agent).
 	ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error)
+	// ListTeamActorIDs — return caller + team member IDs (agent under reseller).
+	// Dipakai untuk aggregate purchases by team scope.
+	ListTeamActorIDs(ctx context.Context, callerID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // Handler untuk domain purchase flow (2-phase self-sufficient).
@@ -1021,7 +1024,15 @@ func (h *Handler) ListOnBehalfOf(c *fiber.Ctx) error {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	items, err := h.repo.ListByPurchaser(c.Context(), cl.UserID, limit)
+	// Team scope: reseller lihat purchase yang dia + agent-nya trigger.
+	// Agent hanya lihat purchase-nya sendiri.
+	actorIDs := []uuid.UUID{cl.UserID}
+	if h.assignments != nil {
+		if teamIDs, err := h.assignments.ListTeamActorIDs(c.Context(), cl.UserID); err == nil && len(teamIDs) > 0 {
+			actorIDs = teamIDs
+		}
+	}
+	items, err := h.repo.ListByPurchasers(c.Context(), actorIDs, limit)
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}

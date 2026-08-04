@@ -221,6 +221,16 @@ type SiteCollaboration struct {
 // COLLABORATOR (bukan owner). Dipakai agent/reseller portal untuk lihat
 // situs klien yang mereka bantu kelola.
 func (r *Repo) ListMyCollaborations(ctx context.Context, userID uuid.UUID) ([]SiteCollaboration, error) {
+	return r.ListCollaborationsForActors(ctx, []uuid.UUID{userID})
+}
+
+// ListCollaborationsForActors — sites di mana salah satu actorIDs adalah
+// non-owner member. Team-scope variant untuk reseller portal supaya lihat
+// juga situs yang agent-agent nya bantu kelola.
+func (r *Repo) ListCollaborationsForActors(ctx context.Context, actorIDs []uuid.UUID) ([]SiteCollaboration, error) {
+	if len(actorIDs) == 0 {
+		return []SiteCollaboration{}, nil
+	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT s.id, s.name, s.slug,
 		       s.user_id, COALESCE(ou.email, ''), COALESCE(ou.name, ''),
@@ -228,9 +238,9 @@ func (r *Repo) ListMyCollaborations(ctx context.Context, userID uuid.UUID) ([]Si
 		  FROM sites s
 		  JOIN site_members sm ON sm.site_id = s.id
 		  LEFT JOIN users ou ON ou.id = s.user_id
-		 WHERE sm.user_id = $1 AND sm.role <> 'owner'
+		 WHERE sm.user_id = ANY($1) AND sm.role <> 'owner'
 		 ORDER BY s.name ASC
-	`, userID)
+	`, actorIDs)
 	if err != nil {
 		return nil, err
 	}

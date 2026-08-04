@@ -18,6 +18,10 @@ import (
 // off (ListForTeam handler return 503).
 type AssignmentResolver interface {
 	ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error)
+	// ListTeamActorIDs — caller + agent-agent di bawahnya (kalau reseller).
+	// Dipakai team invoice fan-out supaya invoice yang purchased_by=agent
+	// juga muncul di reseller portal.
+	ListTeamActorIDs(ctx context.Context, callerID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // Handler — HTTP endpoints untuk invoices.
@@ -74,8 +78,11 @@ func (h *Handler) ListForTeam(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "list managed clients failed: "+err.Error())
 	}
+	// Team actor IDs — reseller: self + agents di bawah; agent: [self].
+	// Best-effort: kalau error, fallback ke [self] (di repo).
+	actorIDs, _ := h.assignments.ListTeamActorIDs(c.Context(), uid)
 	limit, offset := parsePage(c)
-	items, err := h.repo.ListForTeam(c.Context(), uid, clientIDs, limit, offset)
+	items, err := h.repo.ListForTeam(c.Context(), uid, clientIDs, actorIDs, limit, offset)
 	if err != nil {
 		return httpx.Internal(c, err.Error())
 	}
