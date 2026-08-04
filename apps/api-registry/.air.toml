@@ -1,0 +1,50 @@
+# Air config untuk hot-reload dev api-registry.
+#
+# Install sekali (global):
+#   go install github.com/air-verse/air@latest
+#
+# Jalankan dari `apps/api-registry/`:
+#   cd apps/api-registry && air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Build binary ke folder tmp/ supaya tidak conflict dengan `go build ./...`
+  bin = "tmp/api-registry"
+  cmd = "go build -o ./tmp/api-registry ./cmd/server"
+
+  # File extensions yang trigger rebuild.
+  include_ext = ["go", "sql", "tmpl", "tpl", "html", "yaml", "yml"]
+
+  # Folder yang di-skip supaya tidak infinite loop / spam rebuild.
+  exclude_dir = ["tmp", "cert", "docs", "deploy"]
+  exclude_file = []
+
+  # Skip test file — rebuild saat production code berubah, bukan test.
+  exclude_regex = ["_test\\.go"]
+
+  exclude_unchanged = true
+  follow_symlink = false
+
+  # Kill signal + delay supaya listener socket sempat release sebelum restart.
+  kill_delay = "500ms"
+  send_interrupt = true
+  stop_on_error = true
+
+  # Debounce editor save yang batch banyak file.
+  delay = 300
+
+  log = "build-errors.log"
+
+[log]
+  time = true
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  clean_on_exit = true
