@@ -114,6 +114,8 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	// verify (mark-paid for manual_bank) + cancel.
 	if deps.Invoices != nil {
 		g.Get("/invoices", deps.Invoices.ListAdmin)
+		// Drill-down per user — dipakai admin user detail tab Invoice.
+		g.Get("/users/:id/invoices", deps.Invoices.ListByUserAdmin)
 		g.Get("/invoices/:id", deps.Invoices.GetAdmin)
 		g.Get("/invoices/:id/pdf", deps.Invoices.GetPDFAdmin)
 		g.Post("/invoices/:id/mark-paid", deps.Invoices.MarkPaidAdmin)

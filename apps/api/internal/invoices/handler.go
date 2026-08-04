@@ -176,6 +176,21 @@ func (h *Handler) ListAdmin(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"items": items})
 }
 
+// GET /api/v1/admin/users/:id/invoices — filter invoice by user_id.
+// Dipakai admin user detail drill-down (tab Invoice).
+func (h *Handler) ListByUserAdmin(c *fiber.Ctx) error {
+	uid, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	limit, offset := parsePage(c)
+	items, err := h.repo.ListByUser(c.Context(), uid, limit, offset)
+	if err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"items": items})
+}
+
 // GET /api/v1/admin/invoices/:id — detail (any invoice).
 func (h *Handler) GetAdmin(c *fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))

@@ -21,13 +21,14 @@ import {
   Mail,
   MapPin,
   Phone,
+  Printer,
   ShieldCheck,
   ShieldOff,
   Trash2,
   UserCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, openBlob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -347,6 +348,7 @@ export default function AdminUserDetailPage() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="invoices">Invoice</TabsTrigger>
           <TabsTrigger value="activity">Aktivitas</TabsTrigger>
         </TabsList>
 
@@ -355,6 +357,9 @@ export default function AdminUserDetailPage() {
         </TabsContent>
         <TabsContent value="sites" className="mt-4">
           {tab === "sites" && <SitesTab id={id} />}
+        </TabsContent>
+        <TabsContent value="invoices" className="mt-4">
+          {tab === "invoices" && <InvoicesTab id={id} />}
         </TabsContent>
         <TabsContent value="activity" className="mt-4">
           {tab === "activity" && <ActivityTab id={id} />}
@@ -534,6 +539,101 @@ function SitesTab({ id }: { id: string }) {
   );
 }
 
+type UserInvoice = {
+  id: string;
+  number: string;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  currency: string;
+  status: string;
+  payment_method: string;
+  paid_at?: string;
+  due_at: string;
+  created_at: string;
+};
+
+const INVOICE_STATUS_VARIANT: Record<
+  string,
+  "success" | "secondary" | "warning" | "destructive" | "outline"
+> = {
+  paid: "success",
+  unpaid: "warning",
+  draft: "secondary",
+  expired: "destructive",
+  cancelled: "destructive",
+  refund: "outline",
+};
+
+function InvoicesTab({ id }: { id: string }) {
+  const [rows, setRows] = useState<UserInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    api<{ items: UserInvoice[] }>(`/api/v1/admin/users/${id}/invoices?limit=100`)
+      .then((r) => setRows(r.items ?? []))
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  return (
+    <ListSection loading={loading} err={err} empty={rows.length === 0} emptyLabel="User belum punya invoice">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/40 hover:bg-muted/40">
+            <TableHead className="w-[180px]">Nomor</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Payment</TableHead>
+            <TableHead className="text-right">Total</TableHead>
+            <TableHead>Dibuat</TableHead>
+            <TableHead>Dibayar</TableHead>
+            <TableHead className="w-0"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((inv) => (
+            <TableRow key={inv.id}>
+              <TableCell className="font-mono text-xs font-medium">{inv.number}</TableCell>
+              <TableCell>
+                <Badge
+                  variant={INVOICE_STATUS_VARIANT[inv.status] ?? "secondary"}
+                  className="text-xs"
+                >
+                  {inv.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-xs">{inv.payment_method}</TableCell>
+              <TableCell className="text-right font-mono tabular-nums text-sm">
+                {formatIDR(inv.total)}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {formatDate(inv.created_at)}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {inv.paid_at ? formatDate(inv.paid_at) : "—"}
+              </TableCell>
+              <TableCell>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Preview PDF"
+                  onClick={() =>
+                    openBlob(`/api/v1/admin/invoices/${inv.id}/pdf`).catch((e) =>
+                      toast.error("Gagal buka PDF", { description: (e as Error).message }),
+                    )
+                  }
+                >
+                  <Printer className="size-3.5" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </ListSection>
+  );
+}
+
 function ActivityTab({ id }: { id: string }) {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -670,4 +770,8 @@ function formatDateTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function formatIDR(v: number): string {
+  return `Rp ${v.toLocaleString("id-ID")}`;
 }
