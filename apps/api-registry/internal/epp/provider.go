@@ -48,9 +48,14 @@ func (p *EPPDirectProvider) Connect(ctx context.Context) error {
 	return p.c.Connect(ctx)
 }
 
-// Close — shutdown: logout + close TCP.
+// Close — logout + close TCP session. Log file tetap open.
 func (p *EPPDirectProvider) Close() error {
 	return p.c.Close()
+}
+
+// Shutdown — full cleanup termasuk close log file. Dipanggil di process exit.
+func (p *EPPDirectProvider) Shutdown() error {
+	return p.c.Shutdown()
 }
 
 // Ping — readiness probe. Hello frame lightweight, no state change.

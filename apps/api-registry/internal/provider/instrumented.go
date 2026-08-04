@@ -29,6 +29,15 @@ func NewInstrumented(inner Provider) *Instrumented {
 func (p *Instrumented) Name() string             { return p.inner.Name() }
 func (p *Instrumented) Capabilities() Capabilities { return p.inner.Capabilities() }
 
+// Shutdown — forward ke inner provider kalau dia implement Shutdown().
+// Instrumented wrapper transparent — resource cleanup dilakukan inner.
+func (p *Instrumented) Shutdown() error {
+	if s, ok := p.inner.(interface{ Shutdown() error }); ok {
+		return s.Shutdown()
+	}
+	return nil
+}
+
 // record — helper: bump counter + duration.
 func (p *Instrumented) record(op string, start time.Time, err error) {
 	result := classifyErr(err)

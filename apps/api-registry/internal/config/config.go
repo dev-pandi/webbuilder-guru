@@ -41,6 +41,14 @@ type Config struct {
 	EPPCAFile             string        // registry CA cert (opsional; verify server)
 	EPPInsecureSkipVerify bool          // dev/OT&E dengan self-signed cert — jangan pakai di prod
 	EPPKeepAliveInterval  time.Duration // hello frame interval (default 5min)
+	// EPPPerCommandSession — kalau true, connect+login+logout per-command
+	// (no session reuse). Berguna untuk registry yang session-cap ketat atau
+	// debug supaya XML log 1 command 1 session. Default false (session reuse).
+	EPPPerCommandSession bool
+	// EPPLogFile — path ke file untuk dump verbose log EPP client (include
+	// XML request/response). Kosong = no file logging, cuma stdout. Kalau
+	// set, log ditulis dengan format console (human-readable) di level Debug.
+	EPPLogFile string
 
 	// Security — auth header dari web builder API.
 	// HMAC shared secret — request body di-sign, verify di-server. Simple + no
@@ -96,6 +104,8 @@ func Load() *Config {
 		EPPCAFile:             getEnv("EPP_CA_FILE", ""),
 		EPPInsecureSkipVerify: getBool("EPP_INSECURE_SKIP_VERIFY", false),
 		EPPKeepAliveInterval:  getDuration("EPP_KEEPALIVE_INTERVAL", 5*time.Minute),
+		EPPPerCommandSession:  getBool("EPP_PER_COMMAND_SESSION", false),
+		EPPLogFile:            getEnv("EPP_LOG_FILE", ""),
 
 		InternalHMACSecret: getEnv("INTERNAL_HMAC_SECRET", ""),
 

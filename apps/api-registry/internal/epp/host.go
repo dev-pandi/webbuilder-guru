@@ -70,6 +70,7 @@ func (p *EPPDirectProvider) UpdateNameservers(ctx context.Context, name string, 
 
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}

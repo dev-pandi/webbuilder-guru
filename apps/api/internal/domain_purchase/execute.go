@@ -146,23 +146,38 @@ func (h *Handler) executeRegister(
 		return fmt.Errorf("EPP register: %w", err)
 	}
 
-	// Sukses — persist local purchase kalau belum ada, atau update status
-	// existing.
-	local := &Purchase{
-		UserID:         inv.UserID,
-		PurchasedBy:    inv.PurchasedBy,
-		RegistrarJobID: resp.JobID,
-		Domain:         domain,
-		Years:          years,
-		Status:         StatusActive,
-		PaymentMethod:  inv.PaymentMethod,
-	}
-	if err := h.repo.Create(ctx, local); err != nil && !errors.Is(err, ErrJobTaken) {
-		slog.Error("execute_after_payment: local save gagal",
-			"job_id", resp.JobID, "error", err)
-	} else if errors.Is(err, ErrJobTaken) {
-		// Existing purchase — update status.
-		_, _ = h.repo.UpdateStatus(ctx, resp.JobID, StatusActive, "", nil)
+	// Sukses. Purchase row sudah ada (created di purchase.go dengan
+	// RegistrarJobID = inv.ID.String() = idemKey). Update status-nya supaya
+	// frontend polling by jobID langsung lihat 'active'.
+	//
+	// UpdateStatus return (changed=false, err=nil) kalau row tidak ada
+	// ATAU status sudah sama (WHERE status <> $2). Untuk kasus row belum
+	// ada (edge case webhook path lama tanpa initial row), fallback ke
+	// Create dengan resp.JobID.
+	changed, upErr := h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", nil)
+	if upErr != nil {
+		slog.Error("execute_after_payment: update existing failed",
+			"job_id", idemKey, "error", upErr)
+	} else if !changed {
+		// Cek: row memang ada tapi sudah active (idempotent), atau row belum
+		// ada sama sekali. GetByJobIDAny distinguish keduanya.
+		if p, _ := h.repo.GetByJobIDAny(ctx, idemKey); p == nil {
+			local := &Purchase{
+				UserID:         inv.UserID,
+				PurchasedBy:    inv.PurchasedBy,
+				RegistrarJobID: resp.JobID,
+				Domain:         domain,
+				Years:          years,
+				Status:         StatusActive,
+				PaymentMethod:  inv.PaymentMethod,
+			}
+			if err := h.repo.Create(ctx, local); err != nil && !errors.Is(err, ErrJobTaken) {
+				slog.Error("execute_after_payment: local save gagal",
+					"job_id", resp.JobID, "error", err)
+			} else if errors.Is(err, ErrJobTaken) {
+				_, _ = h.repo.UpdateStatus(ctx, resp.JobID, StatusActive, "", nil)
+			}
+		}
 	}
 
 	// Trigger Cloudflare auto-attach best-effort — same pattern dengan
@@ -176,7 +191,7 @@ func (h *Handler) executeRegister(
 		map[string]string{"result": "success", "kind": KindRegister},
 	)
 	slog.Info("execute_after_payment: register success",
-		"invoice_id", inv.ID, "job_id", resp.JobID, "domain", domain)
+		"invoice_id", inv.ID, "job_id", idemKey, "upstream_job_id", resp.JobID, "domain", domain)
 	return nil
 }
 
@@ -199,21 +214,31 @@ func (h *Handler) executeRenew(
 			"invoice_id", inv.ID, "domain", domain, "error", err)
 		return fmt.Errorf("EPP renew: %w", err)
 	}
-	local := &Purchase{
-		UserID:         inv.UserID,
-		PurchasedBy:    inv.PurchasedBy,
-		RegistrarJobID: resp.JobID,
-		Domain:         domain,
-		Years:          years,
-		Kind:           KindRenew,
-		Status:         StatusActive,
-		PaymentMethod:  inv.PaymentMethod,
-	}
-	if err := h.repo.Create(ctx, local); err != nil && !errors.Is(err, ErrJobTaken) {
-		slog.Error("execute_after_payment: local save (renew) gagal",
-			"job_id", resp.JobID, "error", err)
-	} else if errors.Is(err, ErrJobTaken) {
-		_, _ = h.repo.UpdateStatus(ctx, resp.JobID, StatusActive, "", nil)
+	// Update row existing (created di renew.go dengan RegistrarJobID = idemKey).
+	// Fallback create kalau row belum ada (edge webhook path).
+	changed, upErr := h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", nil)
+	if upErr != nil {
+		slog.Error("execute_after_payment: update existing (renew) failed",
+			"job_id", idemKey, "error", upErr)
+	} else if !changed {
+		if p, _ := h.repo.GetByJobIDAny(ctx, idemKey); p == nil {
+			local := &Purchase{
+				UserID:         inv.UserID,
+				PurchasedBy:    inv.PurchasedBy,
+				RegistrarJobID: resp.JobID,
+				Domain:         domain,
+				Years:          years,
+				Kind:           KindRenew,
+				Status:         StatusActive,
+				PaymentMethod:  inv.PaymentMethod,
+			}
+			if err := h.repo.Create(ctx, local); err != nil && !errors.Is(err, ErrJobTaken) {
+				slog.Error("execute_after_payment: local save (renew) gagal",
+					"job_id", resp.JobID, "error", err)
+			} else if errors.Is(err, ErrJobTaken) {
+				_, _ = h.repo.UpdateStatus(ctx, resp.JobID, StatusActive, "", nil)
+			}
+		}
 	}
 	metrics.Default.CounterInc(metricExecuteAfterPayment,
 		"EPP execute triggers after invoice paid",

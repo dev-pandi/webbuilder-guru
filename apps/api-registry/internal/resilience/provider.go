@@ -39,6 +39,15 @@ func NewProvider(inner provider.Provider, cfg Config) *Provider {
 func (p *Provider) Name() string                    { return p.inner.Name() + "+resilience" }
 func (p *Provider) Capabilities() provider.Capabilities { return p.inner.Capabilities() }
 
+// Shutdown — forward ke inner provider kalau dia implement Shutdown().
+// Transparent decorator — cleanup dilakukan di concrete provider.
+func (p *Provider) Shutdown() error {
+	if s, ok := p.inner.(interface{ Shutdown() error }); ok {
+		return s.Shutdown()
+	}
+	return nil
+}
+
 // wrap — helper untuk semua Provider method. Ambil breaker per op, cek
 // circuit + retry.
 func (p *Provider) wrap(ctx context.Context, op string, fn func() error) error {

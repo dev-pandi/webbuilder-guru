@@ -23,6 +23,7 @@ func (p *EPPDirectProvider) CheckDomain(ctx context.Context, req provider.CheckR
 
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -79,6 +80,7 @@ func (p *EPPDirectProvider) BulkCheckDomains(ctx context.Context, req provider.B
 
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -112,6 +114,7 @@ func (p *EPPDirectProvider) BulkCheckDomains(ctx context.Context, req provider.B
 func (p *EPPDirectProvider) InfoDomain(ctx context.Context, name string) (*provider.DomainInfo, error) {
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}

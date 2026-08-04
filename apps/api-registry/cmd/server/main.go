@@ -174,6 +174,8 @@ func main() {
 			slog.Error("shutdown gagal", "err", err)
 			os.Exit(1)
 		}
+		// Provider cleanup — flush log + close file kalau ada.
+		_ = p.Shutdown()
 		slog.Info("shutdown selesai")
 	}
 }
@@ -203,18 +205,28 @@ func buildProvider(cfg *config.Config) (provider.Provider, error) {
 			Timeout:            cfg.RequestTimeout,
 			KeepAliveInterval:  cfg.EPPKeepAliveInterval,
 			MaxRetries:         2,
+			PerCommandSession:  cfg.EPPPerCommandSession,
+			LogFile:            cfg.EPPLogFile,
 		})
 		if err != nil {
 			return nil, err
 		}
-		// Eager connect + login supaya siap serve begitu /readyz probe masuk.
+		// Startup sanity-check: connect + login sekali supaya credentials +
+		// TLS + cert diverifikasi fail-fast. Dalam per-command mode, session
+		// TIDAK di-reuse — first real command akan connect ulang.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := p.Connect(ctx); err != nil {
 			return nil, fmt.Errorf("epp connect+login gagal: %w", err)
 		}
-		slog.Info("epp: connected + logged in",
-			"host", cfg.EPPHost, "port", cfg.EPPPort, "user", cfg.EPPUser)
+		slog.Info("epp: startup handshake OK",
+			"host", cfg.EPPHost, "port", cfg.EPPPort, "user", cfg.EPPUser,
+			"per_command", cfg.EPPPerCommandSession, "log_file", cfg.EPPLogFile)
+		// Per-command mode: tutup session startup supaya first real command
+		// bikin session fresh (no dangling half-idle session).
+		if cfg.EPPPerCommandSession {
+			_ = p.Close()
+		}
 		return p, nil
 	default:
 		return nil, fiber.NewError(fiber.StatusBadRequest,

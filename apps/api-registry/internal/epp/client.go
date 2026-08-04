@@ -17,11 +17,15 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/al0fayz/epp-pandi-client/epp"
 	"github.com/al0fayz/epp-pandi-client/frames"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Config — dependency injection untuk EPPDirect connection.
@@ -39,6 +43,13 @@ type Config struct {
 	Timeout            time.Duration // per-command timeout (default 30s)
 	KeepAliveInterval  time.Duration // hello frame interval (default 5min)
 	MaxRetries         int           // per-command retry (default 2)
+
+	// PerCommandSession — connect+login+logout per-command (no reuse).
+	// Bermanfaat untuk registry yang session-cap ketat + debug XML log.
+	PerCommandSession bool
+	// LogFile — path ke file dump verbose EPP log (include XML frames).
+	// Kosong = tidak log ke file.
+	LogFile string
 }
 
 // Client — session-aware EPP wrapper. Thread-safe: single underlying conn
@@ -47,9 +58,11 @@ type Config struct {
 // Untuk high-concurrency, gunakan SessionPool (dibungkus di connection
 // package terpisah). MVP: single session cukup untuk <10 req/sec.
 type Client struct {
-	cfg     Config
-	client  *epp.Client
-	connMu  sync.Mutex // serialize commands (EPP not concurrent)
+	cfg      Config
+	logger   *zap.Logger // shared di across sessions (dipakai library util WithLogger)
+	logFile  *os.File    // ref file untuk graceful close
+	client   *epp.Client
+	connMu   sync.Mutex // serialize commands (EPP not concurrent)
 	loggedIn bool
 }
 
@@ -71,7 +84,30 @@ func New(cfg Config) (*Client, error) {
 	if cfg.MaxRetries == 0 {
 		cfg.MaxRetries = 2
 	}
-	return &Client{cfg: cfg}, nil
+	c := &Client{cfg: cfg}
+	// Setup file logger — library will log XML request/response + connection
+	// events di Debug level. File di-open append supaya multi-restart tidak
+	// truncate history. Level Debug bikin XML dump keluar (lihat conn.go
+	// line 295/322 di upstream library).
+	if cfg.LogFile != "" {
+		if err := os.MkdirAll(filepath.Dir(cfg.LogFile), 0o755); err != nil {
+			return nil, fmt.Errorf("epp: mkdir log dir: %w", err)
+		}
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("epp: open log file: %w", err)
+		}
+		encCfg := zap.NewDevelopmentEncoderConfig()
+		encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		core := zapcore.NewCore(
+			zapcore.NewConsoleEncoder(encCfg),
+			zapcore.AddSync(f),
+			zapcore.DebugLevel,
+		)
+		c.logger = zap.New(core)
+		c.logFile = f
+	}
+	return c, nil
 }
 
 // Connect — establish TCP+TLS + EPP login. Idempotent: kalau sudah connected
@@ -110,6 +146,11 @@ func (c *Client) connectLocked(ctx context.Context) error {
 	if c.cfg.InsecureSkipVerify {
 		opts = append(opts, epp.WithInsecureSkipVerify(true))
 	}
+	// Pipe verbose EPP log ke file kalau LogFile set. Library logs pretty-XML
+	// request + response di Debug level.
+	if c.logger != nil {
+		opts = append(opts, epp.WithLogger(c.logger))
+	}
 
 	client, err := epp.NewClient(opts...)
 	if err != nil {
@@ -142,7 +183,26 @@ func (c *Client) ensureConnected(ctx context.Context) error {
 	return c.connectLocked(ctx)
 }
 
-// Close — logout + close TCP. Idempotent.
+// endCommand — dipanggil setelah setiap command (via defer). Kalau
+// PerCommandSession mode aktif, logout + close TCP supaya session berikutnya
+// full fresh (connect + login ulang). Aman dipanggil dengan connMu held.
+func (c *Client) endCommand() {
+	if !c.cfg.PerCommandSession || c.client == nil {
+		return
+	}
+	if c.loggedIn {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, _ = c.client.Logout(ctx)
+		cancel()
+	}
+	_ = c.client.Close()
+	c.client = nil
+	c.loggedIn = false
+}
+
+// Close — logout + close TCP session saja. Log file tetap open — pakai
+// Shutdown() untuk cleanup penuh (dipanggil sekali di process exit).
+// Idempotent.
 func (c *Client) Close() error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
@@ -152,12 +212,28 @@ func (c *Client) Close() error {
 	if c.loggedIn {
 		// Best-effort logout — timeout kalau conn stuck.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
 		_, _ = c.client.Logout(ctx)
+		cancel()
 	}
 	err := c.client.Close()
 	c.client = nil
 	c.loggedIn = false
+	return err
+}
+
+// Shutdown — full cleanup: close session + flush + close log file. Dipanggil
+// sekali di process exit.
+func (c *Client) Shutdown() error {
+	err := c.Close()
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	if c.logger != nil {
+		_ = c.logger.Sync()
+	}
+	if c.logFile != nil {
+		_ = c.logFile.Close()
+		c.logFile = nil
+	}
 	return err
 }
 

@@ -37,6 +37,7 @@ func (p *EPPDirectProvider) RegisterDomain(ctx context.Context, req provider.Reg
 
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -86,6 +87,7 @@ func (p *EPPDirectProvider) RenewDomain(ctx context.Context, name string, req pr
 
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}

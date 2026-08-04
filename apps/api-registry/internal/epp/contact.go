@@ -49,6 +49,7 @@ func deriveHandleFromExternalID(externalUserID string) (string, error) {
 func (p *EPPDirectProvider) ensureContact(ctx context.Context, handle string, c provider.Contact) error {
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return mapEPPErr(err)
 	}
@@ -108,6 +109,7 @@ func (p *EPPDirectProvider) GetContact(ctx context.Context, id uint64) (*provide
 func (p *EPPDirectProvider) getContactByHandle(ctx context.Context, handle string) (*provider.Contact, error) {
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -195,6 +197,7 @@ func (p *EPPDirectProvider) updateContactByHandle(ctx context.Context, handle, d
 
 	p.c.connMu.Lock()
 	defer p.c.connMu.Unlock()
+	defer p.c.endCommand()
 	if err := p.c.ensureConnected(ctx); err != nil {
 		return nil, mapEPPErr(err)
 	}
