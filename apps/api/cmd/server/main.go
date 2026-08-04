@@ -382,6 +382,9 @@ func main() {
 	invoicesSvc := invoices.NewService(invoicesRepo, settingsSvc)
 	invoicesHandler := invoices.NewHandler(invoicesRepo, invoicesSvc)
 	invoicesHandler.SetPDFRenderer(invoices.NewHTMLRenderer(settingsSvc))
+	// Wire assignment resolver — reseller repo implements ListManagedClientIDs
+	// via interface (nil-safe kalau reseller feature disabled).
+	invoicesHandler.SetAssignments(resellerRepo)
 
 	// Payment webhook receiver — /webhooks/payment/:code dispatch ke
 	// gwRegistry + invoicesSvc.MarkPaid. Downstream trigger:

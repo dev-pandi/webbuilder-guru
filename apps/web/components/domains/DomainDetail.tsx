@@ -26,6 +26,7 @@ import {
   Trash2,
   Save,
   CheckCircle2,
+  UserCog,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -207,6 +208,9 @@ export function DomainDetail({
 
             {/* DNS editor entry */}
             <DnsPanelLink domain={domain} />
+
+            {/* Contact update entry */}
+            <ContactPanelLink domain={domain} />
           </>
         )
       )}
@@ -487,6 +491,41 @@ function DnsPanelLink({ domain }: { domain: string }) {
           <Button asChild variant="outline" size="sm" className="gap-1.5 shrink-0">
             <Link href={`/settings/domains/${encodeURIComponent(domain)}/dns`}>
               Kelola DNS
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// -------------- Contact Panel Link --------------
+//
+// Entry point ke sub-route contact editor. WHOIS contact update penting untuk
+// user yang pindah alamat / ganti nomor telepon — regulasi mengharuskan
+// WHOIS akurat. EPP contact:update replace-all, form full-page di sub-route.
+function ContactPanelLink({ domain }: { domain: string }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <UserCog className="size-4 text-primary" />
+          Kontak WHOIS
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <p className="text-sm text-muted-foreground">
+              Update nama, email, alamat, atau nomor telepon yang terdaftar
+              di WHOIS. Wajib akurat sesuai regulasi Kemenkominfo untuk
+              domain .id.
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm" className="gap-1.5 shrink-0">
+            <Link href={`/settings/domains/${encodeURIComponent(domain)}/contact`}>
+              Edit kontak
               <ArrowRight className="size-3.5" />
             </Link>
           </Button>

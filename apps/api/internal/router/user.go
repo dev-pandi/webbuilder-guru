@@ -132,10 +132,11 @@ func MountUser(app *fiber.App, deps Deps) {
 		// Renew — 2-phase self-sufficient. Path param `:name` untuk domain.
 		// Ownership check via GetLatestActiveByDomain.
 		authed.Post("/domains/:name/renew", purchaseLimit, deps.DomainPurchase.Renew)
-		// Domain management (nameservers + whois) — semua verify ownership.
+		// Domain management (nameservers + whois + contact) — semua verify ownership.
 		authed.Get("/domains/:name/nameservers", deps.DomainPurchase.GetNameservers)
 		authed.Post("/domains/:name/nameservers", mutateLimit, deps.DomainPurchase.UpdateNameservers)
 		authed.Get("/domains/:name/whois", deps.DomainPurchase.Whois)
+		authed.Patch("/domains/:name/contact", mutateLimit, deps.DomainPurchase.UpdateContact)
 		// DNS editor — proxy ke Cloudflare, scoped domain ownership. Fitur
 		// disable-graceful kalau CF config absent (503 dari handler).
 		authed.Get("/domains/:name/dns", deps.DomainPurchase.ListDNSRecords)
@@ -227,6 +228,13 @@ func MountUser(app *fiber.App, deps Deps) {
 			authed.Get("/reseller/purchases", roleResellerOrAgent, deps.DomainPurchase.ListOnBehalfOf)
 			authed.Get("/reseller/purchases.csv", roleResellerOrAgent, deps.DomainPurchase.ExportOnBehalfOfCSV)
 			authed.Get("/agent/purchases", roleAgent, deps.DomainPurchase.ListOnBehalfOf)
+		}
+
+		// Aggregate invoices — reseller/agent lihat invoice sendiri + client
+		// yang di-manage. Enrich dengan user_email + user_name di response.
+		if deps.Invoices != nil {
+			authed.Get("/reseller/invoices", roleResellerOrAgent, deps.Invoices.ListForTeam)
+			authed.Get("/agent/invoices", roleAgent, deps.Invoices.ListForTeam)
 		}
 
 		// Legacy /reseller/wallet + /agent/wallet + /reseller/wallet/topup*

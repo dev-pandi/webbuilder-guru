@@ -104,6 +104,44 @@ func (c *Client) updateNameserversViaAPIRegistry(ctx context.Context, name strin
 	return &NameserverInfo{Domain: res.Domain, Nameservers: res.Nameservers}, nil
 }
 
+// UpdateDomainContact — PATCH contact info untuk domain existing via
+// api-registry. Semua field wajib (EPP contact:update replace-all).
+// Ownership check di caller (domain_purchase handler verify dulu).
+func (c *Client) UpdateDomainContact(ctx context.Context, name string, contact Contact) (*UpdateContactResponse, error) {
+	if c == nil || c.apiRegistry == nil {
+		return nil, &APIError{
+			Status: 501, Code: "api_registry_not_configured",
+			Msg:    "UpdateDomainContact butuh API_REGISTRY_URL di-set",
+		}
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return nil, &APIError{Status: 400, Code: "bad_request", Msg: "domain kosong"}
+	}
+	res, err := c.apiRegistry.UpdateDomainContact(ctx, name, apiregistry.Contact{
+		Name:        contact.Name,
+		Email:       contact.Email,
+		Phone:       contact.Phone,
+		Address:     contact.Address,
+		City:        contact.City,
+		State:       contact.State,
+		PostalCode:  contact.PostalCode,
+		CountryCode: contact.CountryCode,
+	})
+	if err != nil {
+		return nil, translateAPIRegistryErr(err)
+	}
+	return &UpdateContactResponse{
+		Domain:    res.Domain,
+		ContactID: res.ContactID,
+		NicHandle: res.NicHandle,
+		Name:      res.Name,
+		Email:     res.Email,
+		Phone:     res.Phone,
+		Message:   res.Message,
+	}, nil
+}
+
 // RegisterDomainDirect — direct EPP register via api-registry, ZERO payment
 // coupling. Dipakai flow 2-phase self-sufficient dimana web builder handle
 // payment/invoice sendiri lewat paymentgw + invoices; setelah invoice paid

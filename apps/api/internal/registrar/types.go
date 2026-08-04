@@ -95,3 +95,16 @@ type RenewRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	ExternalUserID string `json:"external_user_id,omitempty"`
 }
+
+// UpdateContactResponse — response dari update contact via api-registry.
+// Message punya varian ("DB + EPP registry" / "DB only" / "drift") — konsumer
+// yang butuh UX banner bisa string-match substring.
+type UpdateContactResponse struct {
+	Domain    string `json:"domain,omitempty"`
+	ContactID uint64 `json:"contact_id"`
+	NicHandle string `json:"nic_handle"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	Phone     string `json:"phone"`
+	Message   string `json:"message"`
+}

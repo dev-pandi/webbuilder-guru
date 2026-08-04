@@ -1,6 +1,7 @@
 package invoices
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"time"
@@ -12,14 +13,23 @@ import (
 	"github.com/webbuilder/api/internal/httpx"
 )
 
+// AssignmentResolver — dependency untuk aggregate reseller/agent listing.
+// Return list client user_id yang di-manage oleh managerID. Nil = feature
+// off (ListForTeam handler return 503).
+type AssignmentResolver interface {
+	ListManagedClientIDs(ctx context.Context, managerID uuid.UUID) ([]uuid.UUID, error)
+}
+
 // Handler — HTTP endpoints untuk invoices.
 //
 // User (JWT authenticated): list + detail + PDF (own only, enforce ownership).
 // Admin: list all + detail + PDF + manual verify (mark-paid).
+// Reseller/agent: aggregate list (self + managed clients).
 type Handler struct {
-	repo *Repo
-	svc  *Service
-	pdf  PDFRenderer // opsional; kalau nil, endpoint /pdf return 501
+	repo        *Repo
+	svc         *Service
+	pdf         PDFRenderer         // opsional; kalau nil, endpoint /pdf return 501
+	assignments AssignmentResolver  // opsional; kalau nil, /reseller/invoices return 503
 }
 
 func NewHandler(r *Repo, s *Service) *Handler {
@@ -27,6 +37,10 @@ func NewHandler(r *Repo, s *Service) *Handler {
 }
 
 func (h *Handler) SetPDFRenderer(p PDFRenderer) { h.pdf = p }
+
+// SetAssignments inject reseller assignment resolver untuk aggregate list.
+// Nil-safe: kalau tidak di-set, endpoint `/reseller/invoices` return 503.
+func (h *Handler) SetAssignments(a AssignmentResolver) { h.assignments = a }
 
 // --- User endpoints ---
 
@@ -44,7 +58,60 @@ func (h *Handler) ListMine(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"items": items})
 }
 
+// GET /api/v1/reseller/invoices — aggregate untuk reseller/agent portal.
+// Include: invoice caller sendiri + invoice client yang di-manage +
+// invoice yang caller trigger sebagai purchased_by (on-behalf-of).
+func (h *Handler) ListForTeam(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	if uid == uuid.Nil {
+		return httpx.Unauthorized(c, "unauthenticated")
+	}
+	if h.assignments == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "assignments_disabled",
+			"Fitur aggregate invoice belum di-wire.")
+	}
+	clientIDs, err := h.assignments.ListManagedClientIDs(c.Context(), uid)
+	if err != nil {
+		return httpx.Internal(c, "list managed clients failed: "+err.Error())
+	}
+	limit, offset := parsePage(c)
+	items, err := h.repo.ListForTeam(c.Context(), uid, clientIDs, limit, offset)
+	if err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"items": items})
+}
+
+// canAccessInvoice — return true kalau caller boleh lihat invoice ini.
+// Rules:
+//   1. Invoice.user_id == caller → self (own invoice)
+//   2. Invoice.purchased_by == caller → caller yang trigger (on-behalf-of)
+//   3. Invoice.user_id ∈ managed clients (via assignments resolver)
+//
+// Rule 3 butuh assignments resolver; kalau nil, skip (cuma rule 1+2).
+func (h *Handler) canAccessInvoice(c *fiber.Ctx, inv *Invoice, callerID uuid.UUID) bool {
+	if inv.UserID == callerID {
+		return true
+	}
+	if inv.PurchasedBy != nil && *inv.PurchasedBy == callerID {
+		return true
+	}
+	if h.assignments != nil {
+		clientIDs, err := h.assignments.ListManagedClientIDs(c.Context(), callerID)
+		if err == nil {
+			for _, id := range clientIDs {
+				if id == inv.UserID {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // GET /api/v1/invoices/:id — detail milik user (ownership check).
+// Reseller/agent boleh akses kalau invoice user_id di managed clients,
+// atau kalau caller = purchased_by (on-behalf-of).
 func (h *Handler) GetMine(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	if uid == uuid.Nil {
@@ -61,15 +128,13 @@ func (h *Handler) GetMine(c *fiber.Ctx) error {
 		}
 		return httpx.Internal(c, err.Error())
 	}
-	// Ownership check — user hanya bisa lihat invoice sendiri (bukan
-	// purchased_by), reseller pakai endpoint /reseller/invoices terpisah.
-	if inv.UserID != uid {
+	if !h.canAccessInvoice(c, inv, uid) {
 		return httpx.NotFound(c, "invoice tidak ditemukan")
 	}
 	return httpx.OK(c, inv)
 }
 
-// GET /api/v1/invoices/:id/pdf — download PDF.
+// GET /api/v1/invoices/:id/pdf — download PDF. Sama access rule dengan GetMine.
 func (h *Handler) GetPDFMine(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	if uid == uuid.Nil {
@@ -86,7 +151,7 @@ func (h *Handler) GetPDFMine(c *fiber.Ctx) error {
 		}
 		return httpx.Internal(c, err.Error())
 	}
-	if inv.UserID != uid {
+	if !h.canAccessInvoice(c, inv, uid) {
 		return httpx.NotFound(c, "invoice tidak ditemukan")
 	}
 	return h.renderPDF(c, inv)

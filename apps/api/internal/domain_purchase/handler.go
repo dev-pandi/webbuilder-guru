@@ -705,6 +705,108 @@ func (h *Handler) Whois(c *fiber.Ctx) error {
 	return httpx.OK(c, w)
 }
 
+// UpdateContact — PATCH /api/v1/domains/:name/contact
+// Body: Contact fields (name, email, phone, address, city, state, postal_code)
+//
+// Update WHOIS contact object untuk domain existing. Semua field WAJIB
+// (EPP replace-all — kalau tidak dikirim, wipe di registry). Ownership
+// check dulu: domain harus punya active job milik user.
+//
+// Response contain `message` dari api-registry yang bisa jadi 3 varian:
+//   - "DB + EPP registry synced" — happy path
+//   - "DB only, EPP drift" — registry down / diff detected, admin follow-up
+//   - "created new contact" — kalau nic_handle belum ada
+type updateContactReq struct {
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	Address    string `json:"address"`
+	City       string `json:"city"`
+	State      string `json:"state,omitempty"`
+	PostalCode string `json:"postal_code"`
+}
+
+func (h *Handler) UpdateContact(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Fitur domain belum dikonfigurasi (API_REGISTRY_URL kosong).")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	// Ownership: user harus punya active job untuk domain ini.
+	if _, err := h.repo.GetLatestActiveByDomain(c.Context(), name, cl.UserID); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "ownership check failed")
+	}
+
+	var req updateContactReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	// Validate mandatory fields (EPP contact:update tolak kalau incomplete).
+	req.Name = strings.TrimSpace(req.Name)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.Address = strings.TrimSpace(req.Address)
+	req.City = strings.TrimSpace(req.City)
+	req.PostalCode = strings.TrimSpace(req.PostalCode)
+	req.State = strings.TrimSpace(req.State)
+	missing := []string{}
+	if req.Name == "" {
+		missing = append(missing, "name")
+	}
+	if req.Email == "" {
+		missing = append(missing, "email")
+	}
+	if req.Phone == "" {
+		missing = append(missing, "phone")
+	}
+	if req.Address == "" {
+		missing = append(missing, "address")
+	}
+	if req.City == "" {
+		missing = append(missing, "city")
+	}
+	if req.PostalCode == "" {
+		missing = append(missing, "postal_code")
+	}
+	if len(missing) > 0 {
+		return httpx.Err(c, fiber.StatusBadRequest, "contact_incomplete",
+			"Field wajib kosong: "+strings.Join(missing, ", "))
+	}
+
+	resp, err := h.registrar.UpdateDomainContact(c.Context(), name, registrar.Contact{
+		Name:        req.Name,
+		Email:       req.Email,
+		Phone:       req.Phone,
+		Address:     req.Address,
+		City:        req.City,
+		State:       req.State,
+		PostalCode:  req.PostalCode,
+		CountryCode: "ID",
+	})
+	if err != nil {
+		var apiErr *registrar.APIError
+		if errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 {
+			return httpx.Err(c, apiErr.Status, "contact_update_failed", apiErr.Msg)
+		}
+		return httpx.Err(c, fiber.StatusBadGateway, "contact_update_failed", err.Error())
+	}
+	h.logAudit(c.Context(), cl.UserID, "domain.contact_updated", "domain", name, map[string]any{
+		"contact_id": resp.ContactID,
+		"nic_handle": resp.NicHandle,
+	})
+	return httpx.OK(c, resp)
+}
+
 func (h *Handler) List(c *fiber.Ctx) error {
 	cl := auth.ClaimsFrom(c)
 	if cl == nil {

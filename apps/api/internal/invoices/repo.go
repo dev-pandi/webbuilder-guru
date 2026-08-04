@@ -239,6 +239,61 @@ func (r *Repo) ListByUser(ctx context.Context, userID uuid.UUID, limit, offset i
 	return scanInvoiceList(rows, err)
 }
 
+// ListForTeam — aggregate untuk reseller/agent portal. Include:
+//   - Invoice yang user_id-nya di managedClientIDs (client yang di-manage)
+//   - Invoice yang purchased_by = callerID (invoice yang caller trigger,
+//     mis. reseller beli untuk klien → purchased_by=reseller)
+//   - Invoice caller sendiri (self-purchase)
+//
+// Enrich dengan email + nama user_id (join users) supaya UI bisa tampilkan
+// "invoice milik X" tanpa second-fetch.
+type TeamInvoice struct {
+	Invoice
+	UserEmail string `json:"user_email"`
+	UserName  string `json:"user_name"`
+}
+
+func (r *Repo) ListForTeam(ctx context.Context, callerID uuid.UUID, managedClientIDs []uuid.UUID, limit, offset int) ([]TeamInvoice, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	// Build IN clause untuk user_id set (self + managed clients).
+	userIDs := append([]uuid.UUID{callerID}, managedClientIDs...)
+
+	q := `
+		SELECT i.id, i.number, i.user_id, i.purchased_by,
+		       i.subtotal, i.tax_rate, i.tax_amount, i.total,
+		       i.currency, i.status, i.payment_method, i.payment_gw_ref,
+		       i.paid_at, i.due_at, i.created_at, i.updated_at, i.metadata,
+		       u.email, u.name
+		FROM invoices i
+		JOIN users u ON u.id = i.user_id
+		WHERE i.user_id = ANY($1) OR i.purchased_by = $2
+		ORDER BY i.created_at DESC
+		LIMIT $3 OFFSET $4
+	`
+	rows, err := r.pool.Query(ctx, q, userIDs, callerID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]TeamInvoice, 0)
+	for rows.Next() {
+		var t TeamInvoice
+		if err := rows.Scan(
+			&t.ID, &t.Number, &t.UserID, &t.PurchasedBy,
+			&t.Subtotal, &t.TaxRate, &t.TaxAmount, &t.Total,
+			&t.Currency, &t.Status, &t.PaymentMethod, &t.PaymentGwRef,
+			&t.PaidAt, &t.DueAt, &t.CreatedAt, &t.UpdatedAt, &t.Metadata,
+			&t.UserEmail, &t.UserName,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ListAll — admin.
 func (r *Repo) ListAll(ctx context.Context, limit, offset int) ([]Invoice, error) {
 	if limit <= 0 || limit > 200 {
