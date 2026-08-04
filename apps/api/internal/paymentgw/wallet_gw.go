@@ -50,6 +50,7 @@ type WalletDebitInput struct {
 	Amount      int64
 	Reason      string     // "debit_register" | "debit_renew"
 	ReferenceID *uuid.UUID // invoice_id
+	Metadata    []byte     // JSON, disimpan di wallet_ledger.metadata
 }
 
 // ErrWalletInsufficient — return kalau saldo user < amount. Diperiksa
@@ -87,13 +88,18 @@ func (g *WalletGateway) CreateCharge(ctx context.Context, req ChargeRequest) (*C
 	if req.OrderID == "" {
 		return nil, fmt.Errorf("order_id wajib")
 	}
-	if req.UserID == "" {
-		return nil, fmt.Errorf("user_id wajib untuk wallet gateway")
+	// Prefer WalletPayerID (explicit debit target, mis. agent → reseller).
+	// Fallback ke UserID untuk backward compat (self-purchase reseller).
+	payerRaw := req.WalletPayerID
+	if payerRaw == "" {
+		payerRaw = req.UserID
 	}
-
-	uid, err := uuid.Parse(req.UserID)
+	if payerRaw == "" {
+		return nil, fmt.Errorf("wallet_payer_id / user_id wajib untuk wallet gateway")
+	}
+	uid, err := uuid.Parse(payerRaw)
 	if err != nil {
-		return nil, fmt.Errorf("user_id bukan UUID valid: %w", err)
+		return nil, fmt.Errorf("wallet payer bukan UUID valid: %w", err)
 	}
 	// OrderID = invoice.id — dipakai sebagai reference_id di ledger untuk
 	// audit (link ledger entry ↔ invoice).
@@ -112,9 +118,10 @@ func (g *WalletGateway) CreateCharge(ctx context.Context, req ChargeRequest) (*C
 	reason := "debit_register"
 
 	debitIn := WalletDebitInput{
-		UserID: uid,
-		Amount: req.Amount,
-		Reason: reason,
+		UserID:   uid,
+		Amount:   req.Amount,
+		Reason:   reason,
+		Metadata: req.WalletMetadata,
 	}
 	if orderUUID != uuid.Nil {
 		debitIn.ReferenceID = &orderUUID

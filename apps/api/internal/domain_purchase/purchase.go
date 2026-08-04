@@ -19,6 +19,7 @@
 package domain_purchase
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -154,6 +155,14 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	if req.PaymentMethod == "deposit_wallet" && !auth.IsResellerLike(caller.Role) {
 		return httpx.Forbidden(c, "payment_method 'deposit_wallet' hanya untuk reseller/agent")
 	}
+	// Agent pakai wallet reseller induk — bukan wallet sendiri. Agent tidak
+	// diberikan mekanisme top-up terpisah supaya akunting terpusat di reseller.
+	if req.PaymentMethod == "deposit_wallet" && caller.Role == auth.RoleAgent {
+		if caller.ParentResellerID == nil {
+			return httpx.Err(c, fiber.StatusBadRequest, "agent_orphan",
+				"Akun agent tidak terhubung ke reseller. Hubungi admin.")
+		}
+	}
 
 	if missing := missingProfileFields(owner); len(missing) > 0 {
 		who := "profil Anda"
@@ -270,16 +279,34 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	//
 	// Untuk wallet gateway (Type=="wallet"), CreateCharge sync debit —
 	// balance dikurangi langsung + return ledger.id sebagai providerRef.
+	//
+	// Wallet payer resolution:
+	//   - Reseller self-purchase / on-behalf-of → wallet reseller (caller)
+	//   - Agent (self-purchase atau on-behalf-of) → wallet PARENT reseller,
+	//     metadata catat agent_id supaya reseller bisa report per-agent.
+	walletPayerID := ""
+	var walletMeta []byte
+	if req.PaymentMethod == "deposit_wallet" {
+		if caller.Role == auth.RoleAgent && caller.ParentResellerID != nil {
+			walletPayerID = caller.ParentResellerID.String()
+			walletMeta = buildWalletMetadata(caller.ID, purchasedBy)
+		} else {
+			walletPayerID = caller.ID.String()
+			walletMeta = buildWalletMetadata(uuid.Nil, purchasedBy)
+		}
+	}
 	paymentURL, providerRef, err := gw.CreateCharge(c.Context(), GatewayChargeRequest{
-		OrderID:       invoiceID.String(),
-		UserID:        owner.ID.String(),
-		Amount:        total,
-		Description:   fmt.Sprintf("Register %s (%d tahun)", req.Domain, req.Years),
-		CustomerName:  owner.Name,
-		CustomerEmail: owner.Email,
-		CustomerPhone: owner.PhoneNumber,
-		ReturnURL:     req.ReturnURL,
-		ExpiresAt:     dueAt,
+		OrderID:        invoiceID.String(),
+		UserID:         owner.ID.String(),
+		Amount:         total,
+		Description:    fmt.Sprintf("Register %s (%d tahun)", req.Domain, req.Years),
+		CustomerName:   owner.Name,
+		CustomerEmail:  owner.Email,
+		CustomerPhone:  owner.PhoneNumber,
+		ReturnURL:      req.ReturnURL,
+		ExpiresAt:      dueAt,
+		WalletPayerID:  walletPayerID,
+		WalletMetadata: walletMeta,
 	})
 	if err != nil {
 		// Detect wallet insufficient — return 402 dengan message spesifik.
@@ -406,4 +433,26 @@ func extractTLD(domain string) string {
 		return ""
 	}
 	return domain[i+1:]
+}
+
+// buildWalletMetadata — encode audit context untuk wallet_ledger.metadata.
+// agentID != uuid.Nil → caller adalah agent (report per-agent di reseller).
+// forClientID != nil → on-behalf-of (agent/reseller beli buat klien).
+// Return nil kalau tidak ada context tambahan (default metadata "{}" di repo).
+func buildWalletMetadata(agentID uuid.UUID, forClientID *uuid.UUID) []byte {
+	m := map[string]string{}
+	if agentID != uuid.Nil {
+		m["agent_id"] = agentID.String()
+	}
+	if forClientID != nil {
+		m["for_client_id"] = forClientID.String()
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }

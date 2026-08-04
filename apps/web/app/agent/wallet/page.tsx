@@ -1,25 +1,20 @@
 "use client";
 
-// Agent wallet dashboard — view saldo agent via /api/v1/wallet.
-// Tiap user (termasuk agent) punya balance sendiri di `wallet_balances`.
-// Top-up mandiri belum tersedia — admin credit manual via /admin/wallet/adjust.
+// Agent wallet page — read-only view. Agent tidak punya wallet terpisah:
+// setiap purchase/renew di-debit dari wallet reseller induk. Halaman ini
+// hanya tampilkan aktivitas agent (dari wallet_ledger reseller, filter
+// metadata.agent_id) supaya agent bisa lihat kontribusinya.
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
   AlertCircle,
-  ArrowDownRight,
   ArrowUpRight,
-  Clock,
-  History,
   Info,
   Loader2,
-  Plus,
+  ShieldCheck,
   Wallet as WalletIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 type LedgerEntry = {
@@ -31,65 +26,51 @@ type LedgerEntry = {
   created_at: string;
 };
 
-type WalletBalance = {
-  balance: number;
-  currency: string;
-};
-
-type Topup = {
-  id: string;
-  amount: number;
-  payment_method: string;
-  status: string; // pending_payment | credited | failed | expired | cancelled
-  created_at: string;
-};
-
 export default function AgentWalletPage() {
-  const [balance, setBalance] = useState<WalletBalance | null>(null);
-  const [recent, setRecent] = useState<LedgerEntry[]>([]);
-  const [pendingTopups, setPendingTopups] = useState<Topup[]>([]);
+  const [items, setItems] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  async function refresh() {
-    setLoading(true);
-    setErr(null);
-    try {
-      const [b, l, t] = await Promise.all([
-        api<WalletBalance>("/api/v1/wallet"),
-        api<{ items: LedgerEntry[] }>("/api/v1/wallet/ledger?limit=5"),
-        api<{ items: Topup[] }>("/api/v1/wallet/topup?limit=10"),
-      ]);
-      setBalance(b);
-      setRecent(l.items || []);
-      setPendingTopups(
-        (t.items || []).filter((x) => x.status === "pending_payment"),
-      );
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    refresh();
+    api<{ items: LedgerEntry[] }>("/api/v1/wallet/agent-activity?limit=50")
+      .then((res) => setItems(res.items || []))
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="mb-1 flex items-center gap-2">
-            <WalletIcon className="size-5 text-primary" />
-            <h1 className="text-2xl font-bold tracking-tight">Wallet</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Saldo prabayar Anda — di-debit tiap Anda beli/perpanjang domain
-            atas nama klien.
-          </p>
+      <div>
+        <div className="mb-1 flex items-center gap-2">
+          <WalletIcon className="size-5 text-primary" />
+          <h1 className="text-2xl font-bold tracking-tight">Wallet</h1>
         </div>
+        <p className="text-sm text-muted-foreground">
+          Sebagai agent, transaksi register / renew domain di-debit dari saldo
+          reseller Anda — bukan wallet pribadi. Anda tidak perlu top-up.
+        </p>
       </div>
+
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="flex items-start gap-3 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+            <ShieldCheck className="size-5" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <h3 className="text-sm font-semibold">Saldo dikelola reseller</h3>
+            <p className="text-sm text-muted-foreground">
+              Saldo tidak ditampilkan di sini demi privasi reseller.
+              Kalau saldo reseller habis, transaksi Anda akan ditolak dengan
+              pesan &ldquo;saldo tidak cukup&rdquo; — minta reseller untuk
+              top-up.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Reseller bisa lihat rincian transaksi per-agent di halaman
+              wallet mereka.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {err && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -98,105 +79,31 @@ export default function AgentWalletPage() {
         </div>
       )}
 
-      <Card className="overflow-hidden">
-        <CardContent className="p-6">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Saldo saat ini
-              </p>
-              <p className="mt-1 text-4xl font-bold tracking-tight">
-                {loading && balance === null ? (
-                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
-                ) : (
-                  formatIDR(balance?.balance ?? 0)
-                )}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {balance?.currency || "IDR"}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button asChild className="gap-1.5">
-                <Link href="/agent/wallet/topup">
-                  <Plus className="size-4" />
-                  Top-up
-                </Link>
-              </Button>
-              <Button variant="outline" asChild className="gap-1.5">
-                <Link href="/agent/wallet/ledger">
-                  <History className="size-4" />
-                  Semua Transaksi
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
-        <Info className="size-4 shrink-0 translate-y-0.5 text-primary" />
-        <span>
-          Klik <strong>Top-up</strong> untuk isi saldo — pembayaran online
-          via Midtrans/Paylabs otomatis credit dalam beberapa detik.
-        </span>
-      </div>
-
-      {pendingTopups.length > 0 && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="space-y-3 p-5">
-            <div className="flex items-start gap-2">
-              <Clock className="size-4 shrink-0 translate-y-0.5 text-amber-600" />
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold">
-                  Top-up belum selesai ({pendingTopups.length})
-                </h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Saldo di-credit otomatis setelah pembayaran dikonfirmasi
-                  gateway. Klik untuk lanjut bayar atau lihat instruksi transfer.
-                </p>
-              </div>
-            </div>
-            <ul className="divide-y">
-              {pendingTopups.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 py-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Badge variant="warning" className="gap-1 text-[10px]">
-                      <Clock className="size-3" />
-                      Menunggu bayar
-                    </Badge>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {formatIDR(t.amount)}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-muted-foreground">
-                        {t.payment_method} · {formatDate(t.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/agent/wallet/topup/${t.id}`}>Lihat</Link>
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardContent className="p-5">
-          <h3 className="mb-3 text-sm font-semibold">Transaksi Terakhir</h3>
-          {loading && recent.length === 0 ? (
-            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Aktivitas Anda</h3>
+            <span className="text-xs text-muted-foreground">
+              {items.length} transaksi
+            </span>
+          </div>
+          {loading ? (
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Memuat…
             </div>
-          ) : recent.length === 0 ? (
-            <p className="py-4 text-sm text-muted-foreground">Belum ada transaksi.</p>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
+              <Info className="size-6 text-muted-foreground/60" />
+              <p>Belum ada transaksi.</p>
+              <p className="text-xs">
+                Aktivitas akan muncul setelah Anda beli atau perpanjang domain
+                dengan metode pembayaran <code>deposit_wallet</code>.
+              </p>
+            </div>
           ) : (
             <ul className="divide-y">
-              {recent.map((e) => (
+              {items.map((e) => (
                 <LedgerRow key={e.id} entry={e} />
               ))}
             </ul>
@@ -208,44 +115,25 @@ export default function AgentWalletPage() {
 }
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {
-  const isCredit = entry.delta > 0;
   const label = reasonLabel(entry.reason);
+  const forClient = (entry.metadata?.for_client_id as string) || undefined;
   return (
     <li className="flex items-center justify-between gap-3 py-3">
       <div className="flex min-w-0 items-center gap-3">
-        <div
-          className={
-            isCredit
-              ? "flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
-              : "flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
-          }
-        >
-          {isCredit ? (
-            <ArrowDownRight className="size-4" />
-          ) : (
-            <ArrowUpRight className="size-4" />
-          )}
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <ArrowUpRight className="size-4" />
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{label}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {formatDate(entry.created_at)}
+            {forClient && ` · untuk klien ${forClient.slice(0, 8)}…`}
           </p>
         </div>
       </div>
       <div className="text-right">
-        <p
-          className={
-            isCredit
-              ? "text-sm font-semibold text-emerald-600 dark:text-emerald-400"
-              : "text-sm font-semibold"
-          }
-        >
-          {isCredit ? "+" : ""}
+        <p className="text-sm font-semibold">
           {formatIDR(entry.delta)}
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          sisa {formatIDR(entry.balance_after)}
         </p>
       </div>
     </li>
@@ -254,11 +142,9 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
 
 function reasonLabel(reason: string): string {
   const map: Record<string, string> = {
-    topup: "Top-up",
     debit_register: "Debit — Register Domain",
     debit_renew: "Debit — Renew Domain",
     refund: "Refund",
-    admin_adjust: "Adjustment Admin",
   };
   return map[reason] || reason;
 }

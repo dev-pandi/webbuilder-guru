@@ -120,6 +120,7 @@ func (a walletDebiterAdapter) Debit(ctx context.Context, in paymentgw.WalletDebi
 		Amount:      in.Amount,
 		Reason:      in.Reason,
 		ReferenceID: in.ReferenceID,
+		Metadata:    in.Metadata,
 	})
 	if err != nil {
 		return uuid.Nil, err
@@ -157,9 +158,11 @@ func (a gatewayAdapter) CreateCharge(ctx context.Context, req domain_purchase.Ga
 			Email: req.CustomerEmail,
 			Phone: req.CustomerPhone,
 		},
-		ReturnURL: req.ReturnURL,
-		NotifURL:  req.NotifURL,
-		ExpiresAt: req.ExpiresAt,
+		ReturnURL:      req.ReturnURL,
+		NotifURL:       req.NotifURL,
+		ExpiresAt:      req.ExpiresAt,
+		WalletPayerID:  req.WalletPayerID,
+		WalletMetadata: req.WalletMetadata,
 	})
 	if err != nil {
 		return "", "", err
@@ -254,4 +257,12 @@ func (a walletUserAdapter) GetCustomerInfo(ctx context.Context, userID uuid.UUID
 		return "", "", "", err
 	}
 	return u.Name, u.Email, u.PhoneNumber, nil
+}
+
+func (a walletUserAdapter) GetRoleAndParent(ctx context.Context, userID uuid.UUID) (string, *uuid.UUID, error) {
+	u, err := a.repo.GetByID(ctx, userID)
+	if err != nil {
+		return "", nil, err
+	}
+	return u.Role, u.ParentResellerID, nil
 }

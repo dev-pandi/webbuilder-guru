@@ -65,9 +65,9 @@ type Customer struct {
 // ChargeRequest — payload create transaksi. Amount = IDR minor unit.
 type ChargeRequest struct {
 	OrderID     string    // invoice.id UUID string
-	UserID      string    // user.id UUID string — dipakai WalletGateway untuk
-	                      // tahu WHICH user yang di-debit. Kosong untuk gateway
-	                      // eksternal (Midtrans/Paylabs — irrelevant).
+	UserID      string    // user.id UUID string — customer identity untuk gateway
+	                      // eksternal. Untuk wallet gateway, WalletPayerID lebih
+	                      // authoritative (kalau kosong, fallback ke UserID).
 	Amount      int64     // IDR utuh (min 10000 biasanya per gateway policy)
 	Currency    string    // "IDR" untuk MVP
 	Description string    // "Domain myshop.id 1 tahun" — tampil di UI + email
@@ -75,6 +75,14 @@ type ChargeRequest struct {
 	ReturnURL   string    // web builder redirect setelah user selesai bayar
 	NotifURL    string    // gateway callback URL — biasanya `/webhooks/payment/:code`
 	ExpiresAt   time.Time // opsional, kosong = pakai default gateway
+
+	// WalletPayerID — override target debit untuk WalletGateway. Dipakai
+	// buat kasus agent: caller.ID = agent, tapi wallet yang di-debit =
+	// parent reseller. Kalau kosong, wallet gateway fallback ke UserID.
+	WalletPayerID string
+	// WalletMetadata — JSON attached ke wallet_ledger.metadata. Reseller
+	// pakai ini buat report per-agent (mis. {"agent_id":"<uuid>"}).
+	WalletMetadata []byte
 }
 
 // ChargeResponse — hasil create transaksi.

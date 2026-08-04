@@ -13,6 +13,7 @@ import {
   History,
   Loader2,
   Plus,
+  Users,
   Wallet as WalletIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -45,10 +46,27 @@ type Topup = {
   created_at: string;
 };
 
+// Shape dari GET /api/v1/wallet/agents-breakdown — reseller reporting.
+type AgentBreakdown = {
+  agent_id: string;
+  agent_email: string;
+  agent_name: string;
+  transaction_count: number;
+  total_debit: number;
+  last_activity_at: string;
+};
+
+type BreakdownResp = {
+  items: AgentBreakdown[];
+  total_debit: number;
+  total_transactions: number;
+};
+
 export default function ResellerWalletPage() {
   const [balance, setBalance] = useState<WalletBalance | null>(null);
   const [recent, setRecent] = useState<LedgerEntry[]>([]);
   const [pendingTopups, setPendingTopups] = useState<Topup[]>([]);
+  const [breakdown, setBreakdown] = useState<BreakdownResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -56,18 +74,20 @@ export default function ResellerWalletPage() {
     setLoading(true);
     setErr(null);
     try {
-      // Paralel fetch balance + last 5 ledger + last 10 topup (filter pending
-      // client-side supaya user tahu ada yang belum credited).
-      const [b, l, t] = await Promise.all([
+      // Paralel fetch balance + ledger + topup + per-agent breakdown.
+      // Kalau reseller belum punya agent, breakdown items[] empty.
+      const [b, l, t, br] = await Promise.all([
         api<WalletBalance>("/api/v1/wallet"),
         api<{ items: LedgerEntry[] }>("/api/v1/wallet/ledger?limit=5"),
         api<{ items: Topup[] }>("/api/v1/wallet/topup?limit=10"),
+        api<BreakdownResp>("/api/v1/wallet/agents-breakdown"),
       ]);
       setBalance(b);
       setRecent(l.items || []);
       setPendingTopups(
         (t.items || []).filter((x) => x.status === "pending_payment"),
       );
+      setBreakdown(br);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -172,6 +192,58 @@ export default function ResellerWalletPage() {
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/reseller/wallet/topup/${t.id}`}>Lihat</Link>
                   </Button>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {breakdown && breakdown.items.length > 0 && (
+        <Card>
+          <CardContent className="p-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Users className="size-4 text-primary" />
+                <h3 className="text-sm font-semibold">
+                  Pemakaian per Agent
+                </h3>
+              </div>
+              <div className="text-right text-xs">
+                <p className="text-muted-foreground">Total dipakai agent</p>
+                <p className="mt-0.5 font-semibold">
+                  {formatIDR(breakdown.total_debit)}
+                </p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {breakdown.total_transactions} transaksi
+                </p>
+              </div>
+            </div>
+            <ul className="divide-y">
+              {breakdown.items.map((a) => (
+                <li key={a.agent_id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <Users className="size-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {a.agent_name || a.agent_email || `${a.agent_id.slice(0, 8)}…`}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {a.agent_email && a.agent_name ? a.agent_email + " · " : ""}
+                        terakhir {formatDate(a.last_activity_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold">
+                      {formatIDR(a.total_debit)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {a.transaction_count} txn
+                    </p>
+                  </div>
                 </li>
               ))}
             </ul>

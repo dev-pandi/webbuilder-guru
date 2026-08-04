@@ -285,6 +285,12 @@ func MountUser(app *fiber.App, deps Deps) {
 	if deps.WalletLocal != nil {
 		authed.Get("/wallet", deps.WalletLocal.GetBalance)
 		authed.Get("/wallet/ledger", deps.WalletLocal.ListLedger)
+		// Agent-only: transaksi milik agent yang di-debit dari wallet
+		// reseller induk. Filter di-tag via metadata.agent_id.
+		authed.Get("/wallet/agent-activity", deps.WalletLocal.AgentActivity)
+		// Reseller-only: breakdown per-agent (aggregate wallet ledger
+		// caller by metadata.agent_id). Untuk reporting siapa pakai berapa.
+		authed.Get("/wallet/agents-breakdown", deps.WalletLocal.AgentsBreakdown)
 		// Top-up self-service — money-moving op, tighter limit.
 		topupLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
 		authed.Post("/wallet/topup", topupLimit, deps.WalletLocal.CreateTopup)

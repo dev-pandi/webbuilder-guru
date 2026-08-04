@@ -93,9 +93,21 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 	}
 
 	// Owner profile — untuk gateway customer info + invoice attribution.
+	// Renew belum support on-behalf-of, jadi owner == caller.
 	owner, err := h.users.GetByID(c.Context(), cl.UserID)
 	if err != nil {
 		return httpx.Internal(c, "user lookup failed")
+	}
+
+	// Wallet payment restriction — sama dengan Purchase.
+	if req.PaymentMethod == "deposit_wallet" && !auth.IsResellerLike(owner.Role) {
+		return httpx.Forbidden(c, "payment_method 'deposit_wallet' hanya untuk reseller/agent")
+	}
+	if req.PaymentMethod == "deposit_wallet" && owner.Role == auth.RoleAgent {
+		if owner.ParentResellerID == nil {
+			return httpx.Err(c, fiber.StatusBadRequest, "agent_orphan",
+				"Akun agent tidak terhubung ke reseller. Hubungi admin.")
+		}
 	}
 
 	// Zone + years-range check.
@@ -183,15 +195,30 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		return httpx.Err(c, fiber.StatusBadRequest, "gateway_unavailable",
 			fmt.Sprintf("Payment method %q tidak tersedia: %v", req.PaymentMethod, err))
 	}
+	// Wallet payer resolution — agent debit dari wallet parent reseller,
+	// metadata catat agent_id supaya reseller bisa report per-agent.
+	walletPayerID := ""
+	var walletMeta []byte
+	if req.PaymentMethod == "deposit_wallet" {
+		if owner.Role == auth.RoleAgent && owner.ParentResellerID != nil {
+			walletPayerID = owner.ParentResellerID.String()
+			walletMeta = buildWalletMetadata(owner.ID, nil)
+		} else {
+			walletPayerID = owner.ID.String()
+		}
+	}
 	paymentURL, providerRef, err := gw.CreateCharge(c.Context(), GatewayChargeRequest{
-		OrderID:       invoiceID.String(),
-		Amount:        total,
-		Description:   fmt.Sprintf("Perpanjangan %s (%d tahun)", domain, req.Years),
-		CustomerName:  owner.Name,
-		CustomerEmail: owner.Email,
-		CustomerPhone: owner.PhoneNumber,
-		ReturnURL:     req.ReturnURL,
-		ExpiresAt:     dueAt,
+		OrderID:        invoiceID.String(),
+		UserID:         owner.ID.String(),
+		Amount:         total,
+		Description:    fmt.Sprintf("Perpanjangan %s (%d tahun)", domain, req.Years),
+		CustomerName:   owner.Name,
+		CustomerEmail:  owner.Email,
+		CustomerPhone:  owner.PhoneNumber,
+		ReturnURL:      req.ReturnURL,
+		ExpiresAt:      dueAt,
+		WalletPayerID:  walletPayerID,
+		WalletMetadata: walletMeta,
 	})
 	if err != nil {
 		metrics.Default.CounterInc(metricRenewsCreated,

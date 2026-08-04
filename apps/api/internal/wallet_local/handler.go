@@ -71,6 +71,9 @@ type TopupChargeRequest struct {
 // pakai user_id string sebagai fallback).
 type UserProfile interface {
 	GetCustomerInfo(ctx context.Context, userID uuid.UUID) (name, email, phone string, err error)
+	// GetRoleAndParent return role + parent reseller id (nullable). Dipakai
+	// agent activity endpoint untuk resolve wallet reseller induk.
+	GetRoleAndParent(ctx context.Context, userID uuid.UUID) (role string, parentResellerID *uuid.UUID, err error)
 }
 
 // ProofStorage — subset assets.Storage untuk simpan bukti transfer.
@@ -105,16 +108,38 @@ func (h *Handler) SetUserProfile(u UserProfile) { h.users = u }
 func (h *Handler) SetStorage(s ProofStorage) { h.storage = s }
 
 // --- GET /api/v1/wallet ---
+// Return "effective billing wallet" balance:
+//   - reseller / client → wallet sendiri
+//   - agent → wallet parent reseller (dipakai buat semua transaksi agent)
+//
+// Response tambahan `wallet_owner_id` supaya frontend tahu ini wallet siapa
+// (agent bisa show label "Wallet reseller induk"). Nil = wallet sendiri.
 func (h *Handler) GetBalance(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	if uid == uuid.Nil {
 		return httpx.Unauthorized(c, "unauthenticated")
 	}
-	b, err := h.repo.GetBalance(c.Context(), uid)
+	// Resolve effective wallet owner. Default = self.
+	walletOwner := uid
+	var ownedByParent bool
+	if h.users != nil {
+		if role, parent, err := h.users.GetRoleAndParent(c.Context(), uid); err == nil {
+			if role == "agent" && parent != nil {
+				walletOwner = *parent
+				ownedByParent = true
+			}
+		}
+	}
+	b, err := h.repo.GetBalance(c.Context(), walletOwner)
 	if err != nil {
 		return httpx.Internal(c, err.Error())
 	}
-	return httpx.OK(c, b)
+	return httpx.OK(c, fiber.Map{
+		"balance":              b.Balance,
+		"currency":             b.Currency,
+		"wallet_owner_id":      walletOwner,
+		"is_shared_from_parent": ownedByParent,
+	})
 }
 
 // --- GET /api/v1/wallet/ledger?page=&limit= ---
@@ -133,6 +158,94 @@ func (h *Handler) ListLedger(c *fiber.Ctx) error {
 	}
 	offset := (page - 1) * limit
 	items, err := h.repo.ListLedger(c.Context(), uid, limit, offset)
+	if err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"items": items, "page": page, "limit": limit})
+}
+
+// AgentsBreakdown — GET /api/v1/wallet/agents-breakdown
+// Reseller-only. Aggregate wallet_ledger caller (wallet reseller) group by
+// metadata.agent_id → per-agent debit summary. Optional date filter via
+// query ?from=ISO&to=ISO.
+func (h *Handler) AgentsBreakdown(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	if uid == uuid.Nil {
+		return httpx.Unauthorized(c, "unauthenticated")
+	}
+	if h.users == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "role_lookup_disabled",
+			"User profile lookup belum wired")
+	}
+	role, _, err := h.users.GetRoleAndParent(c.Context(), uid)
+	if err != nil {
+		return httpx.Internal(c, "user lookup failed")
+	}
+	if role != "reseller" {
+		return httpx.Forbidden(c, "endpoint khusus reseller")
+	}
+	var from, to time.Time
+	if s := strings.TrimSpace(c.Query("from")); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			from = t
+		}
+	}
+	if s := strings.TrimSpace(c.Query("to")); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			to = t
+		}
+	}
+	items, err := h.repo.AgentBreakdownByReseller(c.Context(), uid, from, to)
+	if err != nil {
+		return httpx.Internal(c, err.Error())
+	}
+	// Grand total supaya UI bisa show summary tanpa client-side reduce.
+	var totalDebit int64
+	var totalTxn int
+	for _, r := range items {
+		totalDebit += r.TotalDebit
+		totalTxn += r.TxnCount
+	}
+	return httpx.OK(c, fiber.Map{
+		"items":              items,
+		"total_debit":        totalDebit,
+		"total_transactions": totalTxn,
+	})
+}
+
+// AgentActivity — GET /api/v1/wallet/agent-activity
+// Return debit ledger entries dari wallet reseller induk yang di-tag
+// dengan agent_id = caller.ID. Dipakai agent wallet page supaya agent
+// bisa lihat kontribusi transaksinya tanpa expose full balance reseller.
+func (h *Handler) AgentActivity(c *fiber.Ctx) error {
+	uid := auth.UserIDFrom(c)
+	if uid == uuid.Nil {
+		return httpx.Unauthorized(c, "unauthenticated")
+	}
+	if h.users == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "role_lookup_disabled",
+			"User profile lookup belum wired")
+	}
+	role, parentID, err := h.users.GetRoleAndParent(c.Context(), uid)
+	if err != nil {
+		return httpx.Internal(c, "user lookup failed")
+	}
+	if role != "agent" {
+		return httpx.Forbidden(c, "endpoint khusus agent")
+	}
+	if parentID == nil {
+		return httpx.Err(c, fiber.StatusBadRequest, "agent_orphan",
+			"Akun agent tidak terhubung ke reseller.")
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	page, _ := strconv.Atoi(c.Query("page"))
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	items, err := h.repo.ListLedgerByAgent(c.Context(), *parentID, uid, limit, (page-1)*limit)
 	if err != nil {
 		return httpx.Internal(c, err.Error())
 	}
@@ -185,6 +298,14 @@ func (h *Handler) CreateTopup(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
 	if uid == uuid.Nil {
 		return httpx.Unauthorized(c, "unauthenticated")
+	}
+	// Agent tidak boleh top-up wallet sendiri — pakai saldo reseller induk.
+	// Cegah orphan balance kalau agent iseng hit endpoint langsung.
+	if h.users != nil {
+		if role, _, err := h.users.GetRoleAndParent(c.Context(), uid); err == nil && role == "agent" {
+			return httpx.Forbidden(c,
+				"Agent tidak perlu top-up. Transaksi Anda pakai saldo reseller induk.")
+		}
 	}
 	idem := strings.TrimSpace(c.Get("Idempotency-Key"))
 	if idem == "" {

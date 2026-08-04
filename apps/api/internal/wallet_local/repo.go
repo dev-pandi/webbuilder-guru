@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -222,6 +223,98 @@ func (r *Repo) ListLedger(ctx context.Context, userID uuid.UUID, limit, offset i
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3
 	`, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []LedgerEntry{}
+	for rows.Next() {
+		var e LedgerEntry
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Delta, &e.Reason,
+			&e.ReferenceID, &e.BalanceAfter, &e.Metadata, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// AgentBreakdownRow — 1 agent, 1 baris ringkasan. Include join ke users
+// supaya reseller dashboard tampil nama/email tanpa second-fetch.
+type AgentBreakdownRow struct {
+	AgentID       uuid.UUID `json:"agent_id"`
+	AgentEmail    string    `json:"agent_email"`
+	AgentName     string    `json:"agent_name"`
+	TxnCount      int       `json:"transaction_count"`
+	TotalDebit    int64     `json:"total_debit"`      // absolute (positive)
+	LastActivity  time.Time `json:"last_activity_at"`
+}
+
+// AgentBreakdownByReseller — aggregate debit entries per-agent untuk
+// wallet reseller `resellerID`. Sort by total_debit DESC. Hanya include
+// entry yang metadata-nya punya agent_id (transactions triggered by an
+// agent). Deposit / topup entries di-skip (delta > 0).
+//
+// Optional date filter (from/to zero = no bound).
+func (r *Repo) AgentBreakdownByReseller(ctx context.Context, resellerID uuid.UUID, from, to time.Time) ([]AgentBreakdownRow, error) {
+	// Build WHERE dinamis untuk date filter. Kolom created_at native so we
+	// bisa pakai equality/comparison langsung.
+	where := `l.user_id = $1 AND l.delta < 0 AND l.metadata ? 'agent_id'`
+	args := []any{resellerID}
+	if !from.IsZero() {
+		args = append(args, from)
+		where += fmt.Sprintf(" AND l.created_at >= $%d", len(args))
+	}
+	if !to.IsZero() {
+		args = append(args, to)
+		where += fmt.Sprintf(" AND l.created_at <= $%d", len(args))
+	}
+	q := `
+		SELECT
+			(l.metadata->>'agent_id')::uuid  AS agent_id,
+			COALESCE(u.email, '')            AS agent_email,
+			COALESCE(u.name, '')             AS agent_name,
+			COUNT(*)                         AS txn_count,
+			SUM(-l.delta)                    AS total_debit,
+			MAX(l.created_at)                AS last_activity
+		FROM wallet_ledger l
+		LEFT JOIN users u ON u.id = (l.metadata->>'agent_id')::uuid
+		WHERE ` + where + `
+		GROUP BY (l.metadata->>'agent_id')::uuid, u.email, u.name
+		ORDER BY total_debit DESC
+	`
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AgentBreakdownRow{}
+	for rows.Next() {
+		var r AgentBreakdownRow
+		if err := rows.Scan(&r.AgentID, &r.AgentEmail, &r.AgentName,
+			&r.TxnCount, &r.TotalDebit, &r.LastActivity); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListLedgerByAgent — filter wallet_ledger dari wallet reseller `resellerID`
+// yang metadata-nya punya agent_id = `agentID`. Dipakai agent wallet page
+// supaya agent bisa lihat transaksi miliknya sendiri tanpa expose full
+// balance / ledger reseller.
+func (r *Repo) ListLedgerByAgent(ctx context.Context, resellerID, agentID uuid.UUID, limit, offset int) ([]LedgerEntry, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, user_id, delta, reason, reference_id, balance_after, metadata, created_at
+		FROM wallet_ledger
+		WHERE user_id = $1 AND metadata->>'agent_id' = $2
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4
+	`, resellerID, agentID.String(), limit, offset)
 	if err != nil {
 		return nil, err
 	}

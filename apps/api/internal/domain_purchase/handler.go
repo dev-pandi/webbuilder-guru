@@ -134,6 +134,14 @@ type GatewayChargeRequest struct {
 	ReturnURL   string
 	NotifURL    string
 	ExpiresAt   time.Time
+
+	// WalletPayerID — override debit target untuk wallet gateway. Kalau
+	// agent trigger purchase, ini = parent_reseller_id (bukan agent.ID).
+	WalletPayerID string
+	// WalletMetadata — JSON attached ke wallet_ledger.metadata (mis.
+	// {"agent_id":"<uuid>","for_client_id":"<uuid>"}). Reseller pakai buat
+	// report per-agent.
+	WalletMetadata []byte
 }
 
 // PromoValidator — abstraksi validate + redeem promo. Nil = promo feature
