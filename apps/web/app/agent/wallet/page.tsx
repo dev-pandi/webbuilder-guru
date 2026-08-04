@@ -13,6 +13,7 @@ import {
   History,
   Info,
   Loader2,
+  Plus,
   Wallet as WalletIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -100,12 +101,20 @@ export default function AgentWalletPage() {
                 {balance?.currency || "IDR"}
               </p>
             </div>
-            <Button variant="outline" asChild className="gap-1.5">
-              <Link href="/agent/wallet/ledger">
-                <History className="size-4" />
-                Semua Transaksi
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild className="gap-1.5">
+                <Link href="/reseller/wallet/topup">
+                  <Plus className="size-4" />
+                  Top-up
+                </Link>
+              </Button>
+              <Button variant="outline" asChild className="gap-1.5">
+                <Link href="/agent/wallet/ledger">
+                  <History className="size-4" />
+                  Semua Transaksi
+                </Link>
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -113,8 +122,8 @@ export default function AgentWalletPage() {
       <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground">
         <Info className="size-4 shrink-0 translate-y-0.5 text-primary" />
         <span>
-          Fitur top-up mandiri sedang dalam pengembangan. Untuk isi saldo,
-          hubungi admin untuk credit manual.
+          Klik <strong>Top-up</strong> untuk isi saldo — pembayaran online
+          via Midtrans/Paylabs otomatis credit dalam beberapa detik.
         </span>
       </div>
 

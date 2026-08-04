@@ -67,6 +67,11 @@ type Handler struct {
 	invoicesSvc InvoiceCreator    // create invoice + apply PPN
 	gwRegistry  GatewayRegistry   // resolve payment gateway by code
 	promos      PromoValidator    // validate + redeem promo (nil = feature off)
+
+	// onTopupPaid — callback untuk invoice.kind=topup. Wired dari main.go
+	// pointing ke wallet_local.MarkTopupCredited. Nil = topup feature off
+	// (ExecuteAfterPayment reject dengan error jelas).
+	onTopupPaid func(ctx context.Context, inv *invoices.Invoice) error
 }
 
 // PricingLookup — abstraksi minimal: dapatkan retail price per TLD.
@@ -162,6 +167,13 @@ func (h *Handler) SetGatewayRegistry(g GatewayRegistry) { h.gwRegistry = g }
 // SetPromos inject promo validator/redeem. Nil = fitur promo disabled
 // (semua code akan return "not found" saat validate).
 func (h *Handler) SetPromos(p PromoValidator) { h.promos = p }
+
+// SetOnTopupPaid inject callback untuk invoice.kind=topup. ExecuteAfterPayment
+// dispatch ke sini alih-alih EPP execute. Nil-safe: kalau nil, topup
+// invoice paid akan return error clear.
+func (h *Handler) SetOnTopupPaid(fn func(ctx context.Context, inv *invoices.Invoice) error) {
+	h.onTopupPaid = fn
+}
 
 // SetAudit inject audit repo untuk record purchase / retry / renew (Phase 7).
 func (h *Handler) SetAudit(r *audit.Repo) { h.audit = r }

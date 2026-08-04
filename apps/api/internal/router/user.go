@@ -280,11 +280,16 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Get("/invoices/:id/pdf", deps.Invoices.GetPDFMine)
 	}
 
-	// Wallet — self-sufficient wallet (balance + ledger). Semua authenticated
-	// user boleh punya wallet (bukan hanya reseller/agent).
+	// Wallet — self-sufficient wallet (balance + ledger + top-up). Semua
+	// authenticated user boleh punya wallet (bukan hanya reseller/agent).
 	if deps.WalletLocal != nil {
 		authed.Get("/wallet", deps.WalletLocal.GetBalance)
 		authed.Get("/wallet/ledger", deps.WalletLocal.ListLedger)
+		// Top-up self-service — money-moving op, tighter limit.
+		topupLimit := RateLimitUser(purchasePerWindow, purchaseWindow)
+		authed.Post("/wallet/topup", topupLimit, deps.WalletLocal.CreateTopup)
+		authed.Get("/wallet/topup", deps.WalletLocal.ListTopups)
+		authed.Get("/wallet/topup/:id", deps.WalletLocal.GetTopup)
 	}
 
 	// Documents — dokumen kepatuhan (KTP/NPWP/dll.) untuk domain register

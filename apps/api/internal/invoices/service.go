@@ -160,6 +160,78 @@ func (s *Service) CreateForRegister(ctx context.Context, in CreateForRegisterInp
 	return inv, nil
 }
 
+// CreateForTopupInput — payload untuk 1 invoice top-up wallet. PPN TIDAK
+// applied — top-up = pengisian saldo, bukan transaksi kena pajak.
+type CreateForTopupInput struct {
+	UserID        uuid.UUID
+	Amount        int64  // IDR, langsung jadi subtotal + total (no PPN)
+	PaymentMethod string
+	DueMinutes    int // default 30
+	Description   string
+	TopupID       string // opsional — untuk audit link balik ke wallet_topups
+}
+
+// CreateForTopup — issue invoice untuk top-up wallet. Beda dari
+// CreateForRegister: no PPN, single line, metadata.kind=topup.
+func (s *Service) CreateForTopup(ctx context.Context, in CreateForTopupInput) (*Invoice, error) {
+	if in.Amount <= 0 {
+		return nil, fmt.Errorf("amount wajib > 0")
+	}
+	if in.PaymentMethod == "" {
+		return nil, fmt.Errorf("payment_method wajib")
+	}
+	if in.DueMinutes <= 0 {
+		in.DueMinutes = 30
+	}
+	description := in.Description
+	if description == "" {
+		description = fmt.Sprintf("Top-up wallet Rp %s", formatIDR(in.Amount))
+	}
+
+	now := s.nowFn()
+	number, err := s.repo.NextNumber(ctx, now)
+	if err != nil {
+		return nil, fmt.Errorf("generate number: %w", err)
+	}
+
+	meta := map[string]any{
+		"kind":   "topup",
+		"amount": in.Amount,
+	}
+	if in.TopupID != "" {
+		meta["topup_id"] = in.TopupID
+	}
+	metaBytes, _ := json.Marshal(meta)
+
+	dueAt := now.Add(time.Duration(in.DueMinutes) * time.Minute)
+
+	// Top-up = no PPN. Subtotal = Total.
+	inv, err := s.repo.Create(ctx, CreateInput{
+		Number:        number,
+		UserID:        in.UserID,
+		Subtotal:      in.Amount,
+		TaxRate:       0,
+		TaxAmount:     0,
+		Total:         in.Amount,
+		Currency:      "IDR",
+		PaymentMethod: in.PaymentMethod,
+		DueAt:         dueAt,
+		Metadata:      metaBytes,
+		Lines: []LineInput{
+			{
+				Description: description,
+				Quantity:    1,
+				UnitPrice:   in.Amount,
+				SortOrder:   0,
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return inv, nil
+}
+
 // SavePaymentRef — thin wrapper repo. Promote draft → unpaid + set gw_ref.
 func (s *Service) SavePaymentRef(ctx context.Context, id uuid.UUID, ref string) error {
 	return s.repo.SavePaymentRef(ctx, id, ref)

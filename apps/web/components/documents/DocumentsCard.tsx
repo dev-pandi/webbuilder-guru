@@ -11,17 +11,20 @@
 // Phase 2 self-sufficient: file disimpan lokal (assets.Storage) via
 // /api/v1/documents. Blob preview lewat data URI.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FileText,
+  FileImage,
   Loader2,
   Plus,
   RefreshCw,
   Upload,
+  UploadCloud,
   X,
   Eye,
   Files,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken } from "@/lib/api";
@@ -30,6 +33,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -341,6 +351,8 @@ function UploadForm({
   const [categoryID, setCategoryID] = useState<number>(categories[0]?.id ?? 0);
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -353,25 +365,46 @@ function UploadForm({
     }
   }, [categories, categoryID]);
 
-  const displayName = useMemo(() => {
-    if (name.trim()) return name.trim();
-    if (!file) return "";
-    return file.name.replace(/\.[^.]+$/, "");
-  }, [name, file]);
+  // Generate object URL preview untuk image files. Revoke saat file diganti /
+  // component unmount supaya tidak leak memory.
+  useEffect(() => {
+    if (!file || !file.type.startsWith("image/")) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  function pickFile(f: File | null) {
+    setErr(null);
+    if (!f) {
+      setFile(null);
+      return;
+    }
+    if (f.size > MAX_BYTES) {
+      setErr("File terlalu besar (maks 8 MiB)");
+      return;
+    }
+    if (!ALLOWED_MIMES.includes(f.type)) {
+      setErr("Format tidak didukung — hanya PNG, JPG, atau PDF");
+      return;
+    }
+    setFile(f);
+  }
+
+  function resetFile() {
+    setFile(null);
+    setErr(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     if (!file) {
       setErr("Pilih file dulu");
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      setErr("File terlalu besar (maks 8 MiB)");
-      return;
-    }
-    if (!ALLOWED_MIMES.includes(file.type)) {
-      setErr("Format tidak didukung — hanya PNG, JPG, atau PDF");
       return;
     }
     if (!categoryID) {
@@ -383,7 +416,7 @@ function UploadForm({
       const fd = new FormData();
       fd.append("file", file);
       fd.append("category_id", String(categoryID));
-      // displayName tidak dipakai backend V2 (nama dari file.name saja).
+      // name field tidak dipakai backend V2 (nama dari file.name saja).
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost"}/api/v1/documents`,
         {
@@ -397,9 +430,8 @@ function UploadForm({
         throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
       }
       onUploaded(body.data as Document);
-      setFile(null);
+      resetFile();
       setName("");
-      if (fileRef.current) fileRef.current.value = "";
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -407,94 +439,173 @@ function UploadForm({
     }
   }
 
+  const isPdf = file?.type === "application/pdf";
+
   return (
     <form
       onSubmit={onSubmit}
-      className="space-y-3 rounded-lg border bg-muted/20 p-4"
+      className="space-y-4 rounded-xl border bg-card p-5 shadow-sm"
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="doc-category" className="text-xs">
-            Kategori
-          </Label>
-          <select
-            id="doc-category"
-            value={categoryID}
-            onChange={(e) => setCategoryID(Number(e.target.value))}
-            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+          <Label htmlFor="doc-category">Kategori</Label>
+          <Select
+            value={categoryID ? String(categoryID) : undefined}
+            onValueChange={(v) => setCategoryID(Number(v))}
             disabled={categories.length === 0}
           >
-            {categories.length === 0 ? (
-              <option value={0}>Tidak ada kategori</option>
-            ) : (
-              categories.map((c) => (
-                <option key={c.id} value={c.id}>
+            <SelectTrigger id="doc-category">
+              <SelectValue placeholder="Pilih kategori dokumen…" />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
                   {c.name}
-                </option>
-              ))
-            )}
-          </select>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="doc-name" className="text-xs">
-            Nama <span className="text-muted-foreground">(opsional)</span>
+          <Label htmlFor="doc-name">
+            Nama <span className="font-normal text-muted-foreground">(opsional)</span>
           </Label>
           <Input
             id="doc-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={file ? file.name.replace(/\.[^.]+$/, "") : "mis. KTP Budi"}
-            className="h-9"
             maxLength={128}
           />
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="doc-file" className="text-xs">
-          File (PNG/JPG/PDF, maks 8 MiB)
-        </Label>
+        <Label>File dokumen</Label>
         <input
           ref={fileRef}
           id="doc-file"
           type="file"
           accept={ALLOWED_MIMES.join(",")}
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="block w-full rounded-md border bg-background px-3 py-1.5 text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1 file:text-primary-foreground hover:file:bg-primary/90"
+          onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+          className="sr-only"
         />
-        {file && (
-          <p className="text-[11px] text-muted-foreground">
-            {file.name} · {(file.size / 1024).toFixed(1)} KB
-          </p>
+        {!file ? (
+          <label
+            htmlFor="doc-file"
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              pickFile(e.dataTransfer.files?.[0] ?? null);
+            }}
+            className={[
+              "group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors",
+              dragOver
+                ? "border-primary bg-primary/5"
+                : "border-muted-foreground/25 bg-muted/20 hover:border-primary/60 hover:bg-primary/5",
+            ].join(" ")}
+          >
+            <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary transition-transform group-hover:scale-105">
+              <UploadCloud className="size-6" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">
+                Tarik file ke sini atau{" "}
+                <span className="text-primary underline-offset-2 hover:underline">
+                  pilih dari komputer
+                </span>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                PNG, JPG, atau PDF · maks 8 MiB
+              </p>
+            </div>
+          </label>
+        ) : (
+          <div className="flex items-center gap-3 rounded-xl border bg-background p-3">
+            <div className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40">
+              {preview ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={preview}
+                  alt={file.name}
+                  className="size-full object-cover"
+                />
+              ) : isPdf ? (
+                <FileText className="size-6 text-primary" />
+              ) : (
+                <FileImage className="size-6 text-primary" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{file.name}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {formatBytes(file.size)}
+                {isPdf ? " · PDF" : file.type.startsWith("image/") ? " · Gambar" : ""}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+              >
+                Ganti
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={resetFile}
+                title="Hapus file"
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 
       {err && (
-        <p className="text-xs text-destructive">{err}</p>
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <AlertCircle className="size-4 shrink-0 translate-y-0.5" />
+          <span>{err}</span>
+        </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2 pt-1">
         <Button
           type="submit"
-          size="sm"
           disabled={submitting || !file || !categoryID}
           className="gap-2"
         >
           {submitting ? (
             <>
-              <Loader2 className="size-3.5 animate-spin" />
-              Mengirim…
+              <Loader2 className="size-4 animate-spin" />
+              Mengunggah…
             </>
           ) : (
             <>
-              <Upload className="size-3.5" />
-              Upload
+              <Upload className="size-4" />
+              Unggah dokumen
             </>
           )}
         </Button>
       </div>
     </form>
   );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function formatDate(iso: string): string {

@@ -39,10 +39,13 @@ type Purchase struct {
 	UpdatedAt      time.Time
 }
 
-// Kind constants — mirror registrar_domain_jobs.kind.
+// Kind constants — mirror registrar_domain_jobs.kind + wallet topup.
+// KindTopup di-route ke wallet_local.MarkTopupCredited via onTopupPaid
+// callback (bukan EPP execute).
 const (
 	KindRegister = "register"
 	KindRenew    = "renew"
+	KindTopup    = "topup"
 )
 
 // Status constants — mirror api-registry job status enum.

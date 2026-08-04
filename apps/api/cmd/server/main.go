@@ -408,7 +408,36 @@ func main() {
 		// balance saat CreateCharge; PurchaseV2 detect Type()=="wallet" +
 		// trigger MarkPaid + ExecuteAfterPayment synchronous (no webhook wait).
 		gwRegistry.SetWalletDebiter(walletDebiterAdapter{repo: walletLocalRepo})
+
+		// Topup callback — ExecuteAfterPayment dispatch invoice.kind=topup
+		// ke wallet_local.MarkTopupCredited. Credit ledger + update topup
+		// row atomically dalam 1 SQL tx (race-safe kalau webhook retry).
+		purchaseHandler.SetOnTopupPaid(func(ctx context.Context, inv *invoices.Invoice) error {
+			topup, err := walletLocalRepo.GetTopupByInvoice(ctx, inv.ID)
+			if err != nil {
+				slog.Error("topup callback: fetch topup by invoice failed",
+					"invoice_id", inv.ID, "error", err)
+				return err
+			}
+			_, _, err = walletLocalRepo.MarkTopupCredited(ctx, topup.ID)
+			if err != nil {
+				slog.Error("topup callback: mark credited failed",
+					"topup_id", topup.ID, "error", err)
+				return err
+			}
+			slog.Info("topup: credited via webhook",
+				"topup_id", topup.ID, "user_id", topup.UserID, "amount", topup.Amount)
+			return nil
+		})
 	}
+
+	// Wire wallet_local topup dependencies (invoice + gateway + user profile).
+	// Terpisah dari `if purchaseHandler != nil` supaya topup handler tetap
+	// aktif walaupun purchaseHandler nil (edge case: api-registry disabled
+	// tapi wallet masih bisa top-up untuk store balance ke depan).
+	walletLocalHandler.SetInvoicesService(walletInvoicesAdapter{svc: invoicesSvc})
+	walletLocalHandler.SetGatewayRegistry(walletGatewayAdapter{reg: gwRegistry})
+	walletLocalHandler.SetUserProfile(walletUserAdapter{repo: authRepo})
 
 	// Contact syncer — REMOVED (Fase 1 self-sufficient cleanup).
 	// Removed: profile update propagation via

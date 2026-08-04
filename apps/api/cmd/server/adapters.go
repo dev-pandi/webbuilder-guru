@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/paymentgw"
@@ -174,4 +175,83 @@ func (a gatewayAdapter) CreateCharge(ctx context.Context, req domain_purchase.Ga
 		// paymentURL != "" untuk decide redirect vs modal.
 	}
 	return url, res.ProviderRefID, nil
+}
+
+// --- wallet_local topup adapters ---
+//
+// Wallet_local package tidak boleh import invoices/paymentgw langsung
+// (import cycle risk). Bridge via interface. Sama pattern dengan
+// domain_purchase adapters di atas.
+
+// walletInvoicesAdapter: invoices.Service → wallet_local.InvoiceForTopup
+type walletInvoicesAdapter struct{ svc *invoices.Service }
+
+func (a walletInvoicesAdapter) CreateForTopup(ctx context.Context, in wallet_local.InvoiceTopupInput) (uuid.UUID, int64, time.Time, error) {
+	inv, err := a.svc.CreateForTopup(ctx, invoices.CreateForTopupInput{
+		UserID:        in.UserID,
+		Amount:        in.Amount,
+		PaymentMethod: in.PaymentMethod,
+		Description:   in.Description,
+		TopupID:       in.TopupID,
+	})
+	if err != nil {
+		return uuid.Nil, 0, time.Time{}, err
+	}
+	return inv.ID, inv.Total, inv.DueAt, nil
+}
+
+func (a walletInvoicesAdapter) SavePaymentRef(ctx context.Context, id uuid.UUID, ref string) error {
+	return a.svc.SavePaymentRef(ctx, id, ref)
+}
+
+func (a walletInvoicesAdapter) MarkPaid(ctx context.Context, id uuid.UUID, paidAt time.Time, providerRef string) error {
+	return a.svc.MarkPaid(ctx, id, paidAt, providerRef)
+}
+
+// walletGatewayAdapter: paymentgw.Registry → wallet_local.GatewayForTopup
+type walletGatewayAdapter struct{ reg *paymentgw.Registry }
+
+func (a walletGatewayAdapter) Get(ctx context.Context, code string) (wallet_local.TopupPaymentGateway, error) {
+	gw, err := a.reg.Get(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	return walletGatewayCallAdapter{gw: gw}, nil
+}
+
+type walletGatewayCallAdapter struct{ gw paymentgw.Gateway }
+
+func (a walletGatewayCallAdapter) Code() string { return a.gw.Code() }
+func (a walletGatewayCallAdapter) Type() string { return a.gw.Type() }
+
+func (a walletGatewayCallAdapter) CreateCharge(ctx context.Context, req wallet_local.TopupChargeRequest) (string, string, string, error) {
+	res, err := a.gw.CreateCharge(ctx, paymentgw.ChargeRequest{
+		OrderID:     req.OrderID,
+		UserID:      req.UserID,
+		Amount:      req.Amount,
+		Currency:    "IDR",
+		Description: req.Description,
+		Customer: paymentgw.Customer{
+			Name:  req.CustomerName,
+			Email: req.CustomerEmail,
+			Phone: req.CustomerPhone,
+		},
+		ReturnURL: req.ReturnURL,
+		ExpiresAt: req.ExpiresAt,
+	})
+	if err != nil {
+		return "", "", "", err
+	}
+	return res.PaymentURL, res.Instructions, res.ProviderRefID, nil
+}
+
+// walletUserAdapter: auth.Repo → wallet_local.UserProfile
+type walletUserAdapter struct{ repo *auth.Repo }
+
+func (a walletUserAdapter) GetCustomerInfo(ctx context.Context, userID uuid.UUID) (string, string, string, error) {
+	u, err := a.repo.GetByID(ctx, userID)
+	if err != nil {
+		return "", "", "", err
+	}
+	return u.Name, u.Email, u.PhoneNumber, nil
 }

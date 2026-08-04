@@ -1,9 +1,7 @@
 "use client";
 
 // Reseller wallet dashboard — balance + recent ledger via /api/v1/wallet.
-//
-// Top-up flow di-defer sampai `wallet_local.Topup` di-implement. Untuk
-// sementara, admin credit manual via `/admin/wallet/adjust`.
+// User bisa top-up self-service via /reseller/wallet/topup.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -13,6 +11,7 @@ import {
   ArrowUpRight,
   History,
   Loader2,
+  Plus,
   Wallet as WalletIcon,
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -104,6 +103,12 @@ export default function ResellerWalletPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button asChild className="gap-1.5">
+                <Link href="/reseller/wallet/topup">
+                  <Plus className="size-4" />
+                  Top-up
+                </Link>
+              </Button>
               <Button variant="outline" asChild className="gap-1.5">
                 <Link href="/reseller/wallet/ledger">
                   <History className="size-4" />
@@ -125,7 +130,7 @@ export default function ResellerWalletPage() {
             </div>
           ) : recent.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">
-              Belum ada transaksi. Hubungi admin untuk top-up saldo pertama.
+              Belum ada transaksi. Klik <strong>Top-up</strong> untuk isi saldo pertama.
             </p>
           ) : (
             <ul className="divide-y">
@@ -137,7 +142,7 @@ export default function ResellerWalletPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
+      {/* <Card className="border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
         <CardContent className="flex items-start gap-3 p-4 text-sm">
           <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
           <div className="text-amber-900 dark:text-amber-200">
@@ -145,7 +150,7 @@ export default function ResellerWalletPage() {
             hubungi admin untuk credit manual.
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   );
 }

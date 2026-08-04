@@ -42,13 +42,24 @@ func (h *Handler) ExecuteAfterPayment(ctx context.Context, inv *invoices.Invoice
 	if inv == nil {
 		return errors.New("invoice nil")
 	}
-	if h.registrar == nil {
-		return errors.New("registrar client tidak configured")
-	}
 
 	// Parse metadata.
 	meta := parseInvoiceMetadata(inv.Metadata)
 	kind := stringFromMeta(meta, "kind")
+
+	// Topup — delegate ke callback (wired dari main.go pointing ke wallet_local).
+	// Return early — tidak butuh registrar/domain/years.
+	if kind == KindTopup {
+		if h.onTopupPaid == nil {
+			return errors.New("topup callback not wired (h.onTopupPaid nil)")
+		}
+		return h.onTopupPaid(ctx, inv)
+	}
+
+	if h.registrar == nil {
+		return errors.New("registrar client tidak configured")
+	}
+
 	domain := stringFromMeta(meta, "domain")
 	years := intFromMeta(meta, "years")
 	jobID := stringFromMeta(meta, "job_id")
