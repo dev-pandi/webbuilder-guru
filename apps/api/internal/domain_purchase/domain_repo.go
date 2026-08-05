@@ -119,10 +119,13 @@ func (r *Repo) SetDomainContact(ctx context.Context, name, contactID string) err
 	return nil
 }
 
-// GetDomainByName — ownership-scoped fetch. Return ErrNotFound kalau bukan
-// milik user (atau tidak ada).
+// GetDomainByName — ownership-scoped fetch (inclusive purchased_by).
+// Return ErrNotFound kalau caller bukan owner (user_id) DAN bukan purchaser
+// (purchased_by via on-behalf-of).
 func (r *Repo) GetDomainByName(ctx context.Context, name string, userID uuid.UUID) (*Domain, error) {
-	q := `SELECT ` + domainCols + ` FROM registered_domains WHERE name = $1 AND user_id = $2`
+	q := `SELECT ` + domainCols + `
+		FROM registered_domains
+		WHERE name = $1 AND (user_id = $2 OR purchased_by = $2)`
 	var d Domain
 	if err := scanDomain(r.pool.QueryRow(ctx, q, name, userID), &d); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -147,11 +150,14 @@ func (r *Repo) GetDomainByNameAdmin(ctx context.Context, name string) (*Domain, 
 	return &d, nil
 }
 
-// ListDomainsByUser — semua domain milik userID. Sort by expires_at ASC
-// (nearest expiry first) supaya user lihat yang urgent duluan.
+// ListDomainsByUser — semua domain yang caller "manage": jadi `user_id`
+// (self-purchase / owner) ATAU `purchased_by` (agent/reseller yang trigger
+// register on-behalf-of). Agent yang beli untuk klien tetap kelihatan di
+// list-nya sendiri walau klien yang jadi owner formal.
 func (r *Repo) ListDomainsByUser(ctx context.Context, userID uuid.UUID) ([]Domain, error) {
 	rows, err := r.pool.Query(ctx, `SELECT `+domainCols+`
-		FROM registered_domains WHERE user_id = $1
+		FROM registered_domains
+		WHERE user_id = $1 OR purchased_by = $1
 		ORDER BY expires_at ASC NULLS LAST, name ASC`, userID)
 	if err != nil {
 		return nil, err
@@ -169,13 +175,15 @@ func (r *Repo) ListDomainsByUser(ctx context.Context, userID uuid.UUID) ([]Domai
 }
 
 // ListDomainsByUsers — bulk untuk reseller/agent team scope. Include semua
-// domain yang user_id-nya di list. Dipakai /reseller/domains + /agent/domains.
+// domain yang user_id ATAU purchased_by nya di list (untuk cover team's
+// on-behalf-of). Dipakai /reseller/domains + /agent/domains.
 func (r *Repo) ListDomainsByUsers(ctx context.Context, userIDs []uuid.UUID) ([]Domain, error) {
 	if len(userIDs) == 0 {
 		return []Domain{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `SELECT `+domainCols+`
-		FROM registered_domains WHERE user_id = ANY($1)
+		FROM registered_domains
+		WHERE user_id = ANY($1) OR purchased_by = ANY($1)
 		ORDER BY expires_at ASC NULLS LAST, name ASC`, userIDs)
 	if err != nil {
 		return nil, err
