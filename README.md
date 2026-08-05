@@ -234,3 +234,13 @@ Belum:
 - Image processing (resize/optimize) di sisi server.
 - Rate limit & Sentry / observability.
 - Async export worker (saat ini sync streaming OK untuk situs ≤ ~50 halaman).
+
+## Build
+```sh
+# One-time setup — build binaries + Next apps
+cd apps/api          && go build -o tmp/api ./cmd/server
+cd apps/api-registry && go build -o tmp/api-registry ./cmd/server
+cd apps/web       && npm ci && npm run build
+cd apps/renderer  && npm ci && npm run build
+
+```
