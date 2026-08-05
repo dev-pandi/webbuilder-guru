@@ -114,7 +114,13 @@ func main() {
 	if cfg.InternalHMACSecret == "" {
 		slog.Warn("INTERNAL_HMAC_SECRET kosong — dev mode, semua request accepted tanpa auth!")
 	}
-	v1 := app.Group("/v1", security.HMACMiddleware(cfg.InternalHMACSecret))
+	// Middleware order per /v1:
+	//   1. HMAC verify (secret enforced di prod)
+	//   2. Per-IP rate limit (defense-in-depth kalau secret bocor)
+	v1 := app.Group("/v1",
+		security.HMACMiddleware(cfg.InternalHMACSecret),
+		mw.RateLimitPerIP(cfg.RateLimitPerIP, cfg.RateLimitWindow),
+	)
 
 	// Jobs — audit + idempotency. Fase 1 pakai in-memory (cap 10k), evict
 	// LRU-style kalau overflow. Fase 2 swap ke Postgres/Redis untuk persistence

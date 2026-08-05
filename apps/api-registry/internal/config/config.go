@@ -58,6 +58,10 @@ type Config struct {
 	// Rate limit + timeouts
 	RequestTimeout time.Duration
 	MaxConcurrent  int // limit inflight EPP call (registry biasanya cap session)
+	// Per-source IP rate limit sebagai defense-in-depth di atas HMAC.
+	// Cegah bulk request kalau secret bocor / port accidental exposure.
+	RateLimitPerIP int           // req per window per IP (default 300)
+	RateLimitWindow time.Duration // window default 60s
 
 	// --- Webhook relay ---
 	// Upstream secret: verify webhook dari registrar-api (HMAC SHA-256 dari body).
@@ -110,7 +114,9 @@ func Load() *Config {
 		InternalHMACSecret: getEnv("INTERNAL_HMAC_SECRET", ""),
 
 		RequestTimeout: getDuration("REQUEST_TIMEOUT", 30*time.Second),
-		MaxConcurrent:  getInt("MAX_CONCURRENT", 20),
+		MaxConcurrent:   getInt("MAX_CONCURRENT", 20),
+		RateLimitPerIP:  getInt("RATE_LIMIT_PER_IP", 300),
+		RateLimitWindow: getDuration("RATE_LIMIT_WINDOW", 60*time.Second),
 
 		WebhookUpstreamSecret:   getEnv("WEBHOOK_UPSTREAM_SECRET", ""),
 		WebbuilderWebhookURL:    getEnv("WEBBUILDER_WEBHOOK_URL", ""),

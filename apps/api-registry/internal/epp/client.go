@@ -93,7 +93,9 @@ func New(cfg Config) (*Client, error) {
 		if err := os.MkdirAll(filepath.Dir(cfg.LogFile), 0o755); err != nil {
 			return nil, fmt.Errorf("epp: mkdir log dir: %w", err)
 		}
-		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		// 0o600 — file berisi EPP XML frames dengan contact PII (email,
+		// phone, NIK dari WHOIS/register). Restrict ke owner-only.
+		f, err := os.OpenFile(cfg.LogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("epp: open log file: %w", err)
 		}
