@@ -147,6 +147,9 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Post("/domains/:name/dns", mutateLimit, deps.DomainPurchase.CreateDNSRecord)
 		authed.Patch("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.UpdateDNSRecord)
 		authed.Delete("/domains/:name/dns/:record_id", mutateLimit, deps.DomainPurchase.DeleteDNSRecord)
+		// Cloudflare health check — troubleshoot "domain tidak bisa diakses".
+		// Return zone status + NS sync + apex/www record + platform IP match.
+		authed.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.CloudflareInfo)
 		// Aggregate current-state per FQDN (tabel `domains`) — replacement
 		// untuk /purchases list yang campur register + renew per domain.
 		// Cocok untuk "domain saya" view. Detail transaksi tetap di /purchases.

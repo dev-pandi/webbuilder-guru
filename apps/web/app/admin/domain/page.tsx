@@ -317,9 +317,9 @@ export default function AdminDomainsPage() {
                       </TableCell>
                       <TableCell className="align-top">
                         <Link
-                          href={`/settings/domains/${encodeURIComponent(r.name)}`}
+                          href={`/admin/domain/${encodeURIComponent(r.name)}`}
                           className="inline-flex items-center gap-1 text-xs text-primary underline-offset-4 hover:underline"
-                          title="Buka detail domain (dari sisi user)"
+                          title="Buka detail domain (admin view)"
                         >
                           Detail
                           <ExternalLink className="size-3" />

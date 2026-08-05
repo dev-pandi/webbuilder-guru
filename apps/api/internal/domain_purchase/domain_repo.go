@@ -133,6 +133,20 @@ func (r *Repo) GetDomainByName(ctx context.Context, name string, userID uuid.UUI
 	return &d, nil
 }
 
+// GetDomainByNameAdmin — bypass ownership. Dipakai admin detail page yang
+// perlu troubleshoot domain lintas user (mis. "domain user X tidak accessible").
+func (r *Repo) GetDomainByNameAdmin(ctx context.Context, name string) (*Domain, error) {
+	q := `SELECT ` + domainCols + ` FROM registered_domains WHERE name = $1`
+	var d Domain
+	if err := scanDomain(r.pool.QueryRow(ctx, q, name), &d); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
 // ListDomainsByUser — semua domain milik userID. Sort by expires_at ASC
 // (nearest expiry first) supaya user lihat yang urgent duluan.
 func (r *Repo) ListDomainsByUser(ctx context.Context, userID uuid.UUID) ([]Domain, error) {

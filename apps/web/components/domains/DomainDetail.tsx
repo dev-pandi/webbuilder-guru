@@ -9,7 +9,7 @@
 // Kalau domain bukan milik user → 404 di semua endpoint → tampilkan
 // "domain tidak ditemukan".
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -27,6 +27,9 @@ import {
   Save,
   CheckCircle2,
   UserCog,
+  XCircle,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -72,14 +75,20 @@ type NameserverInfo = {
 // post-register/renew. Ownership scope by user_id di backend (query dari
 // tabel `domains`).
 //
-// `basePath` mengatur back-link (settings vs reseller vs agent).
-// `listEndpoint` override untuk team scope (reseller/agent portal).
+// `basePath` mengatur back-link (settings vs reseller vs agent vs admin).
+// `endpointPrefix` prefix untuk semua endpoint domain — default per-user
+// (`/api/v1/domains`), admin pass `/api/v1/admin/domains` untuk bypass
+// ownership check (lihat troubleshoot lintas user).
+// `adminMode` true → skip actions yg butuh ownership (renew, edit contact)
+// karena admin bukan owner.
 export function DomainDetail({
   basePath = "/settings/domains",
-  listEndpoint = "/api/v1/domains",
+  endpointPrefix = "/api/v1/domains",
+  adminMode = false,
 }: {
   basePath?: string;
-  listEndpoint?: string;
+  endpointPrefix?: string;
+  adminMode?: boolean;
 }) {
   const router = useRouter();
   const params = useParams<{ name: string }>();
@@ -96,11 +105,24 @@ export function DomainDetail({
     setLoading(true);
     setErr(null);
     try {
-      // 1) Ownership check + info — dari /api/v1/domains, filter by name.
-      const list = await api<DomainRow[]>(listEndpoint);
-      const found = (list ?? []).find((d) => d.name === domain);
+      // 1) Domain aggregate — user mode: list + filter by name. Admin mode:
+      //    direct GET /:name (endpoint tunggal).
+      let found: DomainRow | null = null;
+      if (adminMode) {
+        const single = await api<DomainRow & { name: string }>(
+          `${endpointPrefix}/${encodeURIComponent(domain)}`,
+        );
+        if (single) found = single;
+      } else {
+        const list = await api<DomainRow[]>(endpointPrefix);
+        found = (list ?? []).find((d) => d.name === domain) ?? null;
+      }
       if (!found) {
-        setErr("Domain tidak ditemukan di akun Anda.");
+        setErr(
+          adminMode
+            ? "Domain tidak ditemukan di database."
+            : "Domain tidak ditemukan di akun Anda.",
+        );
         setLoading(false);
         return;
       }
@@ -109,8 +131,8 @@ export function DomainDetail({
       // 2 + 3) WHOIS + Nameservers parallel. Kalau salah satu gagal, non-fatal
       //         — tampilkan yang berhasil, error inline.
       const [whoisRes, nsRes] = await Promise.allSettled([
-        api<Whois>(`/api/v1/domains/${encodeURIComponent(domain)}/whois`),
-        api<NameserverInfo>(`/api/v1/domains/${encodeURIComponent(domain)}/nameservers`),
+        api<Whois>(`${endpointPrefix}/${encodeURIComponent(domain)}/whois`),
+        api<NameserverInfo>(`${endpointPrefix}/${encodeURIComponent(domain)}/nameservers`),
       ]);
       if (whoisRes.status === "fulfilled") setWhois(whoisRes.value);
       if (nsRes.status === "fulfilled") setNs(nsRes.value.nameservers ?? []);
@@ -124,7 +146,7 @@ export function DomainDetail({
   useEffect(() => {
     if (domain) refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [domain, listEndpoint]);
+  }, [domain, endpointPrefix, adminMode]);
 
   const expiryInfo = useMemo(() => formatExpiry(row?.expires_at), [row?.expires_at]);
 
@@ -189,10 +211,12 @@ export function DomainDetail({
                         {expiryInfo.label}
                       </div>
                     </div>
-                    <Button size="sm" onClick={() => setRenewOpen(true)} className="gap-1.5">
-                      <RefreshCw className="size-3.5" />
-                      Perpanjang
-                    </Button>
+                    {!adminMode && (
+                      <Button size="sm" onClick={() => setRenewOpen(true)} className="gap-1.5">
+                        <RefreshCw className="size-3.5" />
+                        Perpanjang
+                      </Button>
+                    )}
                   </div>
                 )}
                 {/* Info tambahan dari tabel domains (aggregate). */}
@@ -225,21 +249,27 @@ export function DomainDetail({
               </CardContent>
             </Card>
 
+            {/* Cloudflare health — cek apakah domain akan bisa di-akses */}
+            <CloudflareHealthPanel domain={domain} endpointPrefix={endpointPrefix} />
+
             {/* WHOIS */}
             <WhoisPanel whois={whois} />
 
-            {/* Nameservers */}
+            {/* Nameservers — admin view-only */}
             <NameserverPanel
               domain={domain}
               initial={ns}
               onUpdated={(next) => setNs(next)}
+              readOnly={adminMode}
             />
 
-            {/* DNS editor entry */}
-            <DnsPanelLink domain={domain} />
-
-            {/* Contact update entry */}
-            <ContactPanelLink domain={domain} />
+            {/* Edit-only panels — hide di admin mode */}
+            {!adminMode && (
+              <>
+                <DnsPanelLink domain={domain} />
+                <ContactPanelLink domain={domain} />
+              </>
+            )}
           </>
         )
       )}
@@ -301,10 +331,12 @@ function NameserverPanel({
   domain,
   initial,
   onUpdated,
+  readOnly = false,
 }: {
   domain: string;
   initial: string[];
   onUpdated: (next: string[]) => void;
+  readOnly?: boolean;
 }) {
   // Local edit buffer — initial-nya di-sync via useEffect ketika parent re-fetch.
   const [items, setItems] = useState<string[]>(initial.length > 0 ? initial : ["", ""]);
@@ -386,57 +418,73 @@ function NameserverPanel({
           hingga 24 jam.
         </p>
 
-        <div className="space-y-2">
-          {items.map((n, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Label htmlFor={`ns-${i}`} className="w-16 shrink-0 text-xs text-muted-foreground">
-                NS {i + 1}
-              </Label>
-              <Input
-                id={`ns-${i}`}
-                value={n}
-                onChange={(e) => updateItem(i, e.target.value)}
-                placeholder="ns1.example.com"
-                className="font-mono lowercase"
-              />
+        {readOnly ? (
+          <ul className="space-y-1 rounded-md border bg-muted/30 p-3">
+            {initial.length === 0 ? (
+              <li className="text-xs text-muted-foreground">(tidak ada info NS)</li>
+            ) : (
+              initial.map((n) => (
+                <li key={n} className="font-mono text-xs">
+                  {n}
+                </li>
+              ))
+            )}
+          </ul>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {items.map((n, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Label htmlFor={`ns-${i}`} className="w-16 shrink-0 text-xs text-muted-foreground">
+                    NS {i + 1}
+                  </Label>
+                  <Input
+                    id={`ns-${i}`}
+                    value={n}
+                    onChange={(e) => updateItem(i, e.target.value)}
+                    placeholder="ns1.example.com"
+                    className="font-mono lowercase"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeItem(i)}
+                    disabled={items.length <= 2}
+                    title={items.length <= 2 ? "Minimal 2" : "Hapus"}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => removeItem(i)}
-                disabled={items.length <= 2}
-                title={items.length <= 2 ? "Minimal 2" : "Hapus"}
+                variant="outline"
+                size="sm"
+                onClick={addItem}
+                disabled={items.length >= 13}
+                className="gap-1.5"
               >
-                <Trash2 className="size-4" />
+                <Plus className="size-3.5" />
+                Tambah nameserver
+              </Button>
+              <Button onClick={save} disabled={!dirty || saving} className="gap-2">
+                {saving ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Menyimpan…
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-4" />
+                    Simpan
+                  </>
+                )}
               </Button>
             </div>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={addItem}
-            disabled={items.length >= 13}
-            className="gap-1.5"
-          >
-            <Plus className="size-3.5" />
-            Tambah nameserver
-          </Button>
-          <Button onClick={save} disabled={!dirty || saving} className="gap-2">
-            {saving ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Menyimpan…
-              </>
-            ) : (
-              <>
-                <Save className="size-4" />
-                Simpan
-              </>
-            )}
-          </Button>
-        </div>
+          </>
+        )}
 
         {err && (
           <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
@@ -561,5 +609,268 @@ function ContactPanelLink({ domain }: { domain: string }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// -------------- Cloudflare Health --------------
+// Fetch /api/v1/domains/:name/cloudflare-info → tampilkan zone status,
+// NS sync antara CF vs registrar, apex/www record. Cegah user bingung
+// kenapa domain baru mereka tidak bisa diakses (biasanya NS belum switch
+// atau A record belum point ke platform IP).
+
+type CFHealthResp = {
+  zone: {
+    id: string;
+    status: string;
+    name_servers: string[];
+  };
+  records: Array<{
+    id: string;
+    type: string;
+    name: string;
+    content: string;
+    proxied?: boolean;
+    ttl?: number;
+  }>;
+  nameservers_at_registrar: string[];
+  platform_ips: string[];
+  checks: {
+    zone_active: boolean;
+    ns_synced: boolean;
+    apex_present: boolean;
+    apex_points_to_platform: boolean;
+    www_present: boolean;
+  };
+};
+
+function CloudflareHealthPanel({
+  domain,
+  endpointPrefix = "/api/v1/domains",
+}: {
+  domain: string;
+  endpointPrefix?: string;
+}) {
+  const [data, setData] = useState<CFHealthResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await api<CFHealthResp>(
+        `${endpointPrefix}/${encodeURIComponent(domain)}/cloudflare-info`,
+      );
+      setData(res);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [domain, endpointPrefix]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Cloud className="size-4 text-primary" />
+            Cloudflare Health
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {data && <OverallBadge checks={data.checks} />}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={fetchData}
+              disabled={loading}
+              className="gap-1"
+              title="Refresh"
+            >
+              <RefreshCw className={loading ? "size-3 animate-spin" : "size-3"} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading && !data ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Mengambil data Cloudflare…
+          </div>
+        ) : err ? (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+            <AlertCircle className="size-4 shrink-0 translate-y-0.5 text-amber-600" />
+            <div className="flex-1">
+              <p className="font-medium">Cloudflare data tidak tersedia</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Kemungkinan: Cloudflare belum di-setup admin, atau zone
+                domain ini belum ter-attach ke CF akun kita. Pakai custom NS
+                manual di panel di bawah kalau perlu.
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">{err}</p>
+            </div>
+          </div>
+        ) : data ? (
+          <>
+            {/* Overall check list — 5 indikator */}
+            <div className="grid gap-2 sm:grid-cols-2">
+              <CheckRow
+                ok={data.checks.zone_active}
+                label="Zone Cloudflare aktif"
+                hint={
+                  data.checks.zone_active
+                    ? "Zone berstatus 'active' — CF sudah verify NS switch."
+                    : `Zone berstatus '${data.zone.status}'. Butuh update NS di registrar supaya CF verify.`
+                }
+              />
+              <CheckRow
+                ok={data.checks.ns_synced}
+                label="NS di registrar match CF"
+                hint={
+                  data.checks.ns_synced
+                    ? "Nameserver di PANDI sudah pakai NS Cloudflare."
+                    : "NS di registrar BEDA dengan NS CF. Update di panel Nameserver di bawah."
+                }
+              />
+              <CheckRow
+                ok={data.checks.apex_present}
+                label="Record A untuk root domain"
+                hint={
+                  data.checks.apex_present
+                    ? "A record untuk @ sudah ada."
+                    : "Belum ada A record — buka DNS editor untuk tambahkan."
+                }
+              />
+              <CheckRow
+                ok={data.checks.apex_points_to_platform}
+                label="A record → platform IP"
+                hint={
+                  data.checks.apex_points_to_platform
+                    ? "Root domain point ke IP platform yang benar."
+                    : `A record TIDAK point ke ${data.platform_ips.join(", ") || "platform IP"}. Domain akan resolve ke server lain.`
+                }
+              />
+              <CheckRow
+                ok={data.checks.www_present}
+                label="CNAME untuk www"
+                hint={
+                  data.checks.www_present
+                    ? "www.domain akan resolve ke root."
+                    : "www subdomain belum ada — user yang ketik www.<domain> tidak akan buka situs."
+                }
+              />
+            </div>
+
+            {/* NS comparison */}
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Nameserver
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground">
+                    Cloudflare assigned
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {data.zone.name_servers.map((ns) => (
+                      <li key={ns} className="font-mono text-xs">
+                        {ns}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium text-muted-foreground">
+                    Aktual di registrar (PANDI)
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {data.nameservers_at_registrar.length === 0 ? (
+                      <li className="text-xs text-muted-foreground">
+                        (tidak ada info NS)
+                      </li>
+                    ) : (
+                      data.nameservers_at_registrar.map((ns) => (
+                        <li key={ns} className="font-mono text-xs">
+                          {ns}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+              <p className="text-xs text-muted-foreground">
+                Perlu edit DNS record (A / CNAME / MX / TXT)?
+              </p>
+              <Button asChild size="sm" variant="outline" className="gap-1.5">
+                <Link href={`/settings/domains/${encodeURIComponent(domain)}/dns`}>
+                  Buka DNS Editor
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </Button>
+            </div>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverallBadge({ checks }: { checks: CFHealthResp["checks"] }) {
+  const total = Object.values(checks).length;
+  const passed = Object.values(checks).filter(Boolean).length;
+  if (passed === total) {
+    return (
+      <Badge variant="success" className="gap-1 text-[10px]">
+        <ShieldCheck className="size-3" />
+        Semua OK
+      </Badge>
+    );
+  }
+  if (passed === 0) {
+    return (
+      <Badge variant="destructive" className="gap-1 text-[10px]">
+        <XCircle className="size-3" />
+        {total - passed} masalah
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="warning" className="gap-1 text-[10px]">
+      <ShieldAlert className="size-3" />
+      {total - passed} peringatan
+    </Badge>
+  );
+}
+
+function CheckRow({ ok, label, hint }: { ok: boolean; label: string; hint: string }) {
+  return (
+    <div
+      className={
+        "flex items-start gap-2 rounded-md border p-2.5 text-sm " +
+        (ok
+          ? "border-emerald-500/25 bg-emerald-500/5"
+          : "border-amber-500/25 bg-amber-500/5")
+      }
+    >
+      {ok ? (
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+      ) : (
+        <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className={ok ? "text-sm font-medium" : "text-sm font-medium text-amber-900 dark:text-amber-200"}>
+          {label}
+        </p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+      </div>
+    </div>
   );
 }

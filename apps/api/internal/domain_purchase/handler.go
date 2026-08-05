@@ -644,6 +644,102 @@ func (h *Handler) dnsPrecheck(c *fiber.Ctx, name string) (string, *cloudflare.Cl
 	return zone.ID, client, nil
 }
 
+// CloudflareInfo — GET /api/v1/domains/:name/cloudflare-info
+//
+// Health-check summary Cloudflare: zone status + NS + apex/www records +
+// perbandingan NS antara CF vs registrar (PANDI). Dipakai halaman detail
+// domain untuk troubleshoot "domain tidak bisa diakses".
+//
+// Response include `checks` object dengan boolean per-check supaya UI bisa
+// langsung render icon ✅/⚠️ tanpa parse ulang.
+func (h *Handler) CloudflareInfo(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheck(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+
+	// Zone info — status + NS assigned CF.
+	zone, err := client.GetZoneByDomain(c.Context(), name)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	// DNS records — supaya bisa cek apex + www.
+	records, err := client.ListDNSRecords(c.Context(), zoneID)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	// NS current di registrar — untuk bandingkan sama NS CF.
+	nsAtRegistrar := []string{}
+	if h.registrar != nil {
+		if info, err := h.registrar.GetNameservers(c.Context(), name); err == nil && info != nil {
+			nsAtRegistrar = info.Nameservers
+		}
+	}
+
+	// Analyze health checks.
+	apex := findRecord(records, "A", name)
+	www := findRecord(records, "CNAME", "www."+name)
+	pointsToPlatform := false
+	if apex != nil {
+		for _, ip := range h.platformIPs {
+			if apex.Content == ip {
+				pointsToPlatform = true
+				break
+			}
+		}
+	}
+	nsSynced := nsListsEqual(zone.NameServers, nsAtRegistrar)
+
+	return httpx.OK(c, fiber.Map{
+		"zone": fiber.Map{
+			"id":           zone.ID,
+			"status":       zone.Status,
+			"name_servers": zone.NameServers,
+		},
+		"records":                  records,
+		"nameservers_at_registrar": nsAtRegistrar,
+		"platform_ips":             h.platformIPs,
+		"checks": fiber.Map{
+			"zone_active":              zone.Status == "active",
+			"ns_synced":                nsSynced,
+			"apex_present":             apex != nil,
+			"apex_points_to_platform":  pointsToPlatform,
+			"www_present":              www != nil,
+		},
+	})
+}
+
+// findRecord — return first DNS record match by type + name. Nil kalau
+// tidak ada. Case-insensitive name compare.
+func findRecord(records []cloudflare.DNSRecordData, typ, name string) *cloudflare.DNSRecordData {
+	for i := range records {
+		r := &records[i]
+		if strings.EqualFold(r.Type, typ) && strings.EqualFold(r.Name, name) {
+			return r
+		}
+	}
+	return nil
+}
+
+// nsListsEqual — case-insensitive set compare. Cek apakah NS di CF match
+// dengan NS di registrar (order-independent).
+func nsListsEqual(a, b []string) bool {
+	if len(a) != len(b) || len(a) == 0 {
+		return false
+	}
+	set := make(map[string]struct{}, len(a))
+	for _, s := range a {
+		set[strings.ToLower(strings.TrimRight(s, "."))] = struct{}{}
+	}
+	for _, s := range b {
+		if _, ok := set[strings.ToLower(strings.TrimRight(s, "."))]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // ListDNSRecords — GET /api/v1/domains/:name/dns
 //
 // Return semua DNS record di zone Cloudflare untuk domain ini. Payload
@@ -1366,6 +1462,180 @@ func (h *Handler) AdminListDomains(c *fiber.Ctx) error {
 		out = append(out, r)
 	}
 	return httpx.OK(c, httpx.MakePaginated(out, p, total))
+}
+
+// AdminGetDomain — GET /api/v1/admin/domains/:name
+// Detail 1 domain (aggregate registered_domains) tanpa ownership check.
+// Include owner info via join users. Dipakai admin domain detail page.
+func (h *Handler) AdminGetDomain(c *fiber.Ctx) error {
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	d, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan")
+		}
+		return httpx.Internal(c, "lookup failed")
+	}
+	// Enrich owner info.
+	var ownerEmail, ownerName string
+	if h.users != nil {
+		if u, err := h.users.GetByID(c.Context(), d.UserID); err == nil {
+			ownerEmail = u.Email
+			ownerName = u.Name
+		}
+	}
+	return httpx.OK(c, fiber.Map{
+		"name":              d.Name,
+		"user_id":           d.UserID.String(),
+		"user_email":        ownerEmail,
+		"user_name":         ownerName,
+		"contact_id":        d.ContactID,
+		"expires_at":        formatOptTime(d.ExpiresAt),
+		"registered_at":     d.RegisteredAt.UTC().Format(time.RFC3339),
+		"last_renewed_at":   formatOptTime(d.LastRenewedAt),
+		"status":            d.Status,
+		"registrar_job_id":  d.RegistrarJobID,
+	})
+}
+
+// AdminWhois — GET /api/v1/admin/domains/:name/whois
+// Passthrough ke registrar.Whois (public data, tidak butuh ownership).
+func (h *Handler) AdminWhois(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled", "registrar client belum di-set")
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	w, err := h.registrar.Whois(c.Context(), name)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	if w == nil {
+		return httpx.NotFound(c, "domain tidak terdaftar")
+	}
+	return httpx.OK(c, w)
+}
+
+// AdminGetNameservers — GET /api/v1/admin/domains/:name/nameservers
+// Passthrough ke registrar tanpa ownership check.
+func (h *Handler) AdminGetNameservers(c *fiber.Ctx) error {
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled", "registrar client belum di-set")
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	info, err := h.registrar.GetNameservers(c.Context(), name)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "registrar_error", err.Error())
+	}
+	return httpx.OK(c, info)
+}
+
+// dnsPrecheckAdmin — variant tanpa ownership check. Cek CF config + zone
+// tersedia saja. Dipakai admin endpoints.
+func (h *Handler) dnsPrecheckAdmin(c *fiber.Ctx, name string) (string, *cloudflare.Client, error) {
+	if h.cloudflare == nil {
+		return "", nil, httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_disabled",
+			"Fitur DNS belum aktif — admin perlu setup Cloudflare config.")
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return "", nil, httpx.BadRequest(c, "name required")
+	}
+	cfg, err := h.cloudflare.GetDefault(c.Context())
+	if err != nil {
+		if errors.Is(err, cloudflare.ErrNotFound) {
+			return "", nil, httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_no_config",
+				"Cloudflare default config belum di-set.")
+		}
+		return "", nil, httpx.Internal(c, "cloudflare config lookup failed")
+	}
+	client := cloudflare.NewClient(*cfg)
+	zone, err := client.GetZoneByDomain(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, cloudflare.ErrZoneNotFound) {
+			return "", nil, httpx.Err(c, fiber.StatusNotFound, "zone_not_found",
+				"Zone Cloudflare untuk domain ini belum tersedia.")
+		}
+		return "", nil, httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return zone.ID, client, nil
+}
+
+// AdminListDNSRecords — GET /api/v1/admin/domains/:name/dns (read-only).
+func (h *Handler) AdminListDNSRecords(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheckAdmin(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	records, err := client.ListDNSRecords(c.Context(), zoneID)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"records": records, "zone_id": zoneID})
+}
+
+// AdminCloudflareInfo — GET /api/v1/admin/domains/:name/cloudflare-info
+// Sama seperti CloudflareInfo user-facing tapi bypass ownership.
+func (h *Handler) AdminCloudflareInfo(c *fiber.Ctx) error {
+	zoneID, client, errResp := h.dnsPrecheckAdmin(c, c.Params("name"))
+	if errResp != nil {
+		return errResp
+	}
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+
+	zone, err := client.GetZoneByDomain(c.Context(), name)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	records, err := client.ListDNSRecords(c.Context(), zoneID)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_error", err.Error())
+	}
+	nsAtRegistrar := []string{}
+	if h.registrar != nil {
+		if info, err := h.registrar.GetNameservers(c.Context(), name); err == nil && info != nil {
+			nsAtRegistrar = info.Nameservers
+		}
+	}
+	apex := findRecord(records, "A", name)
+	www := findRecord(records, "CNAME", "www."+name)
+	pointsToPlatform := false
+	if apex != nil {
+		for _, ip := range h.platformIPs {
+			if apex.Content == ip {
+				pointsToPlatform = true
+				break
+			}
+		}
+	}
+	nsSynced := nsListsEqual(zone.NameServers, nsAtRegistrar)
+	return httpx.OK(c, fiber.Map{
+		"zone": fiber.Map{
+			"id":           zone.ID,
+			"status":       zone.Status,
+			"name_servers": zone.NameServers,
+		},
+		"records":                  records,
+		"nameservers_at_registrar": nsAtRegistrar,
+		"platform_ips":             h.platformIPs,
+		"checks": fiber.Map{
+			"zone_active":              zone.Status == "active",
+			"ns_synced":                nsSynced,
+			"apex_present":             apex != nil,
+			"apex_points_to_platform":  pointsToPlatform,
+			"www_present":              www != nil,
+		},
+	})
+}
+
+// formatOptTime — helper untuk nullable *time.Time → RFC3339 atau kosong.
+func formatOptTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // tryAttachToCloudflare = best-effort auto-attach domain baru ke Cloudflare:
