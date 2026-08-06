@@ -1,0 +1,16 @@
+meta {
+  name: GetNameservers
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/domains/{{domain_name}}/nameservers
+  body: none
+  auth: none
+}
+
+docs {
+  Fetch NS domain via api-registry (EPP info). Ownership check via
+  `registered_domains` (`user_id OR purchased_by`).
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Suspend
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/resellers/:id/suspend
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reason": "Fraud detected / TOS violation"
+  }
+}
+
+docs {
+  Suspend reseller — role tidak berubah tapi flag `is_suspended=true`.
+  Agent + clients di bawahnya tetap functional (data retention).
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Delete
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{base_url}}/api/v1/documents/:id
+  body: none
+  auth: none
+}
+
+docs {
+  Hapus row + blob. Kalau document sudah attached ke domain purchase yang
+  aktif, admin harus force-delete lewat DB (protect audit trail).
+}

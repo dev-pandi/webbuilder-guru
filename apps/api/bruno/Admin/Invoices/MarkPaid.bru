@@ -1,0 +1,27 @@
+meta {
+  name: MarkPaid
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/invoices/{{invoice_id}}/mark-paid
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "note": "Manual bank transfer verified — BCA 12345"
+  }
+}
+
+docs {
+  Admin manual verify (untuk manual_bank flow). Transition:
+  `unpaid` → `paid` + trigger ExecuteAfterPayment (EPP CREATE untuk domain
+  purchase / RENEW / wallet credit). Idempotent — kalau sudah paid, no-op.
+}

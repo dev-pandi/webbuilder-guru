@@ -1,0 +1,29 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/domains?page=1&page_size=30&q=&status=&expiring_days=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  q:
+  status:
+  expiring_days:
+}
+
+docs {
+  Admin observability — aggregate list dari `registered_domains` (1 row/FQDN).
+  Filter:
+    - `q` — search name / owner email / owner name
+    - `status` — active|expired|suspended|dsb.
+    - `expiring_days` — > 0 → active + expires_at ≤ now + N days
+
+  Response include `owner_email` + `owner_name` (join users).
+}

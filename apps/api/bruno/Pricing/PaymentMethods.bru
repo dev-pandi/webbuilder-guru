@@ -1,0 +1,16 @@
+meta {
+  name: PaymentMethods
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/payment-methods
+  body: none
+  auth: none
+}
+
+docs {
+  Payment methods enabled (credentials masked). Response: `code`, `label`,
+  `type`, `config.snap_url`, dsb. Dipakai wizard render pilihan pembayaran.
+}

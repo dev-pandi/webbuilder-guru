@@ -1,0 +1,15 @@
+meta {
+  name: ListAgents
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/reseller/agents
+  body: none
+  auth: none
+}
+
+docs {
+  Reseller-only. List semua agent under caller.
+}

@@ -1,0 +1,28 @@
+meta {
+  name: InviteAgent
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/reseller/agents/invite
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "agent@example.com",
+    "name": "Nama Agent"
+  }
+}
+
+docs {
+  Reseller-only. Invite agent baru — kirim email dengan invitation token.
+  Agent accept via `POST /invitations/:token/accept` → set password →
+  auto-login sebagai role=agent under reseller induk.
+}

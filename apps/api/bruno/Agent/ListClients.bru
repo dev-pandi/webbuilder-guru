@@ -1,0 +1,21 @@
+meta {
+  name: ListClients
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/agent/clients?page=1&page_size=30
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+}
+
+docs {
+  Agent-only. Mirror `/reseller/clients` — subset yang assignment aktif ke
+  agent.
+}

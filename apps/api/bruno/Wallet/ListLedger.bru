@@ -1,0 +1,21 @@
+meta {
+  name: ListLedger
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/wallet/ledger?page=1&page_size=30
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+}
+
+docs {
+  Append-only ledger — credit (top-up, refund) + debit (domain purchase,
+  renew). Setiap entry link ke `invoice_id` atau `topup_id`.
+}

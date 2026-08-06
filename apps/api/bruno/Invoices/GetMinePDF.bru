@@ -1,0 +1,16 @@
+meta {
+  name: GetMinePDF
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/invoices/{{invoice_id}}/pdf
+  body: none
+  auth: none
+}
+
+docs {
+  Return raw PDF (`Content-Type: application/pdf`). Include brand name +
+  PPN dari system_settings.
+}

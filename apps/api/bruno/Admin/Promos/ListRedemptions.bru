@@ -1,0 +1,16 @@
+meta {
+  name: ListRedemptions
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/promos/:id/redemptions
+  body: none
+  auth: none
+}
+
+docs {
+  History pemakaian promo. Unique constraint `(promo_id, invoice_id)` cegah
+  dobel-redeem per invoice.
+}

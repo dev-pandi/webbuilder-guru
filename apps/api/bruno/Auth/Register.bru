@@ -1,0 +1,34 @@
+meta {
+  name: Register
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/v1/auth/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "newuser@example.com",
+    "password": "changeme123",
+    "name": "New User"
+  }
+}
+
+docs {
+  Buat user baru dengan role default `client`. Password minimum 8 char.
+  Email verification link akan dikirim async (async goroutine di handler).
+  Rate-limited per IP (registerPerWindow).
+
+  Response 200:
+  ```json
+  { "data": { "id": "...", "email": "...", "name": "...", "role": "client" } }
+  ```
+}

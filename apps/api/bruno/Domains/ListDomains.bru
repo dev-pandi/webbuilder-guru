@@ -1,0 +1,18 @@
+meta {
+  name: ListDomains
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/domains
+  body: none
+  auth: none
+}
+
+docs {
+  Aggregate current-state per FQDN (tabel `registered_domains`). Include
+  domain via `user_id` (owner) atau `purchased_by` (on-behalf-of). 1 row
+  per domain — pakai ini untuk "domain saya" view. Transaction log detail
+  di `/domains/purchases`.
+}

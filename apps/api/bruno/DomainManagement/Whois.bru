@@ -1,0 +1,15 @@
+meta {
+  name: Whois
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/domains/{{domain_name}}/whois
+  body: none
+  auth: none
+}
+
+docs {
+  Ownership-scoped WHOIS lookup via api-registry. Contact info dari EPP.
+}

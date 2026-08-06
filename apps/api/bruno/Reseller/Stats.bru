@@ -1,0 +1,16 @@
+meta {
+  name: Stats
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/reseller/stats
+  body: none
+  auth: none
+}
+
+docs {
+  Reseller-only. Agregat: total clients, total agents, active domains,
+  total revenue (last 30d).
+}

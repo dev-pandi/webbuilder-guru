@@ -1,0 +1,21 @@
+meta {
+  name: UploadTopupProof
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/wallet/topup/{{topup_id}}/proof
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+docs {
+  Upload bukti transfer (JPG/PNG/PDF) untuk top-up manual_bank. Preview
+  inline via base64 data URI di `GET /wallet/topup/:id/proof`. Rate-limit
+  upload (`uploadPerWindow`).
+}

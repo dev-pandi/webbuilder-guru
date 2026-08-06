@@ -1,0 +1,16 @@
+meta {
+  name: Show
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/documents/:id
+  body: none
+  auth: none
+}
+
+docs {
+  Preview 1 dokumen — return base64 data URI supaya bisa render inline
+  di frontend (`<img src="data:...">`).
+}

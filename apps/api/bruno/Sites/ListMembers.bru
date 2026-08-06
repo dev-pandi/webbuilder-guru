@@ -1,0 +1,15 @@
+meta {
+  name: ListMembers
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/v1/sites/{{site_id}}/members
+  body: none
+  auth: none
+}
+
+docs {
+  List collaborator: owner + reseller/agent yang manage. Phase 4 collab.
+}

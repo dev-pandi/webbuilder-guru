@@ -1,0 +1,25 @@
+meta {
+  name: UpdateRole
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/api/v1/admin/users/:id/role
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "role": "admin"
+  }
+}
+
+docs {
+  Promote/demote user role. Enum: client|reseller|agent|admin.
+}

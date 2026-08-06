@@ -1,0 +1,16 @@
+meta {
+  name: Get
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/domains/{{domain_name}}
+  body: none
+  auth: none
+}
+
+docs {
+  Detail 1 domain lintas user — bypass ownership. Untuk troubleshoot
+  "domain user X tidak accessible".
+}

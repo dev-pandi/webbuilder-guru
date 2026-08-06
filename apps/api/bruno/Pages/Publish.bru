@@ -1,0 +1,15 @@
+meta {
+  name: Publish
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/api/v1/pages/{{page_id}}/publish
+  body: none
+  auth: none
+}
+
+docs {
+  Set status=published. Renderer serve draft/live based on preview mode.
+}

@@ -1,0 +1,15 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/zones
+  body: none
+  auth: none
+}
+
+docs {
+  List semua zone (include inactive). Public `/zones` hanya active.
+}

@@ -1,0 +1,24 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/users?page=1&page_size=30&q=&role=&sort=created_desc
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  q:
+  role:
+  sort: created_desc
+}
+
+docs {
+  Admin-only. List semua user. Filter role: client|reseller|agent|admin.
+  Search di email/name.
+}

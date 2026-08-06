@@ -1,0 +1,16 @@
+meta {
+  name: ListDomains
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/reseller/domains
+  body: none
+  auth: none
+}
+
+docs {
+  Reseller ATAU agent. Team-scope aggregate domain list (per FQDN) — union
+  self-owned + on-behalf-of-clients. Portal reseller/agent view.
+}

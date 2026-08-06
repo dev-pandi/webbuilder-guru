@@ -1,0 +1,16 @@
+meta {
+  name: Approve
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/resellers/:id/approve
+  body: none
+  auth: none
+}
+
+docs {
+  Approve reseller application → role user upgrade dari pending → reseller.
+  Kirim notif email.
+}

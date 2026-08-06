@@ -1,0 +1,16 @@
+meta {
+  name: ListTopups
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/wallet/topup
+  body: none
+  auth: none
+}
+
+docs {
+  History top-up caller. Status: `pending` | `awaiting_verification`
+  (manual_bank + bukti uploaded) | `approved` | `rejected` | `expired`.
+}

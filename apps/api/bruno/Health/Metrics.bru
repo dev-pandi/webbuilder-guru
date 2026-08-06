@@ -1,0 +1,20 @@
+meta {
+  name: Metrics
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/metrics
+  body: none
+  auth: none
+}
+
+docs {
+  Prometheus scrape endpoint. Counters yang relevan:
+    - domain_purchase_created_total{result,gateway}
+    - domain_renew_created_total{result,gateway}
+    - payment_webhooks_total{code,result}
+    - domain_purchase_execute_after_payment_total{result,kind}
+    - domain_expiry_notices_total{result}
+}

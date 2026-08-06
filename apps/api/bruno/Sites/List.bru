@@ -1,0 +1,23 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/sites?page=1&page_size=20&q=&sort=updated_desc
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 20
+  q:
+  sort: updated_desc
+}
+
+docs {
+  List situs milik caller. Pagination + search + sort. Response
+  `Paginated<Site>` = `{ items, page, page_size, total, total_pages }`.
+}

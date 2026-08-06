@@ -1,0 +1,20 @@
+meta {
+  name: ListPurchases
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/agent/purchases?page=1&page_size=30
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+}
+
+docs {
+  Agent-only. On-behalf-of purchases yang di-trigger caller.
+}

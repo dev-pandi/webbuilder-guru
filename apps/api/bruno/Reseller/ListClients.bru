@@ -1,0 +1,22 @@
+meta {
+  name: ListClients
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/reseller/clients?page=1&page_size=30&q=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  q:
+}
+
+docs {
+  Reseller ATAU agent boleh. List client yang di-manage caller. Agent lihat
+  subset — hanya client yang assignment aktif.
+}

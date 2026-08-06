@@ -1,0 +1,29 @@
+meta {
+  name: CreateFromTemplate
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/sites/from-template/business-modern
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "job_id": "{{job_id}}"
+  }
+}
+
+docs {
+  Atomic create site + attach ke domain purchase job. `job_id` WAJIB —
+  1 domain = 1 situs. Dipanggil setelah domain purchase status=active,
+  template picker selesai di `/sites/pending/[jobId]`.
+
+  Path param: template slug. List slug: `GET /templates`.
+}

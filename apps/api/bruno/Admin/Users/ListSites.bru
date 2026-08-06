@@ -1,0 +1,15 @@
+meta {
+  name: ListSites
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/users/:id/sites
+  body: none
+  auth: none
+}
+
+docs {
+  Drill-down semua situs user tertentu. Dipakai admin user detail tab Situs.
+}

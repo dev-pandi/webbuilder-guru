@@ -1,0 +1,26 @@
+meta {
+  name: UpdateNameservers
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/domains/{{domain_name}}/nameservers
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nameservers": ["ns1.example.com", "ns2.example.com"]
+  }
+}
+
+docs {
+  Update NS via EPP. Client-side validate: min 2, max 13, hostname regex.
+  Server juga validate lagi (defence in depth).
+}

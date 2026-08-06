@@ -1,0 +1,22 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/invoices?page=1&page_size=30&status=&q=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  status:
+  q:
+}
+
+docs {
+  Admin cross-user invoice list — join users untuk enrich owner info.
+}

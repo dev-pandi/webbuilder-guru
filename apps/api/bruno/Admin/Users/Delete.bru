@@ -1,0 +1,16 @@
+meta {
+  name: Delete
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{base_url}}/api/v1/admin/users/:id
+  body: none
+  auth: none
+}
+
+docs {
+  Hapus user + cascade (sites, domains yang belum expire di-flag, dsb.).
+  Ireversible.
+}

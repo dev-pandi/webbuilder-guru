@@ -1,0 +1,15 @@
+meta {
+  name: Delete
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{base_url}}/api/v1/admin/sites/:id
+  body: none
+  auth: none
+}
+
+docs {
+  Admin cascade delete site — bypass ownership. Ireversible.
+}

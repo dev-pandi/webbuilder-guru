@@ -1,0 +1,18 @@
+meta {
+  name: PurchaseRetry
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/api/v1/domains/purchases/{{job_id}}/retry
+  body: none
+  auth: none
+}
+
+docs {
+  Re-run ExecuteAfterPayment untuk job yang gagal di step EPP CREATE
+  (invoice paid tapi provisioning failed). TIDAK bayar ulang.
+
+  Cocok dipanggil dari tombol "Coba lagi" di `/sites/pending/[jobId]`.
+}

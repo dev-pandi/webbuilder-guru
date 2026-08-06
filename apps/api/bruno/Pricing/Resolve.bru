@@ -1,0 +1,20 @@
+meta {
+  name: Resolve
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/pricing/resolve/id
+  body: none
+  auth: none
+}
+
+docs {
+  Resolve harga per TLD untuk caller (based on role: retail untuk client,
+  wholesale + reseller markup untuk reseller/agent). Response redacted.
+
+  Path param: TLD lowercase (mis. `id`, `com`, `net`).
+
+  Dipakai wizard cari domain untuk render harga + transparency box.
+}

@@ -1,0 +1,22 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/templates?page=1&page_size=30&status=&q=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  status:
+  q:
+}
+
+docs {
+  Admin templates CRUD. Status: draft|published|archived.
+}

@@ -1,0 +1,25 @@
+meta {
+  name: ListPurchases
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/registrar/purchases?page=1&page_size=30&status=&kind=&q=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  status:
+  kind:
+  q:
+}
+
+docs {
+  Transaction log lintas user (register + renew per event). Whitelist
+  sort preset via `AdminList` repo method. Filter status/kind + search
+  by domain/owner email.
+}

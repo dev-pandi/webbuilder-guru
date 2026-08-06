@@ -1,0 +1,30 @@
+meta {
+  name: CreateForSite
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/sites/{{site_id}}/pages
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Halaman Baru",
+    "slug": "halaman-baru",
+    "blocks": [
+      { "type": "heading", "props": { "text": "Halo Dunia" } }
+    ]
+  }
+}
+
+docs {
+  Create page baru. Slug `_home` reserved untuk homepage. Quota:
+  `pages_used >= pages_max` → 403.
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Reject
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/wallet/topups/:id/reject
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "reason": "Bukti transfer tidak valid / nominal tidak sesuai"
+  }
+}
+
+docs {
+  Reject top-up manual. User dapat notif — silakan submit ulang dengan
+  bukti yang benar.
+}

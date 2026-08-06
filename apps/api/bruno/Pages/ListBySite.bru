@@ -1,0 +1,15 @@
+meta {
+  name: ListBySite
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/sites/{{site_id}}/pages
+  body: none
+  auth: none
+}
+
+docs {
+  List semua page dalam 1 situs (drafts + published). Sort by title.
+}

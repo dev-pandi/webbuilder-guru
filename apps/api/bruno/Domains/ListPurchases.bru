@@ -1,0 +1,16 @@
+meta {
+  name: ListPurchases
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/domains/purchases
+  body: none
+  auth: none
+}
+
+docs {
+  Local job tracker list (transaction log — register + renew events).
+  Dashboard poll ini tiap 30s untuk kartu "Domain sedang diproses".
+}

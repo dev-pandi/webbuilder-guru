@@ -1,0 +1,17 @@
+meta {
+  name: Healthz
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/healthz
+  body: none
+  auth: none
+}
+
+docs {
+  Aggregate health check — return 200 kalau db + storage OK. 503 kalau
+  salah satu down (degraded). Untuk k8s liveness/readiness pilih `/livez`
+  atau `/readyz` yang lebih spesifik.
+}

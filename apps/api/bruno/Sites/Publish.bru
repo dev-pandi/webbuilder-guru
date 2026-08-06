@@ -1,0 +1,16 @@
+meta {
+  name: Publish
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/sites/{{site_id}}/publish
+  body: none
+  auth: none
+}
+
+docs {
+  Publish semua page draft ke live. Renderer bakal serve versi baru
+  setelah ISR revalidate (default 30s TTL di /public/*).
+}

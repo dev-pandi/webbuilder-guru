@@ -1,0 +1,16 @@
+meta {
+  name: AgentActivity
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/wallet/agent-activity
+  body: none
+  auth: none
+}
+
+docs {
+  Agent-only. Transaksi milik agent yang di-debit dari wallet reseller induk.
+  Filter di-tag via `metadata.agent_id`.
+}

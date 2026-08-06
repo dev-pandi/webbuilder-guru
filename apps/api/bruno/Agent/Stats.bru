@@ -1,0 +1,15 @@
+meta {
+  name: Stats
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/agent/stats
+  body: none
+  auth: none
+}
+
+docs {
+  Agent-only. Agregat clients + purchases + revenue (yang di-trigger caller).
+}

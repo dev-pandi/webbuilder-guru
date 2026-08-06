@@ -1,0 +1,35 @@
+meta {
+  name: Refresh
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "refresh_token": "{{refresh_token}}"
+  }
+}
+
+script:post-response {
+  // Rotation: old refresh token di-revoke, dapat pasangan baru. Update env.
+  if (res.status === 200 && res.body && res.body.data) {
+    const d = res.body.data;
+    if (d.access_token) bru.setEnvVar('access_token', d.access_token);
+    if (d.refresh_token) bru.setEnvVar('refresh_token', d.refresh_token);
+  }
+}
+
+docs {
+  Rotate refresh token — issue access baru + refresh baru, revoke yang lama.
+  Server balikin 401 kalau refresh token sudah revoked / expired / tidak match.
+}

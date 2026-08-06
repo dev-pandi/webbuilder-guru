@@ -1,0 +1,22 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/promos?page=1&page_size=30&q=&status=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  q:
+  status:
+}
+
+docs {
+  List kupon diskon. Filter status active|paused|expired.
+}

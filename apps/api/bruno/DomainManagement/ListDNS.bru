@@ -1,0 +1,15 @@
+meta {
+  name: ListDNS
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/v1/domains/{{domain_name}}/dns
+  body: none
+  auth: none
+}
+
+docs {
+  List DNS records via Cloudflare (proxy). 503 kalau CF disabled di config.
+}

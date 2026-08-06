@@ -1,0 +1,15 @@
+meta {
+  name: CloudflareInfo
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/domains/{{domain_name}}/cloudflare-info
+  body: none
+  auth: none
+}
+
+docs {
+  Admin CF diagnostic — zone status + NS sync + apex/www A record.
+}

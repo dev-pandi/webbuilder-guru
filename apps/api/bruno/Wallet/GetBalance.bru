@@ -1,0 +1,15 @@
+meta {
+  name: GetBalance
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/wallet
+  body: none
+  auth: none
+}
+
+docs {
+  Balance saldo caller dalam sen (Rp). Semua auth user boleh punya wallet.
+}

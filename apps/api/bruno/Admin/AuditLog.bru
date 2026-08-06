@@ -1,0 +1,23 @@
+meta {
+  name: AuditLog
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/audit-log?page=1&page_size=50&event=&actor_id=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 50
+  event:
+  actor_id:
+}
+
+docs {
+  Phase 7 audit log viewer. Filter event (mis. `promo.applied`,
+  `admin.mark_paid`, `reseller.approve`) + actor_id.
+}

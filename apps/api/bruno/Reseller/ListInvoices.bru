@@ -1,0 +1,16 @@
+meta {
+  name: ListInvoices
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/v1/reseller/invoices
+  body: none
+  auth: none
+}
+
+docs {
+  Aggregate invoice — self + client yang di-manage. Enrich dengan
+  `user_email` + `user_name` di response.
+}

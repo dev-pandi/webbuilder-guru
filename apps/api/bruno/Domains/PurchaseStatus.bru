@@ -1,0 +1,19 @@
+meta {
+  name: PurchaseStatus
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/domains/purchases/{{job_id}}
+  body: none
+  auth: none
+}
+
+docs {
+  Status polling per-job. Polling target di `/sites/pending/[jobId]`
+  (3s interval).
+
+  Status enum: `pending_payment` | `pending_provisioning` | `active` |
+  `failed`.
+}

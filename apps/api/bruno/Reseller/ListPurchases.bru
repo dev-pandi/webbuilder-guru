@@ -1,0 +1,21 @@
+meta {
+  name: ListPurchases
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/reseller/purchases?page=1&page_size=30
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+}
+
+docs {
+  Reseller ATAU agent. Transaction log on-behalf-of purchases (register +
+  renew) — 1 row per event. Include client_email + client_name join.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Publish
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/templates/:id/publish
+  body: none
+  auth: none
+}
+
+docs {
+  Publish template — status draft → published. Setelah publish langsung
+  keliatan di `/templates` public.
+}

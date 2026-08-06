@@ -1,0 +1,29 @@
+meta {
+  name: CreateDNS
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/domains/{{domain_name}}/dns
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "type": "A",
+    "name": "www",
+    "content": "1.2.3.4",
+    "ttl": 3600,
+    "proxied": false
+  }
+}
+
+docs {
+  Create DNS record via Cloudflare API. Type: A/AAAA/CNAME/MX/TXT/SRV/NS.
+}

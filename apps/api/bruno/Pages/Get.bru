@@ -1,0 +1,15 @@
+meta {
+  name: Get
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/pages/{{page_id}}
+  body: none
+  auth: none
+}
+
+docs {
+  Detail 1 page — include blocks tree (JSON), status, versions.
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Upload
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/documents
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file()
+  category: KTP
+  document_number: 3171012345678901
+  holder_name: Nama Lengkap
+}
+
+docs {
+  Upload dokumen (JPG/PNG/PDF, max ~5MB). Multipart form:
+    - `file` — binary
+    - `category` — KTP | NPWP | PASSPORT | ...
+    - `document_number` — nomor identitas (NIK, NPWP, dsb.)
+    - `holder_name` — nama pemilik dokumen
+}

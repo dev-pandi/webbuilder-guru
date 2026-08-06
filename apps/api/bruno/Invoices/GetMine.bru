@@ -1,0 +1,15 @@
+meta {
+  name: GetMine
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/invoices/{{invoice_id}}
+  body: none
+  auth: none
+}
+
+docs {
+  Detail invoice + line items + payment status + PDF download link.
+}

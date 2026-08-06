@@ -1,0 +1,33 @@
+meta {
+  name: UpdateContact
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/api/v1/domains/{{domain_name}}/contact
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "contact@example.com",
+    "phone": "+62.81234567890",
+    "name": "Nama Contact",
+    "organization": "PT Contoh",
+    "address": "Jl. Contoh No. 1",
+    "city": "Jakarta",
+    "postal_code": "12345",
+    "country_code": "ID"
+  }
+}
+
+docs {
+  Update WHOIS contact (registrant). Format phone `+CC.NUMBER` dotted
+  (RFC 5733). Server route ke api-registry EPP update contact.
+}

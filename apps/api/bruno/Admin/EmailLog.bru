@@ -1,0 +1,23 @@
+meta {
+  name: EmailLog
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/email-log?page=1&page_size=50&kind=&to=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 50
+  kind:
+  to:
+}
+
+docs {
+  Log outbound email untuk debug delivery (verification, reset, invitation,
+  domain expiry, dsb.).
+}

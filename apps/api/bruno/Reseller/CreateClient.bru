@@ -1,0 +1,29 @@
+meta {
+  name: CreateClient
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/reseller/clients
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "client@example.com",
+    "name": "Nama Klien",
+    "send_invitation": true
+  }
+}
+
+docs {
+  Create user role=client + link ke reseller/agent. Kalau
+  `send_invitation=true`, kirim email dengan link `/invitations/:token`
+  supaya klien set password sendiri.
+}

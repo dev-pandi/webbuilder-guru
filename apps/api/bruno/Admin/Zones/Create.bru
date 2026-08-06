@@ -1,0 +1,33 @@
+meta {
+  name: Create
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/zones
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tld": "biz.id",
+    "label": ".biz.id",
+    "min_years": 1,
+    "max_years": 10,
+    "require_document": true,
+    "auto_approved": false,
+    "status": "active"
+  }
+}
+
+docs {
+  Register TLD baru. `require_document=true` bikin wizard mandatory
+  upload KTP/NPWP. `auto_approved=false` — PANDI moderasi manual sebelum
+  active.
+}

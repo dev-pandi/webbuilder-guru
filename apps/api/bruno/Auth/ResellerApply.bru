@@ -1,0 +1,31 @@
+meta {
+  name: ResellerApply
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/api/v1/auth/reseller/apply
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "reseller@example.com",
+    "password": "changeme123",
+    "name": "Nama Reseller",
+    "reseller_display_name": "PT Contoh Reseller",
+    "phone": "+6281234567890",
+    "company_address": "Jl. Contoh No. 1, Jakarta"
+  }
+}
+
+docs {
+  Reseller signup — status default `pending`. Admin approve dulu via
+  `POST /admin/resellers/:id/approve` sebelum akun bisa login sebagai reseller.
+}

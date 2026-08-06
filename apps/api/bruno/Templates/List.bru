@@ -1,0 +1,16 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/templates
+  body: none
+  auth: none
+}
+
+docs {
+  List template published (anonymous accessible). Response include slug,
+  title, thumbnail, category. Dipakai wizard "create site from template".
+}

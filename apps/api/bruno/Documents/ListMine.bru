@@ -1,0 +1,17 @@
+meta {
+  name: ListMine
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/documents
+  body: none
+  auth: none
+}
+
+docs {
+  Library dokumen caller. Metadata di `documents` table, blob di
+  assets.Storage. Dipakai wizard pre-attach `document_ids[]` saat
+  purchase TLD yang `require_document=true`.
+}

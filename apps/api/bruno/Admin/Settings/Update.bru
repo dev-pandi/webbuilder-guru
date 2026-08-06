@@ -1,0 +1,26 @@
+meta {
+  name: Update
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{base_url}}/api/v1/admin/settings/ppn_rate
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "0.11"
+  }
+}
+
+docs {
+  Update key. Path param `key` — mis. `ppn_rate`, `brand_name`,
+  `support_email`. `value` selalu string; consumer parse sesuai type.
+}

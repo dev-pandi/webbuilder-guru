@@ -1,0 +1,16 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/payment-methods
+  body: none
+  auth: none
+}
+
+docs {
+  List semua payment method (include disabled + full credentials). Public
+  `/payment-methods` hanya enabled + masked.
+}

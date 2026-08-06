@@ -1,0 +1,16 @@
+meta {
+  name: ListCategories
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/documents/categories
+  body: none
+  auth: none
+}
+
+docs {
+  Kategori dokumen yang di-support: KTP, NPWP, PASSPORT, dsb.
+  Dipakai wizard render label + validation rules per kategori.
+}

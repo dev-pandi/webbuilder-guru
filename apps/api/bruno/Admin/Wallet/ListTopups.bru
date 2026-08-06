@@ -1,0 +1,22 @@
+meta {
+  name: ListTopups
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/wallet/topups?page=1&page_size=30&status=awaiting_verification
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  status: awaiting_verification
+}
+
+docs {
+  Admin queue top-up manual_bank yang menunggu verify. Filter status
+  `awaiting_verification` untuk actionable list.
+}

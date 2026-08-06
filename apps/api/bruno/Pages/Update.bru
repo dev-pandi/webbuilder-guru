@@ -1,0 +1,30 @@
+meta {
+  name: Update
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/api/v1/pages/{{page_id}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Judul Baru",
+    "slug": "slug-baru",
+    "blocks": [
+      { "type": "heading", "props": { "text": "Halo" } },
+      { "type": "text", "props": { "content": "Isi paragraf." } }
+    ]
+  }
+}
+
+docs {
+  Update blocks tree — bikin `page_versions` entry (history untuk restore).
+}

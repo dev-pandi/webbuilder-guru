@@ -1,0 +1,36 @@
+meta {
+  name: Create
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/payment-methods
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "code": "midtrans_snap",
+    "label": "Midtrans (Snap)",
+    "type": "midtrans_snap",
+    "enabled": true,
+    "config": {
+      "server_key": "SB-Mid-server-XXX",
+      "client_key": "SB-Mid-client-XXX",
+      "snap_url": "https://app.sandbox.midtrans.com/snap/v2/vtweb",
+      "webhook_secret": "..."
+    }
+  }
+}
+
+docs {
+  Register payment gateway baru. `code` immutable — pakai untuk webhook
+  route `/webhooks/payment/:code`. Type enum: midtrans_snap | paylabs |
+  manual_bank | deposit_wallet.
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Usage
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/sites/{{site_id}}/usage
+  body: none
+  auth: none
+}
+
+docs {
+  Return quota + used untuk pages + storage. Simpan snapshot ke
+  `site_usage_snapshots` (auto-prune 100 terakhir).
+
+  Response:
+  ```json
+  {
+    "data": {
+      "pages_used": 5, "pages_max": 20,
+      "storage_used_bytes": 12345, "storage_max_bytes": 104857600
+    }
+  }
+  ```
+}

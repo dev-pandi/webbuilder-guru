@@ -1,0 +1,51 @@
+meta {
+  name: Login
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{user_email}}",
+    "password": "{{user_password}}"
+  }
+}
+
+script:post-response {
+  // Auto-capture access + refresh token → env vars. Downstream request
+  // pakai {{access_token}} via collection.bru pre-request script.
+  if (res.status === 200 && res.body && res.body.data) {
+    const d = res.body.data;
+    if (d.access_token) bru.setEnvVar('access_token', d.access_token);
+    if (d.refresh_token) bru.setEnvVar('refresh_token', d.refresh_token);
+  }
+}
+
+docs {
+  Login dengan email + password. Response berisi `access_token` (TTL 15m)
+  + `refresh_token` (TTL 7d, rotation). Script post-response otomatis simpan
+  keduanya ke env — subsequent request otomatis authorized.
+
+  Rate-limited per IP (loginPerWindow).
+
+  Response 200:
+  ```json
+  {
+    "data": {
+      "access_token": "eyJhbGci...",
+      "refresh_token": "...",
+      "user": { "id": "...", "email": "...", "role": "..." }
+    }
+  }
+  ```
+}

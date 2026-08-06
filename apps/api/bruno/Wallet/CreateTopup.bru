@@ -1,0 +1,31 @@
+meta {
+  name: CreateTopup
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/v1/wallet/topup
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "amount": 100000,
+    "payment_method_code": "midtrans_snap"
+  }
+}
+
+docs {
+  Buat top-up request. `amount` dalam Rupiah (bukan sen). Response include
+  `payment_url` untuk redirect gateway (Midtrans/Paylabs) atau instruksi
+  transfer manual (manual_bank).
+
+  Manual_bank flow: user upload bukti transfer → admin approve →
+  wallet credit + ledger entry.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Readyz
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/readyz
+  body: none
+  auth: none
+}
+
+docs {
+  Readiness probe — cek db + storage. 503 kalau salah satu down; k8s bakal
+  pull pod dari LB rotation.
+}

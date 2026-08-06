@@ -1,0 +1,16 @@
+meta {
+  name: Get
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/users/:id
+  body: none
+  auth: none
+}
+
+docs {
+  Detail user + counts (sites, domains, invoices). Dipakai admin user
+  detail page.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Get
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/api/v1/sites/{{site_id}}
+  body: none
+  auth: none
+}
+
+docs {
+  Detail 1 situs — ownership check WHERE user_id = caller. 404 kalau bukan
+  owner (tidak leak existence).
+}

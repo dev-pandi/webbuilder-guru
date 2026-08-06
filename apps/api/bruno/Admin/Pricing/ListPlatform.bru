@@ -1,0 +1,16 @@
+meta {
+  name: ListPlatform
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/pricing/platform
+  body: none
+  auth: none
+}
+
+docs {
+  Admin CRUD retail + wholesale per TLD. Response include cost_cents +
+  retail_cents + margin.
+}

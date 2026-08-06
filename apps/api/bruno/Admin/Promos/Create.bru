@@ -1,0 +1,39 @@
+meta {
+  name: Create
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/promos
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "code": "PROMO2026",
+    "discount_type": "percent",
+    "discount_value": 20,
+    "applies_to": "register",
+    "tlds": ["id", "com"],
+    "min_subtotal_cents": 10000000,
+    "max_discount_cents": 5000000,
+    "valid_from": "2026-01-01T00:00:00Z",
+    "valid_until": "2026-12-31T23:59:59Z",
+    "max_uses_total": 100,
+    "max_uses_per_user": 1
+  }
+}
+
+docs {
+  Buat kupon baru.
+  `discount_type`: percent | fixed
+  `applies_to`: register | renew | both
+  `tlds`: whitelist TLD (empty = semua)
+  `max_uses_*`: 0/null = unlimited
+}

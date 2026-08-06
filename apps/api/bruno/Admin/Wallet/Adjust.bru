@@ -1,0 +1,30 @@
+meta {
+  name: Adjust
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/api/v1/admin/wallet/adjust
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "user_id": "uuid-user",
+    "amount_cents": 50000,
+    "kind": "credit",
+    "reason": "Refund invoice #INV-001"
+  }
+}
+
+docs {
+  Manual adjust wallet — refund, credit promo, koreksi bug. Full audit
+  trail di ledger. `amount_cents` positif untuk credit, negatif untuk debit
+  (atau kind=`debit`).
+}

@@ -1,0 +1,16 @@
+meta {
+  name: AgentsBreakdown
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/api/v1/wallet/agents-breakdown
+  body: none
+  auth: none
+}
+
+docs {
+  Reseller-only. Aggregate per-agent — total spend + count. Reporting
+  siapa pakai berapa dari wallet reseller.
+}

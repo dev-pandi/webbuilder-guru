@@ -1,0 +1,16 @@
+meta {
+  name: Livez
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/livez
+  body: none
+  auth: none
+}
+
+docs {
+  Liveness probe — proses masih running. Selalu 200 kecuali API benar-benar
+  crash. Cocok untuk k8s liveness (fail = restart pod).
+}

@@ -1,0 +1,15 @@
+meta {
+  name: ListInvoices
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/users/:id/invoices
+  body: none
+  auth: none
+}
+
+docs {
+  Drill-down semua invoice user tertentu (admin observability).
+}

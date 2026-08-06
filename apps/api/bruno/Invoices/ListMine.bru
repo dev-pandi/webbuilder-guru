@@ -1,0 +1,23 @@
+meta {
+  name: ListMine
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/invoices?page=1&page_size=30&status=&q=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  status:
+  q:
+}
+
+docs {
+  List invoice caller. Status enum: `draft` | `unpaid` | `paid` |
+  `cancelled` | `refunded`. Search by number atau line description.
+}

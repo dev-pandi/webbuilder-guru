@@ -1,0 +1,21 @@
+meta {
+  name: List
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/v1/admin/resellers?page=1&page_size=30&status=
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  page_size: 30
+  status:
+}
+
+docs {
+  List reseller applications. Status: pending|approved|suspended.
+}

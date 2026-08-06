@@ -1,0 +1,15 @@
+meta {
+  name: Unpublish
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/api/v1/pages/{{page_id}}/unpublish
+  body: none
+  auth: none
+}
+
+docs {
+  Set status=draft — renderer 404 kalau public request.
+}

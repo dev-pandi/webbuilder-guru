@@ -1,0 +1,15 @@
+meta {
+  name: Delete
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{base_url}}/api/v1/sites/{{site_id}}
+  body: none
+  auth: none
+}
+
+docs {
+  Cascade delete site + pages + assets + domain-links. Ireversible.
+}
