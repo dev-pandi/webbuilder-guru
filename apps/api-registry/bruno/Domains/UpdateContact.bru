@@ -1,0 +1,33 @@
+meta {
+  name: Update Contact
+  type: http
+  seq: 8
+}
+
+patch {
+  url: {{base_url}}/v1/domains/example.id/contact
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Budi Santoso",
+    "email": "budi.new@example.com",
+    "phone": "+62.81234567890",
+    "address": "Jl. Sudirman No. 5",
+    "city": "Jakarta",
+    "state": "DKI Jakarta",
+    "postal_code": "10110",
+    "country_code": "ID"
+  }
+}
+
+docs {
+  Update registrant contact via EPP contact:update. Note: registry may
+  charge / require verification for owner contact changes.
+}

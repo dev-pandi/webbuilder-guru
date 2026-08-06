@@ -1,0 +1,28 @@
+meta {
+  name: Update Nameservers
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/v1/domains/example.id/nameservers
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "nameservers": [
+      "noel.ns.cloudflare.com",
+      "sonja.ns.cloudflare.com"
+    ]
+  }
+}
+
+docs {
+  Replace-all NS. Min 2, max 13. Registry validate hostname format strict.
+}

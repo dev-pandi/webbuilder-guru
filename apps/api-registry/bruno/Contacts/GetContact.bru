@@ -1,0 +1,16 @@
+meta {
+  name: Get Contact
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/contacts/12345
+  body: none
+  auth: none
+}
+
+docs {
+  Get contact via internal contact_id (uint64). Handler derive EPP handle
+  deterministic dari id.
+}

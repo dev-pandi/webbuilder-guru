@@ -1,0 +1,48 @@
+meta {
+  name: Register
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/v1/domains/register
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "domain": "example.id",
+    "years": 1,
+    "external_user_id": "00000000-0000-0000-0000-000000000001",
+    "idempotency_key": "test-idem-key-1",
+    "contact": {
+      "name": "Budi Santoso",
+      "email": "budi@example.com",
+      "phone": "+62.81234567890",
+      "address": "Jl. Sudirman No. 1",
+      "city": "Jakarta",
+      "state": "DKI Jakarta",
+      "postal_code": "10110",
+      "country_code": "ID"
+    },
+    "nameservers": []
+  }
+}
+
+docs {
+  Register domain via EPP domain:create. Sync operation — return
+  {job_id, status:"active"} kalau sukses.
+
+  Notes:
+  - idempotency_key WAJIB (cegah double-register kalau retry).
+  - phone format: E.164 dotted (+CC.NUMBER) — RFC 5733 §2.5.
+  - external_user_id dipakai untuk derive contact handle deterministic
+    (WB000000...). Cegah dobel contact create per user.
+  - Nameservers kosong = pakai default registry (biasanya PANDI hosting).
+    Cloudflare auto-attach via web-builder side setelah register sukses.
+}

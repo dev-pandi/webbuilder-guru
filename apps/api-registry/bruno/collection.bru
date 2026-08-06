@@ -1,0 +1,40 @@
+// Collection-level pre-request script — sign HMAC untuk semua request
+// yang hit /v1/*. Skip infra endpoints (/healthz, /readyz, /metrics,
+// /version, /openapi.json).
+//
+// Signature format (harus match apps/api-registry/internal/security/hmac.go):
+//   {ts}.{METHOD}{ORIGINAL_URL}.{body}
+//
+// - `ts` = unix seconds
+// - `METHOD` uppercase (POST, GET, PATCH, dst.)
+// - `ORIGINAL_URL` = path + query string (mis. `/v1/domains/check`,
+//   `/v1/jobs?limit=20`)
+// - `body` = raw request body bytes (kosong untuk GET)
+//
+// Set env `hmac_secret` sesuai INTERNAL_HMAC_SECRET di api-registry .env.
+
+script:pre-request {
+  const crypto = require('crypto');
+  const url = req.getUrl();
+  // Skip HMAC untuk endpoint publik (dev/monitoring).
+  if (/\/(healthz|readyz|version|metrics|openapi\.json)(\?|$)/.test(url)) {
+    return;
+  }
+  const secret = bru.getEnvVar('hmac_secret') || '';
+  if (!secret) {
+    // Dev mode di server juga skip. Kalau prod, request akan 401.
+    return;
+  }
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const method = req.getMethod().toUpperCase();
+  const parsed = new URL(url);
+  const pathAndQuery = parsed.pathname + parsed.search;
+  const rawBody = req.getBody();
+  const bodyStr = rawBody
+    ? (typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody))
+    : '';
+  const canonical = `${ts}.${method}${pathAndQuery}.${bodyStr}`;
+  const signature = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+  req.setHeader('X-Timestamp', ts);
+  req.setHeader('X-Signature', signature);
+}

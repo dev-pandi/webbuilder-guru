@@ -1,0 +1,19 @@
+meta {
+  name: Whois
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/whois?domain=example.id
+  body: none
+  auth: none
+  query: {
+    domain: example.id
+  }
+}
+
+docs {
+  Public WHOIS lookup — return status, registrar, created_at, expires_at,
+  owner_masked. Data dari EPP domain:info (kalau exist) atau kosong.
+}

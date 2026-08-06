@@ -1,0 +1,19 @@
+meta {
+  name: List Jobs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/v1/jobs?limit=20
+  body: none
+  auth: none
+  query: {
+    limit: 20
+  }
+}
+
+docs {
+  Audit trail EPP call. Kind: register / renew / etc. Status per job.
+  In-memory store default (cap 10k, LRU evict).
+}

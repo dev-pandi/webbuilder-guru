@@ -1,0 +1,28 @@
+meta {
+  name: Check
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/v1/domains/check
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "domain": "example.id",
+    "external_user_id": ""
+  }
+}
+
+docs {
+  EPP domain:check single FQDN. Response: {query, allowed_zones, results}.
+  Note: harus FQDN penuh (mis. "example.id"), bukan SLD saja. SLD expansion
+  di layer web builder (checkDomain handler pakai zones catalog).
+}

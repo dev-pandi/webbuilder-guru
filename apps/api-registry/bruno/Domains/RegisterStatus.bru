@@ -1,0 +1,16 @@
+meta {
+  name: Register Status
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/v1/domains/register/epp_example.id_20260806120000/status
+  body: none
+  auth: none
+}
+
+docs {
+  Cek status job register. EPP direct = sync jadi status langsung "active"
+  post-response. Endpoint ini lookup via domain:info berdasarkan job_id.
+}

@@ -1,26 +1,22 @@
 "use client";
 
-// /admin/pricing — CRUD platform_prices per TLD (Phase 3.10).
-// Kolom: TLD | Retail Register | Retail Renew | Wholesale Register | Wholesale Renew | Aksi.
-// Wholesale nullable (fetch dari registrar; admin isi manual sekarang).
+// /admin/pricing — CRUD platform_prices per TLD. Self-sufficient: harga
+// wholesale + retail di-input manual oleh admin (sumber otoritatif = local
+// DB). Legacy sync dari external registrar-api sudah dihapus di Phase 3.
 
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
-  CheckCircle2,
-  Cloud,
   DollarSign,
-  FileText,
   Loader2,
   Pencil,
   Plus,
-  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -51,44 +47,12 @@ type PlatformPrice = {
   updated_at: string;
 };
 
-// Shape dari GET /admin/pricing/registrar-tlds — daftar TLD yang reseller
-// boleh handle + harga wholesale awal, plus flag cross-check apakah sudah
-// di-import ke platform_prices lokal.
-type RegistrarTLD = {
-  tld: string;
-  currency: string;
-  wholesale_register_price: number;
-  wholesale_renew_price: number;
-  suggested_retail_register_price: number;
-  suggested_retail_renew_price: number;
-  require_document: boolean;
-  auto_approved: boolean;
-  nik_auto_approved: boolean;
-  local_exists: boolean;
-  local_out_of_sync: boolean;
-};
-
-// Initial values yang dikirim ke UpsertDialog waktu admin klik "Import" —
-// pre-fill semua field + tandai TLD sebagai locked (bukan edit row lokal).
-type InitialForm = {
-  tld: string;
-  retail_register_price: number;
-  retail_renew_price: number;
-  wholesale_register_price: number;
-  wholesale_renew_price: number;
-};
-
 export default function AdminPricingPage() {
   const [items, setItems] = useState<PlatformPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlatformPrice | null>(null);
-  const [initialForm, setInitialForm] = useState<InitialForm | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-
-  const [registrarTLDs, setRegistrarTLDs] = useState<RegistrarTLD[] | null>(null);
-  const [registrarErr, setRegistrarErr] = useState<string | null>(null);
-  const [registrarLoading, setRegistrarLoading] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -103,57 +67,9 @@ export default function AdminPricingPage() {
     }
   }
 
-  async function loadRegistrarTLDs() {
-    setRegistrarLoading(true);
-    setRegistrarErr(null);
-    try {
-      const res = await api<RegistrarTLD[]>("/api/v1/admin/pricing/registrar-tlds");
-      setRegistrarTLDs(res ?? []);
-    } catch (e) {
-      // 503 = registrar client belum di-wire — beda pesan supaya admin tahu
-      // ini bukan network error tapi config missing.
-      if (e instanceof ApiError && e.status === 503) {
-        setRegistrarErr(
-          "Sync legacy registrar-api tidak tersedia di mode self-sufficient (default). Edit pricing manual per TLD di tabel di bawah.",
-        );
-      } else {
-        setRegistrarErr((e as Error).message);
-      }
-      setRegistrarTLDs([]);
-    } finally {
-      setRegistrarLoading(false);
-    }
-  }
-
   useEffect(() => {
     refresh();
-    loadRegistrarTLDs();
   }, []);
-
-  function importFromRegistrar(t: RegistrarTLD) {
-    setInitialForm({
-      tld: t.tld,
-      retail_register_price: t.suggested_retail_register_price,
-      retail_renew_price: t.suggested_retail_renew_price,
-      wholesale_register_price: t.wholesale_register_price,
-      wholesale_renew_price: t.wholesale_renew_price,
-    });
-    setEditing(null);
-    setDialogOpen(true);
-  }
-
-  function syncWholesale(t: RegistrarTLD, existing: PlatformPrice) {
-    // Update wholesale-only — retail biarkan sesuai admin markup sebelumnya.
-    setInitialForm({
-      tld: existing.tld,
-      retail_register_price: existing.retail_register_price,
-      retail_renew_price: existing.retail_renew_price,
-      wholesale_register_price: t.wholesale_register_price,
-      wholesale_renew_price: t.wholesale_renew_price,
-    });
-    setEditing(existing);
-    setDialogOpen(true);
-  }
 
   async function remove(id: string, tld: string) {
     if (!confirm(`Hapus pricing untuk .${tld}?`)) return;
@@ -182,7 +98,6 @@ export default function AdminPricingPage() {
         <Button
           onClick={() => {
             setEditing(null);
-            setInitialForm(null);
             setDialogOpen(true);
           }}
           className="gap-1.5"
@@ -191,16 +106,6 @@ export default function AdminPricingPage() {
           Tambah TLD
         </Button>
       </div>
-
-      <RegistrarSyncCard
-        tlds={registrarTLDs}
-        loading={registrarLoading}
-        err={registrarErr}
-        localByTLD={Object.fromEntries(items.map((p) => [p.tld, p]))}
-        onReload={loadRegistrarTLDs}
-        onImport={importFromRegistrar}
-        onSyncWholesale={syncWholesale}
-      />
 
       {err && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -287,169 +192,24 @@ export default function AdminPricingPage() {
       <UpsertDialog
         open={dialogOpen}
         initial={editing}
-        prefill={initialForm}
         onClose={() => setDialogOpen(false)}
         onSaved={() => {
           setDialogOpen(false);
-          setInitialForm(null);
           refresh();
-          // Sync ulang badge "sudah imported" pasca upsert.
-          loadRegistrarTLDs();
         }}
       />
     </div>
   );
 }
 
-function RegistrarSyncCard({
-  tlds,
-  loading,
-  err,
-  localByTLD,
-  onReload,
-  onImport,
-  onSyncWholesale,
-}: {
-  tlds: RegistrarTLD[] | null;
-  loading: boolean;
-  err: string | null;
-  localByTLD: Record<string, PlatformPrice>;
-  onReload: () => void;
-  onImport: (t: RegistrarTLD) => void;
-  onSyncWholesale: (t: RegistrarTLD, existing: PlatformPrice) => void;
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-3 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Cloud className="size-4 text-primary" />
-              TLD dari Registrar
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Daftar TLD yang reseller boleh handle + harga wholesale awal.
-              Sumber: <code>POST /reseller/domain/check</code> di registrar-api.
-            </p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={onReload}
-            disabled={loading}
-            className="gap-1.5"
-          >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-            Sinkron ulang
-          </Button>
-        </div>
-
-        {err && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-            <AlertCircle className="size-3.5 shrink-0 translate-y-0.5" />
-            <span>{err}</span>
-          </div>
-        )}
-
-        {!err && tlds !== null && tlds.length === 0 && !loading && (
-          <p className="text-xs text-muted-foreground">
-            Registrar tidak mengembalikan TLD apa pun. Cek <code>allowed_zones</code>{" "}
-            reseller di admin registrar-api.
-          </p>
-        )}
-
-        {tlds && tlds.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {tlds.map((t) => {
-              const existing = localByTLD[t.tld];
-              return (
-                <RegistrarTLDChip
-                  key={t.tld}
-                  tld={t}
-                  existing={existing}
-                  onImport={() => onImport(t)}
-                  onSync={() => existing && onSyncWholesale(t, existing)}
-                />
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function RegistrarTLDChip({
-  tld,
-  existing,
-  onImport,
-  onSync,
-}: {
-  tld: RegistrarTLD;
-  existing?: PlatformPrice;
-  onImport: () => void;
-  onSync: () => void;
-}) {
-  const wholesaleFmt = fmt(tld.wholesale_register_price, tld.currency);
-  if (!existing) {
-    // Belum di-import — button "Import" pre-fill dialog dengan wholesale +
-    // retail suggested (wholesale * 1.2).
-    return (
-      <button
-        type="button"
-        onClick={onImport}
-        className="group inline-flex items-center gap-2 rounded-full border border-dashed px-3 py-1.5 text-xs transition-colors hover:border-primary hover:bg-primary/5"
-        title={`Reg: ${wholesaleFmt} · Ren: ${fmt(tld.wholesale_renew_price, tld.currency)}`}
-      >
-        <span className="font-mono font-medium">.{tld.tld}</span>
-        <span className="text-muted-foreground">{wholesaleFmt}</span>
-        {tld.require_document && (
-          <FileText className="size-3 text-amber-600" />
-        )}
-        <Plus className="size-3 opacity-60 transition-opacity group-hover:opacity-100" />
-      </button>
-    );
-  }
-  if (tld.local_out_of_sync) {
-    return (
-      <button
-        type="button"
-        onClick={onSync}
-        className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 transition-colors hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-200"
-        title={`Wholesale registrar: ${wholesaleFmt}. Sync untuk update.`}
-      >
-        <span className="font-mono font-medium">.{tld.tld}</span>
-        <AlertCircle className="size-3" />
-        <span>Wholesale beda</span>
-      </button>
-    );
-  }
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"
-      title="Sudah imported dan wholesale sesuai registrar"
-    >
-      <span className="font-mono font-medium">.{tld.tld}</span>
-      <CheckCircle2 className="size-3" />
-    </span>
-  );
-}
-
 function UpsertDialog({
   open,
   initial,
-  prefill,
   onClose,
   onSaved,
 }: {
   open: boolean;
   initial: PlatformPrice | null;
-  prefill: InitialForm | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -465,18 +225,7 @@ function UpsertDialog({
 
   useEffect(() => {
     if (!open) return;
-    // Prefill dari registrar sync menang atas both initial + kosong — kalau
-    // ada initial (edit existing), gabungkan: TLD locked ke initial, wholesale
-    // di-override dari registrar, retail biarkan sesuai state initial.
-    if (prefill) {
-      setForm({
-        tld: prefill.tld,
-        retail_register_price: String(prefill.retail_register_price),
-        retail_renew_price: String(prefill.retail_renew_price),
-        wholesale_register_price: String(prefill.wholesale_register_price),
-        wholesale_renew_price: String(prefill.wholesale_renew_price),
-      });
-    } else if (initial) {
+    if (initial) {
       setForm({
         tld: initial.tld,
         retail_register_price: String(initial.retail_register_price),
@@ -496,7 +245,7 @@ function UpsertDialog({
       });
     }
     setErr(null);
-  }, [open, initial, prefill]);
+  }, [open, initial]);
 
   async function submit() {
     setErr(null);
@@ -541,24 +290,11 @@ function UpsertDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {initial
-              ? `Edit Pricing .${initial.tld}`
-              : prefill
-                ? `Import Pricing .${prefill.tld}`
-                : "Tambah Pricing TLD"}
+            {initial ? `Edit Pricing .${initial.tld}` : "Tambah Pricing TLD"}
           </DialogTitle>
           <DialogDescription>
-            {prefill && !initial ? (
-              <>
-                Wholesale + retail suggested (wholesale × 1.2) sudah dipre-fill
-                dari registrar. Adjust markup sebelum simpan.
-              </>
-            ) : (
-              <>
-                Harga dalam IDR (rupiah, tanpa desimal). Wholesale opsional —
-                kalau kosong, wallet debit reseller/agent fallback ke retail.
-              </>
-            )}
+            Harga dalam IDR (rupiah, tanpa desimal). Wholesale opsional —
+            kalau kosong, wallet debit reseller/agent fallback ke retail.
           </DialogDescription>
         </DialogHeader>
 
@@ -570,7 +306,7 @@ function UpsertDialog({
               value={form.tld}
               onChange={(e) => setForm((f) => ({ ...f, tld: e.target.value }))}
               placeholder="co.id"
-              disabled={!!initial || !!prefill}
+              disabled={!!initial}
               className="font-mono"
             />
             <p className="text-[11px] text-muted-foreground">

@@ -1,0 +1,28 @@
+meta {
+  name: Update Contact By ID
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{base_url}}/v1/contacts/12345
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Budi Updated",
+    "email": "budi.updated@example.com",
+    "phone": "+62.81234567890",
+    "address": "Jl. Baru No. 1",
+    "city": "Jakarta",
+    "state": "DKI Jakarta",
+    "postal_code": "10110",
+    "country_code": "ID"
+  }
+}

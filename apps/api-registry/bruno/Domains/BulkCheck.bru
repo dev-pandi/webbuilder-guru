@@ -1,0 +1,25 @@
+meta {
+  name: Bulk Check
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/v1/domains/bulk-check
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "domains": [
+      "example.id",
+      "example.co.id",
+      "example.com"
+    ]
+  }
+}

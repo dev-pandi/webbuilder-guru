@@ -1,0 +1,17 @@
+meta {
+  name: Info
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/v1/domains/example.id/info
+  body: none
+  auth: none
+}
+
+docs {
+  EPP domain:info — return status, registrant handle, nameservers,
+  created_at, expires_at. Dipakai web-builder post-register/renew untuk
+  cache ke tabel registered_domains.
+}

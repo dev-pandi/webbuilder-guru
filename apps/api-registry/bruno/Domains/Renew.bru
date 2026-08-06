@@ -1,0 +1,28 @@
+meta {
+  name: Renew
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/v1/domains/example.id/renew
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "years": 1,
+    "idempotency_key": "test-renew-idem-1",
+    "external_user_id": "00000000-0000-0000-0000-000000000001"
+  }
+}
+
+docs {
+  Renew existing domain — EPP domain:renew. Butuh domain sudah exist di
+  registry + expires_at ada. Return {job_id, status:"active"} + expDate baru.
+}
