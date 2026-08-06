@@ -24,6 +24,12 @@ type AssignmentResolver interface {
 	ListTeamActorIDs(ctx context.Context, callerID uuid.UUID) ([]uuid.UUID, error)
 }
 
+// PaidCallback — dipanggil setelah MarkPaid sukses di admin path. Mirror
+// pola `paymentwh.Handler.onPaid` supaya admin manual verify punya efek
+// downstream yang sama dengan webhook gateway (trigger EPP register + purchase
+// status transition). Nil-safe.
+type PaidCallback func(ctx context.Context, inv *Invoice) error
+
 // Handler — HTTP endpoints untuk invoices.
 //
 // User (JWT authenticated): list + detail + PDF (own only, enforce ownership).
@@ -34,6 +40,7 @@ type Handler struct {
 	svc         *Service
 	pdf         PDFRenderer         // opsional; kalau nil, endpoint /pdf return 501
 	assignments AssignmentResolver  // opsional; kalau nil, /reseller/invoices return 503
+	onPaid      PaidCallback        // opsional; dipanggil setelah MarkPaidAdmin sukses
 }
 
 func NewHandler(r *Repo, s *Service) *Handler {
@@ -45,6 +52,11 @@ func (h *Handler) SetPDFRenderer(p PDFRenderer) { h.pdf = p }
 // SetAssignments inject reseller assignment resolver untuk aggregate list.
 // Nil-safe: kalau tidak di-set, endpoint `/reseller/invoices` return 503.
 func (h *Handler) SetAssignments(a AssignmentResolver) { h.assignments = a }
+
+// SetPaidCallback wire callback yang trigger downstream logic (ExecuteAfterPayment)
+// setelah admin manual mark-paid. Sama pattern dengan paymentwh handler supaya
+// state transition purchase konsisten di semua path (webhook + manual admin).
+func (h *Handler) SetPaidCallback(fn PaidCallback) { h.onPaid = fn }
 
 // --- User endpoints ---
 
@@ -247,6 +259,19 @@ func (h *Handler) MarkPaidAdmin(c *fiber.Ctx) error {
 		return httpx.Internal(c, err.Error())
 	}
 	inv, _ := h.repo.GetWithLines(c.Context(), id)
+	// Trigger downstream callback (ExecuteAfterPayment) — best-effort, sama
+	// pattern dengan paymentwh. Kalau callback error, invoice tetap paid
+	// (idempotent) dan admin bisa retry via /purchases/:job_id/retry.
+	if h.onPaid != nil && inv != nil {
+		if cbErr := h.onPaid(c.Context(), inv); cbErr != nil {
+			// Log tapi jangan gagalkan respons — invoice paid sudah authoritative.
+			// Downstream (ExecuteAfterPayment) idempotent, bisa dipicu ulang via retry.
+			return httpx.OK(c, fiber.Map{
+				"invoice": inv,
+				"warning": "Invoice ditandai paid, tapi trigger provisioning gagal: " + cbErr.Error() + ". Gunakan tombol 'Retry' di halaman pembelian domain untuk re-invoke.",
+			})
+		}
+	}
 	return httpx.OK(c, inv)
 }
 

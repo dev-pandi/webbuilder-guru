@@ -399,6 +399,13 @@ func main() {
 		paymentWebhookHandler.SetPaidCallback(purchaseHandler.ExecuteAfterPayment)
 		slog.Info("payment webhook: callback wired ke domain_purchase.ExecuteAfterPayment")
 
+		// Admin manual mark-paid (/admin/invoices/:id/mark-paid) juga harus
+		// trigger downstream provisioning — kalau tidak, invoice paid tapi
+		// purchase status tetap pending_payment (bug: user lihat status stuck
+		// walau admin sudah verify bank transfer).
+		invoicesHandler.SetPaidCallback(purchaseHandler.ExecuteAfterPayment)
+		slog.Info("invoices: admin mark-paid callback wired ke domain_purchase.ExecuteAfterPayment")
+
 		// PurchaseV2 dependencies — inject via adapters. Bikin 2-phase flow
 		// (invoice + charge lokal) available di POST /domains/purchase.
 		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo, authRepo: authRepo})
