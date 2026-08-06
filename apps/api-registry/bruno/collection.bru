@@ -12,29 +12,44 @@
 // - `body` = raw request body bytes (kosong untuk GET)
 //
 // Set env `hmac_secret` sesuai INTERNAL_HMAC_SECRET di api-registry .env.
+//
+// Troubleshoot: kalau header X-Timestamp / X-Signature tidak muncul di
+// request tab Headers, kemungkinan:
+//   1. `require('crypto')` di-block sandbox — cek `bruno.json` sudah punya
+//      `scripts.moduleWhitelist: ["crypto"]`.
+//   2. Bruno safe-mode enabled — buka Preferences → Scripts → set
+//      "Sandbox Mode: Developer" (v1.20+ butuh ini untuk pakai require()).
+//   3. `hmac_secret` env kosong — script skip signing sebagai dev mode.
 
 script:pre-request {
-  const crypto = require('crypto');
-  const url = req.getUrl();
-  // Skip HMAC untuk endpoint publik (dev/monitoring).
-  if (/\/(healthz|readyz|version|metrics|openapi\.json)(\?|$)/.test(url)) {
-    return;
+  try {
+    const crypto = require('crypto');
+    const url = req.getUrl();
+    // Skip HMAC untuk endpoint publik (dev/monitoring).
+    if (/\/(healthz|readyz|version|metrics|openapi\.json)(\?|$)/.test(url)) {
+      return;
+    }
+    const secret = bru.getEnvVar('hmac_secret') || '';
+    if (!secret) {
+      console.warn('[HMAC] hmac_secret env kosong — skip signing (request akan 401 di prod)');
+      return;
+    }
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const method = req.getMethod().toUpperCase();
+    const parsed = new URL(url);
+    const pathAndQuery = parsed.pathname + parsed.search;
+    const rawBody = req.getBody();
+    const bodyStr = rawBody
+      ? (typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody))
+      : '';
+    const canonical = `${ts}.${method}${pathAndQuery}.${bodyStr}`;
+    const signature = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+    req.setHeader('X-Timestamp', ts);
+    req.setHeader('X-Signature', signature);
+    console.log('[HMAC] signed', method, pathAndQuery, 'ts=' + ts);
+  } catch (err) {
+    console.error('[HMAC] pre-request script error:', err && err.message ? err.message : err);
+    // Rethrow supaya Bruno menampilkan error banner + tidak silent-fail.
+    throw err;
   }
-  const secret = bru.getEnvVar('hmac_secret') || '';
-  if (!secret) {
-    // Dev mode di server juga skip. Kalau prod, request akan 401.
-    return;
-  }
-  const ts = Math.floor(Date.now() / 1000).toString();
-  const method = req.getMethod().toUpperCase();
-  const parsed = new URL(url);
-  const pathAndQuery = parsed.pathname + parsed.search;
-  const rawBody = req.getBody();
-  const bodyStr = rawBody
-    ? (typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody))
-    : '';
-  const canonical = `${ts}.${method}${pathAndQuery}.${bodyStr}`;
-  const signature = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');
-  req.setHeader('X-Timestamp', ts);
-  req.setHeader('X-Signature', signature);
 }

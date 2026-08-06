@@ -17,3 +17,30 @@ docs {
   Public WHOIS lookup — return status, registrar, created_at, expires_at,
   owner_masked. Data dari EPP domain:info (kalau exist) atau kosong.
 }
+
+script:pre-request {
+  try {
+    const crypto = require('crypto');
+    const secret = bru.getEnvVar('hmac_secret') || '';
+    if (!secret) {
+      console.warn('[HMAC] hmac_secret env kosong — skip signing');
+      return;
+    }
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const method = req.getMethod().toUpperCase();
+    const parsed = new URL(req.getUrl());
+    const pathAndQuery = parsed.pathname + parsed.search;
+    const rawBody = req.getBody();
+    const bodyStr = rawBody
+      ? (typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody))
+      : '';
+    const canonical = `${ts}.${method}${pathAndQuery}.${bodyStr}`;
+    const signature = 'sha256=' + crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+    req.setHeader('X-Timestamp', ts);
+    req.setHeader('X-Signature', signature);
+    console.log('[HMAC] signed', method, pathAndQuery, 'ts=' + ts);
+  } catch (err) {
+    console.error('[HMAC] error:', err && err.message ? err.message : err);
+    throw err;
+  }
+}

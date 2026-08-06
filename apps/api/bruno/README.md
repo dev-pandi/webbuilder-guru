@@ -21,12 +21,28 @@ brew install bruno
 
 ## Setup Environment
 
-1. Pilih env di dropdown pojok kanan atas: **Local** atau **Production**.
-2. Klik ikon pensil di sebelah env → set:
-   - `base_url` — default `http://localhost:8080` (API dev via `go run ./cmd/server`).
-   - `user_email` + `user_password` — kredensial akun test.
-   - Field lain (`site_id`, `page_id`, `job_id`, `invoice_id`, `domain_name`) — akan terisi otomatis saat kamu jalanin request tertentu, atau isi manual sesuai kebutuhan.
-3. Save.
+Ada 2 format env di folder ini — pilih sesuai versi Bruno kamu:
+
+### Bruno v1.x (native `.bru` support)
+
+Env otomatis ke-load saat Open Collection. Pilih di dropdown pojok kanan atas: **Local** atau **Production**.
+
+### Bruno v3.x atau versi yang hanya support JSON
+
+Env `.bru` **tidak auto-load**. Import manual JSON:
+
+1. Klik icon environment di sidebar collection → **Import Environment**
+2. Pilih file [`environments/Local.json`](environments/Local.json) → import
+3. Ulangi untuk [`environments/Production.json`](environments/Production.json)
+
+### Configure
+
+Klik ikon pensil di sebelah env → set:
+- `base_url` — default `http://localhost:8080` (API dev via `go run ./cmd/server`).
+- `user_email` + `user_password` — kredensial akun test.
+- Field lain (`site_id`, `page_id`, `job_id`, `invoice_id`, `domain_name`) — akan terisi otomatis saat kamu jalanin request tertentu, atau isi manual sesuai kebutuhan.
+
+Save.
 
 **Local env** — target `http://localhost:8080` (default `HTTP_ADDR=:8080` di `apps/api/.env`).
 

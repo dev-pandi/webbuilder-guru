@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "name": "Local",
+  "type": "environment",
+  "variables": [
+    {
+      "name": "base_url",
+      "value": "http://localhost:4012",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "hmac_secret",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    }
+  ]
+}

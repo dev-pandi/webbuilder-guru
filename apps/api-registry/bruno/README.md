@@ -21,15 +21,27 @@ brew install bruno
 
 ## Setup Environment
 
-1. Pilih env di dropdown pojok kanan atas: **Local** atau **Production**.
-2. Klik ikon pensil di sebelah env → set `hmac_secret` sesuai `INTERNAL_HMAC_SECRET` di `.env` api-registry:
+Ada 2 format env di folder ini — pilih sesuai versi Bruno kamu:
+
+### Bruno v1.x (native `.bru` support)
+
+Env otomatis ke-load saat Open Collection. Pilih di dropdown pojok kanan atas: **Local** atau **Production**. Klik ikon pensil untuk edit `hmac_secret`.
+
+### Bruno v3.x atau versi yang hanya support JSON
+
+Env `.bru` **tidak auto-load**. Kamu harus **import manual** file JSON-nya:
+
+1. Klik icon environment di sidebar collection → **Import Environment**
+2. Pilih file [`environments/Local.json`](environments/Local.json) → import
+3. Ulangi untuk [`environments/Production.json`](environments/Production.json)
+4. Di dropdown env sekarang muncul **Local** + **Production**
+5. Klik pensil di sebelah env → set `hmac_secret` sesuai `INTERNAL_HMAC_SECRET` di `.env` api-registry:
    ```bash
-   # Di api-registry .env kamu:
    INTERNAL_HMAC_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    ```
-3. Save.
+6. Save.
 
-**Local env** default target `http://localhost:5000` (api-registry local via `air` atau `go run`).
+**Local env** default target `http://localhost:4012` (api-registry local via `air` atau `go run`).
 
 **Production env** — ganti `base_url` sesuai deploy (mis. `https://api-registry.internal.yourdomain.com`).
 
@@ -44,6 +56,32 @@ Setiap request ke `/v1/*` di-sign otomatis oleh pre-request script di `collectio
 Kalau `hmac_secret` kosong, script skip signing (dev mode kalau server juga jalan tanpa secret). Prod bakal balik 401.
 
 Endpoint infra (`/healthz`, `/readyz`, `/version`, `/metrics`, `/openapi.json`) di-skip HMAC.
+
+### Kalau header tidak ter-generate otomatis
+
+Bruno v1.20+ default pakai **safe sandbox** yang blokir `require('crypto')`. Kalau kamu buka tab **Headers** dan tidak lihat `X-Timestamp` / `X-Signature` (padahal sudah set `hmac_secret`), berarti script fail silently. Fix:
+
+**1. Aktifkan Developer sandbox** (paling sering ini penyebabnya):
+- Bruno app → **Preferences** (⌘,) → tab **Scripts**
+- Ubah **"Sandbox Mode"** dari `safe` ke `developer`
+- Restart Bruno
+
+**2. Cek `bruno.json` sudah whitelist `crypto`**:
+Collection ini sudah punya:
+```json
+"scripts": {
+  "moduleWhitelist": ["crypto", "buffer", "url"]
+}
+```
+Kalau kamu edit collection dari Bruno UI, pastikan tidak overwrite field ini.
+
+**3. Cek Bruno console** (`View → Toggle Developer Tools`) untuk log:
+- `[HMAC] signed POST /v1/domains/check ts=1234567890` → OK, header ter-set
+- `[HMAC] hmac_secret env kosong` → set env dulu
+- `[HMAC] pre-request script error: ...` → script exception, biasanya `require` di-block
+
+**4. Fallback — manual header** (kalau sandbox tetap tidak bisa di-enable):
+Generate HMAC manual di shell (lihat section "Alternative: curl" di bawah), lalu paste `X-Timestamp` + `X-Signature` di tab Headers per request. Tidak scalable, tapi work.
 
 ## Struktur Collection
 

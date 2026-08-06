@@ -329,9 +329,9 @@ export default function AdminPurchasesPage() {
                           </span>
                         )}
                         <Link
-                          href={`/settings/domains/${encodeURIComponent(r.domain)}`}
+                          href={`/admin/domain/${encodeURIComponent(r.domain)}`}
                           className="mt-1 inline-flex items-center gap-1 text-xs text-primary underline-offset-4 hover:underline"
-                          title="Buka detail domain (dari sisi user)"
+                          title="Buka detail domain (admin view, bypass ownership)"
                         >
                           Detail
                           <ExternalLink className="size-3" />

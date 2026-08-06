@@ -1,0 +1,77 @@
+{
+  "version": "1",
+  "name": "Local",
+  "type": "environment",
+  "variables": [
+    {
+      "name": "base_url",
+      "value": "http://localhost:8080",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "access_token",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    },
+    {
+      "name": "refresh_token",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    },
+    {
+      "name": "user_email",
+      "value": "admin@example.com",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "user_password",
+      "value": "changeme123",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    },
+    {
+      "name": "site_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "page_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "job_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "invoice_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "domain_name",
+      "value": "example.id",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    }
+  ]
+}

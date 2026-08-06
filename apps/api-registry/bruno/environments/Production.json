@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "name": "Production",
+  "type": "environment",
+  "variables": [
+    {
+      "name": "base_url",
+      "value": "https://api-registry.internal.yourdomain.com",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "hmac_secret",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    }
+  ]
+}

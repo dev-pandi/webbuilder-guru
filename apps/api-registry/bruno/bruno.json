@@ -5,5 +5,15 @@
   "ignore": [
     "node_modules",
     ".git"
-  ]
+  ],
+  "scripts": {
+    "moduleWhitelist": [
+      "crypto",
+      "buffer",
+      "url"
+    ],
+    "filesystemAccess": {
+      "allow": false
+    }
+  }
 }

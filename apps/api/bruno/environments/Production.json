@@ -1,0 +1,77 @@
+{
+  "version": "1",
+  "name": "Production",
+  "type": "environment",
+  "variables": [
+    {
+      "name": "base_url",
+      "value": "https://api.yourdomain.com",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "access_token",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    },
+    {
+      "name": "refresh_token",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    },
+    {
+      "name": "user_email",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "user_password",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": true
+    },
+    {
+      "name": "site_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "page_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "job_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "invoice_id",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    },
+    {
+      "name": "domain_name",
+      "value": "",
+      "type": "text",
+      "enabled": true,
+      "secret": false
+    }
+  ]
+}
