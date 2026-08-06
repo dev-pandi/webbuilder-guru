@@ -401,7 +401,7 @@ func main() {
 
 		// PurchaseV2 dependencies — inject via adapters. Bikin 2-phase flow
 		// (invoice + charge lokal) available di POST /domains/purchase.
-		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo})
+		purchaseHandler.SetPricing(pricingAdapter{repo: pricingRepo, authRepo: authRepo})
 		purchaseHandler.SetInvoices(invoicesAdapter{svc: invoicesSvc, repo: invoicesRepo})
 		purchaseHandler.SetGatewayRegistry(gatewayRegistryAdapter{reg: gwRegistry})
 		purchaseHandler.SetPromos(promosAdapter{svc: promosSvc})

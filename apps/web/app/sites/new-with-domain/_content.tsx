@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import { api, getAccessToken, clearTokens, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
-import type { CheckEntry, CheckResp, Me, PaymentMethod, PurchaseResp } from "./_types";
+import type { CheckEntry, CheckResp, Me, PaymentMethod, PaymentMethodInfo, PurchaseResp } from "./_types";
 import { friendlyError, missingProfileFields } from "./_helpers";
 import { Stepper, type StepIdx } from "./_stepper";
 import { SearchSection } from "./_search-section";
@@ -132,7 +132,24 @@ export function NewWithDomainContent() {
 
   // Purchase state.
   const [years, setYears] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("midtrans");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("");
+  // Payment methods enabled — fetched dari admin catalog. Empty = belum
+  // load, ditampilkan warning kalau load selesai + kosong.
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodInfo[]>([]);
+  useEffect(() => {
+    api<{ items: PaymentMethodInfo[] }>("/api/v1/payment-methods")
+      .then((r) => {
+        const items = (r.items ?? [])
+          .filter((m) => m.enabled !== false)
+          .sort((a, b) => a.sort_order - b.sort_order);
+        setPaymentMethods(items);
+        // Default: gateway/manual pertama (bukan wallet — wallet cuma valid
+        // kalau caller reseller/agent + saldo cukup, jadi jangan jadi default).
+        const firstGateway = items.find((m) => m.type !== "wallet");
+        if (firstGateway) setPaymentMethod(firstGateway.code);
+      })
+      .catch(() => setPaymentMethods([]));
+  }, []);
   // documentIds = pre-attach docs untuk audit trail. V2 flow tidak enforce
   // pending_document — dokumen review out-of-band oleh admin/support.
   const [documentIds, setDocumentIds] = useState<string[]>([]);
@@ -333,6 +350,7 @@ export function NewWithDomainContent() {
             setYears={setYears}
             paymentMethod={paymentMethod}
             setPaymentMethod={setPaymentMethod}
+            paymentMethods={paymentMethods}
             documentIds={documentIds}
             setDocumentIds={setDocumentIds}
             promoCode={promoCode}

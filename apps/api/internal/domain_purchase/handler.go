@@ -82,7 +82,14 @@ type Handler struct {
 // PricingLookup — abstraksi minimal: dapatkan retail price per TLD.
 // Diimplementasikan oleh pricing.Repo (via adapter di main.go).
 type PricingLookup interface {
+	// GetPlatformPrice — retail baseline. Dipakai purchase flow untuk hitung
+	// invoice line kalau client self-purchase.
 	GetPlatformPrice(ctx context.Context, tld string) (retailRegister int64, retailRenew int64, err error)
+	// GetChargePrice — resolve harga final yang bakal di-charge ke `userID`
+	// berdasarkan role (client=retail, reseller=wholesale, agent=agent_price
+	// dari reseller list). Dipakai wizard Check untuk preview harga sesuai
+	// role supaya angka yang tampil sama dengan yang bakal di-charge.
+	GetChargePrice(ctx context.Context, tld string, userID uuid.UUID) (register int64, renew int64, currency string, err error)
 }
 
 // InvoiceCreator — abstraksi minimal: buat invoice untuk register/renew.
@@ -271,13 +278,20 @@ type zoneBlock struct {
 }
 
 type purchaseResp struct {
-	JobID      string  `json:"job_id"`
-	Domain     string  `json:"domain"`
-	Status     string  `json:"status"`
-	Kind       string  `json:"kind"` // "register" | "renew" — frontend adapt UI
-	Reason     string  `json:"reason,omitempty"`
-	PaymentURL string  `json:"payment_url,omitempty"`
-	ExpiresAt  string  `json:"expires_at,omitempty"` // RFC3339 saat kind=register && status=active
+	JobID         string  `json:"job_id"`
+	Domain        string  `json:"domain"`
+	Status        string  `json:"status"`
+	Kind          string  `json:"kind"` // "register" | "renew" — frontend adapt UI
+	Reason        string  `json:"reason,omitempty"`
+	PaymentURL    string  `json:"payment_url,omitempty"`
+	// PaymentMethod — code payment method yang dipilih (mis. "midtrans",
+	// "manual_bank"). Frontend pakai untuk render UI yang tepat: gateway =
+	// tombol redirect, manual_bank = instruksi transfer + berita + bank list.
+	PaymentMethod string `json:"payment_method,omitempty"`
+	// Years — lama registrasi (dari purchase.Years). Frontend pakai untuk
+	// display detail invoice tanpa second-fetch.
+	Years     int    `json:"years,omitempty"`
+	ExpiresAt string `json:"expires_at,omitempty"` // RFC3339 saat kind=register && status=active
 	// UpdatedAt — timestamp last state transition. Frontend pakai buat
 	// detect "stuck": kalau pending_provisioning > 60 detik, offer retry
 	// manual.
@@ -354,7 +368,70 @@ func (h *Handler) Check(c *fiber.Ctx) error {
 		}
 		out.Results = append(out.Results, e)
 	}
+
+	// Enrich Price + Zone dari local catalog. api-registry (SaaS mode) tidak
+	// expose harga/zone → web builder yang authoritative. Cache per-TLD
+	// supaya query DB tidak diulang untuk SLD input yang expand ke multi zone.
+	h.enrichCheckResults(c.Context(), auth.UserIDFrom(c), out.Results)
+
 	return httpx.OK(c, out)
+}
+
+// enrichCheckResults — populate Price + Zone dari platform_prices + zones
+// tables. Nil-safe: kalau pricingRepo/zonesRepo belum di-wire, no-op (frontend
+// tetap show entry tanpa harga — user bakal dapat error saat purchase).
+func (h *Handler) enrichCheckResults(ctx context.Context, userID uuid.UUID, results []checkEntry) {
+	if len(results) == 0 {
+		return
+	}
+	priceCache := map[string]*priceBlock{}
+	zoneCache := map[string]*zoneBlock{}
+	for i := range results {
+		e := &results[i]
+		tld := strings.ToLower(e.TLD)
+		if tld == "" || !e.Available {
+			continue // taken domain: tidak perlu harga
+		}
+		// Price — kalau upstream tidak set (default kasus api-registry mode).
+		if e.Price == nil && h.pricingRepo != nil {
+			if p, ok := priceCache[tld]; ok {
+				e.Price = p
+			} else {
+				reg, ren, currency, err := h.pricingRepo.GetChargePrice(ctx, tld, userID)
+				if err == nil {
+					p := &priceBlock{
+						Currency: currency,
+						Register: float64(reg),
+						Renew:    float64(ren),
+					}
+					priceCache[tld] = p
+					e.Price = p
+				} else {
+					priceCache[tld] = nil // negative cache untuk cegah requery
+				}
+			}
+		}
+		// Zone flags — dipakai frontend untuk trigger doc picker + NIK hint.
+		if e.Zone == nil && h.zonesRepo != nil {
+			if z, ok := zoneCache[tld]; ok {
+				e.Zone = z
+			} else {
+				z, err := h.zonesRepo.GetByTLD(ctx, tld)
+				if err == nil && z != nil {
+					zb := &zoneBlock{
+						Name:            z.TLD,
+						RequireDocument: z.RequireDocument,
+						AutoApproved:    z.AutoApproved,
+						NikAutoApproved: z.NikAutoApproved,
+					}
+					zoneCache[tld] = zb
+					e.Zone = zb
+				} else {
+					zoneCache[tld] = nil
+				}
+			}
+		}
+	}
 }
 
 // checkDomain — wrapper around registrar.CheckDomain yang handle SLD input.
@@ -1725,13 +1802,15 @@ func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
 
 func toResp(p *Purchase) purchaseResp {
 	out := purchaseResp{
-		JobID:      p.RegistrarJobID,
-		Domain:     p.Domain,
-		Status:     p.Status,
-		Kind:       p.Kind,
-		Reason:     p.Reason,
-		PaymentURL: p.PaymentURL,
-		UpdatedAt:  p.UpdatedAt.UTC().Format(time.RFC3339),
+		JobID:         p.RegistrarJobID,
+		Domain:        p.Domain,
+		Status:        p.Status,
+		Kind:          p.Kind,
+		Reason:        p.Reason,
+		PaymentURL:    p.PaymentURL,
+		PaymentMethod: p.PaymentMethod,
+		Years:         p.Years,
+		UpdatedAt:     p.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if p.ExpiresAt != nil {
 		out.ExpiresAt = p.ExpiresAt.UTC().Format(time.RFC3339)

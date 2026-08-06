@@ -80,4 +80,19 @@ export type DocumentCategory = {
   parent_id?: number;
 };
 
-export type PaymentMethod = "midtrans" | "paylabs" | "deposit_wallet";
+// PaymentMethod = code dari `payment_methods` table (dinamis, tidak lagi
+// hardcoded). Wizard fetch enabled methods dari GET /payment-methods lalu
+// render pilihan sesuai admin config.
+export type PaymentMethod = string;
+
+// PaymentMethodInfo — 1 baris dari GET /api/v1/payment-methods (public
+// endpoint, credentials sudah di-mask). Wizard pakai `code` + `label` +
+// `type` untuk render pilihan.
+export type PaymentMethodInfo = {
+  id: string;
+  code: string;
+  label: string;
+  type: "gateway" | "manual" | "wallet" | string;
+  enabled: boolean;
+  sort_order: number;
+};

@@ -5,25 +5,45 @@
 // Modernisasi: subsection dengan header kecil, total card gradient, CTA
 // besar full-width di mobile.
 
-import { ArrowRight, CheckCircle2, Loader2, Tag, Wallet as WalletIcon, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Building2, CheckCircle2, CreditCard, Loader2, Tag, Wallet as WalletIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import type { CheckEntry, Me, PaymentMethod } from "./_types";
+import type { CheckEntry, Me, PaymentMethod, PaymentMethodInfo } from "./_types";
 import { formatIDR, FIELD_LABEL } from "./_helpers";
 import { ProfileBlock } from "./_profile-block";
 import { DocumentPicker } from "./_document-picker";
 
 const YEARS_OPTIONS = [1, 2, 3, 5, 10];
 
-// PAYMENT_OPTIONS default (midtrans + paylabs). Wallet ditambah dinamis kalau
-// caller reseller/agent (via `walletBalance` prop non-null).
-const GATEWAY_OPTIONS: Array<{ value: PaymentMethod; label: string; hint: string }> = [
-  { value: "midtrans", label: "Midtrans", hint: "Kartu / VA / e-wallet" },
-  { value: "paylabs", label: "Paylabs", hint: "Kartu / e-wallet" },
-];
+// hintForMethod — derive hint text dari type payment_method. Admin bisa
+// override via label yang deskriptif, tapi hint tetap generik supaya user
+// paham apa yang bakal terjadi.
+function hintForMethod(type: string): string {
+  switch (type) {
+    case "gateway":
+      return "Redirect ke halaman pembayaran";
+    case "manual":
+      return "Transfer bank + upload bukti";
+    default:
+      return "";
+  }
+}
+
+function iconForMethod(type: string): React.ElementType | undefined {
+  switch (type) {
+    case "wallet":
+      return WalletIcon;
+    case "manual":
+      return Building2;
+    case "gateway":
+      return CreditCard;
+    default:
+      return undefined;
+  }
+}
 
 export function ConfirmSection(props: {
   selected: CheckEntry;
@@ -34,6 +54,9 @@ export function ConfirmSection(props: {
   setYears: (n: number) => void;
   paymentMethod: PaymentMethod;
   setPaymentMethod: (m: PaymentMethod) => void;
+  // Payment methods dari admin catalog. Wallet method (type=wallet) di-render
+  // conditional berdasarkan walletBalance.
+  paymentMethods: PaymentMethodInfo[];
   documentIds: string[];
   setDocumentIds: (ids: string[]) => void;
   // Promo — value + setter + hasil validate dari backend (nullable).
@@ -56,7 +79,7 @@ export function ConfirmSection(props: {
 }) {
   const {
     selected, me, profileComplete, missingProfile,
-    years, setYears, paymentMethod, setPaymentMethod,
+    years, setYears, paymentMethod, setPaymentMethod, paymentMethods,
     documentIds, setDocumentIds,
     promoCode, setPromoCode, promoDiscount, promoError,
     onApplyPromo, onClearPromo, validatingPromo,
@@ -77,20 +100,36 @@ export function ConfirmSection(props: {
 
   const walletEnabled = walletBalance != null;
   const balanceEnough = walletEnabled && (walletBalance ?? 0) >= total;
-  const paymentOptions: Array<{ value: PaymentMethod; label: string; hint: string; icon?: React.ElementType; warn?: string }> = walletEnabled
-    ? [
-        {
-          value: "deposit_wallet",
-          label: "Wallet",
+  // Build payment options dari admin catalog. Filter:
+  //   - type=wallet: hanya render kalau caller punya wallet (reseller/agent).
+  //   - lainnya (gateway/manual): render semua yang enabled.
+  const paymentOptions: Array<{
+    value: PaymentMethod;
+    label: string;
+    hint: string;
+    icon?: React.ElementType;
+    warn?: string;
+  }> = paymentMethods
+    .filter((m) => m.type !== "wallet" || walletEnabled)
+    .map((m) => {
+      if (m.type === "wallet") {
+        return {
+          value: m.code,
+          label: m.label,
           hint: balanceEnough
             ? `Saldo: ${formatIDR(walletBalance ?? 0, "IDR")} — instan tanpa gateway`
             : `Saldo kurang (${formatIDR(walletBalance ?? 0, "IDR")}) — top-up dulu`,
-          icon: WalletIcon,
+          icon: iconForMethod(m.type),
           warn: balanceEnough ? undefined : "insufficient",
-        },
-        ...GATEWAY_OPTIONS,
-      ]
-    : GATEWAY_OPTIONS;
+        };
+      }
+      return {
+        value: m.code,
+        label: m.label,
+        hint: hintForMethod(m.type),
+        icon: iconForMethod(m.type),
+      };
+    });
 
   return (
     <Card className="overflow-hidden border-2 shadow-sm">
@@ -156,7 +195,24 @@ export function ConfirmSection(props: {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground">
               Metode pembayaran
             </Label>
-            <div className={walletEnabled ? "grid gap-2" : "grid grid-cols-2 gap-2"}>
+            {paymentOptions.length === 0 && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  Belum ada metode pembayaran aktif. Hubungi admin untuk aktivasi
+                  di halaman <span className="font-medium">Payment Methods</span>.
+                </span>
+              </div>
+            )}
+            <div
+              className={
+                paymentOptions.length > 2
+                  ? "grid gap-2 sm:grid-cols-2"
+                  : paymentOptions.length === 2
+                    ? "grid grid-cols-2 gap-2"
+                    : "grid gap-2"
+              }
+            >
               {paymentOptions.map((opt) => {
                 const Icon = opt.icon;
                 const disabled = opt.warn === "insufficient" && !balanceEnough;
@@ -208,7 +264,9 @@ export function ConfirmSection(props: {
         {/* Transparency line untuk reseller/agent (Phase 3.14) — tampilkan
             wholesale supaya reseller sadar margin per transaksi. Wallet method
             = debit dari saldo, gateway = bayar via Midtrans/Paylabs. */}
-        {walletEnabled && paymentMethod === "deposit_wallet" && selected.price && (
+        {walletEnabled &&
+          paymentMethods.find((m) => m.code === paymentMethod)?.type === "wallet" &&
+          selected.price && (
           <div className="rounded-md border border-dashed bg-muted/20 p-3 text-xs text-muted-foreground">
             💡 Wallet Anda akan di-debit sesuai wholesale platform. Selisih ke
             kulakan agent atau harga jual ke client adalah margin Anda. Detail
@@ -317,7 +375,7 @@ export function ConfirmSection(props: {
           )}
           <Button
             onClick={onPurchase}
-            disabled={!profileComplete || nikBlocking || purchasing}
+            disabled={!profileComplete || nikBlocking || purchasing || !paymentMethod}
             size="lg"
             className="h-12 gap-2 text-base font-semibold shadow-sm sm:w-auto"
           >

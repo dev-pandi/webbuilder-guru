@@ -27,7 +27,10 @@ import (
 
 // --- pricingAdapter: pricing.Repo → domain_purchase.PricingLookup ---
 
-type pricingAdapter struct{ repo *pricing.Repo }
+type pricingAdapter struct {
+	repo     *pricing.Repo
+	authRepo *auth.Repo // untuk resolve role saat GetChargePrice
+}
 
 func (a pricingAdapter) GetPlatformPrice(ctx context.Context, tld string) (int64, int64, error) {
 	p, err := a.repo.GetPlatformByTLD(ctx, strings.ToLower(strings.TrimSpace(tld)))
@@ -38,6 +41,85 @@ func (a pricingAdapter) GetPlatformPrice(ctx context.Context, tld string) (int64
 		return 0, 0, errors.New("price not set for tld")
 	}
 	return p.RetailRegisterPrice, p.RetailRenewPrice, nil
+}
+
+// GetChargePrice — resolve harga final per role.
+//   - client / anonymous : retail_*
+//   - reseller (self)    : wholesale_* (fallback retail)
+//   - agent (self)       : agent_* dari parent reseller list (fallback wholesale, else retail)
+//
+// Kalau TLD tidak ada di platform_prices → return error (frontend fallback
+// tanpa harga). Anonymous userID uuid.Nil → default ke retail path.
+func (a pricingAdapter) GetChargePrice(ctx context.Context, tld string, userID uuid.UUID) (int64, int64, string, error) {
+	tld = strings.ToLower(strings.TrimSpace(tld))
+	if tld == "" {
+		return 0, 0, "", errors.New("tld kosong")
+	}
+	var role string
+	var resellerID *uuid.UUID
+	if userID != uuid.Nil && a.authRepo != nil {
+		if u, err := a.authRepo.GetByID(ctx, userID); err == nil && u != nil {
+			role = u.Role
+			switch u.Role {
+			case auth.RoleReseller:
+				id := u.ID
+				resellerID = &id
+			case auth.RoleAgent:
+				if u.ParentResellerID != nil {
+					resellerID = u.ParentResellerID
+				}
+			}
+		}
+	}
+	resolved, err := a.repo.Resolve(ctx, tld, resellerID)
+	if err != nil {
+		return 0, 0, "", err
+	}
+	currency := resolved.Currency
+	if currency == "" {
+		currency = "IDR"
+	}
+	// Pick per role. Deref *int64 → int64 dengan nil-safe fallback.
+	deref := func(p *int64) int64 {
+		if p != nil {
+			return *p
+		}
+		return 0
+	}
+	var reg, ren int64
+	switch role {
+	case auth.RoleReseller:
+		reg = deref(resolved.WholesaleRegisterPrice)
+		ren = deref(resolved.WholesaleRenewPrice)
+		if reg == 0 {
+			reg = deref(resolved.RetailRegisterPrice)
+		}
+		if ren == 0 {
+			ren = deref(resolved.RetailRenewPrice)
+		}
+	case auth.RoleAgent:
+		reg = deref(resolved.AgentRegisterPrice)
+		ren = deref(resolved.AgentRenewPrice)
+		if reg == 0 {
+			reg = deref(resolved.WholesaleRegisterPrice)
+		}
+		if ren == 0 {
+			ren = deref(resolved.WholesaleRenewPrice)
+		}
+		if reg == 0 {
+			reg = deref(resolved.RetailRegisterPrice)
+		}
+		if ren == 0 {
+			ren = deref(resolved.RetailRenewPrice)
+		}
+	default:
+		reg = deref(resolved.RetailRegisterPrice)
+		ren = deref(resolved.RetailRenewPrice)
+	}
+	if reg == 0 && ren == 0 {
+		return 0, 0, currency, errors.New("price not set for tld")
+	}
+	return reg, ren, currency, nil
 }
 
 // --- invoicesAdapter: invoices.Service + Repo → domain_purchase.InvoiceCreator ---

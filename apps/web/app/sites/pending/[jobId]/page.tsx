@@ -27,6 +27,10 @@ import {
   FileText,
   Send,
   RotateCcw,
+  Building2,
+  Copy,
+  Check,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, getAccessToken, clearTokens, ApiError } from "@/lib/api";
@@ -43,10 +47,32 @@ type Purchase = {
   status: string;
   kind: string; // "register" | "renew" — pending page adapt UI berdasarkan ini
   payment_url?: string;
+  // payment_method — code payment method (mis. "midtrans", "manual_bank").
+  // Dipakai untuk pilih UI antara redirect gateway vs instruksi transfer manual.
+  payment_method?: string;
+  years?: number;
   reason?: string; // diisi kalau status=failed (dari registrar)
   expires_at?: string;
   updated_at?: string; // RFC3339 — buat detect "stuck"
   site_id?: string; // set kalau domain sudah di-attach ke sites row
+};
+
+type PaymentMethodInfo = {
+  code: string;
+  label: string;
+  type: string;
+  config?: {
+    banks?: Array<{ name: string; account_number: string; account_holder: string }>;
+    instructions_md?: string;
+  };
+};
+
+type InvoiceInfo = {
+  id: string;
+  number: string;
+  total: number;
+  currency: string;
+  due_at: string;
 };
 
 // Threshold "stuck" — pending_provisioning yang > STUCK_MS berarti EPP
@@ -392,19 +418,30 @@ export default function PendingDomainPage() {
                   <p className="mt-1 text-sm text-muted-foreground">{info.hint}</p>
 
                   {/* Payment action */}
-                  {purchase.status === "pending_payment" && purchase.payment_url && (
-                    <Button asChild className="mt-4 gap-2">
-                      <a href={purchase.payment_url} target="_blank" rel="noopener noreferrer">
-                        Buka halaman pembayaran
-                        <ExternalLink className="size-4" />
-                      </a>
-                    </Button>
-                  )}
-                  {purchase.status === "pending_payment" && !purchase.payment_url && (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      Menunggu link pembayaran dari gateway… halaman akan refresh otomatis.
-                    </p>
-                  )}
+                  {purchase.status === "pending_payment" &&
+                    purchase.payment_method !== "manual_bank" &&
+                    purchase.payment_url && (
+                      <Button asChild className="mt-4 gap-2">
+                        <a href={purchase.payment_url} target="_blank" rel="noopener noreferrer">
+                          Buka halaman pembayaran
+                          <ExternalLink className="size-4" />
+                        </a>
+                      </Button>
+                    )}
+                  {purchase.status === "pending_payment" &&
+                    purchase.payment_method !== "manual_bank" &&
+                    !purchase.payment_url && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Menunggu link pembayaran dari gateway… halaman akan refresh otomatis.
+                      </p>
+                    )}
+                  {purchase.status === "pending_payment" &&
+                    purchase.payment_method === "manual_bank" && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Ikuti instruksi transfer di bawah. Admin akan verifikasi manual
+                        setelah dana masuk (biasanya 1×24 jam kerja).
+                      </p>
+                    )}
 
                   {/* Pending provisioning stuck (>60s) → offer manual retry.
                       Invoice sudah paid, kita cuma re-invoke ExecuteAfterPayment
@@ -525,6 +562,12 @@ export default function PendingDomainPage() {
           </CardContent>
         </Card>
         )}
+
+        {/* Manual bank instructions — hanya saat pending_payment + method=manual_bank */}
+        {purchase?.status === "pending_payment" &&
+          purchase.payment_method === "manual_bank" && (
+            <ManualBankInstructions jobId={jobId} domain={purchase.domain} />
+          )}
 
         {/* Document picker — hanya saat status=pending_document */}
         {purchase?.status === "pending_document" && (
@@ -971,4 +1014,209 @@ function DocumentUpload({
       </CardContent>
     </Card>
   );
+}
+
+// -------------- Manual bank instructions (status=pending_payment + method=manual_bank) --------------
+// Tampilkan: total, rekening tujuan (dari /payment-methods config), berita
+// transfer (= invoice number / job_id), dan optional admin markdown notes.
+//
+// User transfer sendiri, admin verifikasi via /admin/wallet/topups atau
+// /admin/invoices → mark-paid. Tidak ada auto-verify (manual flow by design).
+
+function ManualBankInstructions({ jobId, domain }: { jobId: string; domain: string }) {
+  const [invoice, setInvoice] = useState<InvoiceInfo | null>(null);
+  const [method, setMethod] = useState<PaymentMethodInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // job_id = invoice_id di V2 flow (single source of truth).
+        const [inv, methods] = await Promise.all([
+          api<InvoiceInfo>(`/api/v1/invoices/${jobId}`).catch(() => null),
+          api<{ items: PaymentMethodInfo[] }>("/api/v1/payment-methods").catch(
+            () => ({ items: [] }),
+          ),
+        ]);
+        if (cancelled) return;
+        if (inv) setInvoice(inv);
+        const mb = methods.items.find((m) => m.code === "manual_bank");
+        if (mb) setMethod(mb);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
+
+  async function copy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 1500);
+      toast.success(`${label} disalin`);
+    } catch {
+      toast.error("Gagal menyalin");
+    }
+  }
+
+  const banks = method?.config?.banks ?? [];
+  const adminNotes = method?.config?.instructions_md ?? "";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Building2 className="size-4 text-primary" />
+          Cara pembayaran — Transfer Bank
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Memuat instruksi…
+          </div>
+        ) : (
+          <>
+            {/* Info baris: total + berita transfer */}
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Total transfer
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-2xl font-bold tracking-tight">
+                      {invoice ? formatIDR(invoice.total) : "—"}
+                    </span>
+                    {invoice && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copy(String(invoice.total), "Nominal")}
+                        className="h-7 gap-1 px-2 text-xs"
+                      >
+                        {copied === "Nominal" ? (
+                          <Check className="size-3" />
+                        ) : (
+                          <Copy className="size-3" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Berita transfer <span className="text-destructive">*</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="max-w-full truncate rounded bg-background px-2 py-1 font-mono text-xs">
+                      {invoice?.number ?? jobId}
+                    </code>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        copy(invoice?.number ?? jobId, "Berita transfer")
+                      }
+                      className="h-7 gap-1 px-2 text-xs"
+                    >
+                      {copied === "Berita transfer" ? (
+                        <Check className="size-3" />
+                      ) : (
+                        <Copy className="size-3" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                <Info className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  <strong>Wajib</strong> isi berita transfer persis seperti di atas
+                  supaya pembayaran dapat kami cocokkan otomatis.
+                </span>
+              </div>
+            </div>
+
+            {/* Bank list */}
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Transfer ke salah satu rekening
+              </div>
+              {banks.length === 0 ? (
+                <div className="rounded-lg border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
+                  Rekening bank belum dikonfigurasi oleh admin. Silakan hubungi
+                  support.
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {banks.map((b, i) => (
+                    <li
+                      key={i}
+                      className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-[10px]">
+                            {b.name}
+                          </Badge>
+                          <code className="font-mono text-sm font-semibold">
+                            {b.account_number}
+                          </code>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          a.n. {b.account_holder}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copy(b.account_number, `Rekening ${b.name}`)}
+                        className="gap-1.5"
+                      >
+                        {copied === `Rekening ${b.name}` ? (
+                          <Check className="size-3.5" />
+                        ) : (
+                          <Copy className="size-3.5" />
+                        )}
+                        Salin
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Admin notes (markdown-lite, render as pre-line) */}
+            {adminNotes && (
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Info className="size-3" />
+                  Catatan admin
+                </div>
+                <p className="whitespace-pre-line text-sm text-muted-foreground">
+                  {adminNotes}
+                </p>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Setelah transfer, admin akan verifikasi manual dan status pembelian{" "}
+              <code>{domain}</code> akan otomatis lanjut ke tahap provisioning.
+              Halaman ini akan refresh otomatis.
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatIDR(n: number): string {
+  return `Rp ${n.toLocaleString("id-ID")}`;
 }
