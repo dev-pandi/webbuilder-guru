@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Rocket } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   const params = useParams<{ id: string }>();
   const pathname = usePathname();
   const [site, setSite] = useState<Site | null>(null);
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -48,15 +49,20 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   ];
 
   async function publish() {
-    if (!site) return;
+    if (!site || publishing || site.status === "published") return;
+    setPublishing(true);
     try {
       const updated = await api<Site>(`/api/v1/sites/${site.id}/publish`, { method: "POST" });
       setSite(updated);
       toast.success("Situs berhasil dipublikasikan");
     } catch (e) {
       toast.error((e as Error).message);
+    } finally {
+      setPublishing(false);
     }
   }
+
+  const isPublished = site?.status === "published";
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -79,9 +85,31 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
               </>
             )}
           </div>
-          <Button onClick={publish} className="bg-emerald-600 text-white hover:bg-emerald-700">
-            <Rocket />
-            Publikasikan
+          <Button
+            onClick={publish}
+            disabled={!site || publishing || isPublished}
+            className={cn(
+              !isPublished && "bg-emerald-600 text-white hover:bg-emerald-700",
+              isPublished && "cursor-default bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10",
+            )}
+            title={isPublished ? "Situs sudah dipublikasikan" : undefined}
+          >
+            {publishing ? (
+              <>
+                <Loader2 className="animate-spin" />
+                Mempublikasikan…
+              </>
+            ) : isPublished ? (
+              <>
+                <CheckCircle2 />
+                Dipublikasikan
+              </>
+            ) : (
+              <>
+                <Rocket />
+                Publikasikan
+              </>
+            )}
           </Button>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-6">

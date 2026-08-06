@@ -15,38 +15,38 @@ import (
 
 // ClientAssignment — 1 row client_assignments.
 type ClientAssignment struct {
-	ID           uuid.UUID
-	ManagerID    uuid.UUID
-	ClientID     uuid.UUID
-	ManagerRole  string // 'reseller' | 'agent'
-	AccessStatus string // 'setup' | 'active' | 'revoked'
-	CreatedAt    time.Time
-	HandedOffAt  *time.Time
-	RevokedAt    *time.Time
+	ID           uuid.UUID  `json:"id"`
+	ManagerID    uuid.UUID  `json:"manager_id"`
+	ClientID     uuid.UUID  `json:"client_id"`
+	ManagerRole  string     `json:"manager_role"`  // 'reseller' | 'agent'
+	AccessStatus string     `json:"access_status"` // 'setup' | 'active' | 'revoked'
+	CreatedAt    time.Time  `json:"created_at"`
+	HandedOffAt  *time.Time `json:"handed_off_at"`
+	RevokedAt    *time.Time `json:"revoked_at"`
 }
 
 // ClientRow — payload untuk list-clients query dengan JOIN users (biar
 // frontend bisa langsung display email + nama tanpa second-fetch).
 type ClientRow struct {
-	Assignment    ClientAssignment
-	Email         string
-	Name          string
-	CreatedAt     time.Time
-	EmailVerified bool
+	Assignment    ClientAssignment `json:"assignment"`
+	Email         string           `json:"email"`
+	Name          string           `json:"name"`
+	CreatedAt     time.Time        `json:"created_at"`
+	EmailVerified bool             `json:"email_verified"`
 	// DomainCount — jumlah domain aktif milik klien (semua register purchases
 	// yang status=active). Dipakai frontend untuk hide "Beli Domain" button
 	// kalau klien sudah punya domain.
-	DomainCount int
+	DomainCount int `json:"domain_count"`
 }
 
 // AgentRow — payload untuk list-agents. Agent = user role='agent' yang
 // parent_reseller_id-nya = reseller yang login.
 type AgentRow struct {
-	ID              uuid.UUID
-	Email           string
-	Name            string
-	CreatedAt       time.Time
-	EmailVerifiedAt *time.Time
+	ID              uuid.UUID  `json:"id"`
+	Email           string     `json:"email"`
+	Name            string     `json:"name"`
+	CreatedAt       time.Time  `json:"created_at"`
+	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
 }
 
 type Repo struct{ pool *pgxpool.Pool }

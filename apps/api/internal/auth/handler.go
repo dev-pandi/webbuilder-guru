@@ -176,7 +176,7 @@ func (h *Handler) dispatchVerifyEmail(userID uuid.UUID, email, name string) {
 		slog.Error("verify email: store failed", "error", err)
 		return
 	}
-	link := h.appBaseURL + "/auth/verify-email?token=" + raw
+	link := h.appBaseURL + "/verify-email?token=" + raw
 	body := "Halo " + name + ",\n\n" +
 		"Selamat datang di Web Builder! Konfirmasikan email Anda dengan membuka link berikut (berlaku 24 jam):\n\n" +
 		link + "\n\n" +
@@ -425,7 +425,7 @@ func (h *Handler) dispatchPasswordReset(email string) {
 		slog.Warn("password reset: no mailer configured — token discarded")
 		return
 	}
-	link := h.appBaseURL + "/auth/reset?token=" + raw
+	link := h.appBaseURL + "/reset?token=" + raw
 	body := "Halo " + u.Name + ",\n\n" +
 		"Kami menerima permintaan reset password untuk akun Anda.\n" +
 		"Klik link berikut untuk mengatur password baru (berlaku 1 jam):\n\n" +

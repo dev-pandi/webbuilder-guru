@@ -46,6 +46,8 @@ export default function ResellerDashboardPage() {
   const [purchases, setPurchases] = useState<PurchaseRow[] | null>(null);
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  // pricingCount — dipakai checklist untuk "Set harga jual". null = loading.
+  const [pricingCount, setPricingCount] = useState<number | null>(null);
   useEffect(() => {
     api<PurchaseRow[]>("/api/v1/reseller/purchases?limit=10")
       .then((r) => setPurchases(r ?? []))
@@ -56,7 +58,15 @@ export default function ResellerDashboardPage() {
     api<Stats>("/api/v1/reseller/stats")
       .then(setStats)
       .catch(() => setStats(null));
+    api<unknown[]>("/api/v1/reseller/pricing")
+      .then((rows) => setPricingCount(rows?.length ?? 0))
+      .catch(() => setPricingCount(0));
   }, []);
+
+  const pricingDone = (pricingCount ?? 0) > 0;
+  const walletDone = (wallet?.balance ?? 0) > 0;
+  const agentDone = (stats?.agents ?? 0) > 0;
+  const clientDone = (stats?.clients ?? 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -133,10 +143,26 @@ export default function ResellerDashboardPage() {
           <h3 className="mb-3 text-sm font-semibold">Checklist onboarding</h3>
           <ul className="space-y-2 text-sm">
             <StepItem done label="Aplikasi disetujui" />
-            <StepItem label="Set harga jual (agent + client)" href="/reseller/pricing" />
-            <StepItem label="Top-up wallet awal" href="/reseller/wallet" />
-            <StepItem label="Undang agent pertama (opsional)" />
-            <StepItem label="Daftarkan klien pertama" />
+            <StepItem
+              done={pricingDone}
+              label="Set harga jual (agent + client)"
+              href="/reseller/pricing"
+            />
+            <StepItem
+              done={walletDone}
+              label="Top-up wallet awal"
+              href="/reseller/wallet"
+            />
+            <StepItem
+              done={agentDone}
+              label="Undang agent pertama (opsional)"
+              href="/reseller/team"
+            />
+            <StepItem
+              done={clientDone}
+              label="Daftarkan klien pertama"
+              href="/reseller/clients"
+            />
           </ul>
         </CardContent>
       </Card>
@@ -257,8 +283,12 @@ function StatTile({
   subTone?: "warn" | "muted";
 }) {
   const body = (
-    <Card className={href ? "transition-colors hover:border-primary" : undefined}>
-      <CardContent className="p-4">
+    <Card
+      className={
+        "h-full" + (href ? " transition-colors hover:border-primary" : "")
+      }
+    >
+      <CardContent className="flex h-full flex-col p-4">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-muted p-2 text-muted-foreground">
             <Icon className="size-4" />
@@ -266,21 +296,24 @@ function StatTile({
           <p className="text-sm text-muted-foreground">{label}</p>
         </div>
         <p className="mt-3 text-2xl font-bold tracking-tight">{value}</p>
-        {sub && (
-          <p
-            className={
-              subTone === "muted"
-                ? "mt-0.5 text-[11px] text-muted-foreground"
-                : "mt-0.5 text-[11px] text-amber-600"
-            }
-          >
-            {sub}
-          </p>
-        )}
+        <p
+          className={
+            "mt-0.5 min-h-[1rem] text-[11px] " +
+            (subTone === "muted" ? "text-muted-foreground" : "text-amber-600")
+          }
+        >
+          {sub ?? " "}
+        </p>
       </CardContent>
     </Card>
   );
-  return href ? <Link href={href}>{body}</Link> : body;
+  return href ? (
+    <Link href={href} className="block h-full">
+      {body}
+    </Link>
+  ) : (
+    body
+  );
 }
 
 function formatIDR(amount: number): string {

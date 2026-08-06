@@ -213,7 +213,43 @@ func (h *Handler) ListResellerDomains(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}
-	return httpx.OK(c, rows)
+	// Purchase struct belum punya JSON tag; marshal default pakai PascalCase
+	// yang tidak match frontend contract. Transform ke tagged local struct
+	// (pattern sama dengan domain_purchase handler.AdminListPurchases).
+	type row struct {
+		ID          string  `json:"id"`
+		Domain      string  `json:"domain"`
+		UserID      string  `json:"user_id"`
+		PurchasedBy *string `json:"purchased_by,omitempty"`
+		Kind        string  `json:"kind"`
+		Status      string  `json:"status"`
+		Years       int     `json:"years"`
+		ExpiresAt   *string `json:"expires_at,omitempty"`
+		CreatedAt   string  `json:"created_at"`
+	}
+	out := make([]row, 0, len(rows))
+	for i := range rows {
+		it := &rows[i]
+		r := row{
+			ID:        it.ID.String(),
+			Domain:    it.Domain,
+			UserID:    it.UserID.String(),
+			Kind:      it.Kind,
+			Status:    it.Status,
+			Years:     it.Years,
+			CreatedAt: it.CreatedAt.UTC().Format(time.RFC3339),
+		}
+		if it.PurchasedBy != nil {
+			s := it.PurchasedBy.String()
+			r.PurchasedBy = &s
+		}
+		if it.ExpiresAt != nil {
+			s := it.ExpiresAt.UTC().Format(time.RFC3339)
+			r.ExpiresAt = &s
+		}
+		out = append(out, r)
+	}
+	return httpx.OK(c, out)
 }
 
 // ApproveReseller — POST /api/v1/admin/resellers/:id/approve
