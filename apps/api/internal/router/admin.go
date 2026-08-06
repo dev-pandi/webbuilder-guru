@@ -10,6 +10,7 @@ import (
 func MountAdmin(app *fiber.App, deps Deps) {
 	g := app.Group(
 		"/api/v1/admin",
+		dashboardCORS(deps.Cfg),
 		auth.Required(deps.Issuer),
 		auth.RequireAdmin(),
 	)

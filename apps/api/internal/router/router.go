@@ -206,21 +206,71 @@ func New(deps Deps) *fiber.App {
 	// Compress JSON+HTML responses. Level=2 chosen for CPU/size balance — gzip
 	// level 6 (default) is ~3x slower on large pages for marginal gains.
 	app.Use(compress.New(compress.Config{Level: compress.LevelBestSpeed}))
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     strings.Join(deps.Cfg.CORSOrigins, ","),
+
+	// CORS di-split per route group karena consumer-nya beda:
+	//
+	//   /api/v1/*   — dashboard admin/user, credentials-bearing (JWT). Strict
+	//                 allowlist dari CORS_ORIGINS env. Hanya domain platform.
+	//
+	//   /public/*   — renderer-facing: analytics beacon, form submit, dsb.
+	//                 Origin = domain user (dinamis, tidak dikenal saat startup).
+	//                 Approve any HTTPS origin — semua domain user pasti HTTPS
+	//                 via on-demand TLS Caddy. Localhost di-allow untuk dev.
+	//                 Credentials=false (no session/JWT dari renderer browser).
+	//
+	// Note: applied per-mount di MountUser/MountAdmin/MountGlobal (bukan global)
+	// supaya per-endpoint policy explicit.
+	MountGlobal(app, deps)
+	MountUser(app, deps)
+	MountAdmin(app, deps)
+
+	return app
+}
+
+// dashboardCORS — CORS strict untuk /api/v1/* (dashboard + admin). Allowlist
+// dari CORS_ORIGINS env. AllowCredentials=true supaya JWT via Authorization
+// header + refresh cookie diterima browser. Pakai di MountUser + MountAdmin.
+func dashboardCORS(cfg config.Config) fiber.Handler {
+	return cors.New(cors.Config{
+		AllowOrigins:     strings.Join(cfg.CORSOrigins, ","),
 		AllowCredentials: true,
 		// Idempotency-Key wajib di whitelist — dipakai POST /domains/purchase +
 		// /domains/renew supaya browser tidak block preflight (CORS spec: custom
 		// header selain simple list harus di-declare eksplisit).
 		AllowHeaders: "Origin,Content-Type,Accept,Authorization,Idempotency-Key",
 		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-	}))
+	})
+}
 
-	MountGlobal(app, deps)
-	MountUser(app, deps)
-	MountAdmin(app, deps)
-
-	return app
+// publicCORS — CORS permissive untuk /public/* (renderer-facing). Origin =
+// domain user yang dinamis. Approve semua HTTPS origin (semua domain user
+// pasti HTTPS via on-demand TLS Caddy). Localhost di-allow di dev/staging
+// untuk renderer dev server. AllowCredentials=false — endpoint publik tidak
+// butuh session/JWT.
+func publicCORS(cfg config.Config) fiber.Handler {
+	isProd := cfg.AppEnv == "production"
+	return cors.New(cors.Config{
+		AllowOriginsFunc: func(origin string) bool {
+			if origin == "" {
+				return false
+			}
+			// Prod: semua HTTPS origin OK. Attack surface: hanya bisa hit
+			// endpoint publik (analytics beacon + form submit) yang sudah
+			// rate-limited per IP + honeypot anti-spam.
+			if strings.HasPrefix(origin, "https://") {
+				return true
+			}
+			// Dev/staging: allow localhost untuk renderer local (port bebas).
+			if !isProd && (strings.HasPrefix(origin, "http://localhost") ||
+				strings.HasPrefix(origin, "http://127.0.0.1")) {
+				return true
+			}
+			return false
+		},
+		AllowCredentials: false,
+		AllowHeaders:     "Origin,Content-Type,Accept",
+		AllowMethods:     "GET,POST,OPTIONS",
+	})
 }
 
 // fiberPanic wraps a non-error panic value so the error tracker sees an `error`.

@@ -70,24 +70,32 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		)
 	}
 
+	// Public endpoints — di-hit dari browser di domain user (dinamis, tidak
+	// dikenal saat startup). Pakai publicCORS yang approve semua HTTPS origin
+	// + localhost dev. AllowCredentials=false karena endpoint publik tidak
+	// pakai session/JWT.
+	pubCORS := publicCORS(deps.Cfg)
+
 	// Public form submission — no JWT (visitor situs anonymous). Anti-spam:
 	// (1) rate limit 10/menit per IP, (2) honeypot field "_hp" di handler.
 	// Kalau form_id tidak valid → 404 (tidak leak enumeration).
 	if deps.Forms != nil {
 		app.Post("/public/forms/:id/submit",
+			pubCORS,
 			RateLimitIP(formSubmitPerWindow, formSubmitWindow),
 			deps.Forms.Submit,
 		)
 		// Public form definition — renderer fetch untuk render HTML form yang
 		// benar (fields, labels, types). Notify email TIDAK di-return
 		// (privacy). Cache 60s di edge (form definition jarang berubah).
-		app.Get("/public/forms/:id", deps.Forms.GetPublic)
+		app.Get("/public/forms/:id", pubCORS, deps.Forms.GetPublic)
 	}
 
 	// Public analytics beacon — renderer POST hit setiap page render.
 	// Rate-limit per IP (200/menit) supaya bot spam tidak bloat counter.
 	if deps.Analytics != nil {
 		app.Post("/public/analytics/pageview",
+			pubCORS,
 			RateLimitIP(analyticsPerWindow, analyticsWindow),
 			deps.Analytics.RecordView,
 		)
@@ -96,7 +104,7 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	// Public read endpoints (renderer). 30s TTL matches renderer's ISR
 	// revalidate window — anything published is visible within 30s without
 	// requiring the dashboard to issue a cache purge.
-	pub := app.Group("/public", cache.New(cache.Config{
+	pub := app.Group("/public", pubCORS, cache.New(cache.Config{
 		Expiration:   30 * time.Second,
 		CacheControl: true,
 		// Default key is METHOD+URL; URL includes the query string, so the

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -216,9 +217,12 @@ func (c Config) Validate() error {
 
 	// Database: refuse plaintext connections in production. sslmode=disable is
 	// the most common footgun — a Postgres running over public network without
-	// TLS is a data-exfil risk.
-	if strings.Contains(c.DatabaseURL, "sslmode=disable") {
-		errs = append(errs, "DATABASE_URL uses sslmode=disable (TLS required in production)")
+	// TLS is a data-exfil risk. EXCEPTION: kalau connect via loopback
+	// (localhost / 127.0.0.1 / ::1) atau unix socket, traffic tidak keluar
+	// dari mesin — TLS tidak menambah keamanan. Common deployment pattern:
+	// API + Postgres di 1 VPS.
+	if strings.Contains(c.DatabaseURL, "sslmode=disable") && !isLoopbackDSN(c.DatabaseURL) {
+		errs = append(errs, "DATABASE_URL uses sslmode=disable (TLS required in production; loopback host OK)")
 	}
 
 	// CORS: must be explicit, no localhost.
@@ -290,4 +294,33 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// isLoopbackDSN — return true kalau DATABASE_URL point ke localhost / 127.0.0.1
+// / ::1 / unix socket. Dipakai relaxation validasi sslmode=disable — kalau
+// koneksi tidak keluar dari mesin, TLS tidak menambah keamanan.
+//
+// Support 2 format:
+//   - URL DSN: `postgres://user:pass@host:port/db?...`
+//   - keyword=value: `host=/var/run/postgresql dbname=x` (unix socket)
+func isLoopbackDSN(dsn string) bool {
+	if dsn == "" {
+		return false
+	}
+	// Unix socket via keyword=value DSN — path absolute (/var/run/postgresql).
+	// Tidak lewat network sama sekali.
+	if strings.Contains(dsn, "host=/") {
+		return true
+	}
+	// URL DSN — parse host component.
+	u, err := url.Parse(dsn)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "":
+		return true
+	}
+	return false
 }

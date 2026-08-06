@@ -14,7 +14,10 @@ import (
 //   - Uploads: tighter user-based limit (separate bucket)
 //   - Reads (GET): no limit — cheap, idempotent
 func MountUser(app *fiber.App, deps Deps) {
-	v1 := app.Group("/api/v1")
+	// CORS strict — hanya domain platform (dashboard, admin panel) yang
+	// boleh hit /api/v1/*. Applied per-mount karena /public/* butuh policy
+	// berbeda (dynamic user domain).
+	v1 := app.Group("/api/v1", dashboardCORS(deps.Cfg))
 
 	// --- Anonymous + rate-limited per IP ---
 	v1.Post("/auth/register", RateLimitIP(registerPerWindow, registerWindow), deps.Auth.Register)
