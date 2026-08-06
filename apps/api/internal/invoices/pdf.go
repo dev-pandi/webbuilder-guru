@@ -35,9 +35,10 @@ func NewHTMLRenderer(s *settings.Service) *HTMLRenderer {
 
 // Render — build HTML dari template + Invoice data.
 //
-// Untuk MVP: return HTML bytes dengan Content-Type override di handler
-// (application/pdf). Ini SEMENTARA supaya endpoint /pdf functional.
-// Follow-up: swap pakai wkhtmltopdf/chromium binary yang produce actual PDF.
+// Untuk MVP: return HTML bytes; handler serve dengan Content-Type text/html
+// supaya browser render benar (user bisa Cmd+P → Save as PDF). Follow-up:
+// swap pakai wkhtmltopdf/chromium binary yang produce actual PDF bytes,
+// lalu handler balik ke application/pdf.
 func (r *HTMLRenderer) Render(ctx context.Context, inv *Invoice) ([]byte, error) {
 	if inv == nil {
 		return nil, errors.New("invoice nil")

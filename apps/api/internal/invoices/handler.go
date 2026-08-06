@@ -280,8 +280,12 @@ func (h *Handler) renderPDF(c *fiber.Ctx, inv *Invoice) error {
 	if err != nil {
 		return httpx.Internal(c, "render pdf: "+err.Error())
 	}
-	c.Set("Content-Type", "application/pdf")
-	c.Set("Content-Disposition", "inline; filename=\""+inv.Number+".pdf\"")
+	// Renderer saat ini generate HTML print-friendly (belum swap ke
+	// wkhtmltopdf/chromium). Serve sebagai text/html supaya browser render
+	// benar — user bisa Cmd+P → Save as PDF. Kalau nanti renderer produce
+	// actual PDF bytes, balik ke Content-Type application/pdf + filename .pdf.
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	c.Set("Content-Disposition", "inline; filename=\""+inv.Number+".html\"")
 	return c.Send(buf)
 }
 
