@@ -48,6 +48,9 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/domains/:name/nameservers", deps.DomainPurchase.AdminGetNameservers)
 		g.Get("/domains/:name/dns", deps.DomainPurchase.AdminListDNSRecords)
 		g.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.AdminCloudflareInfo)
+		// Re-run Cloudflare auto-attach untuk domain yang failed/skipped saat
+		// register. Idempotent — kalau zone sudah ada, tetap mark success.
+		g.Post("/domains/:name/cloudflare-retry", deps.DomainPurchase.AdminCloudflareRetry)
 		g.Get("/registrar/purchases", deps.DomainPurchase.AdminListPurchases)
 		// Admin retry — unblock user yang stuck (invoice paid tapi EPP fail
 		// tanpa transisi purchase status). Bypass ownership, idempotent.

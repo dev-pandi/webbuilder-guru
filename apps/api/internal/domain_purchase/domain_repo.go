@@ -34,17 +34,26 @@ type Domain struct {
 	RegistrarJobID  string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	// CFAttachStatus — status auto-attach ke Cloudflare (pending|success|failed|skipped).
+	// Populated via tryAttachToCloudflare pasca register. Admin bisa retry
+	// kalau failed via /admin/domains/:name/cloudflare-retry.
+	CFAttachStatus  string
+	CFAttachError   string
+	CFAttachAt      *time.Time
+	CFZoneID        string
 }
 
 const domainCols = `id, user_id, purchased_by, name, contact_id, expires_at,
 	registered_at, last_renewed_at, status, site_id, registrar_job_id,
-	created_at, updated_at`
+	created_at, updated_at,
+	cf_attach_status, cf_attach_error, cf_attach_at, cf_zone_id`
 
 func scanDomain(row pgx.Row, d *Domain) error {
 	return row.Scan(
 		&d.ID, &d.UserID, &d.PurchasedBy, &d.Name, &d.ContactID, &d.ExpiresAt,
 		&d.RegisteredAt, &d.LastRenewedAt, &d.Status, &d.SiteID, &d.RegistrarJobID,
 		&d.CreatedAt, &d.UpdatedAt,
+		&d.CFAttachStatus, &d.CFAttachError, &d.CFAttachAt, &d.CFZoneID,
 	)
 }
 
@@ -96,6 +105,41 @@ func (r *Repo) UpdateDomainExpiry(ctx context.Context, name string, expiresAt ti
 			updated_at      = now()
 		 WHERE name = $1
 	`, name, expiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CF attach status constants — mirror kolom cf_attach_status enum.
+const (
+	CFAttachPending = "pending" // belum di-attempt (default row baru)
+	CFAttachSuccess = "success" // zone created + NS pushed OK
+	CFAttachFailed  = "failed"  // ada error di zone create / NS push / DNS
+	CFAttachSkipped = "skipped" // config CF belum ada, sengaja tidak coba
+)
+
+// SetDomainCFAttach — persist hasil tryAttachToCloudflare. Best-effort:
+// dipanggil dari tryAttachToCloudflare per outcome supaya admin bisa lihat
+// status di UI + retry manual kalau failed. Kalau row tidak ada (domain belum
+// masuk registered_domains), no-op — biasanya karena race dengan UpsertDomain
+// yang sync juga jalan; retry berikutnya akan match.
+//
+// zoneID di-simpan supaya endpoint diagnostic tidak perlu re-lookup zone by
+// domain name (yang tidak-precise di CF API — bisa match domain di akun lain).
+func (r *Repo) SetDomainCFAttach(ctx context.Context, name, status, errMsg, zoneID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE registered_domains SET
+			cf_attach_status = $2,
+			cf_attach_error  = $3,
+			cf_zone_id       = COALESCE(NULLIF($4, ''), cf_zone_id),
+			cf_attach_at     = now(),
+			updated_at       = now()
+		 WHERE name = $1
+	`, name, status, errMsg, zoneID)
 	if err != nil {
 		return err
 	}

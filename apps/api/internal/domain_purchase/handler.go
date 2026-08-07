@@ -1575,6 +1575,57 @@ func (h *Handler) AdminGetDomain(c *fiber.Ctx) error {
 		"last_renewed_at":   formatOptTime(d.LastRenewedAt),
 		"status":            d.Status,
 		"registrar_job_id":  d.RegistrarJobID,
+		"cf_attach_status":  d.CFAttachStatus,
+		"cf_attach_error":   d.CFAttachError,
+		"cf_attach_at":      formatOptTime(d.CFAttachAt),
+		"cf_zone_id":        d.CFZoneID,
+	})
+}
+
+// AdminCloudflareRetry — POST /api/v1/admin/domains/:name/cloudflare-retry
+//
+// Re-run tryAttachToCloudflare untuk domain yang gagal atau belum di-attempt.
+// Idempotent: kalau zone sudah ada di CF (duplicate error), tetap mark success.
+// Result-nya visible di CF attach status setelah selesai (~5-15 detik call CF).
+func (h *Handler) AdminCloudflareRetry(c *fiber.Ctx) error {
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	// Verify domain exist di registered_domains.
+	d, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan di registered_domains")
+		}
+		return httpx.Internal(c, "lookup failed")
+	}
+	if h.cloudflare == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_disabled",
+			"Cloudflare handler belum di-wire.")
+	}
+	// Reset status ke pending sebelum retry supaya UI visual jelas "sedang re-attempt".
+	_ = h.repo.SetDomainCFAttach(c.Context(), name, CFAttachPending, "retry triggered manual by admin", d.CFZoneID)
+
+	// Trigger attach — synchronous (call CF API + registrar EPP). Persist status
+	// otomatis via tryAttachToCloudflare.
+	h.tryAttachToCloudflare(c.Context(), name)
+
+	// Fetch fresh status untuk response.
+	fresh, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
+	if err != nil {
+		return httpx.OK(c, fiber.Map{
+			"name":             name,
+			"cf_attach_status": CFAttachPending,
+			"cf_attach_error":  "retry triggered, status update pending",
+		})
+	}
+	return httpx.OK(c, fiber.Map{
+		"name":             fresh.Name,
+		"cf_attach_status": fresh.CFAttachStatus,
+		"cf_attach_error":  fresh.CFAttachError,
+		"cf_attach_at":     formatOptTime(fresh.CFAttachAt),
+		"cf_zone_id":       fresh.CFZoneID,
 	})
 }
 
@@ -1732,10 +1783,24 @@ func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
 	if h.cloudflare == nil || h.registrar == nil || domain == "" {
 		return
 	}
+	// persistStatus — helper local supaya semua exit path konsisten update DB.
+	// Best-effort: kalau row belum ada (race dengan UpsertDomain), no-op.
+	persistStatus := func(status, errMsg, zoneID string) {
+		if err := h.repo.SetDomainCFAttach(ctx, domain, status, errMsg, zoneID); err != nil && !errors.Is(err, ErrNotFound) {
+			slog.Warn("cloudflare attach: persist status failed (non-fatal)",
+				"error", err, "domain", domain, "status", status)
+		}
+	}
+
 	cfg, err := h.cloudflare.GetDefault(ctx)
 	if err != nil {
 		if !errors.Is(err, cloudflare.ErrNotFound) {
 			slog.Warn("cloudflare attach: default lookup failed", "error", err, "domain", domain)
+			persistStatus(CFAttachFailed, "cloudflare config lookup failed: "+err.Error(), "")
+		} else {
+			// Belum ada CF config — beda dari failed. Tandai skipped supaya
+			// admin tahu ini bukan bug, cuma feature belum di-enable.
+			persistStatus(CFAttachSkipped, "cloudflare config belum di-set di /admin/cloudflare", "")
 		}
 		metrics.Default.CounterInc("cloudflare_attach_total",
 			"Auto-attach ke Cloudflare per outcome",
@@ -1749,6 +1814,7 @@ func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
 	if err != nil {
 		slog.Warn("cloudflare attach: create zone failed",
 			"error", err, "domain", domain, "cf_config", cfg.Name)
+		persistStatus(CFAttachFailed, "create zone: "+err.Error(), "")
 		metrics.Default.CounterInc("cloudflare_attach_total",
 			"Auto-attach ke Cloudflare per outcome",
 			map[string]string{"result": "zone_failed"},
@@ -1759,6 +1825,7 @@ func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
 	// -------- DNS records --------
 	// A record `@` → platform IP + CNAME `www` → root. Skip kalau PLATFORM_IPS
 	// belum di-config (admin bisa setup manual di CF dashboard).
+	var dnsWarnings []string
 	if len(h.platformIPs) > 0 {
 		platformIP := h.platformIPs[0]
 		if _, err := client.CreateDNSRecord(ctx, zone.ID, cloudflare.DNSRecordRequest{
@@ -1766,23 +1833,27 @@ func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
 		}); err != nil && !cloudflare.IsCloudflareDuplicateRecord(err) {
 			slog.Warn("cloudflare attach: create A record failed",
 				"error", err, "domain", domain, "content", platformIP)
-			// Non-fatal — lanjut push NS. Admin bisa fix DNS manual di CF.
+			dnsWarnings = append(dnsWarnings, "A @ failed: "+err.Error())
 		}
 		if _, err := client.CreateDNSRecord(ctx, zone.ID, cloudflare.DNSRecordRequest{
 			Type: "CNAME", Name: "www", Content: domain, Proxied: true,
 		}); err != nil && !cloudflare.IsCloudflareDuplicateRecord(err) {
 			slog.Warn("cloudflare attach: create CNAME www failed",
 				"error", err, "domain", domain)
+			dnsWarnings = append(dnsWarnings, "CNAME www failed: "+err.Error())
 		}
 	} else {
 		slog.Warn("cloudflare attach: PLATFORM_IPS kosong, skip create DNS records — domain resolve tidak akan point ke platform sampai admin setup manual",
 			"domain", domain, "zone_id", zone.ID)
+		dnsWarnings = append(dnsWarnings, "PLATFORM_IPS kosong, DNS records tidak dibuat")
 	}
 
 	// -------- Push NS ke registrar --------
 	if _, err := h.registrar.UpdateNameservers(ctx, domain, zone.NameServers); err != nil {
 		slog.Warn("cloudflare attach: update NS at registrar failed",
 			"error", err, "domain", domain, "ns", zone.NameServers)
+		persistStatus(CFAttachFailed,
+			"zone created tapi push NS ke registrar gagal: "+err.Error(), zone.ID)
 		metrics.Default.CounterInc("cloudflare_attach_total",
 			"Auto-attach ke Cloudflare per outcome",
 			map[string]string{"result": "ns_push_failed"},
@@ -1790,6 +1861,13 @@ func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
 		return
 	}
 
+	// Success — mark done. DNS warnings di-include supaya admin tahu kalau
+	// ada record yang gagal walau overall attach berhasil.
+	successMsg := ""
+	if len(dnsWarnings) > 0 {
+		successMsg = "warning: " + strings.Join(dnsWarnings, "; ")
+	}
+	persistStatus(CFAttachSuccess, successMsg, zone.ID)
 	slog.Info("cloudflare attach: success",
 		"domain", domain, "zone_id", zone.ID, "ns", zone.NameServers)
 	metrics.Default.CounterInc("cloudflare_attach_total",

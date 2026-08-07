@@ -74,8 +74,37 @@ api.bikinweb.pandi.id {
 
 # ---------- Renderer (public multi-tenant SSR) ----------
 
-# Catch-all untuk custom domain user (myshop.id, dst.) + subdomain platform
-# (kalau ada). Caddy call `ask` endpoint sebelum ACME issuance.
+# Subdomain platform khusus renderer — dipakai:
+#   - Template preview iframe di dashboard admin/wizard client
+#     (set env NEXT_PUBLIC_RENDERER_BASE=https://preview.bikinweb.pandi.id)
+#   - Kalau butuh URL "default site" untuk demo, redirect ke sini
+#
+# Bedanya dengan :443 catch-all: subdomain platform TIDAK butuh on-demand TLS
+# (Caddy issue cert normal, tidak call ask endpoint), lebih cepat + zero
+# tergantung state API.
+preview.bikinweb.pandi.id {
+    reverse_proxy 10.1.12.46:4001 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up Host {host}
+
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 60s
+            read_timeout 120s
+        }
+    }
+
+    log {
+        output file /var/log/caddy/renderer-preview.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
+
+# Catch-all untuk custom domain user (myshop.id, dst.). Caddy call `ask`
+# endpoint sebelum ACME issuance.
 :443 {
     tls {
         on_demand

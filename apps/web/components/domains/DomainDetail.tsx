@@ -52,6 +52,11 @@ type DomainRow = {
   last_renewed_at?: string;
   site_id?: string;
   registrar_job_id?: string;
+  // CF attach status — admin only field. Pending | success | failed | skipped.
+  cf_attach_status?: string;
+  cf_attach_error?: string;
+  cf_attach_at?: string;
+  cf_zone_id?: string;
 };
 
 type Whois = {
@@ -248,6 +253,16 @@ export function DomainDetail({
                 </div>
               </CardContent>
             </Card>
+
+            {/* CF attach status — hanya admin mode. Nampilin status auto-attach
+                dari saat register + tombol retry manual kalau failed. */}
+            {adminMode && row && (
+              <CFAttachStatusCard
+                domain={domain}
+                initial={row}
+                onRefreshed={(fresh) => setRow(fresh)}
+              />
+            )}
 
             {/* Cloudflare health — cek apakah domain akan bisa di-akses */}
             <CloudflareHealthPanel domain={domain} endpointPrefix={endpointPrefix} />
@@ -872,5 +887,189 @@ function CheckRow({ ok, label, hint }: { ok: boolean; label: string; hint: strin
         <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
       </div>
     </div>
+  );
+}
+
+// -------------- CF Attach Status (admin only) --------------
+// Nampilin status auto-attach ke Cloudflare yang di-record saat register.
+// Kalau failed / skipped, admin bisa klik "Retry" untuk re-trigger tanpa
+// perlu re-register domain. Idempotent di backend — kalau zone sudah ada
+// di CF, tetap mark success.
+
+function CFAttachStatusCard({
+  domain,
+  initial,
+  onRefreshed,
+}: {
+  domain: string;
+  initial: DomainRow;
+  onRefreshed: (fresh: DomainRow) => void;
+}) {
+  const [retrying, setRetrying] = useState(false);
+  const [snapshot, setSnapshot] = useState<{
+    status: string;
+    error: string;
+    at?: string;
+    zoneId?: string;
+  }>({
+    status: initial.cf_attach_status ?? "pending",
+    error: initial.cf_attach_error ?? "",
+    at: initial.cf_attach_at,
+    zoneId: initial.cf_zone_id,
+  });
+
+  async function onRetry() {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const res = await api<{
+        cf_attach_status: string;
+        cf_attach_error: string;
+        cf_attach_at?: string;
+        cf_zone_id?: string;
+      }>(`/api/v1/admin/domains/${encodeURIComponent(domain)}/cloudflare-retry`, {
+        method: "POST",
+      });
+      setSnapshot({
+        status: res.cf_attach_status,
+        error: res.cf_attach_error,
+        at: res.cf_attach_at,
+        zoneId: res.cf_zone_id,
+      });
+      // Sync ke parent DomainRow state juga.
+      onRefreshed({
+        ...initial,
+        cf_attach_status: res.cf_attach_status,
+        cf_attach_error: res.cf_attach_error,
+        cf_attach_at: res.cf_attach_at,
+        cf_zone_id: res.cf_zone_id,
+      });
+      if (res.cf_attach_status === "success") {
+        toast.success("Cloudflare attach berhasil");
+      } else if (res.cf_attach_status === "failed") {
+        toast.error(`Retry gagal: ${res.cf_attach_error || "unknown error"}`);
+      } else {
+        toast.info(`Status: ${res.cf_attach_status}`);
+      }
+    } catch (e) {
+      toast.error(`Retry error: ${(e as Error).message}`);
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  const { status, error, at, zoneId } = snapshot;
+
+  // Visual per status.
+  const style: Record<
+    string,
+    { icon: React.ReactNode; label: string; badgeCls: string }
+  > = {
+    success: {
+      icon: <CheckCircle2 className="size-4 text-emerald-600" />,
+      label: "Terhubung",
+      badgeCls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    },
+    failed: {
+      icon: <XCircle className="size-4 text-destructive" />,
+      label: "Gagal",
+      badgeCls: "border-destructive/40 bg-destructive/10 text-destructive",
+    },
+    pending: {
+      icon: <Loader2 className="size-4 animate-spin text-muted-foreground" />,
+      label: "Menunggu",
+      badgeCls: "border-border bg-muted/40 text-muted-foreground",
+    },
+    skipped: {
+      icon: <AlertCircle className="size-4 text-amber-600" />,
+      label: "Belum di-setup",
+      badgeCls: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    },
+  };
+  const cur = style[status] ?? style.pending;
+  const canRetry = status === "failed" || status === "skipped" || status === "pending";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Cloud className="size-4 text-primary" />
+          Status Cloudflare Attach
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            {cur.icon}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className={"rounded-md border px-2 py-0.5 text-xs font-medium " + cur.badgeCls}>
+                  {cur.label}
+                </span>
+                {zoneId && (
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    zone: {zoneId.slice(0, 8)}…
+                  </code>
+                )}
+              </div>
+              {at && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Terakhir dicek {new Date(at).toLocaleString("id-ID")}
+                </p>
+              )}
+            </div>
+          </div>
+          {canRetry && (
+            <Button
+              onClick={onRetry}
+              disabled={retrying}
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+            >
+              {retrying ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Retry…
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="size-3.5" />
+                  Retry
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+
+        {error && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs">
+            <div className="mb-1 flex items-center gap-1.5 font-medium text-destructive">
+              <Info className="size-3" />
+              Detail error
+            </div>
+            <p className="whitespace-pre-wrap break-words font-mono text-[11px] text-destructive/90">
+              {error}
+            </p>
+          </div>
+        )}
+
+        {status === "skipped" && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
+            Setup Cloudflare config di{" "}
+            <Link href="/admin/cloudflare" className="font-medium underline">
+              /admin/cloudflare
+            </Link>{" "}
+            dulu, lalu klik Retry.
+          </div>
+        )}
+
+        {status === "success" && error && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
+            Attach berhasil tapi ada warning: <span className="font-mono">{error}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
