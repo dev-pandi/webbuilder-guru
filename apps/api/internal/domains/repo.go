@@ -128,12 +128,32 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Domain, error) {
 	return &d, err
 }
 
+// IsAllowed — decide apakah Caddy boleh issue TLS cert untuk hostname.
+//
+// Approve kalau salah satu benar:
+//   (a) Custom hostname legacy di `domains` table dengan status=verified.
+//       Site status TIDAK dipersyaratkan lagi (dulu wajib published — bikin
+//       chicken-egg: visitor pengen lihat draft site harus wait publish).
+//   (b) Domain hasil registrasi via wizard di `registered_domains` dengan
+//       status=active. Ini flow "beli domain + buat situs" — domain sudah
+//       propagate NS ke platform, wajar issue cert bahkan sebelum ada situs.
+//
+// Cegah abuse: attacker point DNS random ke server kita, coba trigger cert
+// issuance. Cert TLS-nya legit tapi tidak resolve ke situs siapapun — cuma
+// waste ACME quota. Kalau ini jadi masalah (rate-limit Let's Encrypt), tambah
+// per-IP rate limit di endpoint /internal/caddy/ask.
 func (r *Repo) IsAllowed(ctx context.Context, hostname string) (bool, error) {
 	var n int
 	err := r.pool.QueryRow(ctx, `
-		SELECT count(*) FROM domains d
-		JOIN sites s ON s.id = d.site_id
-		WHERE d.hostname = $1 AND d.status = 'verified' AND s.status = 'published'
+		SELECT (
+			-- (a) Custom hostname mapping yang sudah verified.
+			SELECT count(*) FROM domains
+			 WHERE hostname = $1 AND status = 'verified'
+		) + (
+			-- (b) Domain EPP-registered yang sudah active di registry.
+			SELECT count(*) FROM registered_domains
+			 WHERE name = $1 AND status = 'active'
+		)
 	`, hostname).Scan(&n)
 	return n > 0, err
 }
