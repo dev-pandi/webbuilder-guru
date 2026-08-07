@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -311,12 +312,56 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// VerifyToken cek apakah API token valid + punya scope minimal (Zone:Edit).
+// VerifyToken cek apakah API token valid + active.
 // Dipakai UI admin untuk validate credentials sebelum save.
 //
-// Cloudflare docs: https://developers.cloudflare.com/api/operations/user-api-tokens-verify-token
+// Cloudflare punya 2 tipe token dengan endpoint verify berbeda:
+//   - User API Token (klasik, tanpa prefix) → GET /user/tokens/verify
+//   - Account-Owned Token (baru, prefix "cfat_") → GET /accounts/{id}/tokens/verify
+//
+// Auto-detect: kalau token diawali "cfat_" DAN AccountID di-set, pakai endpoint
+// account. Selain itu, pakai endpoint user. Kalau user endpoint fail dengan
+// 404 (token tidak ditemukan di scope user), fallback ke account endpoint
+// supaya operator tidak perlu tahu jenis token yang dipakai.
+//
+// Docs:
+//   User: https://developers.cloudflare.com/api/operations/user-api-tokens-verify-token
+//   Account: https://developers.cloudflare.com/api/operations/account-api-tokens-verify-token
 func (c *Client) VerifyToken(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/user/tokens/verify", nil)
+	// Pilih endpoint berdasarkan token prefix. cfat_ = account-owned token
+	// (introduced 2023). Fallback: user endpoint kalau prefix bukan cfat_ /
+	// AccountID kosong.
+	tokenIsAccountOwned := strings.HasPrefix(c.cfg.APIToken, "cfat_")
+	var primary, fallback string
+	if tokenIsAccountOwned && c.cfg.AccountID != "" {
+		primary = baseURL + "/accounts/" + c.cfg.AccountID + "/tokens/verify"
+		fallback = baseURL + "/user/tokens/verify"
+	} else {
+		primary = baseURL + "/user/tokens/verify"
+		if c.cfg.AccountID != "" {
+			fallback = baseURL + "/accounts/" + c.cfg.AccountID + "/tokens/verify"
+		}
+	}
+
+	err := c.verifyTokenAt(ctx, primary)
+	if err == nil {
+		return nil
+	}
+	// Fallback hanya kalau primary balik 404/401 (token bukan di scope itu).
+	// Kalau primary error network / 500, jangan fallback — user butuh liat error
+	// asli.
+	if fallback != "" && isTokenScopeMismatch(err) {
+		if err2 := c.verifyTokenAt(ctx, fallback); err2 == nil {
+			return nil
+		}
+	}
+	return err
+}
+
+// verifyTokenAt hits 1 endpoint. Extracted supaya bisa retry di endpoint
+// alternatif tanpa duplicate code.
+func (c *Client) verifyTokenAt(ctx context.Context, url string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
@@ -333,6 +378,20 @@ func (c *Client) VerifyToken(ctx context.Context) error {
 		return fmt.Errorf("cloudflare token invalid (%d): %s", resp.StatusCode, snip(raw))
 	}
 	return nil
+}
+
+// isTokenScopeMismatch — deteksi error yang indikasi token bukan di scope
+// endpoint (mis. account-owned token di-verify via /user/*). CF response biasanya
+// 401 dengan code 1000 "Invalid API Token" atau 404. Substring check karena
+// error message dari verifyTokenAt sudah include HTTP status.
+func isTokenScopeMismatch(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "(401)") ||
+		strings.Contains(msg, "(404)") ||
+		strings.Contains(msg, "\"code\":1000")
 }
 
 func snip(b []byte) string {

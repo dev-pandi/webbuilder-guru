@@ -302,7 +302,10 @@ func splitCSV(s string) []string {
 //
 // Support 2 format:
 //   - URL DSN: `postgres://user:pass@host:port/db?...`
-//   - keyword=value: `host=/var/run/postgresql dbname=x` (unix socket)
+//   - keyword=value: `host=localhost user=x dbname=y` atau `host=/var/run/postgresql ...`
+//
+// Fallback substring match untuk password yang mengandung `@` (bikin url.Parse
+// misidentify host — mis. `postgres://u:p@ss@localhost:5432/x`).
 func isLoopbackDSN(dsn string) bool {
 	if dsn == "" {
 		return false
@@ -312,14 +315,30 @@ func isLoopbackDSN(dsn string) bool {
 	if strings.Contains(dsn, "host=/") {
 		return true
 	}
-	// URL DSN — parse host component.
-	u, err := url.Parse(dsn)
-	if err != nil || u.Host == "" {
-		return false
+	// keyword=value DSN dengan host loopback.
+	for _, kv := range []string{"host=localhost", "host=127.0.0.1", "host=::1"} {
+		if strings.Contains(dsn, kv) {
+			return true
+		}
 	}
-	host := u.Hostname()
-	switch host {
-	case "localhost", "127.0.0.1", "::1", "":
+	// URL DSN — parse host component (path yang paling common).
+	if u, err := url.Parse(dsn); err == nil && u.Host != "" {
+		host := u.Hostname()
+		switch host {
+		case "localhost", "127.0.0.1", "::1", "":
+			return true
+		}
+	}
+	// Fallback substring match — cover URL DSN dengan password yang mengandung
+	// karakter khusus (@, :) yang bikin url.Parse hasil host salah. Cukup
+	// permissive tapi acceptable karena guard di production build:
+	// admin ops harus explicit set sslmode=disable → ini opt-in.
+	if strings.Contains(dsn, "@localhost:") ||
+		strings.Contains(dsn, "@localhost/") ||
+		strings.Contains(dsn, "@127.0.0.1:") ||
+		strings.Contains(dsn, "@127.0.0.1/") ||
+		strings.Contains(dsn, "@[::1]:") ||
+		strings.Contains(dsn, "@[::1]/") {
 		return true
 	}
 	return false

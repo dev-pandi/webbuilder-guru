@@ -1,0 +1,111 @@
+# Global options
+{
+    # Email untuk ACME registration + notifikasi cert expiry.
+    email teknis@pandi.id
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+
+    # On-demand TLS: Caddy tanya ke API sebelum issue cert untuk domain baru.
+    # Cegah cert issuance dari attacker yang point DNS random ke server kita.
+    on_demand_tls {
+        ask https://api.bikinweb.pandi.id/internal/caddy/ask?secret={$CADDY_ASK_SECRET}
+        interval 2m
+        burst 5
+    }
+
+    # HTTP/3 default on. Kalau ada issue firewall UDP, uncomment ini.
+    # servers {
+    #     protocols h1 h2
+    # }
+}
+
+
+# ---------- Platform dashboards ----------
+
+# Dashboard admin / reseller / agent / client
+bikinweb.pandi.id {
+    reverse_proxy 10.1.12.46:4000
+
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # HSTS 1 tahun + preload — pastikan yakin HTTPS-only sebelum enable.
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
+
+    log {
+        output file /var/log/caddy/app-access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
+
+
+# Public API — CORS di-handle di API side (Fiber middleware).
+api.bikinweb.pandi.id {
+    reverse_proxy 10.1.12.46:4011 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Naikkan timeout — EPP login / registry lookup kadang butuh 2-5 detik,
+        # default Caddy 30s cukup tapi transient network glitch bisa timeout.
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 60s
+            read_timeout 120s
+        }
+    }
+
+    # Larger body untuk upload dokumen / bukti transfer / template pages_json.
+    request_body {
+        max_size 20MB
+    }
+
+    log {
+        output file /var/log/caddy/api-access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
+
+
+# ---------- Renderer (public multi-tenant SSR) ----------
+
+# Catch-all untuk custom domain user (myshop.id, dst.) + subdomain platform
+# (kalau ada). Caddy call `ask` endpoint sebelum ACME issuance.
+:443 {
+    tls {
+        on_demand
+    }
+
+    reverse_proxy 10.1.12.46:4001 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up Host {host}
+
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 60s
+            read_timeout 120s
+        }
+    }
+
+    log {
+        output file /var/log/caddy/renderer-tenant.log {
+            roll_size 200mb
+            roll_keep 10
+        }
+    }
+}
+
+
+# HTTP → 401 → auto-redirect ke HTTPS untuk domain yang punya cert.
+# Caddy handle otomatis; tapi untuk custom domain yang belum on-boarded,
+# passthrough ke renderer supaya user tetap dapet response
+# (misalnya "domain belum terhubung ke situs Anda").
+:80 {
+    reverse_proxy 10.1.12.46:4001
+}
