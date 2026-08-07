@@ -66,8 +66,13 @@ type ResponsivePatch = {
   bg?: string;
 };
 
-async function fetchJson<T>(path: string): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
-  const res = await fetch(`${API}${path}`, { next: { revalidate: 30 } });
+// fetchJson — helper untuk /public/* endpoints. Default revalidate short
+// (5 detik) karena user edit theme/pages di dashboard, expect update visible
+// segera di renderer. Cache tetap ada supaya spike traffic tidak hammer API.
+// Untuk endpoint yang jarang berubah (products/blog) bisa override via
+// fetchJsonCached dengan TTL lebih panjang.
+async function fetchJson<T>(path: string, revalidateSec = 5): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
+  const res = await fetch(`${API}${path}`, { next: { revalidate: revalidateSec } });
   if (!res.ok) {
     // Parse error envelope kalau ada supaya caller bisa branch berdasarkan
     // business code (mis. site_not_published vs no_site_for_host).

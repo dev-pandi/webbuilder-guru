@@ -101,31 +101,48 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		)
 	}
 
-	// Public read endpoints (renderer). 30s TTL matches renderer's ISR
-	// revalidate window — anything published is visible within 30s without
-	// requiring the dashboard to issue a cache purge.
-	pub := app.Group("/public", pubCORS, cache.New(cache.Config{
+	// Public read endpoints (renderer). Cache TTL di-split:
+	//
+	//   Short (5s)  — site-by-host, pages: theme + block tree yang user edit
+	//                 di dashboard. User expect update visible segera setelah
+	//                 save; 5s trade-off freshness vs DB load.
+	//   Long (30s)  — products/blog: content-heavy tapi jarang berubah.
+	//                 Cache lebih agresif untuk hemat DB.
+	//
+	// Kalau butuh instant refresh (mis. preview iframe di dashboard), pakai
+	// endpoint /preview/:token yang bypass cache (dynamic per-token). Untuk
+	// invalidation on-demand (dashboard save → purge), butuh implementasi
+	// terpisah (TODO Phase 4).
+	shortCache := cache.New(cache.Config{
+		Expiration:   5 * time.Second,
+		CacheControl: true,
+	})
+	longCache := cache.New(cache.Config{
 		Expiration:   30 * time.Second,
 		CacheControl: true,
-		// Default key is METHOD+URL; URL includes the query string, so the
-		// host=... param on site-by-host already keys per-tenant.
-	}))
-	pub.Get("/site-by-host", deps.Public.SiteByHost)
-	pub.Get("/sites/:id/pages", deps.Public.ListPages)
-	pub.Get("/sites/:id/pages/:slug", deps.Public.PageBySlug)
-	pub.Get("/sites/:id/products", deps.Public.ListProducts)
-	pub.Get("/sites/:id/products/:slug", deps.Public.ProductBySlug)
-	pub.Get("/sites/:id/blog-posts", deps.Public.ListBlogPosts)
-	pub.Get("/sites/:id/blog-posts/:slug", deps.Public.BlogPostBySlug)
+	})
+
+	pubBase := app.Group("/public", pubCORS)
+
+	// Fresh-critical: theme + page tree yang user edit langsung.
+	pubBase.Get("/site-by-host", shortCache, deps.Public.SiteByHost)
+	pubBase.Get("/sites/:id/pages", shortCache, deps.Public.ListPages)
+	pubBase.Get("/sites/:id/pages/:slug", shortCache, deps.Public.PageBySlug)
+
+	// Cacheable lebih lama.
+	pubBase.Get("/sites/:id/products", longCache, deps.Public.ListProducts)
+	pubBase.Get("/sites/:id/products/:slug", longCache, deps.Public.ProductBySlug)
+	pubBase.Get("/sites/:id/blog-posts", longCache, deps.Public.ListBlogPosts)
+	pubBase.Get("/sites/:id/blog-posts/:slug", longCache, deps.Public.BlogPostBySlug)
 
 	// Template live preview — dipakai renderer route /template-preview/:slug
 	// + wizard client modal iframe. Hanya status='published' yang accessible.
-	pub.Get("/template-preview/:slug", deps.Public.TemplatePreview)
+	pubBase.Get("/template-preview/:slug", longCache, deps.Public.TemplatePreview)
 
 	// Preview-by-token — anonymous draft access for sharing unpublished pages
-	// with reviewers. Token validates owner intent; no DB row needed. Sits
-	// inside the cached `pub` group so the same 30s revalidation applies.
-	pub.Get("/preview/:token", deps.Pages.PreviewByToken)
+	// dengan reviewers. Token validates owner intent. Bypass cache — reviewer
+	// harus lihat state persis saat token di-share.
+	pubBase.Get("/preview/:token", deps.Pages.PreviewByToken)
 }
 
 // readiness returns per-dependency status so a load-balancer can pull the pod
