@@ -247,6 +247,12 @@ func (h *Handler) executeRenew(
 		)
 		slog.Error("execute_after_payment: RenewDomainDirect gagal",
 			"invoice_id", inv.ID, "domain", domain, "error", err)
+		// Mark local purchase failed supaya frontend polling detect + retry
+		// button aktif. Parity dengan executeRegister (line ~144).
+		if pMeta := parseInvoiceMetadata(inv.Metadata); stringFromMeta(pMeta, "job_id") != "" {
+			jobID := stringFromMeta(pMeta, "job_id")
+			_, _ = h.repo.UpdateStatus(ctx, jobID, StatusFailed, err.Error(), nil)
+		}
 		return fmt.Errorf("EPP renew: %w", err)
 	}
 	// Update row existing (created di renew.go dengan RegistrarJobID = idemKey).

@@ -22,7 +22,9 @@ import {
   Mail,
   ExternalLink,
   ChevronLeft,
+  RotateCcw,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Pagination, useDebounced, type PaginatedResult } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
@@ -109,6 +111,29 @@ export default function AdminPurchasesPage() {
   const [data, setData] = useState<PaginatedResult<Row> | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<Record<string, boolean>>({});
+  // refetchTick — bump untuk force refetch setelah retry berhasil, tanpa
+  // duplicate fetchData logic.
+  const [refetchTick, setRefetchTick] = useState(0);
+
+  async function onRetry(jobID: string, domain: string) {
+    if (retrying[jobID]) return;
+    if (!confirm(`Retry provisioning untuk ${domain}? Backend akan re-invoke ExecuteAfterPayment (tidak charge ulang).`)) {
+      return;
+    }
+    setRetrying((s) => ({ ...s, [jobID]: true }));
+    try {
+      await api(`/api/v1/admin/registrar/purchases/${jobID}/retry`, {
+        method: "POST",
+      });
+      toast.success(`Retry ${domain} dikirim — status akan update`);
+      setRefetchTick((t) => t + 1);
+    } catch (e) {
+      toast.error(`Retry ${domain} gagal: ${(e as Error).message}`);
+    } finally {
+      setRetrying((s) => ({ ...s, [jobID]: false }));
+    }
+  }
 
   useEffect(() => {
     setPage(1);
@@ -142,7 +167,7 @@ export default function AdminPurchasesPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, pageSize, debouncedQ, status, kind, sort]);
+  }, [page, pageSize, debouncedQ, status, kind, sort, refetchTick]);
 
   const items = data?.items ?? [];
   const activeFilterCount = useMemo(() => {
@@ -336,6 +361,29 @@ export default function AdminPurchasesPage() {
                           Detail
                           <ExternalLink className="size-3" />
                         </Link>
+                        {(r.status === "pending_payment" ||
+                          r.status === "pending_provisioning" ||
+                          r.status === "failed") && (
+                          <button
+                            type="button"
+                            onClick={() => onRetry(r.job_id, r.domain)}
+                            disabled={!!retrying[r.job_id]}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-amber-700 underline-offset-4 hover:underline disabled:opacity-50 dark:text-amber-500"
+                            title="Retry provisioning (rerun ExecuteAfterPayment, tidak charge ulang). Untuk unblock user yang stuck karena api-registry fail."
+                          >
+                            {retrying[r.job_id] ? (
+                              <>
+                                <Loader2 className="size-3 animate-spin" />
+                                Retry…
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw className="size-3" />
+                                Retry
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

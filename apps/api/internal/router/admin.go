@@ -49,6 +49,9 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/domains/:name/dns", deps.DomainPurchase.AdminListDNSRecords)
 		g.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.AdminCloudflareInfo)
 		g.Get("/registrar/purchases", deps.DomainPurchase.AdminListPurchases)
+		// Admin retry — unblock user yang stuck (invoice paid tapi EPP fail
+		// tanpa transisi purchase status). Bypass ownership, idempotent.
+		g.Post("/registrar/purchases/:job_id/retry", deps.DomainPurchase.AdminRetry)
 	}
 
 	// Audit log — read-only viewer (Phase 7). Nil-safe.

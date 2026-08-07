@@ -51,9 +51,14 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.NotFound(c, "job tidak ditemukan")
 	}
-	if job.Status != StatusFailed && job.Status != StatusPendingProvisioning {
+	// Retry allowed untuk semua status non-terminal (kecuali active/expired/
+	// cancelled). Termasuk `pending_payment` kalau ternyata invoice paid tapi
+	// callback gagal — user stuck di sini kalau EPP fail sebelum sempat
+	// transisi ke pending_provisioning/failed. Idempotency di
+	// ExecuteAfterPayment (cek StatusActive di awal).
+	if job.Status == StatusActive || job.Status == StatusExpired || job.Status == StatusCancelled {
 		return httpx.BadRequest(c,
-			"retry hanya untuk job status=failed atau pending_provisioning (invoice udah paid)")
+			"job sudah dalam status terminal ("+job.Status+"), tidak perlu retry")
 	}
 
 	// job_id = invoice.ID (canonical). Kalau parse gagal, invalid job.
@@ -88,6 +93,76 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 	// Return status terbaru.
 	fresh, err := h.repo.GetByJobIDForActor(c.Context(), jobID, cl.UserID)
 	if err != nil {
+		return httpx.OK(c, fiber.Map{"job_id": jobID, "status": StatusPendingProvisioning})
+	}
+	return httpx.OK(c, toResp(fresh))
+}
+
+// AdminRetry — POST /api/v1/admin/registrar/purchases/:job_id/retry
+//
+// Sama seperti Retry tapi bypass ownership check — admin bisa retry job
+// siapa pun. Dipakai untuk unblock user yang stuck (mis. invoice paid tapi
+// api-registry down saat callback → purchase pending_payment tanpa retry
+// button di frontend user).
+//
+// Idempotent + safe: ExecuteAfterPayment cek StatusActive di awal.
+func (h *Handler) AdminRetry(c *fiber.Ctx) error {
+	if h.invoicesSvc == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "retry_not_ready",
+			"Retry butuh invoices service ter-wire.")
+	}
+	if h.registrar == nil || !h.registrar.UsesAPIRegistry() {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "api_registry_required",
+			"Retry butuh API_REGISTRY_URL di-set.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	jobID := strings.TrimSpace(c.Params("job_id"))
+	if jobID == "" {
+		return httpx.BadRequest(c, "job_id required")
+	}
+
+	// Admin bypass — GetByJobIDAny (bukan ForActor).
+	job, err := h.repo.GetByJobIDAny(c.Context(), jobID)
+	if err != nil || job == nil {
+		return httpx.NotFound(c, "job tidak ditemukan")
+	}
+	if job.Status == StatusActive || job.Status == StatusExpired || job.Status == StatusCancelled {
+		return httpx.BadRequest(c,
+			"job sudah dalam status terminal ("+job.Status+"), tidak perlu retry")
+	}
+
+	invoiceID, err := uuid.Parse(jobID)
+	if err != nil {
+		return httpx.BadRequest(c, "job_id tidak valid")
+	}
+	inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
+	if err != nil || inv == nil {
+		return httpx.NotFound(c, "invoice tidak ditemukan")
+	}
+	if inv.Status != "paid" {
+		return httpx.BadRequest(c,
+			"invoice belum lunas — mark-paid dulu via /admin/invoices sebelum retry")
+	}
+
+	// Clear status ke pending_provisioning supaya visual reset saat retry.
+	if _, err := h.repo.UpdateStatus(c.Context(), jobID, StatusPendingProvisioning, "", nil); err != nil {
+		return httpx.Internal(c, "status reset gagal: "+err.Error())
+	}
+
+	if execErr := h.ExecuteAfterPayment(c.Context(), inv); execErr != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "epp_execute_failed", execErr.Error())
+	}
+
+	h.logAudit(c.Context(), cl.UserID, audit.EventDomainRetried, "job", jobID, map[string]any{
+		"kind":  job.Kind,
+		"admin": true,
+	})
+
+	fresh, _ := h.repo.GetByJobIDAny(c.Context(), jobID)
+	if fresh == nil {
 		return httpx.OK(c, fiber.Map{"job_id": jobID, "status": StatusPendingProvisioning})
 	}
 	return httpx.OK(c, toResp(fresh))
