@@ -77,6 +77,10 @@ func MountUser(app *fiber.App, deps Deps) {
 	authed.Patch("/sites/:id", mutateLimit, deps.Sites.Update)
 	authed.Delete("/sites/:id", mutateLimit, deps.Sites.Delete)
 	authed.Post("/sites/:id/publish", mutateLimit, deps.Sites.Publish)
+	// Reset per-block color override (themeOverride + layout.bg) di semua page.
+	// Untuk case user ubah global theme tapi block masih pakai warna snapshot
+	// lama dari template. Spacing (padding/margin) tetap.
+	authed.Post("/sites/:id/reset-block-styles", mutateLimit, deps.Pages.ResetBlockStyles)
 
 	// Site members (Phase 4 collab). Read: siapapun yang punya akses; write:
 	// owner-only (add/remove) atau self (leave). Endpoint add belum expose

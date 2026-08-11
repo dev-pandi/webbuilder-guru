@@ -9,6 +9,7 @@ import {
   Eye,
   Loader2,
   Palette,
+  RotateCcw,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
@@ -290,7 +291,8 @@ export default function ThemePage() {
               </p>
             </div>
 
-            <div className="flex justify-end border-t pt-4">
+            <div className="flex flex-wrap justify-between gap-3 border-t pt-4">
+              <ResetBlockStylesButton siteId={params.id} />
               <Button onClick={save} disabled={saving} className="gap-2">
                 {saving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -731,5 +733,106 @@ function ThemeSwatchPreview({ theme }: { theme: ThemeJson }) {
         <span className="h-6 flex-1" style={{ background: secondary, borderRadius: radius }} />
       </div>
     </div>
+  );
+}
+
+// ResetBlockStylesButton — trigger backend endpoint yang strip themeOverride
+// + layout.bg dari semua block di semua page. Confirm dialog dulu supaya user
+// tidak accidental wipe warna custom per-block yang intentional. Spacing
+// (padding/margin) tidak di-strip.
+function ResetBlockStylesButton({ siteId }: { siteId: string }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function onConfirm() {
+    setBusy(true);
+    try {
+      const res = await api<{
+        ok: boolean;
+        pages_touched: number;
+        blocks_stripped: number;
+      }>(`/api/v1/sites/${siteId}/reset-block-styles`, { method: "POST" });
+      if (res.blocks_stripped === 0) {
+        toast.info("Tidak ada block yang punya warna override — semua sudah pakai theme site");
+      } else {
+        toast.success(
+          `Reset selesai: ${res.blocks_stripped} block di ${res.pages_touched} halaman kembali pakai theme site`,
+        );
+      }
+      setOpen(false);
+    } catch (e) {
+      toast.error(`Gagal reset: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setOpen(true)}
+        className="gap-2"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+        Terapkan theme ke semua block
+      </Button>
+      <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="size-4 text-amber-600" />
+              Terapkan theme ke semua block
+            </DialogTitle>
+            <DialogDescription>
+              Semua warna custom per-block (di panel <b>Layout & Style</b>)
+              akan di-hapus dari draft <b>dan</b> versi yang sudah published.
+              Block kembali pakai warna theme site di atas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm">
+            <p className="font-medium">Yang akan di-reset (draft + published):</p>
+            <ul className="ml-4 list-disc space-y-1 text-muted-foreground">
+              <li>Warna primary/secondary/bg/fg per block</li>
+              <li>Background color block (<code className="text-[10px]">layout.bg</code>)</li>
+            </ul>
+            <p className="mt-2 font-medium">Yang TIDAK di-reset:</p>
+            <ul className="ml-4 list-disc space-y-1 text-muted-foreground">
+              <li>Spacing (padding, margin)</li>
+              <li>Content block (title, image, dll.)</li>
+              <li>Layout position + max-width</li>
+            </ul>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Renderer di domain user langsung ikut update (tidak perlu klik
+            Publish lagi). Aksi ini tidak bisa di-undo — kalau ada block yang
+            sengaja beda warna, kamu perlu set ulang manual di editor.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+              Batal
+            </Button>
+            <Button
+              onClick={onConfirm}
+              disabled={busy}
+              className="gap-2 bg-amber-600 text-white hover:bg-amber-700"
+            >
+              {busy ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Reset…
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="size-4" />
+                  Ya, reset semua
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
