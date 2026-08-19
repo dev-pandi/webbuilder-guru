@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Panduan Pengguna Web Builder</title>
+<style>
+  /* ==== Print-friendly stylesheet ==== */
+  @page {
+    size: A4;
+    margin: 2cm 1.8cm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.65;
+    color: #1f2937;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+    font-size: 15px;
+  }
+
+  /* Cover */
+  .cover {
+    text-align: center;
+    padding: 4rem 0;
+    page-break-after: always;
+  }
+  .cover h1 {
+    font-size: 2.5rem;
+    margin: 0 0 0.5rem;
+    color: #1e40af;
+    border: none;
+    padding: 0;
+  }
+  .cover p.subtitle { font-size: 1.15rem; color: #6b7280; margin: 0.5rem 0 2rem; }
+  .cover .badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: white;
+    padding: 0.5rem 1.25rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .cover .meta {
+    margin-top: 3rem;
+    font-size: 0.85rem;
+    color: #9ca3af;
+  }
+
+  /* Headings — page break sebelum h1 (kecuali cover) */
+  h1 {
+    font-size: 1.8rem;
+    color: #1e40af;
+    border-bottom: 3px solid #2563eb;
+    padding-bottom: 0.5rem;
+    margin-top: 3rem;
+    margin-bottom: 1.5rem;
+    page-break-before: always;
+  }
+  h1:first-of-type { page-break-before: auto; }
+  .cover + * h1 { page-break-before: auto; }
+
+  h2 {
+    color: #2563eb;
+    font-size: 1.35rem;
+    margin-top: 2.5rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  h3 {
+    color: #374151;
+    font-size: 1.1rem;
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+  }
+  h4 { color: #4b5563; font-size: 1rem; margin: 1.25rem 0 0.5rem; }
+
+  p { margin: 0.75rem 0; }
+
+  /* Links */
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Inline code */
+  code {
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 0.88em;
+    color: #be185d;
+  }
+
+  /* Code block */
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    line-height: 1.5;
+    font-size: 0.85em;
+    page-break-inside: avoid;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  /* Table */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.92em;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid #e5e7eb;
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+  }
+  tbody tr:nth-child(even) { background: #fafafa; }
+
+  /* Blockquote */
+  blockquote {
+    border-left: 4px solid #2563eb;
+    background: #eff6ff;
+    padding: 0.75rem 1rem;
+    color: #1e3a8a;
+    margin: 1rem 0;
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin: 0.25rem 0; }
+
+  /* Lists */
+  ul, ol { padding-left: 1.5rem; margin: 0.75rem 0; }
+  li { margin: 0.25rem 0; }
+
+  /* Callout-style paragraphs (starts dengan ⚠️ ✅ ❌ 💡) */
+  p:has(+ *) strong:first-child { color: #dc2626; }
+
+  /* Alert emoji styling via first-line pattern */
+  li strong:first-child { color: #1e40af; }
+
+  /* Placeholder buat screenshot user tambah sendiri */
+  .screenshot-placeholder {
+    border: 2px dashed #cbd5e1;
+    background: #f8fafc;
+    padding: 2rem;
+    text-align: center;
+    margin: 1rem 0;
+    color: #64748b;
+    font-style: italic;
+    border-radius: 8px;
+    page-break-inside: avoid;
+  }
+  .screenshot-placeholder::before {
+    content: "🖼️ ";
+    font-size: 2rem;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  /* ASCII diagrams — render dengan font monospace + preserved whitespace */
+  pre.ascii-diagram {
+    background: #f8fafc;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    font-size: 0.8em;
+    line-height: 1.3;
+  }
+
+  /* Images (kalau user tambahin nanti) */
+  img {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    margin: 1rem 0;
+    display: block;
+  }
+
+  /* TOC (Table of Contents) */
+  .toc {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    padding: 1.5rem 2rem;
+    border-radius: 8px;
+    page-break-after: always;
+    margin-bottom: 3rem;
+  }
+  .toc h2 { margin-top: 0; border: none; padding: 0; color: #1e40af; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc > ul > li { font-weight: 600; margin-top: 0.5rem; }
+  .toc ul ul {
+    padding-left: 1.5rem;
+    font-weight: normal;
+    font-size: 0.95em;
+  }
+  .toc a { color: #374151; }
+
+  /* Section badge per bab */
+  h1[id^="bab-"]::before {
+    content: "";
+    display: block;
+    height: 4px;
+    width: 60px;
+    background: linear-gradient(90deg, #2563eb, #7c3aed);
+    margin-bottom: 1rem;
+    border-radius: 2px;
+  }
+
+  /* Print-specific */
+  @media print {
+    body { max-width: none; padding: 0; }
+    a { color: #2563eb; text-decoration: none; }
+    /* Show URL after link kalau external */
+    a[href^="http"]::after {
+      content: " (" attr(href) ")";
+      font-size: 0.8em;
+      color: #9ca3af;
+      word-break: break-all;
+    }
+    /* Skip URL untuk anchor internal */
+    a[href^="#"]::after,
+    a[href^="/"]::after { content: ""; }
+
+    pre, table, blockquote { page-break-inside: avoid; }
+    h1, h2, h3 { page-break-after: avoid; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Cover Page -->
+<div class="cover">
+  <div class="badge">DOKUMENTASI PENGGUNA</div>
+  <h1>Panduan Web Builder</h1>
+  <p class="subtitle">Untuk Admin · Reseller · Agent · Client</p>
+  <div class="meta">
+    Web Builder Platform · Versi 1.0
+  </div>
+</div>
+
+<!-- Content -->
+<h1 id="panduan-pengguna-web-builder-pengantar">Panduan Pengguna Web Builder — Pengantar</h1>
+<h2 id="tentang-web-builder">Tentang Web Builder</h2>
+<p>Web Builder adalah platform SaaS untuk membuat situs web tanpa perlu coding.
+Fitur utama:</p>
+<ul>
+<li><strong>Editor drag-and-drop</strong> — susun halaman dari block siap pakai (hero, feature grid, produk, blog, form kontak, dsb.)</li>
+<li><strong>Beli domain terintegrasi</strong> — daftar domain <code>.id</code>, <code>.co.id</code>, <code>.com</code>, dsb. langsung dari wizard</li>
+<li><strong>Auto-setup Cloudflare</strong> — domain baru otomatis attached ke Cloudflare, DNS + SSL siap pakai</li>
+<li><strong>Multi-tenant</strong> — 1 platform bisa host ribuan situs pelanggan di domain masing-masing</li>
+<li><strong>Role-based access</strong> — Admin, Reseller, Agent, Client dengan permission berbeda</li>
+</ul>
+<h2 id="peran-role-di-sistem">Peran (Role) di Sistem</h2>
+<p>Ada 4 peran user dengan akses berbeda:</p>
+<h3 id="1-client-pelanggan">1. Client (Pelanggan)</h3>
+<p>Pengguna akhir — orang yang punya toko/bisnis dan mau bikin situs sendiri.</p>
+<p><strong>Yang bisa dilakukan:</strong>
+- Beli domain + bikin situs dari template
+- Edit block, tema, konten via editor visual
+- Kelola produk, blog, formulir kontak
+- Setup DNS + WHOIS domain sendiri
+- Perpanjang domain</p>
+<h3 id="2-agent-freelancer-staff-reseller">2. Agent (Freelancer / Staff Reseller)</h3>
+<p>Pekerja lapangan yang dibawahi oleh Reseller. Membantu klien setup situs.</p>
+<p><strong>Yang bisa dilakukan:</strong>
+- Lihat klien yang di-assign
+- Beli domain untuk klien (<strong>on-behalf-of</strong> — pakai wallet Reseller induk)
+- Edit situs klien (jadi collaborator otomatis)
+- Lihat statistik pribadi</p>
+<h3 id="3-reseller-mitra-bisnis">3. Reseller (Mitra Bisnis)</h3>
+<p>Partner yang jualan produk Web Builder ke pelanggan mereka sendiri, dengan harga jual sendiri.</p>
+<p><strong>Yang bisa dilakukan:</strong>
+- Undang Agent ke tim
+- Buat &amp; manage klien
+- Set harga jual per TLD (untuk agent + untuk client)
+- Top-up wallet + lihat ledger transaksi
+- Beli domain on-behalf-of klien
+- Lihat statistik tim (all agents + revenue)</p>
+<h3 id="4-admin-platform-operator">4. Admin (Platform Operator)</h3>
+<p>Pengelola platform. Punya akses full ke semua data + config.</p>
+<p><strong>Yang bisa dilakukan:</strong>
+- CRUD user, situs, template, zone TLD
+- Approve reseller applications
+- Set harga platform (retail + wholesale)
+- Verify top-up wallet + mark invoice paid manual
+- Manage Cloudflare configs, promo, payment methods
+- Observability: audit log, email log, metrics</p>
+<h2 id="terminologi-penting">Terminologi Penting</h2>
+<table>
+<thead>
+<tr>
+<th>Istilah</th>
+<th>Arti</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Situs / Site</strong></td>
+<td>Website milik user, punya domain sendiri + template + isi (halaman, produk, blog)</td>
+</tr>
+<tr>
+<td><strong>Domain</strong></td>
+<td>Alamat internet (mis. <code>tokosaya.id</code>) yang mengarah ke situs</td>
+</tr>
+<tr>
+<td><strong>Zone / TLD</strong></td>
+<td>Ekstensi domain (<code>.id</code>, <code>.co.id</code>, <code>.com</code>) yang di-support platform</td>
+</tr>
+<tr>
+<td><strong>Template</strong></td>
+<td>Blueprint desain siap pakai — kategori (UMKM, sekolah, portfolio, dsb.) × variant (modern, clean, professional)</td>
+</tr>
+<tr>
+<td><strong>Block</strong></td>
+<td>Komponen halaman (Hero, Feature Grid, Button, Text, Image, Product Grid, dsb.)</td>
+</tr>
+<tr>
+<td><strong>Theme</strong></td>
+<td>Setting global site: warna primary/secondary/bg/fg + font heading/body + radius sudut</td>
+</tr>
+<tr>
+<td><strong>Wallet</strong></td>
+<td>Saldo internal — dipakai Reseller/Agent untuk bayar domain instan (tanpa gateway)</td>
+</tr>
+<tr>
+<td><strong>Invoice</strong></td>
+<td>Tagihan atas transaksi (register domain, renew, top-up wallet)</td>
+</tr>
+<tr>
+<td><strong>On-behalf-of (OBO)</strong></td>
+<td>Reseller/Agent trigger transaksi untuk klien — domain jadi milik klien, tapi dibayar reseller</td>
+</tr>
+<tr>
+<td><strong>Assignment</strong></td>
+<td>Relasi Reseller ↔ Client atau Agent ↔ Client — kontrol siapa yang boleh manage siapa</td>
+</tr>
+</tbody>
+</table>
+<h2 id="alur-umum-pembelian-domain-buat-situs">Alur Umum Pembelian Domain + Buat Situs</h2>
+<p>Berlaku untuk semua role (client self-service, atau reseller/agent OBO):</p>
+<pre><code>1. Cari domain di wizard &quot;Beli Domain + Buat Situs&quot;
+   └─► Cek availability + harga per TLD (retail/wholesale sesuai role)
+
+2. Konfirmasi: pilih tahun registrasi, metode bayar, promo (opsional)
+   └─► Sistem buat invoice → charge via payment gateway atau wallet
+
+3. Setelah bayar (webhook / wallet debit sync):
+   ├─► Sistem daftarkan domain ke registrar (via EPP direct)
+   ├─► Auto-attach ke Cloudflare (create zone + DNS records)
+   └─► Push nameserver Cloudflare ke registry
+
+4. Pilih template → sistem create Situs baru attached ke domain
+
+5. Buka editor → edit konten → Publikasikan → domain live
+</code></pre>
+<p>Total waktu dari klik "Beli" sampai domain aktif: <strong>1-5 menit</strong> (tergantung
+antrian registrar).</p>
+<h2 id="cara-login">Cara Login</h2>
+<p>Semua role login lewat URL yang sama, di-routing otomatis ke dashboard yang
+tepat berdasarkan role akun.</p>
+<ol>
+<li>Buka <code>https://bikinweb.pandi.id/login</code></li>
+<li>Masukkan email + password</li>
+<li>Kalau lupa password: klik "Lupa Password" → email reset link</li>
+<li>Setelah login, dashboard yang muncul tergantung role:</li>
+<li>Admin → <code>/admin</code></li>
+<li>Reseller → <code>/reseller/dashboard</code></li>
+<li>Agent → <code>/agent/dashboard</code></li>
+<li>Client → <code>/dashboard</code></li>
+</ol>
+<h2 id="kontak-support">Kontak Support</h2>
+<p>Kalau ada masalah teknis yang tidak bisa diselesaikan sendiri, hubungi:</p>
+<ul>
+<li><strong>Email</strong>: (isi sesuai config admin di <code>/admin/settings</code>)</li>
+<li><strong>Telegram/WhatsApp</strong>: (isi sesuai policy operator)</li>
+</ul>
+<p>Panduan ini terdiri dari 4 bab per role — baca bab yang sesuai dengan peran
+Anda:</p>
+<ul>
+<li><strong>Bab 1</strong>: Panduan Client (regular user)</li>
+<li><strong>Bab 2</strong>: Panduan Agent</li>
+<li><strong>Bab 3</strong>: Panduan Reseller</li>
+<li><strong>Bab 4</strong>: Panduan Admin</li>
+</ul>
+<hr />
+<p><em>Panduan ini di-generate dari Web Builder v1 — kalau ada fitur baru yang
+tidak tercantum, cek changelog atau hubungi admin.</em></p><h1 id="bab-1-panduan-client-pengguna-umum">Bab 1 — Panduan Client (Pengguna Umum)</h1>
+<p>Untuk user yang mau bikin situs pribadi/bisnis sendiri. Semua flow di sini
+bisa dilakukan sendiri tanpa bantuan Agent/Reseller.</p>
+<h2 id="overview-flow">Overview Flow</h2>
+<pre><code>┌──────────────┐    ┌───────────────┐    ┌───────────────┐
+│  Registrasi  │───►│ Beli Domain   │───►│ Pilih Template│
+│  + Verify    │    │ + Bayar       │    │ + Bikin Situs │
+│    Email     │    │               │    │               │
+└──────────────┘    └───────────────┘    └───────┬───────┘
+                                                 │
+                                                 ▼
+┌──────────────┐    ┌───────────────┐    ┌───────────────┐
+│  Situs Live  │◄───│ Publikasikan  │◄───│ Edit Block    │
+│  di domain   │    │   Situs       │    │  di Editor    │
+└──────────────┘    └───────────────┘    └───────────────┘
+</code></pre>
+<h2 id="11-registrasi-login">1.1 Registrasi &amp; Login</h2>
+<h3 id="registrasi">Registrasi</h3>
+<ol>
+<li>Buka <code>https://bikinweb.pandi.id/register</code></li>
+<li>Isi:</li>
+<li><strong>Nama lengkap</strong></li>
+<li><strong>Email</strong> — akan jadi username login</li>
+<li><strong>Password</strong> — min 8 karakter</li>
+<li>Klik <strong>Daftar</strong> → cek email untuk <strong>link verifikasi</strong></li>
+<li>Klik link verifikasi → account aktif, siap login</li>
+</ol>
+<p>Kalau tidak menerima email dalam 5 menit:
+- Cek folder Spam
+- Klik "Kirim ulang" di halaman login
+- Kalau tetap tidak masuk, hubungi support</p>
+<h3 id="login">Login</h3>
+<ol>
+<li><code>https://bikinweb.pandi.id/login</code></li>
+<li>Email + password</li>
+<li>Kalau lupa password → klik "Lupa Password" → email reset</li>
+</ol>
+<h2 id="12-lengkapi-profil">1.2 Lengkapi Profil</h2>
+<p><strong>Wajib diisi sebelum beli domain</strong>, karena data ini dipakai untuk WHOIS
+contact:</p>
+<ol>
+<li>Klik nama Anda di kanan atas → <strong>Profil</strong></li>
+<li>Isi:</li>
+<li><strong>Nama</strong> (sudah dari registrasi)</li>
+<li><strong>Nomor telepon</strong> — format <code>+6281234567890</code></li>
+<li><strong>Alamat lengkap</strong></li>
+<li><strong>Kota</strong></li>
+<li><strong>Provinsi</strong></li>
+<li><strong>Kode pos</strong></li>
+<li><strong>NIK</strong> (opsional, tapi <strong>WAJIB untuk domain <code>.id</code></strong> karena regulasi PANDI)</li>
+</ol>
+<p>Kalau salah satu field kosong, wizard beli domain akan tampilkan peringatan
+"Profil belum lengkap, kurang: nama, phone, ...".</p>
+<h2 id="13-beli-domain-buat-situs">1.3 Beli Domain + Buat Situs</h2>
+<p>Flow ini gabungkan "daftar domain" + "buat situs" dalam satu wizard.</p>
+<h3 id="langkah-1-cari-domain">Langkah 1 — Cari Domain</h3>
+<p><img alt="Wizard Search Domain" src="screenshots/client-wizard-search.png" /></p>
+<ol>
+<li>Klik <strong>"Beli Domain + Buat Situs"</strong> di dashboard</li>
+<li>Ketik nama domain:</li>
+<li>Format singkat: <code>myshop</code> → sistem tampilkan hasil per TLD (<code>myshop.id</code>, <code>myshop.co.id</code>, <code>myshop.com</code>, dsb.)</li>
+<li>Format lengkap: <code>myshop.co.id</code> → cek 1 domain spesifik</li>
+<li>Klik <strong>Cek Ketersediaan</strong></li>
+<li>Hasil muncul:</li>
+<li>✅ <strong>Tersedia</strong> — hijau, klik untuk pilih</li>
+<li>❌ <strong>Sudah dipakai</strong> — abu, tidak bisa dipilih</li>
+</ol>
+<p>Setiap domain tersedia menampilkan <strong>harga</strong> (register + renew) sesuai role
+Anda. Untuk client, ini adalah harga retail.</p>
+<h3 id="langkah-2-konfirmasi-pembelian">Langkah 2 — Konfirmasi Pembelian</h3>
+<p>Setelah pilih domain:</p>
+<ol>
+<li><strong>Cek profil</strong> — kalau ada field kurang, klik "Lengkapi" untuk isi</li>
+<li><strong>Upload dokumen</strong> (kalau domain <code>.id</code>) — KTP atau NPWP</li>
+<li><strong>Lama registrasi</strong> — pilih 1, 2, 3, 5, atau 10 tahun (semakin lama biasanya diskon per tahun)</li>
+<li><strong>Metode pembayaran</strong> — pilih dari yang tersedia:</li>
+<li><strong>Midtrans / Paylabs</strong> — kartu kredit, virtual account, e-wallet</li>
+<li><strong>Transfer Bank Manual</strong> — transfer + kirim bukti (admin verify manual)</li>
+<li><strong>Kode Promo</strong> (opsional) — masukkan code lalu klik <strong>Terapkan</strong> untuk lihat diskon</li>
+<li><strong>Total</strong> — tampilkan breakdown: harga × tahun − promo = <strong>Total bayar</strong></li>
+<li>Klik <strong>Beli &amp; Bayar</strong></li>
+</ol>
+<h3 id="langkah-3-bayar">Langkah 3 — Bayar</h3>
+<p>Berdasarkan metode:</p>
+<p><strong>Gateway (Midtrans/Paylabs):</strong>
+- Redirect ke halaman gateway → bayar via VA/kartu/e-wallet
+- Setelah bayar, halaman kembali ke <code>/sites/pending/&lt;jobId&gt;</code> otomatis</p>
+<p><strong>Manual Bank:</strong>
+- Halaman <code>/sites/pending/&lt;jobId&gt;</code> menampilkan instruksi:
+  - Total transfer
+  - Berita transfer (nomor invoice — <strong>WAJIB</strong> dicantumkan di transfer)
+  - Daftar rekening tujuan
+- Transfer sesuai instruksi
+- Tunggu admin verify (~1×24 jam kerja)</p>
+<h3 id="langkah-4-tunggu-provisioning">Langkah 4 — Tunggu Provisioning</h3>
+<p>Halaman <code>/sites/pending/&lt;jobId&gt;</code> auto-refresh 3-5 detik.</p>
+<p>Status yang mungkin muncul:
+- <strong>Menunggu pembayaran</strong> — belum bayar
+- <strong>Sedang diproses registrar</strong> — payment OK, EPP register sedang jalan (~1-5 menit)
+- <strong>Domain aktif</strong> — sukses, siap pilih template
+- <strong>Gagal</strong> — cek pesan detail, tombol <strong>Coba Lagi</strong> tersedia (tidak charge ulang)</p>
+<h3 id="langkah-5-pilih-template">Langkah 5 — Pilih Template</h3>
+<p><img alt="Template Picker" src="screenshots/client-template-picker.png" /></p>
+<p>Setelah status <strong>aktif</strong>:</p>
+<ol>
+<li>Muncul list template dikelompokkan per kategori (UMKM, Sekolah, Portfolio, Blog, Guru)</li>
+<li>Setiap template punya 3 variant: Modern, Clean, Professional</li>
+<li>Klik <strong>Preview</strong> untuk lihat live di iframe modal</li>
+<li>Klik card template → panel bawah muncul:</li>
+<li><strong>Nama situs</strong> (default dari nama domain, bisa diedit)</li>
+<li>Klik <strong>Buat Situs</strong> → sistem create site + attach ke domain → redirect ke editor</li>
+</ol>
+<h2 id="14-editor-susun-halaman">1.4 Editor — Susun Halaman</h2>
+<p><img alt="Editor Overview" src="screenshots/client-editor-overview.png" /></p>
+<h3 id="layout-editor">Layout Editor</h3>
+<p>Tampilan editor terbagi 3 kolom (desktop):</p>
+<pre><code>┌─────────────┬─────────────────────────┬─────────────┐
+│  Sidebar    │  Canvas (preview live)  │  Panel      │
+│  block tree │                         │  properties │
+│             │                         │  + layout   │
+│  ─────────  │                         │  ─────────  │
+│  [ Hero  ]  │      &lt; Live Preview &gt;   │  Content    │
+│  [ Feat  ]  │                         │  Layout     │
+│  [ CTA   ]  │                         │  Style      │
+│  [ Blog  ]  │                         │             │
+└─────────────┴─────────────────────────┴─────────────┘
+    Left panel      Center canvas          Right panel
+   (drag reorder)   (klik block select)   (edit props)
+</code></pre>
+<ul>
+<li><strong>Sidebar kiri</strong>: daftar block yang ada di halaman (tree hierarchy)</li>
+<li><strong>Canvas tengah</strong>: rendering live seperti pengunjung situs</li>
+<li><strong>Panel kanan</strong>: edit properti block yang di-select</li>
+</ul>
+<h3 id="tambah-block-baru">Tambah Block Baru</h3>
+<ol>
+<li>Klik tombol <strong>+</strong> di canvas (muncul saat hover antar block)</li>
+<li>Pilih block dari galeri:</li>
+<li><strong>Layout</strong>: Container, Columns, Divider, Spacer</li>
+<li><strong>Content</strong>: Heading, Text, Image, Button</li>
+<li><strong>Hero</strong>: AuroraHero, HighlightHero, LampHero, SpotlightHero</li>
+<li><strong>Feature</strong>: HoverGlowGrid, IconGrid, MovingBorderCTA</li>
+<li><strong>Data-driven</strong>: ProductGrid, BlogList, FormBlock</li>
+<li>Block baru ditambahkan ke posisi</li>
+</ol>
+<h3 id="edit-block-content">Edit Block Content</h3>
+<ol>
+<li>Klik block di canvas atau sidebar → panel kanan muncul</li>
+<li>Tab <strong>Properti</strong>: edit isi (title, subtitle, ctaLabel, imageUrl, dsb.)</li>
+<li>Tab <strong>Layout &amp; Style</strong>:</li>
+<li><strong>Padding &amp; margin</strong> — 4 sisi + responsive per device (desktop/tablet/mobile)</li>
+<li><strong>Alignment</strong> — kiri/tengah/kanan</li>
+<li><strong>Max width</strong> — full / narrow / prose / wide</li>
+<li><strong>Background color</strong> — pilih warna override</li>
+<li><strong>Theme override</strong> — override primary/secondary/bg/fg khusus block ini</li>
+<li><strong>Hidden on device</strong> — sembunyikan block di mobile/tablet</li>
+</ol>
+<h3 id="drag-drop-untuk-reorder">Drag &amp; Drop untuk Reorder</h3>
+<ul>
+<li>Tarik block di sidebar tree → drop ke posisi baru</li>
+<li>Support nesting: masukkan block ke dalam Container/Columns</li>
+</ul>
+<h3 id="duplicate-delete-block">Duplicate / Delete Block</h3>
+<ul>
+<li>Klik block → tombol icon di toolbar block:</li>
+<li><strong>Copy</strong> — duplicate block persis</li>
+<li><strong>Trash</strong> — hapus block</li>
+</ul>
+<h3 id="undo-redo">Undo / Redo</h3>
+<ul>
+<li><strong>Ctrl+Z</strong> / <strong>⌘+Z</strong> — undo perubahan terakhir</li>
+<li><strong>Ctrl+Shift+Z</strong> — redo</li>
+</ul>
+<h2 id="15-halaman-pages">1.5 Halaman (Pages)</h2>
+<p>Situs bisa punya multiple halaman (Home, About, Kontak, dsb.).</p>
+<h3 id="kelola-halaman">Kelola Halaman</h3>
+<p>Menu tab <strong>Halaman</strong> di header editor:</p>
+<ol>
+<li><strong>List semua page</strong> — homepage ditandai dengan bintang</li>
+<li><strong>+ Halaman baru</strong> — buat page kosong</li>
+<li><strong>Rename / Slug</strong> — klik pensil di row page</li>
+<li><strong>Duplicate</strong> — copy page + isinya</li>
+<li><strong>Set as Home</strong> — jadikan homepage default</li>
+<li><strong>Publikasikan / Tarik</strong> — status published/draft</li>
+<li><strong>Hapus</strong> — permanent delete (tidak bisa di-undo)</li>
+</ol>
+<h3 id="homepage-vs-sub-page">Homepage vs Sub-page</h3>
+<ul>
+<li><strong>Homepage</strong> — slug <code>_home</code>, akses via <code>https://domain.com/</code></li>
+<li><strong>Sub-page</strong> — slug custom, akses via <code>https://domain.com/&lt;slug&gt;</code></li>
+</ul>
+<h3 id="version-history">Version History</h3>
+<p>Setiap edit page dicatat sebagai version. Bisa restore ke version lama:</p>
+<ol>
+<li>Tab <strong>Halaman</strong> → klik page → <strong>Riwayat Versi</strong></li>
+<li>List semua version dengan timestamp</li>
+<li><strong>Preview</strong> — lihat isi version lama</li>
+<li><strong>Restore</strong> — ganti page current ke version ini (bikin version baru untuk track)</li>
+</ol>
+<h2 id="16-tema-theme">1.6 Tema (Theme)</h2>
+<p><img alt="Halaman Tema" src="screenshots/client-theme-page.png" /></p>
+<p>Menu tab <strong>Tema</strong> — atur warna + font global untuk seluruh situs.</p>
+<h3 id="hierarki-warna">Hierarki Warna</h3>
+<pre><code>Global Theme Site (yang di-set di /tema)
+    │
+    └──► CSS variables: --color-primary, --color-secondary, dst.
+             │
+             └──► Semua block pakai warna ini otomatis
+                       │
+                       │  KECUALI kalau block punya
+                       ▼
+                  themeOverride per-block
+                  (override warna khusus block ini)
+</code></pre>
+<p>Kalau block punya <code>themeOverride</code>, ubah global theme <strong>tidak affect</strong> block itu.
+Lihat section "Terapkan Theme ke Semua Block" di bawah.</p>
+<h3 id="ubah-warna">Ubah Warna</h3>
+<ol>
+<li>Klik color picker untuk masing-masing:</li>
+<li><strong>Primary</strong> — warna aksen utama (tombol, link, highlight)</li>
+<li><strong>Secondary</strong> — warna aksen pendukung</li>
+<li><strong>Background</strong> — warna latar halaman</li>
+<li><strong>Foreground</strong> — warna teks default</li>
+<li>Preview live di panel kanan</li>
+<li>Klik <strong>Simpan Tema</strong></li>
+</ol>
+<h3 id="ubah-font">Ubah Font</h3>
+<ol>
+<li>Font picker untuk <strong>Heading</strong> + <strong>Body</strong></li>
+<li>Pilih dari Google Fonts (Inter, Manrope, Poppins, dsb.)</li>
+<li>Simpan</li>
+</ol>
+<h3 id="terapkan-theme-ke-semua-block">Terapkan Theme ke Semua Block</h3>
+<p><strong>Kalau block sudah kadung punya warna override sendiri</strong> (dari template atau
+edit manual), ubah theme global tidak affect block itu.</p>
+<p>Solusi: klik <strong>"Terapkan theme ke semua block"</strong> — dialog konfirmasi muncul,
+klik <strong>Ya, reset semua</strong> → semua warna block-level di-hapus, block kembali
+pakai warna theme site.</p>
+<p>Perhatikan:
+- Yang di-reset: warna primary/secondary/bg/fg + background color per block
+- Yang <strong>tidak</strong> di-reset: spacing (padding/margin), content block, layout</p>
+<h3 id="ganti-template">Ganti Template</h3>
+<p>Klik <strong>Ganti Template</strong> untuk switch ke template lain:
+- <strong>Theme only</strong> — hanya theme (warna + font), block tetap
+- <strong>Append</strong> — tambah page baru dari template ke situs existing
+- <strong>Replace all</strong> — ⚠️ hapus semua page lama, ganti dengan template baru</p>
+<h2 id="17-produk-e-commerce">1.7 Produk (E-commerce)</h2>
+<p>Kalau situs Anda toko:</p>
+<ol>
+<li>Tab <strong>Produk</strong> → <strong>+ Produk Baru</strong></li>
+<li>Isi:</li>
+<li>Nama, slug, deskripsi (Rich Text)</li>
+<li>Harga (Rp)</li>
+<li>SKU, stok</li>
+<li>Kategori</li>
+<li>Gambar utama + gambar tambahan</li>
+<li>Simpan → produk otomatis muncul di block <strong>ProductGrid</strong> (kalau ada di page)</li>
+</ol>
+<h3 id="kelola-produk">Kelola Produk</h3>
+<ul>
+<li><strong>List</strong> — tab Produk menampilkan semua</li>
+<li><strong>Edit</strong> — klik row → panel edit</li>
+<li><strong>Publikasikan / Tarik</strong> — kontrol visibility di renderer</li>
+<li><strong>Hapus</strong> — permanent</li>
+</ul>
+<h2 id="18-blog">1.8 Blog</h2>
+<p>Fitur mirip produk tapi untuk artikel:</p>
+<ol>
+<li>Tab <strong>Blog</strong> → <strong>+ Post Baru</strong></li>
+<li>Isi:</li>
+<li>Judul, slug, ringkasan</li>
+<li>Konten (Rich Text — heading, paragraph, image, list, dsb.)</li>
+<li>Featured image</li>
+<li>Kategori + tag</li>
+<li><strong>Publikasikan</strong> — post muncul di block <strong>BlogList</strong> + accessible di <code>/blog/&lt;slug&gt;</code></li>
+</ol>
+<h2 id="19-formulir-contact-form">1.9 Formulir (Contact Form)</h2>
+<ol>
+<li>Tab <strong>Formulir</strong> → <strong>+ Buat form</strong></li>
+<li>Pilih jenis:</li>
+<li><strong>Kontak</strong> — nama + email + pesan (default)</li>
+<li><strong>Newsletter</strong> — email saja</li>
+<li><strong>Kustom</strong> — bikin field sendiri (nanti via API)</li>
+<li>Set <strong>Notify email</strong> — email admin yang terima submission</li>
+<li>Simpan → dapat <strong>form ID</strong> untuk embed di block <strong>FormBlock</strong></li>
+</ol>
+<h3 id="lihat-submission">Lihat Submission</h3>
+<ul>
+<li>Klik form → expand card → tab <strong>Inbox</strong></li>
+<li>List semua submission dengan timestamp + IP</li>
+<li><strong>Hapus</strong> — bersihkan spam</li>
+</ul>
+<h2 id="110-aset-assets">1.10 Aset (Assets)</h2>
+<p>Upload gambar + file untuk dipakai di block:</p>
+<ol>
+<li>Tab <strong>Aset</strong> → <strong>Upload</strong></li>
+<li>Multi-file drag-drop atau click browse</li>
+<li>Format: JPG, PNG, WebP, PDF (max 25 MB per file)</li>
+<li>Aset yang di-upload muncul di <strong>Image Picker</strong> saat pilih gambar di block</li>
+</ol>
+<h3 id="kuota">Kuota</h3>
+<ul>
+<li>Default: <strong>100 MB per situs</strong></li>
+<li>Kalau penuh, hapus aset lama atau minta admin naikin quota</li>
+</ul>
+<h2 id="111-kode-kustom">1.11 Kode Kustom</h2>
+<p>Tab <strong>Kode Kustom</strong> — inject HTML/JS ke situs (untuk tracking, analytics, dsb.):</p>
+<ol>
+<li><strong>Custom Head Code</strong> — masuk sebelum <code>&lt;/head&gt;</code> (mis. Google Analytics, Meta Pixel)</li>
+<li><strong>Custom Body End Code</strong> — masuk sebelum <code>&lt;/body&gt;</code> (mis. chat widget, Tawk.to)</li>
+</ol>
+<p><strong>⚠️ Peringatan</strong>: kode kustom <strong>tidak di-sanitize</strong> — hati-hati XSS. Kalau
+kamu paste dari sumber tidak dikenal, malicious script bisa jalan di situs.</p>
+<h2 id="112-publikasikan-situs">1.12 Publikasikan Situs</h2>
+<p>Setelah edit selesai:</p>
+<ol>
+<li>Tombol <strong>🚀 Publikasikan</strong> di kanan atas header editor</li>
+<li>Confirm → status site jadi <strong>published</strong></li>
+<li>Domain langsung serve versi baru (via renderer)</li>
+</ol>
+<p><strong>Kalau tombol disabled ("Sudah dipublikasikan")</strong> — memang sudah live.
+Setiap edit di editor <strong>otomatis</strong> ke draft, tapi baru live setelah klik
+Publikasikan lagi.</p>
+<p><strong>⚠️ Ingat</strong>: kalau ubah tema/warna, klik Publikasikan <strong>tidak cukup</strong> kalau
+block-nya punya warna override sendiri. Gunakan tombol <strong>"Terapkan theme ke
+semua block"</strong> di tab Tema untuk unify.</p>
+<h2 id="113-manage-domain">1.13 Manage Domain</h2>
+<p><img alt="Domain Detail Page" src="screenshots/client-domain-detail.png" /></p>
+<p>Menu <strong>Settings → Domain Saya</strong> atau <code>/settings/domains/&lt;domain&gt;</code>:</p>
+<h3 id="perpanjang-renew">Perpanjang (Renew)</h3>
+<ol>
+<li>Klik domain → tombol <strong>Perpanjang</strong></li>
+<li>Pilih jumlah tahun tambahan</li>
+<li>Bayar (sama flow dengan register)</li>
+</ol>
+<h3 id="ubah-nameserver">Ubah Nameserver</h3>
+<p><strong>⚠️ Advanced</strong> — kalau ubah NS, situs bisa offline sampai propagasi selesai.</p>
+<ol>
+<li>Tab <strong>Nameserver</strong></li>
+<li>Edit list NS (min 2, max 13)</li>
+<li>Simpan → sistem push ke registry</li>
+</ol>
+<h3 id="ubah-whois-contact">Ubah WHOIS Contact</h3>
+<ol>
+<li>Tab <strong>WHOIS Contact</strong></li>
+<li>Update nama, email, phone, alamat</li>
+<li>Simpan → sync ke registry</li>
+</ol>
+<h3 id="dns-records">DNS Records</h3>
+<p>Kalau domain di-manage via Cloudflare (default auto-attach):</p>
+<ol>
+<li>Tab <strong>DNS Records</strong></li>
+<li><strong>+ Record baru</strong> — pilih type (A, AAAA, CNAME, MX, TXT, SRV, NS)</li>
+<li>Isi name, content, TTL, proxied (untuk A/AAAA/CNAME)</li>
+<li>Simpan → langsung update di Cloudflare</li>
+</ol>
+<h3 id="cloudflare-health">Cloudflare Health</h3>
+<p>Tab <strong>Cloudflare Info</strong> — diagnostic tools:</p>
+<ul>
+<li>Zone status di Cloudflare</li>
+<li>NS sync antara registry vs Cloudflare</li>
+<li>Apex A record + CNAME www point ke platform IP</li>
+<li>Kalau ada masalah, tombol <strong>Retry Attach</strong> (kalau admin enable)</li>
+</ul>
+<h2 id="114-wallet-opsional">1.14 Wallet (Opsional)</h2>
+<p>Sebagian besar client bayar per-transaksi via gateway. Tapi kalau operator
+enable wallet untuk semua role:</p>
+<h3 id="top-up-wallet">Top-up Wallet</h3>
+<ol>
+<li>Menu <strong>Settings → Wallet</strong></li>
+<li>Klik <strong>Top-up</strong></li>
+<li>Isi nominal + pilih metode</li>
+<li>Setelah admin verify → saldo masuk</li>
+</ol>
+<h3 id="bayar-domain-dari-wallet">Bayar Domain dari Wallet</h3>
+<p>Saat wizard beli domain, pilih metode <strong>Wallet</strong> — instan tanpa gateway
+(potong saldo langsung).</p>
+<h2 id="115-invoice-history">1.15 Invoice History</h2>
+<p>Menu <strong>Settings → Tagihan</strong>:</p>
+<ul>
+<li>List semua transaksi (register, renew, top-up)</li>
+<li>Klik row → detail invoice + line items</li>
+<li><strong>Download PDF</strong> untuk backup / akuntansi</li>
+</ul>
+<h2 id="116-kolaborator-multi-user">1.16 Kolaborator (Multi-user)</h2>
+<p>Reseller/Agent yang belikan domain untuk Anda otomatis jadi <strong>editor</strong> di
+situs Anda. Mereka bisa edit block, tapi tidak bisa hapus situs.</p>
+<h3 id="manage-kolaborator">Manage Kolaborator</h3>
+<p>Tab <strong>Halaman → Kolaborator</strong> di situs:</p>
+<ul>
+<li>List semua yang punya akses (owner + editors)</li>
+<li><strong>Hapus kolaborator</strong> — hilangkan akses editor</li>
+<li><strong>Keluar dari situs</strong> (kalau kamu editor, bukan owner) — self-remove</li>
+</ul>
+<h2 id="117-dokumen-kepatuhan">1.17 Dokumen Kepatuhan</h2>
+<p>Untuk register domain <code>.id</code>, PANDI wajibkan KTP/NPWP. Upload sekali, dipakai
+untuk semua purchase berikutnya.</p>
+<h3 id="upload-dokumen">Upload Dokumen</h3>
+<ol>
+<li>Settings → <strong>Dokumen</strong></li>
+<li><strong>Upload</strong> → pilih file (JPG/PNG/PDF, max 8 MB)</li>
+<li>Set:</li>
+<li><strong>Kategori</strong>: KTP / NPWP / Passport / ...</li>
+<li><strong>Nomor</strong>: NIK atau NPWP</li>
+<li><strong>Nama pemilik</strong>: sesuai KTP</li>
+<li>Simpan → di-review admin, status jadi verified setelah OK</li>
+</ol>
+<h3 id="pakai-di-wizard-beli-domain">Pakai di Wizard Beli Domain</h3>
+<p>Saat wizard step "Konfirmasi", muncul document picker (kalau TLD butuh) —
+pilih dokumen dari library atau upload baru.</p>
+<h2 id="118-troubleshoot">1.18 Troubleshoot</h2>
+<p><strong>Situs saya tidak buka di browser</strong>
+- Cek status domain: <code>/settings/domains/&lt;domain&gt;</code> — harus <strong>active</strong>
+- Cek NS sudah point ke Cloudflare (kalau auto-attach on)
+- Cek DNS record A <code>@</code> ada + point ke platform IP
+- Tunggu propagasi DNS (max 24 jam pertama kali)</p>
+<p><strong>Editor lambat / stuck</strong>
+- Refresh halaman
+- Clear browser cache
+- Hindari page dengan block &gt; 50 (split ke sub-page)</p>
+<p><strong>Warna theme yang saya save tidak muncul di situs live</strong>
+- Klik tombol <strong>"Terapkan theme ke semua block"</strong> di tab Tema
+- Publikasikan situs lagi</p>
+<p><strong>Email verifikasi / reset password tidak masuk</strong>
+- Cek Spam
+- Hubungi support — mungkin config SMTP di sisi platform bermasalah</p>
+<p><strong>Domain expired tanpa peringatan</strong>
+- Sistem kirim email reminder 30 hari sebelum expire
+- Cek Spam folder atau update email di profil</p><h1 id="bab-2-panduan-agent">Bab 2 — Panduan Agent</h1>
+<p>Agent adalah freelancer atau staff dari Reseller yang membantu klien setup
+situs. Semua transaksi Agent otomatis di-debit dari <strong>wallet Reseller induk</strong>,
+bukan wallet pribadi.</p>
+<h2 id="21-cara-jadi-agent">2.1 Cara Jadi Agent</h2>
+<p>Anda tidak bisa daftar Agent sendiri. Reseller induk akan <strong>kirim invitation
+email</strong>:</p>
+<ol>
+<li>Buka email dari Reseller — subject "Undangan Agent di [Nama Reseller]"</li>
+<li>Klik link → halaman <code>Terima Undangan</code></li>
+<li>Set password Anda (email sudah pre-filled dari invitation)</li>
+<li>Auto-login ke <code>/agent/dashboard</code></li>
+</ol>
+<h2 id="22-dashboard-agent">2.2 Dashboard Agent</h2>
+<p><img alt="Dashboard Agent" src="screenshots/agent-dashboard.png" /></p>
+<h3 id="alur-kerja-agent">Alur Kerja Agent</h3>
+<pre><code>      ┌─────────┐
+      │ Reseller│
+      └────┬────┘
+           │ invite
+           ▼
+      ┌─────────┐
+      │  Anda   │  ◄── Login sebagai Agent
+      │  Agent  │
+      └────┬────┘
+           │ manage
+           ▼
+      ┌─────────┐        ┌─────────┐
+      │  Klien  │───────►│ Domain  │
+      │(assigned│        │ Situs   │
+      │ ke Anda)│        │(dibeli  │
+      └─────────┘        │ atas    │
+                         │ nama    │
+                         │ klien)  │
+                         └─────────┘
+                              ▲
+                              │ debit
+                              │
+                         ┌──────────┐
+                         │ Wallet   │
+                         │ Reseller │
+                         │  (induk) │
+                         └──────────┘
+</code></pre>
+<p><code>/agent/dashboard</code> — overview aktivitas Anda:</p>
+<ul>
+<li><strong>Klien saya</strong> — jumlah klien yang di-assign ke Anda (bisa &lt; total klien Reseller)</li>
+<li><strong>Domain aktif</strong> — total domain yang Anda register untuk klien</li>
+<li><strong>Pending jobs</strong> — domain yang lagi proses (belum active)</li>
+<li><strong>Wallet activity</strong> — riwayat transaksi Anda (di-debit dari wallet Reseller)</li>
+</ul>
+<h2 id="23-kelola-klien">2.3 Kelola Klien</h2>
+<p><img alt="List Klien Agent" src="screenshots/agent-clients-list.png" /></p>
+<p>Menu <strong>Klien</strong> — <code>/agent/clients</code>:</p>
+<h3 id="list-klien">List Klien</h3>
+<p>Menampilkan semua klien yang di-assign ke Anda oleh Reseller induk. Perhatikan:
+- Anda cuma lihat klien yang <strong>assignment aktif</strong> ke Anda
+- Kalau Reseller cabut assignment (revoke), klien hilang dari list
+- Anda <strong>tidak bisa</strong> invite klien baru sendiri — itu tugas Reseller</p>
+<h3 id="detail-klien">Detail Klien</h3>
+<p>Klik row klien → halaman <code>/agent/clients/&lt;id&gt;</code>:</p>
+<ul>
+<li><strong>Info klien</strong>: nama, email, telepon, alamat</li>
+<li><strong>Domain</strong>: list domain yang klien punya (self + yang Anda belikan)</li>
+<li><strong>Situs</strong>: list situs klien + link ke editor</li>
+<li><strong>Invoice</strong>: riwayat transaksi klien</li>
+<li><strong>Aksi</strong>:</li>
+<li><strong>Beli Domain untuk klien</strong> — trigger wizard OBO</li>
+<li><strong>Edit profil klien</strong> (nama, alamat, NIK)</li>
+</ul>
+<h3 id="edit-profil-klien">Edit Profil Klien</h3>
+<p>Karena Anda "care of" klien, Anda boleh update profil mereka untuk kelengkapan
+WHOIS:</p>
+<ol>
+<li>Klik <strong>Edit Profil</strong> di halaman detail klien</li>
+<li>Update field yang kurang (mis. NIK untuk domain <code>.id</code>)</li>
+<li>Simpan</li>
+</ol>
+<p>Klien tetap bisa update sendiri kapan pun via login mereka.</p>
+<h2 id="24-beli-domain-untuk-klien-on-behalf-of">2.4 Beli Domain untuk Klien (On-Behalf-Of)</h2>
+<p><img alt="Wizard Beli Domain OBO" src="screenshots/agent-buy-domain-obo.png" /></p>
+<p>Flow inti Agent: beli domain untuk klien pakai wallet Reseller induk.</p>
+<h3 id="langkah">Langkah</h3>
+<ol>
+<li>Halaman detail klien → klik <strong>Beli Domain</strong></li>
+<li>Redirect ke wizard <code>/sites/new-with-domain?for_client=&lt;uuid&gt;</code></li>
+<li>Header wizard menampilkan <strong>"Untuk klien: [nama klien]"</strong> — konfirmasi Anda benar</li>
+<li>Isi wizard seperti biasa:</li>
+<li>Cari domain</li>
+<li>Konfirmasi (pakai profil <strong>klien</strong>, bukan Anda)</li>
+<li>Upload dokumen klien (kalau perlu)</li>
+<li><strong>Metode bayar: pilih Wallet</strong> — otomatis debit wallet Reseller induk</li>
+<li>Klik <strong>Beli &amp; Bayar</strong> → langsung <code>pending_provisioning</code> (instant, no gateway)</li>
+<li>Setelah domain active → pilih template → situs dibuat, <strong>owner = klien</strong></li>
+</ol>
+<h3 id="yang-otomatis-terjadi">Yang Otomatis Terjadi</h3>
+<ul>
+<li>Domain di-register atas nama klien (WHOIS contact = klien)</li>
+<li>Situs otomatis attach ke domain</li>
+<li>Anda otomatis di-add sebagai <strong>editor</strong> di situs klien (bisa edit tapi tidak hapus)</li>
+<li>Transaksi dicatat di ledger wallet Reseller dengan metadata <code>agent_id = Anda</code></li>
+<li>Reseller induk bisa lihat "berapa yang Anda pakai" di menu Wallet → Agents Breakdown</li>
+</ul>
+<h2 id="25-metode-bayar-wallet">2.5 Metode Bayar Wallet</h2>
+<p>Agent <strong>tidak punya wallet pribadi</strong>. Setiap "bayar" via Wallet =
+potong saldo wallet Reseller induk.</p>
+<h3 id="kalau-saldo-kurang">Kalau Saldo Kurang</h3>
+<p>Kalau wizard tampilkan "Saldo kurang" saat pilih Wallet:
+- Metode Wallet di-disable
+- Alternatif: pilih gateway (Midtrans/Paylabs) — bayar sendiri, nanti coordination dengan Reseller
+- Atau minta Reseller top-up dulu</p>
+<h3 id="lihat-aktivitas-anda">Lihat Aktivitas Anda</h3>
+<p>Menu <strong>Wallet Activity</strong> — list transaksi yang Anda trigger yang di-debit
+dari wallet Reseller induk. Include:
+- Domain register untuk klien X: <code>−Rp 250.000</code>
+- Domain renew untuk klien Y: <code>−Rp 200.000</code></p>
+<p>Anda <strong>tidak bisa</strong> top-up wallet — itu tugas Reseller.</p>
+<h2 id="26-manage-situs-klien">2.6 Manage Situs Klien</h2>
+<p>Setelah domain klien active + situs dibuat, Anda otomatis jadi editor:</p>
+<ol>
+<li>Menu <strong>Kolaborasi</strong> — list semua situs klien yang Anda edit</li>
+<li>Klik row → buka editor situs</li>
+<li>Edit blocks, tema, konten seperti owner (kecuali tidak bisa hapus situs)</li>
+</ol>
+<p>Klien juga bisa edit sendiri — kolaborasi real-time (dengan versi history).</p>
+<h2 id="27-statistik-pribadi">2.7 Statistik Pribadi</h2>
+<p>Menu <strong>Statistik</strong> — <code>/agent/stats</code>:</p>
+<ul>
+<li><strong>Total klien</strong> — yang di-assign ke Anda</li>
+<li><strong>Total domain register</strong> — yang Anda trigger</li>
+<li><strong>Total revenue</strong> — nilai transaksi yang Anda trigger (untuk komisi dari Reseller)</li>
+<li><strong>Breakdown per bulan</strong> — chart aktivitas</li>
+</ul>
+<h2 id="28-purchases-history">2.8 Purchases History</h2>
+<p>Menu <strong>Purchases</strong> — <code>/agent/purchases</code>:</p>
+<p>Semua register + renew yang Anda trigger, dengan info:
+- Nama klien
+- Nama domain
+- Tahun
+- Total
+- Status (active / pending / failed)
+- Timestamp</p>
+<p>Filter:
+- Status: all / active / pending / failed
+- Kind: register / renew</p>
+<p>Klik row → link ke halaman detail domain (kalau active) atau pending page
+(kalau masih proses).</p>
+<h2 id="29-team-domains">2.9 Team Domains</h2>
+<p>Menu <strong>Domain Klien</strong> — <code>/agent/domains</code>:</p>
+<p>Berbeda dari Purchases (yang transaction log), ini list <strong>per FQDN unik</strong> —
+1 baris per domain, current state:
+- Nama domain
+- Klien pemilik
+- Status
+- Expire date
+- Situs terkait (kalau ada)</p>
+<p>Cocok untuk monitor "domain klien mana yang mau expire" — filter
+<code>expires_at ≤ 30 hari</code>.</p>
+<h2 id="210-batasan-agent">2.10 Batasan Agent</h2>
+<p>Yang <strong>TIDAK BISA</strong> Agent lakukan (harus lewat Reseller):</p>
+<ul>
+<li>❌ Invite klien baru</li>
+<li>❌ Assign klien ke agent lain</li>
+<li>❌ Top-up wallet</li>
+<li>❌ Set harga jual</li>
+<li>❌ Hapus klien</li>
+<li>❌ Lihat aktivitas agent lain di tim Reseller</li>
+</ul>
+<p>Kalau butuh salah satu di atas, koordinasi dengan Reseller induk.</p>
+<h2 id="211-troubleshoot">2.11 Troubleshoot</h2>
+<p><strong>Klien saya hilang dari list</strong>
+- Reseller mungkin cabut assignment (revoke). Konfirmasi ke Reseller.</p>
+<p><strong>Beli domain gagal — saldo kurang</strong>
+- Cek wallet Reseller di dashboard (menu Wallet — untuk Agent view balance saja, tidak bisa top-up)
+- Kalau kurang, minta Reseller top-up dulu</p>
+<p><strong>Klien butuh edit domain tapi saya tidak lihat opsi Edit Contact</strong>
+- Fitur ini di-lock ke owner domain (klien) via halaman <code>/settings/domains/&lt;domain&gt;</code>
+- Klien harus login sendiri untuk update. Anda cuma bisa edit <strong>situs</strong>, tidak <strong>domain settings</strong>.</p>
+<p><strong>Situs klien tidak bisa saya edit walau saya sudah beli untuk mereka</strong>
+- Cek <code>/collaborations</code> — semua situs di mana Anda editor
+- Kalau tidak muncul, kemungkinan collaborator entry gagal di-create. Hubungi admin.</p><h1 id="bab-3-panduan-reseller">Bab 3 — Panduan Reseller</h1>
+<p>Reseller adalah mitra bisnis yang jualan Web Builder ke pelanggan sendiri
+dengan harga jual sendiri. Reseller punya wallet + tim Agent + list klien.</p>
+<h2 id="31-daftar-sebagai-reseller">3.1 Daftar sebagai Reseller</h2>
+<p>Reseller <strong>wajib approval Admin</strong> — tidak bisa langsung aktif setelah daftar.</p>
+<h3 id="langkah-daftar">Langkah Daftar</h3>
+<ol>
+<li>Buka <code>/reseller/apply</code> atau tombol "Daftar Reseller" di landing page</li>
+<li>Isi:</li>
+<li><strong>Email</strong> + password</li>
+<li><strong>Nama pribadi</strong></li>
+<li><strong>Reseller display name</strong> — nama bisnis (mis. "PT Web Solusi")</li>
+<li><strong>Nomor telepon</strong></li>
+<li><strong>Alamat perusahaan</strong></li>
+<li>Submit → status <strong>pending</strong></li>
+<li>Tunggu Admin review — dapat email notifikasi kalau di-approve</li>
+<li>Setelah approved, login → dashboard reseller aktif</li>
+</ol>
+<h2 id="32-dashboard-reseller">3.2 Dashboard Reseller</h2>
+<p><img alt="Dashboard Reseller" src="screenshots/reseller-dashboard.png" /></p>
+<h3 id="struktur-bisnis-reseller">Struktur Bisnis Reseller</h3>
+<pre><code>     ┌─────────────┐
+     │   Anda      │  ◄── Reseller (approved by Admin)
+     │  (Reseller) │
+     └──────┬──────┘
+            │
+       ┌────┴─────┐
+       │          │
+       ▼          ▼
+   ┌────────┐   ┌────────┐
+   │ Agent  │   │ Client │  ◄── Direct client (Anda invite)
+   │ (tim)  │   │        │
+   └───┬────┘   └────────┘
+       │
+       │ manage
+       ▼
+   ┌────────┐
+   │ Client │  ◄── Client via Agent (Agent invite)
+   │        │
+   └────────┘
+
+  Wallet Anda ──► debit tiap transaksi (self OR via Agent)
+</code></pre>
+<p><code>/reseller/dashboard</code>:</p>
+<ul>
+<li><strong>Card stats</strong> — 4 tile: klien, agent, domain aktif, saldo wallet</li>
+<li><strong>Quick actions</strong> — Daftarkan Klien Baru + Undang Agent</li>
+<li><strong>Domain yang diproses</strong> — pending purchases untuk semua klien tim</li>
+<li><strong>Checklist onboarding</strong> — 5 step untuk optimize akun:</li>
+<li>Aplikasi disetujui ✓</li>
+<li>Set harga jual</li>
+<li>Top-up wallet awal</li>
+<li>Undang agent pertama</li>
+<li>Daftarkan klien pertama</li>
+</ul>
+<h2 id="33-kelola-klien">3.3 Kelola Klien</h2>
+<p><img alt="List Klien Reseller" src="screenshots/reseller-clients.png" /></p>
+<p>Menu <strong>Klien</strong> — <code>/reseller/clients</code>.</p>
+<h3 id="tambah-klien-baru">Tambah Klien Baru</h3>
+<p>Ada 2 cara:</p>
+<p><strong>A. Invite via Email (recommended)</strong></p>
+<ol>
+<li>Klik <strong>+ Klien Baru</strong></li>
+<li>Isi email + nama</li>
+<li>Centang <strong>Kirim invitation</strong> → sistem email link ke klien</li>
+<li>Klien klik link → set password sendiri → auto-login</li>
+<li>Assignment otomatis di-create: Anda → klien</li>
+</ol>
+<p><strong>B. Create Manual (klien tidak perlu login sendiri)</strong></p>
+<p>Kalau Anda 100% take-over — misalnya klien tidak paham komputer:</p>
+<ol>
+<li><strong>+ Klien Baru</strong> → uncheck "Kirim invitation"</li>
+<li>Set password sementara</li>
+<li>Manual: share credential + login untuk klien saat perlu</li>
+</ol>
+<p>Klien tetap bisa reset password sendiri via email nanti.</p>
+<h3 id="list-klien">List Klien</h3>
+<p>Kolom yang muncul:
+- Nama, email, phone
+- Managed by (kalau ada Agent yang assigned)
+- Status (aktif, belum verify email, suspend)
+- Total domain
+- Tanggal join</p>
+<p>Filter: role, status, agent (untuk cari klien yang di-manage agent tertentu).</p>
+<h3 id="assign-klien-ke-agent">Assign Klien ke Agent</h3>
+<p>Kalau Anda punya Agent, bisa delegate klien ke mereka:</p>
+<ol>
+<li>Klik klien → tab <strong>Managed By</strong></li>
+<li><strong>+ Assign Agent</strong> — pilih dari list agent Anda</li>
+<li>Set permission (editor / viewer / owner untuk situs)</li>
+<li>Simpan</li>
+</ol>
+<p>Agent langsung bisa manage klien itu (beli domain, edit situs).</p>
+<h3 id="revoke-assignment">Revoke Assignment</h3>
+<p>Klik row assignment → <strong>Revoke</strong> — Agent lose access ke klien. Klien tetap
+punya semua data-nya (domain, situs, dst.).</p>
+<h3 id="detail-klien">Detail Klien</h3>
+<p>Klik row → <code>/reseller/clients/&lt;id&gt;</code>:</p>
+<p>Tabs:
+- <strong>Profil</strong> — full info klien
+- <strong>Domain</strong> — list domain klien
+- <strong>Situs</strong> — list situs klien + link editor (Anda otomatis editor)
+- <strong>Invoice</strong> — riwayat transaksi klien
+- <strong>Aksi</strong>:
+  - <strong>Beli Domain untuk klien</strong>
+  - <strong>Edit profil klien</strong></p>
+<h2 id="34-undang-agent">3.4 Undang Agent</h2>
+<p><img alt="Invite Agent Dialog" src="screenshots/reseller-invite-agent.png" /></p>
+<p>Menu <strong>Tim</strong> atau <strong>Agent</strong> — <code>/reseller/team</code> atau <code>/reseller/agents</code>.</p>
+<h3 id="kirim-invitation">Kirim Invitation</h3>
+<ol>
+<li>Klik <strong>+ Undang Agent</strong></li>
+<li>Isi email + nama Agent</li>
+<li>Klik <strong>Kirim Undangan</strong> → email dengan link accept dikirim</li>
+<li>Agent klik link → set password → jadi Agent Anda</li>
+</ol>
+<h3 id="list-agent">List Agent</h3>
+<ul>
+<li>Nama, email</li>
+<li>Status (aktif, pending accept)</li>
+<li>Jumlah klien yang di-manage</li>
+<li>Jumlah domain yang di-trigger</li>
+<li>Total revenue yang mereka drive</li>
+</ul>
+<h3 id="detail-agent">Detail Agent</h3>
+<p>Klik row Agent → <code>/reseller/team/&lt;agent_id&gt;</code>:</p>
+<ul>
+<li>Info Agent</li>
+<li>Klien yang di-assign ke mereka</li>
+<li>Purchases mereka (semua transaksi + total)</li>
+<li>Aktivitas wallet (yang di-debit oleh mereka dari wallet Anda)</li>
+</ul>
+<h3 id="cabut-akses-agent">Cabut Akses Agent</h3>
+<p>Klik row → <strong>Suspend / Delete</strong>:
+- <strong>Suspend</strong>: Agent tidak bisa login, tapi data historis + assignment tetap
+- <strong>Delete</strong>: hapus permanent, assignment ke klien juga di-clear</p>
+<h2 id="35-wallet-top-up">3.5 Wallet &amp; Top-up</h2>
+<p><img alt="Wallet Reseller" src="screenshots/reseller-wallet.png" /></p>
+<p>Menu <strong>Wallet</strong> — <code>/reseller/wallet</code>.</p>
+<h3 id="cek-saldo">Cek Saldo</h3>
+<p>Card besar di top: saldo current dalam Rupiah.</p>
+<h3 id="top-up-wallet">Top-up Wallet</h3>
+<ol>
+<li>Klik <strong>Top-up</strong></li>
+<li>Isi nominal</li>
+<li>Pilih metode:</li>
+<li><strong>Midtrans / Paylabs</strong> — instant charge via gateway</li>
+<li><strong>Transfer Bank Manual</strong> — transfer + upload bukti transfer</li>
+<li>Kalau gateway: bayar → saldo masuk instant setelah webhook</li>
+<li>Kalau manual: upload bukti → admin verify (1-24 jam) → saldo masuk</li>
+</ol>
+<h3 id="upload-bukti-transfer-manual-bank">Upload Bukti Transfer (Manual Bank)</h3>
+<p>Halaman top-up detail:
+1. Klik row top-up dengan status <strong>awaiting verification</strong>
+2. Klik <strong>Upload Bukti</strong>
+3. Pilih file (JPG/PNG/PDF, max 8 MB)
+4. Optional: tambah catatan
+5. Submit → status jadi <strong>awaiting_verification</strong>, admin dapat notif
+6. Setelah admin approve → saldo credit + ledger entry</p>
+<h3 id="ledger-riwayat-transaksi">Ledger — Riwayat Transaksi</h3>
+<p>Tab <strong>Ledger</strong> di halaman Wallet:
+- Semua credit + debit dengan timestamp
+- Link ke invoice untuk debit (mis. domain register)
+- Filter tanggal, tipe (credit/debit)</p>
+<h3 id="agents-breakdown">Agents Breakdown</h3>
+<p>Tab <strong>Per-Agent Activity</strong>:
+- Aggregate spending per Agent Anda dalam periode
+- Cocok untuk track "Agent mana yang paling produktif" atau komisi kalkulasi
+- Export ke CSV</p>
+<h2 id="36-set-harga-jual-pricing">3.6 Set Harga Jual (Pricing)</h2>
+<p><img alt="Pricing Reseller" src="screenshots/reseller-pricing.png" /></p>
+<p>Ini yang bikin Reseller = bisnis. Anda set markup dari harga wholesale
+platform.</p>
+<h3 id="konsep-harga">Konsep Harga</h3>
+<pre><code>Harga Platform          Anda Set (per TLD)
+──────────────          ──────────────────
+Retail   Rp 250.000  ← baseline harga client
+Wholesale Rp 180.000  ← Anda bayar segini per register
+
+                     ─► Agent Price: Rp 200.000 (Anda tetapkan)
+                        └─ Ini yang di-debit dari wallet saat Agent Anda beli
+
+                     ─► Client Price: Rp 240.000 (Anda tetapkan)
+                        └─ Ini yang dilihat + dibayar client saat beli sendiri
+</code></pre>
+<p><strong>Margin Anda per transaksi</strong>: <code>Wholesale − Client Price</code> untuk client
+self-purchase, atau <code>Wholesale − Agent Price</code> kalau Agent beli untuk client.</p>
+<h3 id="set-harga-per-tld">Set Harga per TLD</h3>
+<p>Menu <strong>Harga Jual</strong> — <code>/reseller/pricing</code>:</p>
+<ol>
+<li><strong>+ TLD Baru</strong> — pilih TLD dari list yang tersedia (di-whitelist platform admin)</li>
+<li>Isi:</li>
+<li><strong>Agent Register Price</strong> — yang di-debit wallet Anda saat Agent register</li>
+<li><strong>Agent Renew Price</strong> — sama untuk renew</li>
+<li><strong>Client Register Price</strong> — yang dilihat client Anda</li>
+<li><strong>Client Renew Price</strong></li>
+<li>Simpan → harga langsung apply untuk transaksi berikutnya</li>
+</ol>
+<h3 id="list-harga">List Harga</h3>
+<p>Tab list menampilkan:
+- Semua TLD yang sudah Anda set
+- Kolom: agent_reg, agent_renew, client_reg, client_renew, wholesale (reference)</p>
+<h3 id="edit-hapus">Edit / Hapus</h3>
+<ul>
+<li><strong>Edit</strong>: klik row → panel edit → simpan</li>
+<li><strong>Hapus</strong>: fallback ke retail platform (client bayar retail, wholesale tidak ada margin buat Anda)</li>
+</ul>
+<h2 id="37-beli-domain-untuk-klien-on-behalf-of">3.7 Beli Domain untuk Klien (On-Behalf-Of)</h2>
+<p>Sama flow dengan Agent. Beda: transaksi di-log dengan <code>purchased_by = Anda</code>
+(bukan <code>agent_id</code>), wallet yang dipotong = wallet Anda sendiri.</p>
+<h3 id="langkah">Langkah</h3>
+<ol>
+<li>Menu Klien → pilih klien → <strong>Beli Domain</strong></li>
+<li>Wizard <code>/sites/new-with-domain?for_client=&lt;uuid&gt;</code></li>
+<li>Wizard tampilkan profil <strong>klien</strong> (bukan Anda)</li>
+<li>Wizard tampilkan <strong>wholesale price</strong> yang di-debit + info margin Anda</li>
+<li>Pilih metode: <strong>Wallet</strong> (instan, potong saldo Anda) atau gateway</li>
+<li>Setelah domain active → pilih template → situs dibuat, owner = klien</li>
+<li>Anda otomatis di-add sebagai editor</li>
+</ol>
+<h2 id="38-purchases-invoices-team">3.8 Purchases &amp; Invoices Team</h2>
+<h3 id="purchases">Purchases</h3>
+<p>Menu <strong>Purchases</strong> — <code>/reseller/purchases</code>:</p>
+<p>Semua transaksi yang trigger via tim Anda (self + Agent):
+- Kolom: klien, domain, status, kind, total, tanggal
+- Filter: status, kind, klien
+- Export <strong>CSV</strong> — untuk akuntansi</p>
+<h3 id="invoices">Invoices</h3>
+<p>Menu <strong>Tagihan</strong> — <code>/reseller/invoices</code>:</p>
+<p>Aggregate list:
+- Invoice self (top-up wallet Anda)
+- Invoice klien (register + renew untuk mereka)
+- Klik row → detail + PDF download</p>
+<h2 id="39-statistik-reporting">3.9 Statistik &amp; Reporting</h2>
+<p>Menu <strong>Statistik</strong> — <code>/reseller/stats</code>:</p>
+<ul>
+<li><strong>Total klien</strong> (direct + via agent)</li>
+<li><strong>Total agent</strong> aktif</li>
+<li><strong>Total domain aktif</strong> di tim</li>
+<li><strong>Total revenue</strong> rolling 30 hari</li>
+<li><strong>Chart aktivitas</strong> — line chart per bulan</li>
+</ul>
+<h2 id="310-domain-klien-aggregate">3.10 Domain Klien (Aggregate)</h2>
+<p>Menu <strong>Domain</strong> — <code>/reseller/domains</code>:</p>
+<p>Beda dari Purchases (yang transaction log), ini list <strong>per FQDN unik</strong>:
+- 1 baris per domain
+- Info: owner klien, status, expire, situs terkait, siapa yang trigger register</p>
+<p>Filter berguna:
+- <code>expires_at ≤ 30 hari</code> — domain yang mau expire, follow-up ke klien untuk renew</p>
+<h2 id="311-kolaborasi-situs">3.11 Kolaborasi Situs</h2>
+<p>Menu <strong>Kolaborasi</strong> — <code>/settings/collaborators</code>:</p>
+<ul>
+<li><strong>Situs saya</strong> — situs milik Anda sendiri (kalau Anda punya)</li>
+<li><strong>Situs klien saya</strong> — situs klien di mana Anda editor</li>
+<li>Klik row → buka editor</li>
+</ul>
+<p>Reseller otomatis editor di semua situs klien yang Anda + Agent Anda buat.</p>
+<h2 id="312-batasan-reseller">3.12 Batasan Reseller</h2>
+<p>Yang TIDAK bisa Reseller lakukan:</p>
+<ul>
+<li>❌ Approve reseller lain (itu admin only)</li>
+<li>❌ Set harga di atas platform retail (ada guard di backend, mungkin)</li>
+<li>❌ Reassign klien reseller lain ke Anda</li>
+<li>❌ Akses <code>/admin/*</code> (akses admin platform)</li>
+</ul>
+<h2 id="313-best-practice">3.13 Best Practice</h2>
+<p><strong>1. Set harga jual DULU sebelum invite Agent</strong></p>
+<p>Kalau Agent Anda beli domain sebelum Anda set harga TLD tersebut, sistem
+fallback ke retail platform — Anda tidak dapat margin.</p>
+<p><strong>2. Top-up wallet cukup</strong></p>
+<p>Kalau saldo habis di tengah transaksi Agent, mereka blocked. Kalau bisnis
+aktif, top-up 2x lipat rata-rata transaksi bulanan supaya tidak sering
+top-up.</p>
+<p><strong>3. Monitor Agent Breakdown</strong></p>
+<p>Cek berkala menu Wallet → Agents Breakdown untuk deteksi:
+- Agent yang tidak aktif (0 transaksi) — mungkin butuh training
+- Agent yang salah beli (mis. domain expensive tanpa persetujuan)
+- Untuk hitung komisi</p>
+<p><strong>4. Test flow sebagai Client dulu</strong></p>
+<p>Sebelum onboard klien beneran, coba self-purchase dari akun test → alami
+sendiri flow-nya → bisa jelaskan ke klien saat mereka bingung.</p>
+<h2 id="314-troubleshoot">3.14 Troubleshoot</h2>
+<p><strong>Aplikasi reseller saya masih pending 2 hari</strong>
+- Hubungi admin — biasanya approve 1x24 jam kerja</p>
+<p><strong>Agent invitation email tidak terkirim ke Agent</strong>
+- Cek Spam folder Agent
+- Cek Anda tidak salah tulis email di form invite
+- Re-send: klik row Agent (status pending) → <strong>Kirim Ulang</strong></p>
+<p><strong>Wallet debit tidak sesuai — Agent beli tapi saldo saya tidak turun</strong>
+- Kemungkinan transaksi di-cancel / failed di provisioning stage — wallet
+  auto-refund
+- Cek ledger, kalau ada baris "refund", itu sudah dikembalikan</p>
+<p><strong>Klien tidak bisa akses situs setelah saya belikan</strong>
+- Cek domain status: sudah active?
+- Cek Cloudflare attach: sudah success? (info di <code>/settings/domains/&lt;domain&gt;</code>
+  tab Cloudflare)
+- Kalau CF attach failed, ada tombol Retry di admin — hubungi admin</p>
+<p><strong>Set harga tapi client masih lihat harga retail</strong>
+- Cek TLD yang Anda set match dengan TLD yang client cari — mis. set <code>id</code>
+  tapi client cari <code>co.id</code> = beda TLD
+- Refresh cache: logout-login client lagi (kadang wizard cache pricing)</p>
+<p><strong>Berapa margin saya per domain?</strong>
+- Buka <code>/reseller/pricing</code> — kolom margin visible sebagai <code>client_price − wholesale</code>
+  untuk client self, atau <code>agent_price − wholesale</code> untuk transaksi via Agent</p><h1 id="bab-4-panduan-admin">Bab 4 — Panduan Admin</h1>
+<p>Admin adalah operator platform. Punya akses full ke semua data + config
+sistem. Panduan ini asumsi Anda familiar dengan cara kerja SaaS multi-tenant
++ registrar domain.</p>
+<h2 id="41-akses-admin-panel">4.1 Akses Admin Panel</h2>
+<p>Admin akun harus di-bootstrap via env var (<code>ADMIN_EMAIL</code> + <code>ADMIN_PASSWORD</code>
+di <code>.env</code> API) saat pertama deploy. Setelah itu, admin bisa promote user lain
+via panel.</p>
+<p>Login → tombol <strong>⚙ Admin Panel</strong> muncul di header dashboard (kalau role
+Anda <code>admin</code>). Klik → redirect ke <code>/admin</code>.</p>
+<h2 id="42-overview-stats">4.2 Overview Stats</h2>
+<p><img alt="Admin Dashboard" src="screenshots/admin-stats.png" /></p>
+<h3 id="struktur-sistem">Struktur Sistem</h3>
+<pre><code>                  ┌───────────────┐
+                  │     ADMIN     │
+                  │  (Anda, ops)  │
+                  └───────┬───────┘
+                          │
+                          │ approve / manage
+                          ▼
+       ┌──────────────────┼──────────────────┐
+       │                  │                  │
+       ▼                  ▼                  ▼
+  ┌─────────┐        ┌─────────┐        ┌─────────┐
+  │Reseller │        │ Agent   │        │ Client  │
+  │(mitra)  │───────►│ (staff  │───────►│ (end    │
+  │         │        │  tim R) │        │  user)  │
+  └────┬────┘        └─────────┘        └─────────┘
+       │                                     ▲
+       └─────────────────────────────────────┘
+          Reseller/Agent bisa OBO (on-behalf-of)
+</code></pre>
+<p><code>/admin</code> — dashboard stats:</p>
+<ul>
+<li>Total user (per role)</li>
+<li>Total situs (published / draft)</li>
+<li>Total domain aktif</li>
+<li>Total invoice (paid / unpaid)</li>
+<li>Revenue rolling 30 hari</li>
+<li>Chart aktivitas user + revenue</li>
+</ul>
+<h2 id="43-kelola-user">4.3 Kelola User</h2>
+<p><img alt="User Management" src="screenshots/admin-users.png" /></p>
+<p>Menu <strong>User</strong> — <code>/admin/users</code>.</p>
+<h3 id="list-user">List User</h3>
+<p>Kolom: email, nama, role, status verify, tanggal daftar, total situs.</p>
+<p>Filter: role, status, search (email/nama).</p>
+<h3 id="detail-user">Detail User</h3>
+<p>Klik row → tab:
+- <strong>Profil</strong> — full info
+- <strong>Situs</strong> — list situs user
+- <strong>Invoice</strong> — riwayat transaksi
+- <strong>Aksi</strong>:
+  - <strong>Ganti Role</strong> — promote/demote (client ↔ reseller ↔ agent ↔ admin)
+  - <strong>Reset Password</strong> — kirim email reset
+  - <strong>Suspend</strong> — user tidak bisa login (data tetap)
+  - <strong>Delete</strong> — cascade hapus user + semua data (ireversibel!)</p>
+<h3 id="promote-ke-admin">Promote ke Admin</h3>
+<p>Hati-hati — admin punya akses full. Best practice:
+1. Sebelum promote, konfirmasi via WA/email personal
+2. Enable 2FA di akun mereka (belum ada, roadmap)
+3. Log siapa promote siapa kapan (audit log auto-record)</p>
+<h2 id="44-kelola-situs">4.4 Kelola Situs</h2>
+<p>Menu <strong>Situs</strong> — <code>/admin/sites</code>.</p>
+<h3 id="list">List</h3>
+<p>Semua situs cross-user. Filter: owner, status (published/draft), search.</p>
+<h3 id="edit-kuota">Edit Kuota</h3>
+<p>Klik row → <strong>Edit Quota</strong>:
+- <strong>Max pages</strong> — default 20
+- <strong>Max storage</strong> — default 100 MB</p>
+<p>Kalau ada user komplain quota habis, cek usage-nya dulu di <code>/sites/&lt;id&gt;/usage</code>
+sebelum naikin (mungkin ada spam upload).</p>
+<h3 id="hapus-situs">Hapus Situs</h3>
+<p><strong>Delete</strong> — cascade hapus situs + pages + assets + domain link.
+Ireversibel. Konfirm ownership + reason sebelum delete.</p>
+<h2 id="45-reseller-applications">4.5 Reseller Applications</h2>
+<p><img alt="Reseller Applications" src="screenshots/admin-resellers-pending.png" /></p>
+<p>Menu <strong>Reseller</strong> — <code>/admin/resellers</code>.</p>
+<h3 id="list-pending-applications">List Pending Applications</h3>
+<p>Kolom: nama, email, reseller display name, tanggal apply, status.</p>
+<p>Filter status: pending / approved / suspended.</p>
+<h3 id="detail-application">Detail Application</h3>
+<p>Klik row → info:
+- Data pribadi + bisnis
+- Alamat + phone
+- Reason for apply (kalau ada field)</p>
+<h3 id="approve-suspend">Approve / Suspend</h3>
+<p><strong>Approve</strong>:
+1. Klik row → tombol <strong>Approve</strong>
+2. Backend: role user diupgrade ke <code>reseller</code> + email notif dikirim
+3. Status jadi <code>active</code></p>
+<p><strong>Suspend</strong>:
+1. Untuk reseller aktif — freeze akses tanpa hapus data
+2. Isi reason (untuk audit + email ke reseller)
+3. Klik <strong>Suspend</strong>
+4. Reseller tidak bisa login, tapi klien + Agent + data tetap</p>
+<p><strong>Unsuspend</strong>: klik lagi → <strong>Reactivate</strong>.</p>
+<h3 id="tabs-detail-reseller">Tabs Detail Reseller</h3>
+<ul>
+<li><strong>Klien</strong> — semua klien yang mereka manage</li>
+<li><strong>Agent</strong> — tim Agent</li>
+<li><strong>Domain</strong> — semua domain yang mereka register (self + team)</li>
+<li><strong>Wallet</strong> — saldo + ledger</li>
+</ul>
+<h2 id="46-domain-observability">4.6 Domain Observability</h2>
+<p>Menu <strong>Domain</strong> — <code>/admin/domain</code>.</p>
+<p>Aggregate list per FQDN (cross-user). Cocok untuk monitor semua domain di
+platform.</p>
+<h3 id="list_1">List</h3>
+<p>Filter:
+- Status: active / expired / suspended
+- Expiring: dalam N hari
+- Search: domain name / owner email</p>
+<h3 id="detail-domain">Detail Domain</h3>
+<p>Klik row → <code>/admin/domain/&lt;name&gt;</code>:
+- Info domain (bypass ownership check)
+- WHOIS live
+- Nameservers
+- DNS records (via Cloudflare)
+- <strong>Cloudflare attach status</strong> — kalau failed, tombol <strong>Retry</strong> available</p>
+<h3 id="cloudflare-retry">Cloudflare Retry</h3>
+<p>Kalau <code>cf_attach_status</code> = <code>failed</code>:
+1. Klik tombol <strong>Retry</strong> di card CF status
+2. Backend re-run tryAttachToCloudflare
+3. Kalau sukses: badge jadi <strong>Terhubung</strong> (hijau)
+4. Kalau tetap fail: cek error detail — biasanya:
+   - Token CF invalid → update di <code>/admin/cloudflare</code>
+   - Zone sudah exist di akun lain → hapus dulu di CF dashboard
+   - Permission tidak cukup → cek token permission (butuh Account → Zone → Edit)</p>
+<h2 id="47-registrar-purchases">4.7 Registrar Purchases</h2>
+<p>Menu <strong>Registrar</strong> atau <strong>Purchases</strong> — <code>/admin/domain/purchases</code>.</p>
+<p>Transaction log semua register + renew cross-user. Termasuk yang failed.</p>
+<h3 id="kegunaan">Kegunaan</h3>
+<ul>
+<li>Monitor rate transaksi</li>
+<li>Debug user yang stuck di pending</li>
+<li>Cari root cause failed jobs</li>
+</ul>
+<h3 id="retry-stuck-job">Retry Stuck Job</h3>
+<p>Klik row → kalau status <code>failed</code> / <code>pending_payment</code> / <code>pending_provisioning</code>:
+- Tombol <strong>Retry</strong> di kolom Aksi
+- Bypass ownership — admin bisa retry job siapa pun
+- Idempotent — kalau job sudah active, no-op</p>
+<h2 id="48-pricing-platform">4.8 Pricing Platform</h2>
+<p>Menu <strong>Harga Platform</strong> — <code>/admin/pricing/platform</code>.</p>
+<p>Set harga baseline per TLD × periode. Ini yang di-refer Reseller saat set
+markup mereka.</p>
+<h3 id="konsep">Konsep</h3>
+<pre><code>Untuk 1 TLD × N tahun:
+  Retail Price     — yang client bayar (tanpa reseller)
+  Wholesale Price  — cost basis (yang direseller bayar ke Anda)
+  Cost Price       — biaya Anda ke registrar (untuk kalkulasi margin platform)
+</code></pre>
+<p>Contoh <code>.id</code> 1 tahun:
+- Cost: Rp 150.000 (biaya ke PANDI)
+- Wholesale: Rp 180.000 (dijual ke reseller — margin Anda Rp 30.000)
+- Retail: Rp 250.000 (client self-purchase — margin Anda Rp 100.000)</p>
+<h3 id="set-harga">Set Harga</h3>
+<ol>
+<li><strong>+ TLD Baru</strong> → pilih TLD dari list zone (dari <code>/admin/zones</code>)</li>
+<li>Isi cost, wholesale, retail × register + renew</li>
+<li>Simpan → langsung apply</li>
+</ol>
+<p>Kalau TLD di zones tapi tidak ada di pricing, wizard beli domain tampilkan
+"harga belum di-set" — client tidak bisa beli TLD itu.</p>
+<h2 id="49-promo-kupon-diskon">4.9 Promo (Kupon Diskon)</h2>
+<p>Menu <strong>Promo</strong> — <code>/admin/promos</code>.</p>
+<h3 id="buat-promo-baru">Buat Promo Baru</h3>
+<ol>
+<li><strong>+ Promo</strong> → isi:</li>
+<li><strong>Code</strong> — mis. <code>LAUNCH2026</code> (uppercase auto)</li>
+<li><strong>Discount type</strong> — percent atau fixed</li>
+<li><strong>Discount value</strong> — 20 (percent) atau 50000 (fixed IDR)</li>
+<li><strong>Applies to</strong> — register / renew / both</li>
+<li><strong>TLD whitelist</strong> — list TLD (kosong = semua)</li>
+<li><strong>Min subtotal</strong> — minimum belanja untuk aktif</li>
+<li><strong>Max discount cap</strong> — kalau percent, cap Rp</li>
+<li><strong>Valid from / until</strong> — tanggal aktif</li>
+<li><strong>Max uses total</strong> — total redemption</li>
+<li><strong>Max uses per user</strong> — cegah user pakai berkali</li>
+<li>Simpan → langsung available di wizard</li>
+</ol>
+<h3 id="monitor-redemption">Monitor Redemption</h3>
+<p>Detail promo → tab <strong>Redemption</strong>:
+- List semua penggunaan dengan user, invoice, tanggal
+- Unique per invoice (cegah dobel redeem)</p>
+<h3 id="deactivate">Deactivate</h3>
+<p>Bisa <strong>Pause</strong> promo tanpa hapus (redemption history tetap):
+- Set status <code>paused</code> → tidak available di wizard walau valid window</p>
+<h2 id="410-zone-catalog-tld-config">4.10 Zone Catalog (TLD Config)</h2>
+<p>Menu <strong>Zone</strong> — <code>/admin/zones</code>.</p>
+<p>Kontrol TLD apa yang platform Anda support.</p>
+<h3 id="field-per-zone">Field per Zone</h3>
+<ul>
+<li><strong>TLD</strong> — mis. <code>id</code>, <code>co.id</code>, <code>com</code></li>
+<li><strong>Label</strong> — display name (mis. <code>.id</code>, <code>.co.id</code>)</li>
+<li><strong>Active</strong> — enable/disable tanpa hapus</li>
+<li><strong>Min years</strong> — minimum tahun registrasi</li>
+<li><strong>Max years</strong> — max tahun</li>
+<li><strong>Require document</strong> — perlu KTP/NPWP upload (untuk <code>.id</code> family)</li>
+<li><strong>Auto approved</strong> — bypass admin manual review (biasanya <code>.com</code>, <code>.net</code>)</li>
+<li><strong>NIK auto approved</strong> — kalau NIK match validasi, auto approve</li>
+</ul>
+<h3 id="best-practice">Best Practice</h3>
+<ul>
+<li>Jangan disable TLD yang masih ada user active — mereka tidak bisa renew!</li>
+<li>Kalau mau phase out, set price wholesale sangat tinggi (block ekonomi)
+  daripada disable</li>
+</ul>
+<h2 id="411-system-settings">4.11 System Settings</h2>
+<p>Menu <strong>Settings</strong> — <code>/admin/settings</code>.</p>
+<p>Key-value store untuk config non-code:
+- <strong>PPN rate</strong> — mis. <code>0.11</code> (11%)
+- <strong>Brand name</strong> — untuk PDF invoice + email
+- <strong>Brand address</strong> — di footer email + PDF
+- <strong>Support email</strong> — kontak yang muncul di UI
+- <strong>Support phone</strong>
+- Dan config lain sesuai domain bisnis</p>
+<p>Edit inline, save langsung apply.</p>
+<h2 id="412-payment-methods">4.12 Payment Methods</h2>
+<p>Menu <strong>Payment Method</strong> — <code>/admin/payment-methods</code>.</p>
+<p>CRUD gateway pembayaran + config credentials.</p>
+<h3 id="tipe-gateway">Tipe Gateway</h3>
+<ul>
+<li><strong>gateway</strong> — Midtrans, Paylabs (redirect ke halaman gateway)</li>
+<li><strong>manual</strong> — Manual bank transfer (upload bukti, admin verify)</li>
+<li><strong>wallet</strong> — Deposit wallet (potong saldo)</li>
+</ul>
+<h3 id="setup-gateway-baru">Setup Gateway Baru</h3>
+<p>Contoh Midtrans:
+1. <strong>+ Payment Method</strong>
+2. Isi:
+   - Code: <code>midtrans_snap</code>
+   - Label: <code>Midtrans (Snap)</code>
+   - Type: <code>gateway</code>
+   - Enabled: <code>true</code>
+   - Config JSON:
+     <code>json
+     {
+       "server_key": "SB-Mid-server-XXX",
+       "client_key": "SB-Mid-client-XXX",
+       "snap_url": "https://app.sandbox.midtrans.com/snap/v2/vtweb",
+       "webhook_secret": "..."
+     }</code>
+3. Simpan
+4. Wizard beli domain langsung tampilkan opsi ini</p>
+<h3 id="setup-manual-bank">Setup Manual Bank</h3>
+<ol>
+<li>Code: <code>manual_bank</code>, type: <code>manual</code></li>
+<li>Config:
+   <code>json
+   {
+     "banks": [
+       {"name":"BCA", "account_number":"1234567890", "account_holder":"PT Web Builder"}
+     ],
+     "instructions_md": "Setelah transfer, tunggu 1x24 jam."
+   }</code></li>
+<li>Simpan → wizard tampilkan instruksi transfer dengan bank list</li>
+</ol>
+<h3 id="disable">Disable</h3>
+<p>Uncheck <strong>Enabled</strong> → tidak muncul di wizard, tapi transaksi lama tetap
+history. Cocok untuk sunset gateway.</p>
+<h2 id="413-invoice-management">4.13 Invoice Management</h2>
+<p><img alt="Invoice Management" src="screenshots/admin-invoices.png" /></p>
+<p>Menu <strong>Invoice</strong> — <code>/admin/invoices</code>.</p>
+<h3 id="list-all-invoices">List All Invoices</h3>
+<p>Filter: status (draft/unpaid/paid/cancelled/expired), search.</p>
+<h3 id="mark-paid-manual">Mark Paid Manual</h3>
+<p>Untuk manual_bank flow — setelah verify transfer di bank statement:</p>
+<ol>
+<li>Klik row invoice (status <code>unpaid</code>)</li>
+<li>Klik <strong>Tandai Paid</strong></li>
+<li>Dialog: isi nomor referensi bank (opsional untuk audit)</li>
+<li>Konfirm → invoice → paid + trigger <code>ExecuteAfterPayment</code> (register domain / credit wallet)</li>
+</ol>
+<h3 id="cancel-invoice">Cancel Invoice</h3>
+<p>Untuk invoice unpaid yang expired atau salah:
+1. Klik <strong>Batalkan</strong>
+2. Isi reason (untuk audit)
+3. Konfirm → status → <code>cancelled</code>, refund gateway (kalau applicable)</p>
+<h3 id="download-pdf">Download PDF</h3>
+<p>Setiap invoice → tombol <strong>PDF</strong> — generate HTML print-friendly, browser bisa
+Save As PDF.</p>
+<p><em>Note: PDF real belum di-render (masih HTML). Kalau butuh true PDF, install
+wkhtmltopdf atau chromium-headless di server + swap renderer.</em></p>
+<h2 id="414-wallet-top-up-approval">4.14 Wallet Top-up Approval</h2>
+<p>Menu <strong>Wallet Top-up</strong> — <code>/admin/wallet/topups</code>.</p>
+<h3 id="queue-verification">Queue Verification</h3>
+<p>Filter status <code>awaiting_verification</code> — top-up manual_bank yang user sudah
+upload bukti.</p>
+<h3 id="approve-flow">Approve Flow</h3>
+<ol>
+<li>Klik row → detail top-up</li>
+<li>Klik <strong>Lihat Bukti</strong> → preview inline (image atau PDF)</li>
+<li>Verify di mobile banking / rekening bank:</li>
+<li>Nominal match?</li>
+<li>Nama pengirim wajar?</li>
+<li>Berita transfer include nomor invoice?</li>
+<li><strong>Approve</strong> — dialog konfirmasi + checkbox "Saya sudah verify dana masuk"</li>
+<li>Konfirm → wallet user credit + ledger entry + email notif ke user</li>
+</ol>
+<h3 id="reject-flow">Reject Flow</h3>
+<ol>
+<li><strong>Reject</strong> button</li>
+<li>Isi reason (mis. "Nominal tidak sesuai, kurang Rp 10.000")</li>
+<li>Konfirm → status → <code>failed</code>, email ke user dengan reason</li>
+<li>User bisa submit ulang top-up baru</li>
+</ol>
+<h3 id="manual-adjust">Manual Adjust</h3>
+<p>Tab <strong>Wallet Adjust</strong> — untuk case khusus (refund, koreksi bug):</p>
+<ol>
+<li>Pilih user</li>
+<li>Nominal (positif/negatif)</li>
+<li>Reason (wajib untuk audit)</li>
+<li>Submit → immediate credit/debit dengan ledger entry</li>
+</ol>
+<h2 id="415-cloudflare-configs">4.15 Cloudflare Configs</h2>
+<p><img alt="Cloudflare Configs" src="screenshots/admin-cf-configs.png" /></p>
+<p>Menu <strong>Cloudflare</strong> — <code>/admin/cloudflare</code>.</p>
+<p>Multi-account support — bisa punya beberapa CF config, salah satu di-tag <code>default</code>.</p>
+<h3 id="add-config">Add Config</h3>
+<ol>
+<li><strong>+ Cloudflare Config</strong></li>
+<li>Isi:</li>
+<li><strong>Nama</strong> — mis. <code>webbuilder-prod</code></li>
+<li><strong>Account ID</strong> — dari CF dashboard</li>
+<li><strong>API Token</strong> — dengan permission:<ul>
+<li>Account → Zone → Edit</li>
+<li>Zone → Zone → Edit</li>
+<li>Zone → DNS → Edit</li>
+</ul>
+</li>
+<li>Klik <strong>Verify</strong> — test token via <code>/user/tokens/verify</code> atau <code>/accounts/{id}/tokens/verify</code></li>
+<li>Kalau valid, <strong>Simpan</strong></li>
+</ol>
+<h3 id="set-default">Set Default</h3>
+<p>Toggle bintang di row config → jadi default untuk auto-attach domain baru.</p>
+<h3 id="rotate-token">Rotate Token</h3>
+<ol>
+<li>Buat token baru di CF dashboard (permission sama)</li>
+<li>Klik row → <strong>Edit</strong> → paste token baru</li>
+<li>Verify → save</li>
+<li>Token lama bisa di-delete di CF dashboard</li>
+</ol>
+<h2 id="416-templates">4.16 Templates</h2>
+<p>Menu <strong>Template</strong> — <code>/admin/templates</code>.</p>
+<h3 id="list_2">List</h3>
+<p>Semua template (built-in seed + custom yang admin buat).</p>
+<p>Filter: status (draft/published/archived), category.</p>
+<h3 id="create-custom-template">Create Custom Template</h3>
+<ol>
+<li><strong>+ Template Baru</strong></li>
+<li>Isi metadata: slug, name, category, variant, description</li>
+<li>Design block tree (edit di editor site → save-as-template — belum ada, roadmap)</li>
+<li>Publish → available di wizard untuk client</li>
+</ol>
+<h3 id="publish-archive">Publish / Archive</h3>
+<ul>
+<li><strong>Publish</strong> — public visible di wizard</li>
+<li><strong>Archive</strong> — hide dari wizard (transaksi historis pakai template ini tetap OK)</li>
+</ul>
+<h3 id="duplicate">Duplicate</h3>
+<p>Kalau mau bikin variant dari template existing → <strong>Duplicate</strong> → rename +
+modify.</p>
+<h2 id="417-audit-log">4.17 Audit Log</h2>
+<p>Menu <strong>Audit Log</strong> — <code>/admin/audit-log</code>.</p>
+<p>Semua action penting yang admin lakukan:
+- Reseller approve/suspend
+- Invoice mark-paid
+- User promote/demote
+- Delete site/user
+- Promo apply
+- Domain retry</p>
+<p>Filter: event, actor (siapa yang do), target (siapa yang kena), tanggal.</p>
+<p>Untuk compliance + forensic kalau ada dispute.</p>
+<h2 id="418-email-log">4.18 Email Log</h2>
+<p>Menu <strong>Email Log</strong> — <code>/admin/email-log</code>.</p>
+<p>List semua email yang dikirim sistem (verification, reset password,
+invitation, domain expiry, top-up approved, dsb.).</p>
+<p>Filter: kind, to (email penerima).</p>
+<p>Kalau user komplain "tidak terima email X":
+1. Cek email log — status <code>sent</code> / <code>failed</code>?
+2. Kalau <code>sent</code> tapi user tidak dapat: cek Spam folder mereka
+3. Kalau <code>failed</code>: cek SMTP config di <code>.env</code> API</p>
+<h2 id="419-metrics-observability">4.19 Metrics + Observability</h2>
+<p><code>/metrics</code> — Prometheus scrape endpoint (tidak di UI admin, akses via curl atau Grafana).</p>
+<p>Counter penting:
+- <code>domain_purchase_created_total{result,gateway}</code> — success rate purchase
+- <code>payment_webhooks_total{code,result}</code> — webhook health per gateway
+- <code>cloudflare_attach_total{result}</code> — CF attach success rate
+- <code>domain_expiry_notices_total{result}</code> — email reminder health</p>
+<p>Setup Grafana dashboard untuk trend visualization.</p>
+<h2 id="420-best-practice-admin">4.20 Best Practice Admin</h2>
+<p><strong>1. Backup DB rutin</strong></p>
+<p><code>registered_domains</code>, <code>sites</code>, <code>invoices</code> = data authoritative. Backup harian
+minimum, PITR (Point-in-Time Recovery) kalau volume tinggi.</p>
+<p><strong>2. Monitor 502 di api-registry</strong></p>
+<p>Kalau EPP session drop, api-registry sering 502. Cek log
+<code>pm2 logs api-registry | grep 502</code>. Fix: set <code>EPP_PER_COMMAND_SESSION=true</code>
+di <code>.env</code> api-registry (trade latency vs stability).</p>
+<p><strong>3. Verify Cloudflare token expire policy</strong></p>
+<p>Kalau token TTL bukan <code>Forever</code>, set reminder untuk rotate sebelum expire.
+Kalau expire, auto-attach domain baru bakal fail.</p>
+<p><strong>4. Update system_settings PPN rate rutin</strong></p>
+<p>Kalau ada perubahan regulasi PPN, update via <code>/admin/settings/ppn_rate</code>.
+Invoice yang sudah issued tetap pakai rate saat itu, invoice baru pakai rate baru.</p>
+<p><strong>5. Cek expired domain queue</strong></p>
+<p>Menu Domain filter <code>expires_at ≤ 7 hari</code> — kirim reminder manual ke user
+kalau email otomatis tidak jalan.</p>
+<h2 id="421-troubleshoot">4.21 Troubleshoot</h2>
+<p><strong>API service crash / restart-loop</strong>
+- Cek log: <code>pm2 logs api --lines 200</code>
+- Kemungkinan: DB migration failed, credential invalid, config validation error
+- Fix root cause di <code>.env</code> atau code, restart</p>
+<p><strong>Semua request 502 dari Caddy</strong>
+- Cek API service jalan: <code>pm2 status</code>
+- Cek port match: <code>.env</code> <code>HTTP_ADDR</code> vs Caddyfile <code>reverse_proxy</code>
+- Cek firewall antara Caddy ↔ API (kalau beda server)</p>
+<p><strong>Domain aktif tapi tidak resolve di browser</strong>
+- Cek Cloudflare attach status di <code>/admin/domain/&lt;name&gt;</code>
+- Cek DNS record A <code>@</code> point ke platform IP
+- Test propagation: <code>dig &lt;domain&gt; +short @1.1.1.1</code></p>
+<p><strong>Invoice paid tapi domain tidak provision</strong>
+- Cek <code>pm2 logs api | grep ExecuteAfterPayment</code>
+- Manual retry: <code>/admin/domain/purchases</code> → cari job → tombol <strong>Retry</strong></p>
+<p><strong>User tidak dapat email verifikasi</strong>
+- Cek <code>/admin/email-log</code> filter user tersebut
+- Cek SMTP config di <code>.env</code> API — mungkin kredensial expired atau rate-limited</p>
+<p><strong>Reseller apply spam / abuse</strong>
+- Reject applications yang tidak masuk akal
+- Kalau signup rate abnormal, tambah rate limit di <code>/api/v1/auth/reseller/apply</code>
+  (config di code, butuh redeploy)</p>
+<footer style="margin-top: 4rem; padding-top: 2rem; border-top: 1px solid #e5e7eb; font-size: 0.85em; color: #9ca3af; text-align: center;">
+  <p>Web Builder — Panduan Pengguna · Generated dari Markdown</p>
+  <p>Untuk update terbaru, cek folder <code>docs/user-guide/</code> di repository</p>
+</footer>
+
+</body>
+</html>
