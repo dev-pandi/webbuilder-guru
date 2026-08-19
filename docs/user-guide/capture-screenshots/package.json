@@ -1,0 +1,19 @@
+{
+  "name": "web-builder-screenshot-capture",
+  "version": "1.0.0",
+  "description": "Playwright script untuk auto-capture screenshot semua page per role — untuk isi placeholder di docs/user-guide/*.md",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "install-browsers": "playwright install chromium",
+    "capture": "node --env-file-if-exists=.env capture.mjs",
+    "capture:client": "node --env-file-if-exists=.env capture.mjs client",
+    "capture:agent": "node --env-file-if-exists=.env capture.mjs agent",
+    "capture:reseller": "node --env-file-if-exists=.env capture.mjs reseller",
+    "capture:admin": "node --env-file-if-exists=.env capture.mjs admin",
+    "capture:headed": "HEADED=1 node --env-file-if-exists=.env capture.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

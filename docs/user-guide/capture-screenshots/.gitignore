@@ -1,0 +1,14 @@
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment (jangan commit kalau isi kredensial production)
+.env
+.env.local
+
+# Playwright artifacts
+playwright-report/
+test-results/
+
+# Debug output
+*.error.png
