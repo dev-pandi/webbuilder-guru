@@ -260,6 +260,21 @@ export async function getTemplatePreview(slug: string): Promise<TemplatePreview 
   return r.ok ? r.data : null;
 }
 
+// getTemplatePreviewByID — sama seperti getTemplatePreview tapi accept UUID
+// dan return template regardless of status (draft/archived/published).
+// Dipakai admin dashboard untuk live preview template saat editing.
+// Bypass cache (revalidate 0) karena admin edit-preview cycle butuh fresh.
+export async function getTemplatePreviewByID(
+  id: string,
+): Promise<TemplatePreview | null> {
+  if (!id) return null;
+  const r = await fetchJson<TemplatePreview>(
+    `/public/template-preview-by-id/${encodeURIComponent(id)}`,
+    0, // bypass cache — admin preview harus reflect state DB terbaru
+  );
+  return r.ok ? r.data : null;
+}
+
 // findTemplatePage — helper untuk cari page berdasarkan slug (atau home page
 // kalau slug kosong). Return null kalau tidak ketemu.
 export function findTemplatePage(

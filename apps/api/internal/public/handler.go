@@ -277,3 +277,61 @@ func (h *Handler) TemplatePreview(c *fiber.Ctx) error {
 		Pages:       pages,
 	})
 }
+
+// TemplatePreviewByID — GET /public/template-preview-by-id/:id
+//
+// Sama seperti TemplatePreview tapi:
+//   1. Accept UUID (bukan slug) — supaya tidak bisa guess dari nama.
+//   2. TIDAK filter status — draft/archived juga accessible.
+//
+// Kenapa aman tanpa auth: template.ID adalah UUIDv4 dengan 122-bit entropy —
+// tidak feasible di-brute-force. Dipakai admin dashboard untuk live preview
+// template saat editing (belum published). Kalau UUID bocor, worst-case admin
+// draft template terlihat orang — impact rendah karena hanya struktur block
+// + theme (tidak ada data user/business sensitive).
+func (h *Handler) TemplatePreviewByID(c *fiber.Ctx) error {
+	if h.templates == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "templates_disabled",
+			"Template repo belum di-wire.")
+	}
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "id tidak valid")
+	}
+	t, err := h.templates.GetByID(c.Context(), id)
+	if errors.Is(err, templates.ErrNotFound) {
+		return httpx.NotFound(c, "template tidak ditemukan")
+	}
+	if err != nil {
+		return httpx.Internal(c, "lookup failed")
+	}
+	// TIDAK cek status — admin preview mode.
+	var pages []TemplatePreviewPage
+	if len(t.Pages) > 0 {
+		if err := json.Unmarshal(t.Pages, &pages); err != nil {
+			return httpx.Internal(c, "pages_json malformed: "+err.Error())
+		}
+	}
+	for i := range pages {
+		if len(pages[i].Tree) == 0 {
+			pages[i].Tree = json.RawMessage(`{}`)
+		}
+		if len(pages[i].SEO) == 0 {
+			pages[i].SEO = json.RawMessage(`{}`)
+		}
+	}
+	theme := t.Theme
+	if len(theme) == 0 {
+		theme = json.RawMessage(`{}`)
+	}
+	return httpx.OK(c, TemplatePreviewResponse{
+		ID:          t.ID.String(),
+		Slug:        t.Slug,
+		Name:        t.Name,
+		Description: t.Description,
+		Category:    t.Category,
+		Variant:     t.Variant,
+		Theme:       theme,
+		Pages:       pages,
+	})
+}

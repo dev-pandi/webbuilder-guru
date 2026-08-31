@@ -25,6 +25,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeEditor, type ThemeValue } from "@/components/theme/ThemeEditor";
 import {
   TemplatePagesEditor,
@@ -280,12 +281,39 @@ export default function AdminTemplateEditPage() {
         </div>
       )}
 
-      {/* Metadata form */}
+      {/* Tabs — Metadata | Tema | Halaman */}
+      <Tabs defaultValue="pages" className="space-y-4">
+        <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsTrigger value="metadata" className="gap-1.5">
+            <Package className="size-3.5" />
+            Metadata
+          </TabsTrigger>
+          <TabsTrigger value="theme" className="gap-1.5">
+            <Eye className="size-3.5" />
+            Tema
+          </TabsTrigger>
+          <TabsTrigger value="pages" className="gap-1.5">
+            <Blocks className="size-3.5" />
+            Halaman
+          </TabsTrigger>
+        </TabsList>
+
+        {/* -------- METADATA TAB -------- */}
+        <TabsContent value="metadata" className="mt-4 space-y-4">
       <Card>
         <CardContent className="space-y-4 p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Metadata
-          </h2>
+          <div className="flex items-start gap-3 border-b pb-4">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Package className="size-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">Metadata</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Informasi identitas template: nama, slug, kategori, dan thumbnail
+                yang tampil di wizard.
+              </p>
+            </div>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="f-name">Nama</Label>
@@ -365,39 +393,82 @@ export default function AdminTemplateEditPage() {
           </label>
         </CardContent>
       </Card>
+        </TabsContent>
 
+        {/* -------- THEME TAB -------- */}
+        <TabsContent value="theme" className="mt-4 space-y-4">
       {/* Theme visual editor — colors + fonts + radius + live preview */}
       <Card>
         <CardContent className="space-y-4 p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Theme
-          </h2>
+          <div className="flex items-start gap-3 border-b pb-4">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Eye className="size-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">Tema</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Warna, font, dan radius yang akan di-apply ke situs baru yang
+                pakai template ini.
+              </p>
+            </div>
+          </div>
           <ThemeEditor
             value={form.theme}
             onChange={(next) => setForm((f) => ({ ...f, theme: next }))}
           />
         </CardContent>
       </Card>
+        </TabsContent>
 
+        {/* -------- PAGES TAB -------- */}
+        <TabsContent value="pages" className="mt-4 space-y-4">
       {/* Pages editor — visual page manager + block editor per page */}
       <Card>
-        <CardContent className="space-y-4 p-6">
-          <div className="flex items-center gap-2">
-            <Blocks className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Pages
-            </h2>
+        <CardContent className="space-y-5 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
+            <div className="flex items-start gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Blocks className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight">
+                  Struktur Halaman
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Susun halaman + block yang jadi kerangka template. Minimal{" "}
+                  <b>1 halaman</b> dengan tanda{" "}
+                  <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary">
+                    HOME
+                  </span>{" "}
+                  wajib sebelum publish.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="rounded-md border bg-muted/40 px-2 py-1 font-mono">
+                {form.pages.length} halaman
+              </span>
+              <span className="rounded-md border bg-muted/40 px-2 py-1 font-mono">
+                {form.pages.reduce(
+                  (acc, p) => acc + (p.tree?.blocks?.length ?? 0),
+                  0,
+                )}{" "}
+                block total
+              </span>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Tambah page + susun block per page. Publish butuh minimal 1 page
-            dengan tanda <code>Home</code>.
-          </p>
           <TemplatePagesEditor
             value={form.pages}
             onChange={(next) => setForm((f) => ({ ...f, pages: next }))}
+            templateId={tpl.id}
+            templateUpdatedAt={tpl.updated_at}
+            onSaveRequest={save}
+            saving={saving}
           />
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
 
       {err && (
         <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">

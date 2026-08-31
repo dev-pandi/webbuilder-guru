@@ -139,6 +139,12 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	// + wizard client modal iframe. Hanya status='published' yang accessible.
 	pubBase.Get("/template-preview/:slug", longCache, deps.Public.TemplatePreview)
 
+	// Template preview by UUID — accept semua status (draft/archived/published).
+	// Aman tanpa auth karena UUID unguessable (122-bit entropy). Dipakai admin
+	// panel edit template untuk live preview versi yang belum di-publish.
+	// Cache SHORT (5s) karena admin edit + preview cycle harus fresh.
+	pubBase.Get("/template-preview-by-id/:id", shortCache, deps.Public.TemplatePreviewByID)
+
 	// Preview-by-token — anonymous draft access for sharing unpublished pages
 	// dengan reviewers. Token validates owner intent. Bypass cache — reviewer
 	// harus lihat state persis saat token di-share.

@@ -17,15 +17,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown,
-  ArrowUp,
   Blocks,
+  Eye,
+  ExternalLink,
+  FileText,
   Home,
+  LayoutTemplate,
   Loader2,
+  Monitor,
   Plus,
   Redo2,
+  RefreshCw,
   Search,
   Settings,
+  Smartphone,
+  Sparkles,
+  Tablet,
   Trash2,
   Undo2,
   X,
@@ -34,8 +41,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { blockSchemas, blockSchemasByCategory, CATEGORY_LABELS } from "@/lib/blocks";
+import { blockSchemas, blockSchemasByCategory } from "@/lib/blocks";
 import { cn } from "@/lib/utils";
+
+const RENDERER_BASE =
+  process.env.NEXT_PUBLIC_RENDERER_BASE ?? "http://localhost";
 
 import { PropEditor, type BlockData } from "@/app/sites/[id]/editor/PropEditor";
 import { SortableBlockList } from "@/app/sites/[id]/editor/SortableBlockList";
@@ -75,9 +85,23 @@ function makeKeys(n: number, prefix: string): string[] {
 export function TemplatePagesEditor({
   value,
   onChange,
+  templateId,
+  templateUpdatedAt,
+  onSaveRequest,
+  saving,
 }: {
   value: TemplatePage[];
   onChange: (pages: TemplatePage[]) => void;
+  // Untuk live preview iframe — kirim template ID (UUID) supaya renderer
+  // bisa fetch preview endpoint by-id (accept semua status).
+  templateId?: string;
+  // Timestamp save terakhir — dipakai untuk key iframe supaya auto-refresh
+  // setelah save. Ganti reference → iframe reload.
+  templateUpdatedAt?: string;
+  // Callback save (dari parent) — dipanggil kalau user pindah tab ke Preview
+  // supaya iframe reflect state terbaru.
+  onSaveRequest?: () => Promise<void>;
+  saving?: boolean;
 }) {
   // Selected page index — default 0 (atau home page kalau ada).
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -100,6 +124,56 @@ export function TemplatePagesEditor({
   const [blockKeys, setBlockKeys] = useState<string[]>([]);
 
   const [addBlockOpen, setAddBlockOpen] = useState(false);
+
+  // Device switcher untuk preview iframe di center panel.
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">(
+    "desktop",
+  );
+  // Nonce untuk force refresh iframe pada tombol Refresh manual.
+  const [previewNonce, setPreviewNonce] = useState(0);
+  // "Menyimpan draft…" indicator saat auto-save berlangsung.
+  const [autoSaving, setAutoSaving] = useState(false);
+
+  // Debounced auto-save — setelah user berhenti edit 1.5 detik, save ke DB
+  // supaya preview iframe reflect state terbaru. Iframe key ganti via
+  // templateUpdatedAt yang parent update dari response save → auto-reload.
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoSave = useCallback(() => {
+    if (!onSaveRequest) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      setAutoSaving(true);
+      try {
+        await onSaveRequest();
+      } catch {
+        /* parent handles toast */
+      } finally {
+        setAutoSaving(false);
+      }
+    }, 1500);
+  }, [onSaveRequest]);
+
+  // Force refresh iframe (bypass cache) + trigger save fresh.
+  const refreshPreview = useCallback(async () => {
+    if (onSaveRequest) {
+      setAutoSaving(true);
+      try {
+        await onSaveRequest();
+      } catch {
+        /* ignore */
+      } finally {
+        setAutoSaving(false);
+      }
+    }
+    setPreviewNonce((n) => n + 1);
+  }, [onSaveRequest]);
+
+  // Cleanup timer saat unmount supaya tidak save di background setelah nav away.
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, []);
 
   // Load page's blocks saat selection berubah. Set hydrated=true supaya
   // sync-back effect boleh mulai jalan.
@@ -133,6 +207,7 @@ export function TemplatePagesEditor({
 
   // Sync block edits back to parent — throttle via effect + comparison biar
   // tidak infinite loop. Skip kalau belum hydrated (initial render).
+  // Setelah sync, schedule debounced auto-save supaya preview iframe auto-reload.
   useEffect(() => {
     if (!hydrated.current) return;
     if (!selectedPage) return;
@@ -145,6 +220,8 @@ export function TemplatePagesEditor({
       tree: { blocks },
     };
     onChange(next);
+    // Trigger auto-save + preview refresh (debounced, 1.5s).
+    scheduleAutoSave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks]);
 
@@ -294,161 +371,277 @@ export function TemplatePagesEditor({
 
   if (value.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-8 text-center">
-        <Blocks className="size-8 text-muted-foreground opacity-40" />
-        <p className="text-sm font-medium">Template belum punya page</p>
-        <p className="max-w-md text-xs text-muted-foreground">
-          Setiap template butuh minimal 1 page dengan is_home=true. Tambah page
-          pertama untuk mulai.
-        </p>
-        <Button onClick={addPage} className="gap-1.5">
-          <Plus className="size-3.5" />
-          Tambah page pertama
+      <div className="flex flex-col items-center gap-4 rounded-xl border-2 border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center">
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+          <LayoutTemplate className="size-7" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-base font-semibold">Belum ada halaman di template</p>
+          <p className="mx-auto max-w-md text-sm text-muted-foreground">
+            Setiap template butuh minimal <b>1 halaman</b> yang di-tandai sebagai
+            Home. Tambahkan halaman pertama untuk mulai menyusun struktur.
+          </p>
+        </div>
+        <Button onClick={addPage} size="lg" className="gap-1.5">
+          <Plus className="size-4" />
+          Tambah Halaman Pertama
         </Button>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[240px_1fr_320px]">
-      {/* Left panel — Page list */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-            Halaman ({value.length})
-          </Label>
-          <Button size="sm" variant="ghost" onClick={addPage} className="h-6 gap-1 text-xs">
-            <Plus className="size-3" />
-            Tambah
-          </Button>
-        </div>
-        <ul className="space-y-1">
-          {value.map((p, i) => {
-            const active = i === selectedIdx;
-            return (
-              <li key={i}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedIdx(i)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") setSelectedIdx(i);
-                  }}
-                  className={cn(
-                    "group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors",
-                    active
-                      ? "border-primary bg-primary/5"
-                      : "border-transparent hover:border-border hover:bg-muted",
-                  )}
-                >
-                  {p.is_home && <Home className="size-3 shrink-0 text-primary" />}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{p.title || p.slug}</p>
-                    <p className="truncate font-mono text-[10px] text-muted-foreground">
-                      /{p.slug}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deletePage(i);
-                    }}
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    aria-label="Hapus page"
-                    title={p.is_home && value.length > 1 ? "Hapus (page pertama sisanya jadi home)" : "Hapus"}
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+    <div className="space-y-3">
+      {/* Page meta bar (title + slug + home + undo/redo) — top level, spans all */}
+      {selectedPage && (
+        <PageMetaBar
+          page={selectedPage}
+          onChange={(patch) => updatePageMeta(selectedIdx, patch)}
+          onSetHome={() => setHome(selectedIdx)}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          autoSaving={autoSaving}
+        />
+      )}
 
-      {/* Middle panel — Block list for selected page */}
-      <div className="space-y-3">
-        {selectedPage && (
-          <>
-            <PageMetaBar
-              page={selectedPage}
-              onChange={(patch) => updatePageMeta(selectedIdx, patch)}
-              onSetHome={() => setHome(selectedIdx)}
-              canUndo={canUndo}
-              canRedo={canRedo}
-              onUndo={undo}
-              onRedo={redo}
-            />
-
-            <div className="flex items-center justify-between">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-                Blocks ({blocks.length})
-              </Label>
+      {/* 3-column workspace: Left (Pages+Blocks) | Center (Preview) | Right (Props) */}
+      <div className="grid gap-3 lg:grid-cols-[280px_1fr_340px]">
+        {/* ============ LEFT — Pages list + Block outline ============ */}
+        <Card className="flex h-fit max-h-[calc(100vh-9rem)] flex-col overflow-hidden lg:sticky lg:top-4">
+          {/* Pages section */}
+          <div className="border-b p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <FileText className="size-3.5 text-muted-foreground" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Halaman
+                </span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+                  {value.length}
+                </span>
+              </div>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setAddBlockOpen(true)}
-                className="h-8 gap-1 text-xs"
+                onClick={addPage}
+                className="h-7 gap-1 px-2 text-[11px]"
               >
-                <Plus className="size-3.5" />
-                Tambah Block
+                <Plus className="size-3" />
+                Baru
+              </Button>
+            </div>
+            <ul className="max-h-40 space-y-1 overflow-y-auto pr-1">
+              {value.map((p, i) => {
+                const active = i === selectedIdx;
+                const blockCount = p.tree?.blocks?.length ?? 0;
+                return (
+                  <li key={i}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedIdx(i)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") setSelectedIdx(i);
+                      }}
+                      className={cn(
+                        "group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors",
+                        active
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      {p.is_home ? (
+                        <Home className="size-3 shrink-0" />
+                      ) : (
+                        <FileText className="size-3 shrink-0" />
+                      )}
+                      <span className="flex-1 truncate font-medium">
+                        {p.title || p.slug}
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-1.5 py-0 font-mono text-[9px]",
+                          active
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {blockCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deletePage(i);
+                        }}
+                        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                        aria-label="Hapus halaman"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* Block outline section — susunan block untuk selected page */}
+          <div className="flex flex-1 flex-col overflow-hidden p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Blocks className="size-3.5 text-muted-foreground" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Susunan Block
+                </span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+                  {blocks.length}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => setAddBlockOpen(true)}
+                className="h-7 gap-1 px-2 text-[11px] shadow-sm"
+              >
+                <Plus className="size-3" />
+                Tambah
               </Button>
             </div>
 
-            {blocks.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-8 text-center">
-                <Blocks className="size-6 text-muted-foreground opacity-40" />
-                <p className="text-xs text-muted-foreground">Belum ada block di page ini</p>
-                <Button size="sm" onClick={() => setAddBlockOpen(true)} className="gap-1.5">
-                  <Plus className="size-3.5" />
+            <div className="flex-1 overflow-y-auto pr-1">
+              {blocks.length === 0 ? (
+                <button
+                  onClick={() => setAddBlockOpen(true)}
+                  className="flex w-full flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-input py-6 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                >
+                  <Sparkles className="size-4" />
                   Tambah block pertama
-                </Button>
-              </div>
-            ) : (
-              <SortableBlockList
-                blocks={blocks}
-                keys={blockKeys}
-                selectedIdx={selectedBlockIdx}
-                onSelect={(i) => setSelectedBlockIdx(i)}
-                onReorder={reorderBlocks}
-                onMove={moveBlock}
-                onDuplicate={duplicateBlock}
-                onDelete={deleteBlock}
-              />
-            )}
-          </>
-        )}
-      </div>
+                </button>
+              ) : (
+                <SortableBlockList
+                  blocks={blocks}
+                  keys={blockKeys}
+                  selectedIdx={selectedBlockIdx}
+                  onSelect={(i) => setSelectedBlockIdx(i)}
+                  onReorder={reorderBlocks}
+                  onMove={moveBlock}
+                  onDuplicate={duplicateBlock}
+                  onDelete={deleteBlock}
+                />
+              )}
+            </div>
+          </div>
+        </Card>
 
-      {/* Right panel — PropEditor untuk selected block */}
-      <div className="space-y-2">
-        <Label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
-          <Settings className="size-3" />
-          Props
-        </Label>
-        {selectedBlock ? (
-          <Card>
-            <CardContent className="p-4">
-              <div className="mb-3 flex items-center justify-between border-b pb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {selectedBlock.type}
+        {/* ============ CENTER — Live Preview (always visible) ============ */}
+        <Card className="flex h-fit max-h-[calc(100vh-9rem)] flex-col overflow-hidden lg:sticky lg:top-4">
+          <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
+            <div className="flex items-center gap-1.5">
+              <Eye className="size-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Preview Langsung
+              </span>
+              {autoSaving && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Loader2 className="size-2.5 animate-spin" />
+                  Sync…
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {/* Device switcher */}
+              <div className="flex items-center gap-0.5 rounded-md border bg-background p-0.5">
+                {(
+                  [
+                    { key: "desktop", Icon: Monitor, label: "Desktop" },
+                    { key: "tablet", Icon: Tablet, label: "Tablet" },
+                    { key: "mobile", Icon: Smartphone, label: "Mobile" },
+                  ] as const
+                ).map(({ key, Icon, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setPreviewDevice(key)}
+                    className={cn(
+                      "flex size-6 items-center justify-center rounded-sm transition-colors",
+                      previewDevice === key
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                    title={label}
+                  >
+                    <Icon className="size-3" />
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void refreshPreview()}
+                disabled={autoSaving || saving}
+                className="size-7 p-0"
+                title="Simpan draft + reload preview"
+              >
+                {autoSaving || saving ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-hidden">
+            <PreviewPanel
+              templateId={templateId}
+              pageSlug={selectedPage?.slug}
+              device={previewDevice}
+              nonce={previewNonce}
+              templateUpdatedAt={templateUpdatedAt}
+            />
+          </div>
+        </Card>
+
+        {/* ============ RIGHT — PropEditor ============ */}
+        <Card className="h-fit max-h-[calc(100vh-9rem)] overflow-y-auto lg:sticky lg:top-4">
+          <CardContent className="p-4">
+            <div className="mb-3 flex items-center justify-between gap-2 border-b pb-2">
+              <div className="flex items-center gap-1.5">
+                <Settings className="size-3.5 text-muted-foreground" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {selectedBlock ? selectedBlock.type : "Pengaturan Block"}
+                </span>
+              </div>
+              {selectedBlock && (
+                <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                   #{selectedBlockIdx + 1}
                 </span>
-              </div>
+              )}
+            </div>
+            {selectedBlock ? (
               <PropEditor
                 block={selectedBlock}
                 onChange={(next) => updateBlock(selectedBlockIdx, next)}
               />
-            </CardContent>
-          </Card>
-        ) : (
-          <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-            Pilih block di tengah untuk edit props-nya
-          </p>
-        )}
+            ) : (
+              <div className="flex flex-col items-center gap-2 py-8 text-center">
+                <div className="flex size-10 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
+                  <Settings className="size-4" />
+                </div>
+                <p className="text-xs font-medium text-muted-foreground">
+                  Belum ada block dipilih
+                </p>
+                <p className="max-w-[240px] text-[11px] text-muted-foreground/80">
+                  Klik salah satu block di panel kiri untuk mengedit propertinya
+                  di sini.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {addBlockOpen && (
@@ -468,6 +661,7 @@ function PageMetaBar({
   canRedo,
   onUndo,
   onRedo,
+  autoSaving,
 }: {
   page: TemplatePage;
   onChange: (patch: Partial<TemplatePage>) => void;
@@ -476,81 +670,115 @@ function PageMetaBar({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  autoSaving?: boolean;
 }) {
   const [slugErr, setSlugErr] = useState<string | null>(null);
 
   return (
     <Card>
-      <CardContent className="p-3">
-        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
-          <div className="space-y-1">
-            <Label htmlFor="p-title" className="text-[10px]">
-              Judul
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-center justify-between gap-2 border-b pb-2">
+          <div className="flex items-center gap-1.5">
+            <FileText className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Detail Halaman
+            </span>
+            {autoSaving && (
+              <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                <Loader2 className="size-2.5 animate-spin" />
+                Sync…
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {page.is_home ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                <Home className="size-3" />
+                Halaman Home
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onSetHome}
+                className="h-7 gap-1 px-2 text-[11px]"
+                title="Jadikan halaman ini sebagai Home"
+              >
+                <Home className="size-3" />
+                Jadikan Home
+              </Button>
+            )}
+            <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onUndo}
+                disabled={!canUndo}
+                className="size-7 p-0 disabled:opacity-40"
+                title="Undo (⌘Z)"
+                aria-label="Undo"
+              >
+                <Undo2 className="size-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onRedo}
+                disabled={!canRedo}
+                className="size-7 p-0 disabled:opacity-40"
+                title="Redo (⌘⇧Z)"
+                aria-label="Redo"
+              >
+                <Redo2 className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="p-title" className="text-xs">
+              Judul Halaman
             </Label>
             <Input
               id="p-title"
               value={page.title}
               onChange={(e) => onChange({ title: e.target.value })}
-              placeholder="Beranda"
-              className="h-8 text-sm"
+              placeholder="mis. Beranda, Tentang Kami"
+              className="h-9"
             />
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="p-slug" className="text-[10px]">
-              Slug
+          <div className="space-y-1.5">
+            <Label htmlFor="p-slug" className="text-xs">
+              Slug URL
             </Label>
-            <Input
-              id="p-slug"
-              value={page.slug}
-              onChange={(e) => {
-                const v = e.target.value.toLowerCase();
-                onChange({ slug: v });
-                setSlugErr(!SLUG_RE.test(v) ? "Format invalid" : null);
-              }}
-              placeholder="tentang"
-              className={cn(
-                "h-8 font-mono text-xs",
-                slugErr && "border-destructive",
-              )}
-            />
-          </div>
-          <div className="flex items-end gap-1">
-            <Button
-              size="sm"
-              variant={page.is_home ? "default" : "outline"}
-              onClick={onSetHome}
-              disabled={page.is_home}
-              className="h-8 gap-1 text-xs"
-              title={page.is_home ? "Sudah home" : "Set sebagai home"}
-            >
-              <Home className="size-3" />
-              {page.is_home ? "Home" : "Set home"}
-            </Button>
-          </div>
-          <div className="flex items-end gap-0.5">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onUndo}
-              disabled={!canUndo}
-              className="size-8 p-0"
-              title="Undo"
-            >
-              <Undo2 className="size-3.5" />
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onRedo}
-              disabled={!canRedo}
-              className="size-8 p-0"
-              title="Redo"
-            >
-              <Redo2 className="size-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <span className="rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-muted-foreground">
+                /
+              </span>
+              <Input
+                id="p-slug"
+                value={page.slug}
+                onChange={(e) => {
+                  const v = e.target.value.toLowerCase();
+                  onChange({ slug: v });
+                  setSlugErr(!SLUG_RE.test(v) ? "Slug hanya huruf kecil, angka, dan dash" : null);
+                }}
+                placeholder="tentang-kami"
+                className={cn(
+                  "h-9 flex-1 font-mono text-sm",
+                  slugErr && "border-destructive focus-visible:ring-destructive",
+                )}
+              />
+            </div>
+            {slugErr && (
+              <p className="flex items-center gap-1 text-[11px] text-destructive">
+                <span className="inline-block size-1 rounded-full bg-destructive" />
+                {slugErr}
+              </p>
+            )}
           </div>
         </div>
-        {slugErr && <p className="mt-1 text-[10px] text-destructive">{slugErr}</p>}
       </CardContent>
     </Card>
   );
@@ -642,6 +870,118 @@ function AddBlockDialog({
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// -------- PreviewPanel --------
+// Iframe live preview ke renderer route /template-preview-by-id/:id?page=<slug>.
+// Renderer endpoint bypass status filter — draft/published sama-sama accessible
+// (aman karena UUID unguessable).
+//
+// Refresh trigger:
+//   1. Ganti device — iframe unmount + remount (key change)
+//   2. Ganti page slug — auto-navigate via URL param
+//   3. Ganti templateUpdatedAt / nonce — force reload iframe
+function PreviewPanel({
+  templateId,
+  pageSlug,
+  device,
+  nonce,
+  templateUpdatedAt,
+}: {
+  templateId?: string;
+  pageSlug?: string;
+  device: "desktop" | "tablet" | "mobile";
+  nonce: number;
+  templateUpdatedAt?: string;
+}) {
+  const [loaded, setLoaded] = useState(false);
+
+  if (!templateId) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-muted/20 p-6 text-center">
+        <div className="flex size-12 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+          <Eye className="size-5" />
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold">Preview belum tersedia</p>
+          <p className="max-w-sm text-xs text-muted-foreground">
+            Klik <b>Simpan</b> di bawah dulu untuk aktifkan preview live.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Device dimension untuk width iframe.
+  const deviceWidth = {
+    desktop: 1280,
+    tablet: 768,
+    mobile: 390,
+  }[device];
+
+  const url = `${RENDERER_BASE}/template-preview-by-id/${encodeURIComponent(
+    templateId,
+  )}${pageSlug ? `?page=${encodeURIComponent(pageSlug)}` : ""}`;
+
+  // Key ganti setiap ada perubahan yang perlu refresh iframe.
+  const iframeKey = `${templateId}-${device}-${pageSlug ?? "_home"}-${templateUpdatedAt ?? ""}-${nonce}`;
+
+  return (
+    <div className="flex h-full flex-col bg-muted/20">
+      {/* Iframe container — browser-chrome-like frame */}
+      <div className="flex-1 overflow-auto p-3">
+        <div
+          className="mx-auto overflow-hidden rounded-lg border border-foreground/10 bg-white shadow-lg transition-all duration-300"
+          style={{ width: deviceWidth, maxWidth: "100%" }}
+        >
+          {/* Fake browser chrome */}
+          <div className="flex items-center gap-1.5 border-b bg-muted/40 px-3 py-1.5">
+            <span className="size-2 rounded-full bg-red-400" />
+            <span className="size-2 rounded-full bg-amber-400" />
+            <span className="size-2 rounded-full bg-emerald-400" />
+            <div className="mx-2 flex-1 truncate rounded-md bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+              /{pageSlug || "home"}
+            </div>
+          </div>
+
+          <div className="relative">
+            {!loaded && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-sm">
+                <div className="flex items-center gap-2 rounded-md bg-background px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Memuat…
+                </div>
+              </div>
+            )}
+            <iframe
+              key={iframeKey}
+              src={url}
+              title="Template preview"
+              onLoad={() => setLoaded(true)}
+              className="h-[calc(100vh-14rem)] w-full border-0 bg-white"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Meta bar footer */}
+      <div className="flex items-center justify-between gap-2 border-t bg-muted/40 px-3 py-1 text-[10px] text-muted-foreground">
+        <span className="font-mono">
+          {device} · {deviceWidth}px
+        </span>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 hover:text-foreground"
+        >
+          Buka tab baru
+          <ExternalLink className="size-2.5" />
+        </a>
       </div>
     </div>
   );
