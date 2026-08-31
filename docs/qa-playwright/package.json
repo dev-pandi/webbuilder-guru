@@ -1,0 +1,35 @@
+{
+  "name": "web-builder-qa-playwright",
+  "version": "1.0.0",
+  "description": "Automated QA test suite untuk web-builder pakai Playwright + Excel reporter.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "install-browsers": "playwright install chromium",
+    "install-browsers:all": "playwright install chromium firefox webkit",
+    "test": "node --env-file-if-exists=.env node_modules/.bin/playwright test",
+    "test:smoke": "node --env-file-if-exists=.env node_modules/.bin/playwright test --grep @smoke",
+    "test:regression": "node --env-file-if-exists=.env node_modules/.bin/playwright test",
+    "test:visual": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/visual",
+    "test:visual:update": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/visual --update-snapshots",
+    "test:cross-browser": "PLAYWRIGHT_BROWSERS=all node --env-file-if-exists=.env node_modules/.bin/playwright test --grep @cross-browser",
+    "test:auth": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/01-auth",
+    "test:client": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/10-client",
+    "test:agent": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/20-agent",
+    "test:reseller": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/30-reseller",
+    "test:admin": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/40-admin",
+    "test:security": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/security",
+    "test:functional": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/functional",
+    "test:negative": "node --env-file-if-exists=.env node_modules/.bin/playwright test tests/negative",
+    "test:headed": "HEADED=1 node --env-file-if-exists=.env node_modules/.bin/playwright test --headed",
+    "test:ui": "node --env-file-if-exists=.env node_modules/.bin/playwright test --ui",
+    "report": "playwright show-report results/html-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "exceljs": "^4.4.0"
+  },
+  "engines": {
+    "node": ">=20.6"
+  }
+}

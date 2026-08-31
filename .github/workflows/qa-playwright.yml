@@ -1,0 +1,238 @@
+name: QA Playwright
+
+# Smoke suite jalan tiap PR — cepat (≤ 5 menit), block merge kalau fail.
+# Regression suite jalan nightly + tag push — semua 134+ test.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "docs/qa-playwright/**"
+      - ".github/workflows/qa-playwright.yml"
+  schedule:
+    # 03:00 UTC = 10:00 WIB — daily regression sebelum jam kerja
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "smoke | regression | visual"
+        required: true
+        default: "smoke"
+
+jobs:
+  # Smoke — ≤ 5 menit, jalan di PR.
+  smoke:
+    if: github.event_name == 'pull_request' || github.event.inputs.mode == 'smoke'
+    name: Smoke (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: webbuilder_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d webbuilder_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Backend + web + renderer harus jalan sebelum test.
+      # Simplification: docker compose start all services from infra/.
+      - name: Start backend stack
+        run: docker compose -f infra/docker-compose.yml up -d
+        env:
+          POSTGRES_HOST: localhost
+          # Seed demo user supaya loginAs bekerja untuk 4 role.
+          SEED_DEMO: "true"
+
+      - name: Wait services healthy
+        run: |
+          until curl -sf http://localhost:8080/healthz; do sleep 2; done
+          until curl -sf http://localhost:3000; do sleep 2; done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install QA + browsers
+        working-directory: docs/qa-playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke suite
+        working-directory: docs/qa-playwright
+        env:
+          BASE_URL: http://localhost:3000
+          API_BASE: http://localhost:8080
+          CLIENT_EMAIL: ${{ secrets.QA_CLIENT_EMAIL || 'client@example.com' }}
+          CLIENT_PASSWORD: ${{ secrets.QA_CLIENT_PASSWORD || 'demo1234' }}
+          AGENT_EMAIL: ${{ secrets.QA_AGENT_EMAIL || 'agent@example.com' }}
+          AGENT_PASSWORD: ${{ secrets.QA_AGENT_PASSWORD || 'changeme123' }}
+          RESELLER_EMAIL: ${{ secrets.QA_RESELLER_EMAIL || 'reseller@example.com' }}
+          RESELLER_PASSWORD: ${{ secrets.QA_RESELLER_PASSWORD || 'changeme123' }}
+          ADMIN_EMAIL: ${{ secrets.QA_ADMIN_EMAIL || 'admin@example.com' }}
+          ADMIN_PASSWORD: ${{ secrets.QA_ADMIN_PASSWORD || 'changeme1234' }}
+        run: npm run test:smoke
+
+      - name: Upload QA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-smoke-report
+          path: |
+            docs/qa-playwright/results/qa-report-latest.xlsx
+            docs/qa-playwright/results/html-report/
+          retention-days: 14
+
+  # Regression — full suite, jalan nightly + tag push.
+  regression:
+    if: github.event_name == 'schedule' || github.event.inputs.mode == 'regression'
+    name: Regression (chromium full)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: webbuilder_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d webbuilder_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start backend stack
+        run: docker compose -f infra/docker-compose.yml up -d
+        env:
+          POSTGRES_HOST: localhost
+          SEED_DEMO: "true"
+
+      - name: Wait services healthy
+        run: |
+          until curl -sf http://localhost:8080/healthz; do sleep 2; done
+          until curl -sf http://localhost:3000; do sleep 2; done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install QA + browsers
+        working-directory: docs/qa-playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run full regression
+        working-directory: docs/qa-playwright
+        env:
+          BASE_URL: http://localhost:3000
+          API_BASE: http://localhost:8080
+          CLIENT_EMAIL: ${{ secrets.QA_CLIENT_EMAIL || 'client@example.com' }}
+          CLIENT_PASSWORD: ${{ secrets.QA_CLIENT_PASSWORD || 'demo1234' }}
+          AGENT_EMAIL: ${{ secrets.QA_AGENT_EMAIL || 'agent@example.com' }}
+          AGENT_PASSWORD: ${{ secrets.QA_AGENT_PASSWORD || 'changeme123' }}
+          RESELLER_EMAIL: ${{ secrets.QA_RESELLER_EMAIL || 'reseller@example.com' }}
+          RESELLER_PASSWORD: ${{ secrets.QA_RESELLER_PASSWORD || 'changeme123' }}
+          ADMIN_EMAIL: ${{ secrets.QA_ADMIN_EMAIL || 'admin@example.com' }}
+          ADMIN_PASSWORD: ${{ secrets.QA_ADMIN_PASSWORD || 'changeme1234' }}
+        run: npm run test:regression
+
+      - name: Upload QA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-regression-report
+          path: |
+            docs/qa-playwright/results/qa-report-latest.xlsx
+            docs/qa-playwright/results/html-report/
+            docs/qa-playwright/results/report.json
+          retention-days: 30
+
+      # Kalau regression fail nightly, notify Slack.
+      - name: Notify Slack on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: slackapi/slack-github-action@v1
+        continue-on-error: true
+        with:
+          payload: |
+            {
+              "text": "🔴 Nightly QA regression failed on `${{ github.ref_name }}` — check artifacts di run ${{ github.run_id }}."
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Visual regression — cross-browser, opt-in via workflow_dispatch atau nightly.
+  visual:
+    if: github.event.inputs.mode == 'visual' || github.event_name == 'schedule'
+    name: Visual regression (chromium + firefox + webkit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: webbuilder_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d webbuilder_test"
+          --health-interval 5s
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true # Baseline PNGs mungkin di-track via Git LFS untuk hemat repo size
+
+      - name: Start backend stack
+        run: docker compose -f infra/docker-compose.yml up -d
+        env:
+          SEED_DEMO: "true"
+
+      - name: Wait services healthy
+        run: |
+          until curl -sf http://localhost:8080/healthz; do sleep 2; done
+          until curl -sf http://localhost:3000; do sleep 2; done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install QA + all browsers
+        working-directory: docs/qa-playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run visual regression
+        working-directory: docs/qa-playwright
+        env:
+          BASE_URL: http://localhost:3000
+          API_BASE: http://localhost:8080
+          PLAYWRIGHT_BROWSERS: all
+          CLIENT_EMAIL: ${{ secrets.QA_CLIENT_EMAIL || 'client@example.com' }}
+          CLIENT_PASSWORD: ${{ secrets.QA_CLIENT_PASSWORD || 'demo1234' }}
+          RESELLER_EMAIL: ${{ secrets.QA_RESELLER_EMAIL || 'reseller@example.com' }}
+          RESELLER_PASSWORD: ${{ secrets.QA_RESELLER_PASSWORD || 'changeme123' }}
+          ADMIN_EMAIL: ${{ secrets.QA_ADMIN_EMAIL || 'admin@example.com' }}
+          ADMIN_PASSWORD: ${{ secrets.QA_ADMIN_PASSWORD || 'changeme1234' }}
+        run: npm run test:visual
+
+      - name: Upload visual diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-visual-diffs
+          path: docs/qa-playwright/results/artifacts/
+          retention-days: 7
