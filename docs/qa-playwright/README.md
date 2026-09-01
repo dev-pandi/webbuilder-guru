@@ -4,12 +4,12 @@ Automated smoke + regression tests untuk web-builder pakai Playwright, hasil di-
 
 Coverage: login per role, dashboard per role, halaman settings, admin panel, akses kontrol, health-check API.
 
-**Status**: 169/169 tests hijau (`npm test` ~100 detik di lokal). Coverage:
+**Status**: 195/195 tests hijau (`npm test` ~4-5 menit di lokal). Coverage:
 - 56 baseline UI (auth + role dashboards)
-- 61 security (OWASP 8/10) — RBAC, JWT, injection, idempotency, headers, payment integrity, audit log, SSRF, upload, rate limit
-- 17 functional deep (pagination, wallet ledger integrity, E2E site publish)
-- **30 negative** (input validation, boundary values, form UI, method restrictions)
-- 5 visual regression (landing, login, dashboard, admin, wallet)
+- 80 security — RBAC (A01), JWT (A02), injection (A03), idempotency (A04), headers (A05), auth-hardening (A07), payment+upload (A08), audit log (A09), SSRF (A10), preview HMAC, CORS whitelist, logout revocation, server hardening (pprof), register validation
+- 24 functional deep — pagination, wallet ledger, E2E publish, refresh rotation, template gate, quota, wallet role, idempotency dedup, renderer HTML
+- 30 negative — input validation, boundary values, form UI, method restrictions
+- 5 visual regression
 
 **Smoke suite**: 16 tests, ~8 detik — jalan tiap PR (block merge kalau fail).
 **Regression**: full 139 tests, ~87 detik — nightly + on-demand.

@@ -136,17 +136,19 @@ test.describe("A02 — JWT hardening", () => {
   });
 
   test("Login response TIDAK leak password hash / sensitive fields", async ({}, testInfo) => {
+    testInfo.setTimeout(400_000); // room untuk retry-on-429 backoff sampai 6 menit
     req(
       testInfo,
       "POST /auth/login → response body inspect: WAJIB berisi access_token + refresh_token; TIDAK boleh berisi password_hash, argon2$..., atau field internal DB. Access token JWT length ≥ 100 char (JWT typical), refresh opaque atau JWT.",
     );
 
-    // Retry-on-429: Fiber login limiter 5/menit per IP. Test ini bypass cache
-    // (test sensitivity karena inspect response body langsung), jadi bisa
-    // kena 429 kalau QA suite baru saja hit /auth/login.
+    // Retry-on-429: Fiber login limiter 10/5min per IP. Kalau QA suite baru
+    // saja hit login banyak kali (via rate-limit burst test), kita perlu
+    // wait full window supaya slot fresh. Extend budget ke 6 menit + backoff.
     let res;
     const start = Date.now();
-    while (Date.now() - start < 90_000) {
+    let waitMs = 5000;
+    while (Date.now() - start < 360_000) {
       res = await fetch(`${apiBase}/api/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,7 +158,8 @@ test.describe("A02 — JWT hardening", () => {
         }),
       });
       if (res.status !== 429) break;
-      await new Promise((r) => setTimeout(r, 5000));
+      await new Promise((r) => setTimeout(r, waitMs));
+      waitMs = Math.min(waitMs * 1.5, 30_000); // exponential backoff cap 30s
     }
     expect(res.status).toBe(200);
     const bodyRaw = await res.text();
