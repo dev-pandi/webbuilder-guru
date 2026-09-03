@@ -44,7 +44,7 @@ export function SearchSection(props: {
             <Input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              placeholder="myshop atau myshop.co.id"
+              placeholder="myblog atau myblog.id"
               className="h-12 pl-12 text-base font-medium"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
