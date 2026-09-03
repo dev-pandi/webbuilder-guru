@@ -522,40 +522,40 @@ func (h *Handler) checkDomain(ctx context.Context, input string) (*registrar.Dom
 	return out, nil
 }
 
-// resolveAllowedZones — kalau zonesRepo di-set, intersect upstream zones
-// dengan local active. Return (finalList, membershipSet). Set nil = no
-// local filter (legacy passthrough).
+// resolveAllowedZones — kalau zonesRepo di-set, return list local active zones
+// sebagai UI hint + membership set untuk filter per-entry.
+//
+// SEBELUMNYA: fungsi intersect upstream × local buat `AllowedZones` response.
+// BUG: kalau user cek TLD yang tidak dilayani (mis. "foo.thistldnotserved"),
+// api-registry echo TLD input di upstream.AllowedZones. Local set beda → intersect
+// kosong → response allowed_zones=[] → frontend tampilkan "belum ada zona"
+// padahal admin sudah aktifkan beberapa TLD. Ini regresi visibility, bukan gate
+// security (filter per-entry di Check() line 342-346 pakai `allowedSet` yang tetap
+// dihitung dari local).
+//
+// FIX: `AllowedZones` field response = **selalu** list local active TLD (source
+// of truth admin), tidak intersect dengan upstream. Frontend butuh ini sebagai
+// suggestion chips supaya user tahu opsi TLD valid.
 func (h *Handler) resolveAllowedZones(ctx context.Context, upstream []string) ([]string, map[string]struct{}) {
 	if h.zonesRepo == nil {
+		// Legacy mode (belum ada zones catalog) — trust upstream sepenuhnya.
 		return upstream, nil
 	}
 	local, err := h.zonesRepo.ListActive(ctx)
 	if err != nil {
-		// Fallback: trust upstream kalau local query fail. Log tapi jangan
-		// block user — better degrade to upstream-only than break wizard.
+		// Fallback: trust upstream kalau local query fail. Log warn supaya
+		// operator visible ada masalah (sebelumnya silent swallow).
+		slog.Warn("resolveAllowedZones: local ListActive failed, fallback upstream",
+			"error", err, "upstream_count", len(upstream))
 		return upstream, nil
 	}
 	localSet := make(map[string]struct{}, len(local))
+	localTLDs := make([]string, 0, len(local))
 	for _, z := range local {
 		localSet[strings.ToLower(z.TLD)] = struct{}{}
+		localTLDs = append(localTLDs, z.TLD)
 	}
-	// Intersect: hanya TLD yang muncul di kedua source.
-	// Kalau upstream empty (mis. api-registry tidak return zones), fallback
-	// pakai semua local active.
-	if len(upstream) == 0 {
-		out := make([]string, 0, len(local))
-		for _, z := range local {
-			out = append(out, z.TLD)
-		}
-		return out, localSet
-	}
-	out := make([]string, 0, len(upstream))
-	for _, tld := range upstream {
-		if _, ok := localSet[strings.ToLower(tld)]; ok {
-			out = append(out, tld)
-		}
-	}
-	return out, localSet
+	return localTLDs, localSet
 }
 
 // Audit event constants — dipakai lokal supaya tidak import cycle string

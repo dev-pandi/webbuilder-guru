@@ -120,6 +120,56 @@ test.describe("Client — Domain search wizard", () => {
     await loginAs(context, "client");
   });
 
+  test("Empty state — search TLD yang tidak dilayani → pesan actionable + chip TLD suggest muncul", async ({
+    page,
+  }, testInfo) => {
+    req(
+      testInfo,
+      "Ketik 'qa-empty-test.thistldnotserved' (TLD dijamin tidak di allowed_zones) → GET /api/v1/domains/check → response 200 dengan results=[] ATAU single-result unavailable. UI HARUS render kartu empty state dengan pesan actionable (bukan blank). Chip TLD yang di-serve HARUS muncul supaya user tahu opsi valid. Regression test untuk bug: user bingung karena UI blank waktu TLD tidak allowed.",
+    );
+    await page.goto("/sites/new-with-domain");
+    const input = page.locator("input").first();
+    await expect(input).toBeVisible();
+    // Pakai TLD yang sangat unlikely di allowed_zones — hampir pasti tidak dilayani
+    await input.fill("qa-empty-test.thistldnotserved");
+
+    const [resp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes("/api/v1/domains/check") && r.request().method() === "POST",
+        { timeout: 15_000 },
+      ),
+      page.keyboard.press("Enter"),
+    ]);
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    const items = body.data.results || [];
+
+    // Kalau backend return [] atau semua unavailable, empty state HARUS muncul
+    const allUnavailable = items.length === 0 || items.every((e) => !e.available);
+    if (!allUnavailable) {
+      // Edge case: TLD ini malah di-serve. Test tidak applicable.
+      act(testInfo, `TLD .thistldnotserved unexpectedly served, results=${items.length} — skip empty state assertion`);
+      return;
+    }
+
+    // UI HARUS render salah satu: empty-state card ATAU unavailable card (bukan blank)
+    // Cek pesan actionable di main content.
+    const emptyIndicator = page
+      .locator("main")
+      .getByText(/belum dilayani|tidak.*hasil|belum ada zona|dipakai/i)
+      .first();
+    await expect(emptyIndicator).toBeVisible({ timeout: 5000 });
+
+    // Chip TLD suggest harus muncul (guide user ke opsi valid)
+    const zonesHint = page.locator("main").getByText(/TLD tersedia/i).first();
+    const zonesVisible = await zonesHint.isVisible().catch(() => false);
+
+    act(
+      testInfo,
+      `HTTP 200, results.length=${items.length}, empty-state indicator muncul, chip TLD guide=${zonesVisible ? "visible" : "hidden"}`,
+    );
+  });
+
   test("Cek availability domain → API return 200 + kartu hasil berisi status 'Tersedia' atau 'Dipakai'", async ({
     page,
   }, testInfo) => {

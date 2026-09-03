@@ -4,7 +4,7 @@
 // Modern touch: hero search input yang besar, allowed_zones chips animasi
 // muncul, result grid dengan card yang punya hover elevation.
 
-import { AlertCircle, Globe2, Loader2, Search } from "lucide-react";
+import { AlertCircle, Globe2, Loader2, Search, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,10 +29,22 @@ export function SearchSection(props: {
     results, selected, onSelect, err,
   } = props;
 
-  const showZoneHint = results === null && allowedZones.length > 0;
   const showMultiGrid = results !== null && results.length > 1;
   const showSingleCard = results !== null && results.length === 1;
+  const showEmpty = results !== null && results.length === 0;
   const availableCount = results?.filter((r) => r.available).length ?? 0;
+  // Chip TLD muncul saat user butuh guidance: pre-search, empty state, atau
+  // browsing multi-result. Hide waktu single-card (fokus ke card, hindari
+  // duplikasi info). Ini fix bug user bingung waktu results = [].
+  const showZoneHint = allowedZones.length > 0 && !showSingleCard;
+
+  // Deteksi TLD yang user ketik (kalau ada '.') — untuk pesan empty spesifik.
+  const inputHasTld = domain.includes(".");
+  const inputTld = inputHasTld
+    ? domain.trim().toLowerCase().split(".").slice(1).join(".")
+    : null;
+  const inputTldNotAllowed =
+    inputTld !== null && allowedZones.length > 0 && !allowedZones.includes(inputTld);
 
   return (
     <Card className="overflow-hidden border-2 shadow-sm">
@@ -89,12 +101,17 @@ export function SearchSection(props: {
               <button
                 key={z}
                 type="button"
-                onClick={() => setDomain((domain.trim() || "myshop") + "." + z)}
+                onClick={() => {
+                  // Extract SLD saja (bagian sebelum titik pertama) supaya
+                  // "myshop.xyz" → klik .id → "myshop.id" (bukan myshop.xyz.id).
+                  const sld = (domain.trim().split(".")[0] || "myshop").toLowerCase();
+                  setDomain(`${sld}.${z}`);
+                }}
                 className={cn(
                   "rounded-md border bg-background px-2 py-0.5 font-mono text-xs transition-colors",
                   "hover:border-primary hover:text-primary",
                 )}
-                title={`Isi input dengan .${z}`}
+                title={`Ganti ke .${z}`}
               >
                 .{z}
               </button>
@@ -145,6 +162,34 @@ export function SearchSection(props: {
               variant="wide"
               onSelect={onSelect}
             />
+          </div>
+        )}
+
+        {/* Empty state — backend return [] (semua zone disable ATAU TLD user
+            tidak di-allow). Tanpa ini user cuma lihat blank + bingung. */}
+        {showEmpty && (
+          <div className="mt-5 rounded-xl border border-dashed bg-muted/30 p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
+                <SearchX className="size-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <p className="text-sm font-semibold">
+                  {inputTldNotAllowed
+                    ? `Ekstensi .${inputTld} belum dilayani`
+                    : allowedZones.length === 0
+                      ? "Belum ada zona domain aktif"
+                      : "Tidak ada hasil untuk pencarian ini"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {inputTldNotAllowed
+                    ? "Coba salah satu TLD di atas — klik untuk isi otomatis."
+                    : allowedZones.length === 0
+                      ? "Belum ada TLD yang di-aktifkan admin. Hubungi admin atau coba lagi nanti."
+                      : "Registrar tidak mengembalikan pilihan. Coba nama lain atau ubah TLD."}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
