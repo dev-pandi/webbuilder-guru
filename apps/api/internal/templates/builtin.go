@@ -33,6 +33,10 @@ var Categories = []CategoryInfo{
 	{Key: "portfolio", Label: "Portofolio", Description: "Profil personal, project, dan kontak.", Emoji: "💼"},
 	{Key: "teacher", Label: "Guru", Description: "Profil guru, jadwal, materi belajar.", Emoji: "👨‍🏫"},
 	{Key: "blog", Label: "Blog", Description: "Blog personal atau magazine.", Emoji: "📝"},
+	// Kategori khusus co-branding PANDI × UPI — 1 template spesial untuk guru
+	// yang ingin website pribadi bergaya editorial. Standalone, tidak ikut
+	// matrix category × variant (buildPages skip cat=="guru-pandi").
+	{Key: "guru-pandi", Label: "Guru PANDI × UPI", Description: "Template co-branding PANDI × UPI untuk website pribadi guru — 9 halaman editorial.", Emoji: "✨"},
 }
 
 var Variants = []VariantInfo{
@@ -133,10 +137,19 @@ func copyFor(v string) variantCopy {
 	return variantCopy{CTA: "Mulai", Tone: ""}
 }
 
-// BuiltinTemplates returns all 15 templates by combining each category with each variant.
+// BuiltinTemplates returns 15 matrix templates (5 categories × 3 variants) plus
+// standalone co-branded templates (guru-pandi-upi). Total = 16.
+//
+// The matrix loop skips category "guru-pandi" — it's a standalone template
+// with 1 variant only (pandi-upi), appended manually below with dedicated
+// editorial styling from the PANDI × UPI mockup.
 func BuiltinTemplates() []BuiltinTemplate {
-	out := make([]BuiltinTemplate, 0, len(Categories)*len(Variants))
+	out := make([]BuiltinTemplate, 0, len(Categories)*len(Variants)+1)
 	for _, c := range Categories {
+		// Standalone categories tidak ikut matrix — di-append manual di bawah.
+		if c.Key == "guru-pandi" {
+			continue
+		}
 		for _, v := range Variants {
 			out = append(out, BuiltinTemplate{
 				Slug:        c.Key + "-" + v.Key,
@@ -149,6 +162,8 @@ func BuiltinTemplates() []BuiltinTemplate {
 			})
 		}
 	}
+	// Standalone co-branded template — PANDI × UPI teacher editorial.
+	out = append(out, guruPandiUPITemplate())
 	return out
 }
 

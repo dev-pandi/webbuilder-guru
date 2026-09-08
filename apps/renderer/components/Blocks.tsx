@@ -1,6 +1,23 @@
 import { marked } from "marked";
 import { formatPrice, getPublicForm, listBlogPosts, listProducts, type Block } from "@/lib/api";
 import { FormBlock } from "@/components/FormBlock";
+import {
+  GuruArticleGrid,
+  GuruFooter,
+  GuruForumThreadList,
+  GuruHero,
+  GuruLatestGrid,
+  GuruNavbar,
+  GuruProfileCard,
+  GuruPromoCarousel,
+  GuruQuote,
+  GuruRubricGrid,
+  GuruRubricHero,
+  GuruStatsBar,
+  GuruStyles,
+  GuruTagList,
+  GuruTimeline,
+} from "@/components/GuruBlocks";
 
 // marked configured once at module scope — strips raw HTML so a malicious
 // markdown payload (`<script>`) can't leak through. Matches the blog renderer
@@ -1741,6 +1758,39 @@ function BlockView({ block }: { block: Block }) {
         </section>
       );
     }
+
+    // -------- Guru PANDI × UPI custom blocks (template guru-pandi-upi) --------
+    // Renders style block once + delegates to GuruBlocks.tsx per type.
+    case "GuruStyles":
+      return <GuruStyles />;
+    case "GuruNavbar":
+      return <GuruNavbar {...(p as Parameters<typeof GuruNavbar>[0])} />;
+    case "GuruHero":
+      return <GuruHero {...(p as Parameters<typeof GuruHero>[0])} />;
+    case "GuruPromoCarousel":
+      return <GuruPromoCarousel {...(p as Parameters<typeof GuruPromoCarousel>[0])} />;
+    case "GuruStatsBar":
+      return <GuruStatsBar {...(p as Parameters<typeof GuruStatsBar>[0])} />;
+    case "GuruRubricGrid":
+      return <GuruRubricGrid {...(p as Parameters<typeof GuruRubricGrid>[0])} />;
+    case "GuruLatestGrid":
+      return <GuruLatestGrid {...(p as Parameters<typeof GuruLatestGrid>[0])} />;
+    case "GuruQuote":
+      return <GuruQuote {...(p as Parameters<typeof GuruQuote>[0])} />;
+    case "GuruRubricHero":
+      return <GuruRubricHero {...(p as Parameters<typeof GuruRubricHero>[0])} />;
+    case "GuruArticleGrid":
+      return <GuruArticleGrid {...(p as Parameters<typeof GuruArticleGrid>[0])} />;
+    case "GuruForumThreadList":
+      return <GuruForumThreadList {...(p as Parameters<typeof GuruForumThreadList>[0])} />;
+    case "GuruProfileCard":
+      return <GuruProfileCard {...(p as Parameters<typeof GuruProfileCard>[0])} />;
+    case "GuruTimeline":
+      return <GuruTimeline {...(p as Parameters<typeof GuruTimeline>[0])} />;
+    case "GuruTagList":
+      return <GuruTagList {...(p as Parameters<typeof GuruTagList>[0])} />;
+    case "GuruFooter":
+      return <GuruFooter {...(p as Parameters<typeof GuruFooter>[0])} />;
 
     default:
       return null;

@@ -524,7 +524,8 @@ func itoa(n int) string {
 	return string(rune('0'+n/100)) + string(rune('0'+(n/10)%10)) + string(rune('0'+n%10))
 }
 
-// Seed populates the 15 built-in templates (5 categories × 3 variants each).
+// Seed populates the built-in templates: 15 dari matrix (5 categories × 3
+// variants) + 1 standalone co-branded (guru-pandi-upi) = 16 total.
 // Idempotent: re-running upserts by slug.
 func (r *Repo) Seed(ctx context.Context) error {
 	for _, t := range BuiltinTemplates() {
