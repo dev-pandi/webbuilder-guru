@@ -63,6 +63,14 @@ type Config struct {
 	// PprofEnabled mounts /debug/pprof when true. Always behind admin role.
 	PprofEnabled bool
 
+	// TrustProxy — set true kalau API di-deploy behind Caddy/Nginx reverse
+	// proxy yang menambahkan X-Forwarded-For. Efek: Fiber c.IP() akan resolve
+	// dari header proxy (bukan connecting IP yang selalu localhost). Wajib
+	// untuk: rate limiter per-IP, view dedupe fingerprint, audit log IP.
+	// JANGAN aktifkan kalau API expose langsung ke internet — attacker bisa
+	// spoof X-Forwarded-For.
+	TrustProxy bool
+
 	// Image upload compression. Defaults: enabled, 2000px longest edge,
 	// JPEG quality 82.
 	ImageCompressEnabled bool
@@ -166,6 +174,7 @@ func Load() Config {
 		DBSlowQueryThreshold: envDuration("DB_SLOW_QUERY_THRESHOLD", 500*time.Millisecond),
 
 		PprofEnabled: env("PPROF_ENABLED", "false") == "true",
+		TrustProxy:   env("TRUST_PROXY", "false") == "true",
 
 		ImageCompressEnabled: env("IMAGE_COMPRESS_ENABLED", "true") == "true",
 		ImageMaxDimension:    envInt("IMAGE_MAX_DIMENSION", 2000),

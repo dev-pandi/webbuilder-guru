@@ -320,6 +320,10 @@ func main() {
 	// otomatis populate articles/materials/banners sample.
 	templatesHandler := templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo, purchaseRepo)
 	templatesHandler.SetGuruSeeders(articlesRepo, learningRepo, bannersRepo)
+
+	// Banners handler — extract ke var supaya audit repo bisa di-inject
+	// setelah audit dibangun (spec §27: track admin banner override).
+	bannersHandler := banners.NewHandler(bannersRepo, siteRepo)
 	if purchaseRepo != nil {
 		adminHandler.SetPurchases(purchaseRepo)
 	}
@@ -355,6 +359,7 @@ func main() {
 	if purchaseHandler != nil {
 		purchaseHandler.SetAudit(auditRepo)
 	}
+	bannersHandler.SetAuditRepo(auditRepo)
 
 	// Pricing — Phase 3.10+ 3-tier pricing model.
 	pricingRepo := pricing.NewRepo(pool)
@@ -523,7 +528,7 @@ func main() {
 		Articles:       articles.NewHandler(articlesRepo, siteRepo),
 		Learning:       learning.NewHandler(learningRepo, siteRepo),
 		Responses:      responses.NewHandler(responsesRepo, siteRepo, articlesRepo),
-		Banners:        banners.NewHandler(bannersRepo, siteRepo),
+		Banners:        bannersHandler,
 		PublicGuru:     publicGuruHandler,
 		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,

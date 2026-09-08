@@ -33,6 +33,9 @@ export function GuruResponseForm({
   const [name, setName] = useState("");
   const [role, setRole] = useState<ResponseRole>("pembaca");
   const [body, setBody] = useState("");
+  // Honeypot — never rendered visible ke user asli. State React (bukan hanya
+  // hidden input) supaya bot yg parse React state juga tetap ke-detect.
+  const [hp, setHp] = useState("");
   const [state, setState] = useState<"idle" | "submitting" | "done" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
 
@@ -50,6 +53,7 @@ export function GuruResponseForm({
           author_name: name.trim(),
           author_role: role,
           body: body.trim(),
+          _hp: hp, // honeypot — user asli selalu ""
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -85,6 +89,31 @@ export function GuruResponseForm({
       <p className="guru-response-form__hint">
         Tanggapan Anda akan ditinjau oleh guru sebelum tampil publik.
       </p>
+
+      {/* Honeypot — hidden from real users (position off-screen + aria-hidden).
+          Bots that fill every input trigger silent-drop di backend. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: "-9999px",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+        }}
+      >
+        <label>
+          Jangan isi field ini
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            value={hp}
+            onChange={(e) => setHp(e.target.value)}
+          />
+        </label>
+      </div>
 
       <div className="guru-response-form__row">
         <label>

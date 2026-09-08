@@ -39,6 +39,9 @@ const (
 	EventAdminUserDemoted    = "admin.user_demoted"
 	EventAdminUserDeleted    = "admin.user_deleted"
 	EventAdminSiteDeleted    = "admin.site_deleted"
+	// Banner moderation (spec §27) — admin override guru promotion banner.
+	EventAdminBannerEnabled  = "admin.banner_enabled"
+	EventAdminBannerDisabled = "admin.banner_disabled"
 )
 
 // Entry = 1 row audit_log — mirror shape SQL. IP + UserAgent optional.

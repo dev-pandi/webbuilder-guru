@@ -2,6 +2,7 @@ package responses
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -115,6 +116,10 @@ type submitReq struct {
 	AuthorRole  string `json:"author_role"`
 	AuthorEmail string `json:"author_email"` // private, never exposed publicly
 	Body        string `json:"body"`
+	// Honeypot — user asli tidak lihat field ini (di-hide di renderer via
+	// CSS + aria-hidden). Bot cenderung fill semua input yang mereka lihat
+	// dari HTML source → kalau field ini terisi, kita silent-drop.
+	Honeypot string `json:"_hp"`
 }
 
 // PublicSubmit — POST /public/sites/:id/articles/:article_id/responses.
@@ -149,6 +154,21 @@ func (h *Handler) PublicSubmit(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return httpx.BadRequest(c, "invalid json")
 	}
+
+	// Honeypot check — kalau bot fill _hp, return 200 "sukses" tanpa insert.
+	// Bot tidak tahu di-block → tidak retry dengan variasi. Log info level
+	// supaya bisa audit kalau ada spike.
+	if strings.TrimSpace(req.Honeypot) != "" {
+		slog.Info("response submit: honeypot triggered",
+			"article_id", articleID, "site_id", siteID, "ip", c.IP())
+		return httpx.Created(c, PublicView{
+			ID:         uuid.Nil,
+			AuthorName: strings.TrimSpace(req.AuthorName),
+			AuthorRole: "pembaca",
+			Body:       "",
+		})
+	}
+
 	req.AuthorName = strings.TrimSpace(req.AuthorName)
 	req.AuthorRole = strings.ToLower(strings.TrimSpace(req.AuthorRole))
 	req.Body = strings.TrimSpace(req.Body)

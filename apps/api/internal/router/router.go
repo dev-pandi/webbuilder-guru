@@ -166,7 +166,7 @@ type Deps struct {
 
 // New builds a fiber.App with global middleware and all route groups mounted.
 func New(deps Deps) *fiber.App {
-	app := fiber.New(fiber.Config{
+	fiberCfg := fiber.Config{
 		AppName:               "web-builder-api",
 		DisableStartupMessage: false,
 		// Generous read timeout for large multipart uploads; tight write timeout
@@ -194,7 +194,19 @@ func New(deps Deps) *fiber.App {
 				"message": err.Error(),
 			}})
 		},
-	})
+	}
+	// TRUST_PROXY=true — Fiber c.IP() resolve dari X-Forwarded-For.
+	// Wajib kalau API di-deploy behind Caddy/reverse proxy supaya rate limit
+	// per-IP, view dedupe fingerprint, dan audit log dapet IP client asli
+	// (bukan IP loopback proxy). JANGAN aktifkan kalau API expose langsung.
+	if deps.Cfg.TrustProxy {
+		fiberCfg.ProxyHeader = fiber.HeaderXForwardedFor
+		fiberCfg.EnableTrustedProxyCheck = true
+		// TrustedProxies kosong = terima semua proxy. Aman karena Caddy di
+		// dalam network yang sama; kalau ada beberapa hop bisa list CIDR
+		// spesifik di sini.
+	}
+	app := fiber.New(fiberCfg)
 
 	app.Use(recover.New(recover.Config{
 		EnableStackTrace: true,

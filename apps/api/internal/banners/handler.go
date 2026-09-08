@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/sites"
@@ -17,9 +18,14 @@ import (
 type Handler struct {
 	repo  *Repo
 	sites *sites.Repo
+	audit *audit.Repo // optional — nil-safe; kalau nil skip audit log
 }
 
 func NewHandler(r *Repo, s *sites.Repo) *Handler { return &Handler{repo: r, sites: s} }
+
+// SetAuditRepo — inject audit logger post-construction. Dipanggil di main.go
+// setelah auditRepo dibangun (audit di-wire ke banyak handler).
+func (h *Handler) SetAuditRepo(a *audit.Repo) { h.audit = a }
 
 const (
 	maxTitleLen  = 120
@@ -309,6 +315,28 @@ func (h *Handler) AdminSetEnabled(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return httpx.Internal(c, "update failed")
+	}
+	// Audit trail — spec §27 disarankan simpan admin + waktu + alasan.
+	// Fire-and-forget: kegagalan audit tidak block moderation response.
+	if h.audit != nil {
+		event := audit.EventAdminBannerEnabled
+		if !req.Enabled {
+			event = audit.EventAdminBannerDisabled
+		}
+		_ = h.audit.Log(c.Context(), audit.Params{
+			ActorID:    &adminID,
+			Event:      event,
+			TargetType: "banner",
+			TargetID:   id.String(),
+			Metadata: map[string]any{
+				"site_id":        b.SiteID.String(),
+				"owner_user_id":  b.OwnerUserID.String(),
+				"internal_title": b.InternalTitle,
+				"reason":         req.Reason,
+			},
+			IP:        c.IP(),
+			UserAgent: c.Get("User-Agent"),
+		})
 	}
 	return httpx.OK(c, b)
 }

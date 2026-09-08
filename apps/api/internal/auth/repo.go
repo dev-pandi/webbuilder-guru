@@ -56,11 +56,21 @@ type User struct {
 	// domain). Sekali set, dipakai direct PATCH /reseller/contacts/:id (1
 	// call untuk semua domain user, tidak butuh domain aktif).
 	RegistrarContactID *int64
+
+	// Guru profile — spec §13, §25. Semua default "" supaya non-guru user
+	// tidak break. `SocialLinks` = JSONB raw, biarkan handler serialize.
+	SubjectOrField  string
+	ProfileImage    string
+	BioShort        string
+	BioLong         string
+	HeroStatement   string
+	Quote           string
+	SocialLinksJSON []byte
 }
 
 // scanUserCols is the projection every SELECT below uses. Kept in sync with
 // the SELECT statements so a schema-column reorder only needs one edit.
-const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik, parent_reseller_id, reseller_display_name, reseller_status, reseller_tier, registrar_contact_id`
+const scanUserCols = `id, email, COALESCE(password_hash, ''), name, role, created_at, email_verified_at, oauth_google_sub, phone_number, address, city, state, postal_code, nik, parent_reseller_id, reseller_display_name, reseller_status, reseller_tier, registrar_contact_id, subject_or_field, profile_image, bio_short, bio_long, hero_statement, quote, social_links_json`
 
 func scanUser(u *User) []any {
 	return []any{
@@ -68,6 +78,8 @@ func scanUser(u *User) []any {
 		&u.PhoneNumber, &u.Address, &u.City, &u.State, &u.PostalCode, &u.Nik,
 		&u.ParentResellerID, &u.ResellerDisplayName, &u.ResellerStatus, &u.ResellerTier,
 		&u.RegistrarContactID,
+		&u.SubjectOrField, &u.ProfileImage, &u.BioShort, &u.BioLong,
+		&u.HeroStatement, &u.Quote, &u.SocialLinksJSON,
 	}
 }
 
@@ -160,25 +172,47 @@ type ProfileUpdate struct {
 	State       *string
 	PostalCode  *string
 	Nik         *string
+	// Guru profile fields — spec §13, §25. SocialLinks passed as raw JSON
+	// so nested shape (array of {platform, url}) tidak butuh Go struct.
+	SubjectOrField *string
+	ProfileImage   *string
+	BioShort       *string
+	BioLong        *string
+	HeroStatement  *string
+	Quote          *string
+	SocialLinks    []byte // JSONB, nil = don't touch, []byte("[]") = clear
 }
 
 // UpdateProfile applies a partial update. Uses COALESCE so `NULL` params
 // preserve existing values without needing dynamic SQL.
 func (r *Repo) UpdateProfile(ctx context.Context, userID uuid.UUID, p ProfileUpdate) (*User, error) {
+	var socialArg any
+	if p.SocialLinks != nil {
+		socialArg = p.SocialLinks
+	}
 	var u User
 	err := r.pool.QueryRow(ctx, `
 		UPDATE users
-		   SET name         = COALESCE($2, name),
-		       phone_number = COALESCE($3, phone_number),
-		       address      = COALESCE($4, address),
-		       city         = COALESCE($5, city),
-		       state        = COALESCE($6, state),
-		       postal_code  = COALESCE($7, postal_code),
-		       nik          = COALESCE($8, nik),
-		       updated_at   = now()
+		   SET name              = COALESCE($2, name),
+		       phone_number      = COALESCE($3, phone_number),
+		       address           = COALESCE($4, address),
+		       city              = COALESCE($5, city),
+		       state             = COALESCE($6, state),
+		       postal_code       = COALESCE($7, postal_code),
+		       nik               = COALESCE($8, nik),
+		       subject_or_field  = COALESCE($9, subject_or_field),
+		       profile_image     = COALESCE($10, profile_image),
+		       bio_short         = COALESCE($11, bio_short),
+		       bio_long          = COALESCE($12, bio_long),
+		       hero_statement    = COALESCE($13, hero_statement),
+		       quote             = COALESCE($14, quote),
+		       social_links_json = COALESCE($15, social_links_json),
+		       updated_at        = now()
 		 WHERE id = $1
 		RETURNING `+scanUserCols,
 		userID, p.Name, p.PhoneNumber, p.Address, p.City, p.State, p.PostalCode, p.Nik,
+		p.SubjectOrField, p.ProfileImage, p.BioShort, p.BioLong,
+		p.HeroStatement, p.Quote, socialArg,
 	).Scan(scanUser(&u)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   Files,
   Globe2,
+  GraduationCap,
   LogOut,
   Receipt,
   User,
@@ -24,6 +25,7 @@ type Me = { id: string; email: string; role: string };
 
 const NAV = [
   { href: "/settings/profile", label: "Profil", icon: User },
+  { href: "/settings/profile-guru", label: "Profil Guru", icon: GraduationCap },
   { href: "/settings/domains", label: "Domain", icon: Globe2 },
   { href: "/settings/collaborators", label: "Kolaborator", icon: Users },
   { href: "/settings/invoices", label: "Invoice", icon: Receipt },

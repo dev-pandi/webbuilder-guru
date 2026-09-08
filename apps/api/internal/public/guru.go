@@ -2,6 +2,8 @@ package public
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -249,13 +251,20 @@ func (h *GuruHandler) countDirectory(ctx context.Context, like string) (int, err
 }
 
 func (h *GuruHandler) queryDirectory(ctx context.Context, like, orderBy string, limit, offset int) ([]TeacherDirectoryItem, error) {
+	// Domain: pakai domain_purchases.domain_name kalau ada + status active,
+	// fallback ke s.slug supaya kartu tetap punya identifier.
 	rows, err := h.pool.Query(ctx, `
 		SELECT
 		    s.id, s.user_id,
 		    COALESCE(NULLIF(u.name, ''), u.email) AS name,
-		    ''::text AS subject_or_field,      -- reserved: users.subject_or_field (Fase 2)
-		    ''::text AS profile_image,
-		    s.slug AS domain,                  -- fallback; nanti override kalau ada custom domain
+		    u.subject_or_field,
+		    u.profile_image,
+		    COALESCE(
+		        (SELECT dp.domain FROM domain_purchases dp
+		           WHERE dp.site_id = s.id AND dp.status = 'active'
+		           ORDER BY dp.created_at DESC LIMIT 1),
+		        s.slug
+		    ) AS domain,
 		    COALESCE(SUM(a.view_count), 0)::bigint AS total_views,
 		    s.created_at,
 		    (s.created_at > now() - interval '14 days') AS is_new
@@ -263,7 +272,12 @@ func (h *GuruHandler) queryDirectory(ctx context.Context, like, orderBy string, 
 		JOIN users u ON u.id = s.user_id
 		LEFT JOIN articles a ON a.site_id = s.id AND a.status = 'published'
 		WHERE s.status = 'published'
-		  AND (LOWER(s.name) LIKE $1 OR LOWER(u.name) LIKE $1 OR LOWER(u.email) LIKE $1)
+		  AND (
+		      LOWER(s.name) LIKE $1
+		      OR LOWER(u.name) LIKE $1
+		      OR LOWER(u.email) LIKE $1
+		      OR LOWER(u.subject_or_field) LIKE $1
+		  )
 		GROUP BY s.id, u.id
 		ORDER BY `+orderBy+`
 		LIMIT $2 OFFSET $3
@@ -295,12 +309,19 @@ func toStr(v any) string {
 	}
 }
 
-// fingerprint — cheap dedupe key: IP + first 40 chars of UA.
-// Not a real fingerprint, just enough to dedupe simple refresh spam.
+// fingerprint — SHA256(IP + "|" + UA-prefix) truncated ke 16 hex chars.
+// Kenapa hash:
+//   1. Panjang konsisten (16 char) — tidak bloat kolom article_view_events
+//   2. Tidak leak IP client raw ke DB (privacy — kalau backup DB bocor,
+//      attacker tidak dapet IP:artikel mapping)
+//   3. Case-insensitive (hex output)
+// Note: c.IP() sudah respect X-Forwarded-For kalau TRUST_PROXY=true
+// (dikonfigurasi di router.New via fiber.ProxyHeader).
 func fingerprint(c *fiber.Ctx) string {
 	ua := c.Get("User-Agent")
-	if len(ua) > 40 {
-		ua = ua[:40]
+	if len(ua) > 60 {
+		ua = ua[:60]
 	}
-	return c.IP() + "|" + ua
+	sum := sha256.Sum256([]byte(c.IP() + "|" + ua))
+	return hex.EncodeToString(sum[:8]) // 16 hex chars = 64-bit
 }
