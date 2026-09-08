@@ -8,6 +8,7 @@ import {
   isGuruRubric,
   listArticles,
   listLatestArticles,
+  listLearningMaterials,
   listPromotionBanners,
   getSiteStats,
   type Article,
@@ -178,6 +179,58 @@ export async function GuruArticleGridDynamic({
     href: `/${a.rubric}/${a.slug}`,
     engagement: engagement(a),
     coverVariant: coverVariant(a.rubric),
+    featured: i === 0,
+  }));
+  return (
+    <GuruArticleGrid
+      items={items}
+      sidebarTitle={sidebarTitle}
+      sidebarBody={sidebarBody}
+      sidebarTags={sidebarTags}
+      sidebarLinks={sidebarLinks}
+    />
+  );
+}
+
+// GuruLearningGridDynamic — halaman Pembelajaran (spec §19). Reuse
+// GuruArticleGrid UI, tanpa engagement meta (materi tidak punya views/
+// tanggapan sesuai spec).
+export async function GuruLearningGridDynamic({
+  siteId,
+  sidebarTitle,
+  sidebarBody,
+  sidebarTags,
+  sidebarLinks,
+}: {
+  siteId: string;
+  sidebarTitle?: string;
+  sidebarBody?: string;
+  sidebarTags?: string[];
+  sidebarLinks?: Array<{ label: string; href: string }>;
+}) {
+  const materials = await listLearningMaterials(siteId, 20);
+  if (materials.length === 0) {
+    return (
+      <section className="guru-section">
+        <div className="guru-container">
+          <div className="guru-content-panel">
+            <p style={{ color: "#637083", textAlign: "center", padding: "40px 20px" }}>
+              Belum ada materi pembelajaran.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  const variants: Array<"default" | "red" | "sage" | "gold"> = [
+    "default", "red", "sage", "gold",
+  ];
+  const items = materials.map((m, i) => ({
+    title: m.title,
+    excerpt: m.excerpt,
+    meta: m.published_at ? `Pembelajaran · ${fmtDate(m.published_at)}` : "Pembelajaran",
+    href: `/pembelajaran/${m.slug}`,
+    coverVariant: variants[i % variants.length],
     featured: i === 0,
   }));
   return (

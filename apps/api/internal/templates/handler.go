@@ -10,10 +10,13 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/webbuilder/api/internal/articles"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/banners"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/sites"
@@ -26,10 +29,24 @@ type Handler struct {
 	products  *products.Repo         // optional — for seeding sample products on UMKM templates
 	blog      *blog.Repo             // optional — for seeding sample blog posts on Blog templates
 	purchases *domain_purchase.Repo  // required in production — enforces "1 domain = 1 site"
+	// Optional — guru content model seeders. Kalau nil, guru sample tidak dibuat.
+	articles *articles.Repo
+	learning *learning.Repo
+	banners  *banners.Repo
 }
 
 func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo, dp *domain_purchase.Repo) *Handler {
 	return &Handler{repo: repo, sites: s, pages: p, products: pr, blog: b, purchases: dp}
+}
+
+// SetGuruSeeders — inject repos untuk seed sample data ketika user pilih
+// template guru-pandi-upi. Optional (nil-safe di handler). Dipanggil di main.go
+// setelah semua handler dibangun (menghindari cyclic dep di NewHandler
+// signature yang sudah luas).
+func (h *Handler) SetGuruSeeders(a *articles.Repo, l *learning.Repo, b *banners.Repo) {
+	h.articles = a
+	h.learning = l
+	h.banners = b
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
@@ -254,6 +271,13 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		if h.blog != nil {
 			h.seedSampleBlogPosts(c.Context(), site.ID)
 		}
+	}
+
+	// Template-specific seeding — untuk `guru-pandi-upi` sediakan sample
+	// articles, learning materials, dan banners supaya user langsung lihat
+	// website "hidup" tanpa perlu isi content dulu.
+	if tpl.Slug == "guru-pandi-upi" {
+		h.seedSampleGuru(c.Context(), site.ID, ownerID)
 	}
 
 	return httpx.Created(c, site)

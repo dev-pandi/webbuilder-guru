@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type PortalBanner } from "@/lib/api";
 
 // RuangPromosiCarousel — Carousel dark navy `#101d33` dengan fade+scale
 // transition antar slide (mockup: opacity 0→1 + transform scale(1.012)→1
@@ -9,6 +10,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //
 // Auto-play 5s, pause on hover/focus, wrap around, reset timer per user
 // interaction — sesuai mockup script.
+//
+// Data: fetch dari `/public/portal/promotion-banners` (spec §6) — agregat
+// banner efektif seluruh guru (teacher_active + admin_enabled + period valid).
+// Fallback ke 3 asset lokal saat API kosong / gagal supaya section tidak
+// terlihat "kosong" sebelum ada guru pertama yang aktif.
 
 type PromoSlide = {
   image: string;
@@ -16,7 +22,7 @@ type PromoSlide = {
   href?: string;
 };
 
-const SLIDES: PromoSlide[] = [
+const FALLBACK_SLIDES: PromoSlide[] = [
   {
     image: "/assets/rdg/promo-adaptif.webp",
     alt: "Promosi Mengajar Lebih Adaptif di Era Digital",
@@ -37,9 +43,36 @@ const SLIDES: PromoSlide[] = [
 const AUTOPLAY_MS = 5000;
 
 export function RuangPromosiCarousel() {
+  const [slides, setSlides] = useState<PromoSlide[]>(FALLBACK_SLIDES);
   const [index, setIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const total = SLIDES.length;
+  const total = slides.length;
+
+  // Fetch banner cross-site dari portal endpoint. Kalau ada minimal 1 banner
+  // hasil moderasi, replace fallback. Kalau kosong/gagal, keep fallback.
+  useEffect(() => {
+    let cancelled = false;
+    api<PortalBanner[]>(`/public/portal/promotion-banners?limit=8`, {
+      auth: false,
+    })
+      .then((banners) => {
+        if (cancelled || !banners || banners.length === 0) return;
+        setSlides(
+          banners.map((b) => ({
+            image: b.image_url,
+            alt: b.alt_text,
+            href: b.target_url,
+          })),
+        );
+        setIndex(0);
+      })
+      .catch(() => {
+        // silent — keep fallback
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) {
@@ -83,7 +116,7 @@ export function RuangPromosiCarousel() {
     >
       {/* Track — absolute slides with fade+scale transition (bukan translateX) */}
       <div className="relative size-full">
-        {SLIDES.map((s, i) => {
+        {slides.map((s, i) => {
           const isActive = i === index;
           const inner = (
             // eslint-disable-next-line @next/next/no-img-element
@@ -151,7 +184,7 @@ export function RuangPromosiCarousel() {
         style={{ background: "rgba(7,18,35,.44)" }}
         aria-label="Pilih promosi"
       >
-        {SLIDES.map((_, i) => {
+        {slides.map((_, i) => {
           const isActive = i === index;
           return (
             <button

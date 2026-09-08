@@ -81,10 +81,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex min-h-screen bg-muted/20">
-      {/* Sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-[#0f1117] text-slate-100 md:flex">
-        {/* Brand */}
-        <div className="px-5 py-5">
+      {/* Sidebar — sticky ke viewport supaya user footer (Keluar) selalu
+          terlihat tanpa perlu scroll seluruh halaman. Nav di tengah punya
+          scroll area sendiri kalau daftar menu lebih panjang dari layar. */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-[#0f1117] text-slate-100 md:flex">
+        {/* Brand — pinned di atas */}
+        <div className="shrink-0 px-5 py-5">
           <Link href="/admin" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-md">
               <ShieldCheck className="size-4 text-primary-foreground" />
@@ -101,10 +103,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
 
-        <Separator className="bg-white/5" />
+        <Separator className="shrink-0 bg-white/5" />
 
-        {/* Navigation */}
-        <nav className="flex-1 space-y-0.5 p-3 pt-4">
+        {/* Navigation — scrollable independen. min-h-0 wajib supaya flex
+            child boleh shrink di bawah content size (browser default:
+            min-height:auto = ukuran isi). Tanpa ini, scroll tidak aktif. */}
+        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-3 pt-4 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,.15)_transparent]">
           <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
             Menu
           </p>
@@ -153,9 +157,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </nav>
 
-        {/* User footer */}
-        <Separator className="bg-white/5" />
-        <div className="p-3">
+        {/* User footer — pinned di bawah */}
+        <Separator className="shrink-0 bg-white/5" />
+        <div className="shrink-0 p-3">
           <div className="flex items-center gap-3 rounded-lg px-2 py-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary">
               {getInitials(me.name, me.email)}
@@ -180,7 +184,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
         <div className="flex h-14 shrink-0 items-center border-b bg-background/80 px-6 backdrop-blur-sm">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

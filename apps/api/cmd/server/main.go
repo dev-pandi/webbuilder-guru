@@ -314,6 +314,12 @@ func main() {
 	publicHandler := public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo)
 	publicHandler.SetTemplates(templateRepo)
 	publicGuruHandler := public.NewGuruHandler(pool, articlesRepo, learningRepo, responsesRepo)
+
+	// Templates handler — extract ke variabel supaya bisa inject guru seeders.
+	// Setelah CreateSiteFromTemplate untuk `guru-pandi-upi`, seeder ini
+	// otomatis populate articles/materials/banners sample.
+	templatesHandler := templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo, purchaseRepo)
+	templatesHandler.SetGuruSeeders(articlesRepo, learningRepo, bannersRepo)
 	if purchaseRepo != nil {
 		adminHandler.SetPurchases(purchaseRepo)
 	}
@@ -485,7 +491,7 @@ func main() {
 		Sites:        sitesHandler,
 		Pages:        pagesHandler,
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
-		Templates:    templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo, purchaseRepo),
+		Templates:    templatesHandler,
 		Export: exports.NewHandler(&exports.Builder{
 			Sites:    siteRepo,
 			Pages:    pageRepo,

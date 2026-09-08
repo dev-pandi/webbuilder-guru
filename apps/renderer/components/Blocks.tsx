@@ -22,6 +22,7 @@ import {
   GuruArticleGridDynamic,
   GuruForumThreadListDynamic,
   GuruLatestGridDynamic,
+  GuruLearningGridDynamic,
   GuruPromoCarouselDynamic,
   GuruStatsBarDynamic,
 } from "@/components/GuruBlocksDynamic";
@@ -235,6 +236,20 @@ export async function RenderBlocks({
           <GuruArticleGridDynamic
             siteId={siteId}
             rubric={String(pp.rubric ?? "ceritaku")}
+            sidebarTitle={pp.sidebarTitle as string | undefined}
+            sidebarBody={pp.sidebarBody as string | undefined}
+            sidebarTags={pp.sidebarTags as string[] | undefined}
+            sidebarLinks={pp.sidebarLinks as Array<{ label: string; href: string }> | undefined}
+          />,
+        );
+      }
+      if (b.type === "GuruLearningGridDynamic") {
+        const pp = b.props ?? {};
+        return withLayout(
+          b,
+          i,
+          <GuruLearningGridDynamic
+            siteId={siteId}
             sidebarTitle={pp.sidebarTitle as string | undefined}
             sidebarBody={pp.sidebarBody as string | undefined}
             sidebarTags={pp.sidebarTags as string[] | undefined}

@@ -156,22 +156,13 @@ func guruHomePage() map[string]any {
 				"noteBText": "Catatan hari ini",
 				"noteBSub":  "Siswa berani bertanya.",
 			}),
-			block("GuruPromoCarousel", map[string]any{
-				"items": []map[string]any{
-					{"image": guruAssetPromo1, "alt": "Program pelatihan pengembangan guru", "href": "/"},
-					{"image": guruAssetPromo2, "alt": "Program literasi kelas", "href": "/"},
-					{"image": guruAssetPromo3, "alt": "Komunitas berbagi praktik baik guru", "href": "/"},
-				},
-			}),
-			block("GuruStatsBar", map[string]any{
+			// Dynamic — fetch banner efektif site pada render time.
+			block("GuruPromoCarouselDynamic", map[string]any{}),
+			// Dynamic — Jejak Website Saya dari SiteStats (spec §12).
+			block("GuruStatsBarDynamic", map[string]any{
 				"eyebrow":  "Jejak Website Saya",
 				"title":    "Tulisan yang tumbuh bersama pembaca.",
 				"subtitle": "Catatan kecil tentang bagaimana tulisan di website ini dibaca dan ditanggapi.",
-				"items": []map[string]any{
-					{"value": "42.680", "label": "Total Views"},
-					{"value": "324", "label": "Tanggapan"},
-					{"value": "186", "label": "Tulisan"},
-				},
 			}),
 			block("GuruRubricGrid", map[string]any{
 				"eyebrow":  "Enam ruang utama",
@@ -186,43 +177,11 @@ func guruHomePage() map[string]any {
 					{"title": "Forum Diskusi", "desc": "Ruang guru, siswa, orang tua, dan pembaca untuk membicarakan materi & isu aktual.", "href": "/forum-diskusi", "icon": "chat"},
 				},
 			}),
-			block("GuruLatestGrid", map[string]any{
+			// Dynamic — 4 tulisan terbaru dari DB (featured + 3 side).
+			block("GuruLatestGridDynamic", map[string]any{
 				"eyebrow":  "Tulisan terbaru",
 				"title":    "Dari kelas, buku, dan sekitar.",
 				"subtitle": "Beberapa catatan yang paling baru saya tulis. Saya menyimpannya bukan sebagai jawaban final, tetapi sebagai jejak proses belajar.",
-				"featured": map[string]any{
-					"meta":       "Ceritaku · 2 September 2026",
-					"title":      "Hati-hati dengan Spasi",
-					"excerpt":    "Berawal dari kesalahan kecil pada sebuah kalimat, kelas Bahasa Indonesia berubah menjadi percakapan tentang makna.",
-					"href":       "/ceritaku",
-					"engagement": "1.248 views · 18 tanggapan",
-				},
-				"side": []map[string]any{
-					{
-						"meta":       "Peradaban",
-						"title":      "Jejak Aksara dalam Perjalanan Nusantara",
-						"excerpt":    "Membaca aksara sebagai ingatan yang hidup.",
-						"href":       "/peradaban",
-						"engagement": "2.136 views · 27 tanggapan",
-						"iconKey":    "temple",
-					},
-					{
-						"meta":       "Bacaanku",
-						"title":      "Membaca Lagi Laskar Pelangi",
-						"excerpt":    "Apa yang berubah ketika dibaca dari sudut pandang guru?",
-						"href":       "/bacaanku",
-						"engagement": "972 views · 12 tanggapan",
-						"iconKey":    "bookmark",
-					},
-					{
-						"meta":       "Forum Diskusi",
-						"title":      "Apakah PR Masih Relevan?",
-						"excerpt":    "Satu pertanyaan lama yang perlu konteks baru.",
-						"href":       "/forum-diskusi",
-						"engagement": "862 views · 27 tanggapan",
-						"iconKey":    "chat",
-					},
-				},
 			}),
 			block("GuruQuote", map[string]any{
 				"text":   "Saya tidak ingin website ini hanya menjadi etalase. Saya ingin ia menjadi tempat untuk mengingat apa yang sudah dipelajari — dan apa yang masih perlu diperbaiki.",
@@ -291,7 +250,9 @@ func guruProfilPage() map[string]any {
 // -------- Rubrik pribadi (5 halaman) --------
 
 // guruRubrikPage helper — struktur konsisten untuk 5 rubrik.
-func guruRubrikPage(slug, title, eyebrow, subtitle, iconKey string, articles []map[string]any, topics []string) map[string]any {
+// `articles` parameter di-drop karena block sekarang dynamic (fetch dari DB).
+// Data awal disediakan lewat seedSampleGuru saat site dibuat dari template.
+func guruRubrikPage(slug, title, eyebrow, subtitle, iconKey string, _ []map[string]any, topics []string) map[string]any {
 	sidebarLinks := []map[string]any{
 		{"label": "Ceritaku", "href": "/ceritaku"},
 		{"label": "Bacaanku", "href": "/bacaanku"},
@@ -313,10 +274,11 @@ func guruRubrikPage(slug, title, eyebrow, subtitle, iconKey string, articles []m
 				"subtitle": subtitle,
 				"iconKey":  iconKey,
 			}),
-			block("GuruArticleGrid", map[string]any{
-				"items":        articles,
+			// Dynamic — fetch artikel rubric ini dari DB.
+			block("GuruArticleGridDynamic", map[string]any{
+				"rubric":       slug,
 				"sidebarTitle": "Tentang rubrik",
-				"sidebarBody":  "Semua tulisan pada template ini bersifat contoh. Ganti dengan tulisan Anda sendiri lewat editor.",
+				"sidebarBody":  "Semua tulisan awal template ini adalah contoh. Ubah, tambah, atau hapus dari dashboard.",
 				"sidebarTags":  topics,
 				"sidebarLinks": sidebarLinks,
 			}),
@@ -422,54 +384,8 @@ func guruForumDiskusiPage() map[string]any {
 				"subtitle": "Tempat guru, siswa, orang tua, dan pembaca berinteraksi tentang materi pelajaran, pengalaman, isu aktual, maupun topik sederhana. Percakapan pada template ini ditampilkan dengan prinsip moderasi.",
 				"iconKey":  "chat",
 			}),
-			block("GuruForumThreadList", map[string]any{
-				"items": []map[string]any{
-					{
-						"initials":      "RP",
-						"avatarVariant": "red",
-						"label":         "Diskusi Utama",
-						"date":          "2 Sep 2026",
-						"title":         "Apakah PR Masih Relevan?",
-						"excerpt":       "Daripada bertanya perlu atau tidak, mari membahas: untuk siapa, untuk tujuan apa, dan dalam kondisi apa?",
-						"tags":          []string{"Pembelajaran", "Keadilan"},
-						"engagement":    "862 views · 27 tanggapan",
-						"featured":      true,
-						"href":          "/forum-diskusi",
-					},
-					{
-						"initials":      "GS",
-						"avatarVariant": "blue",
-						"label":         "Guru & Siswa",
-						"date":          "3 Sep 2026",
-						"title":         "Bagaimana Menumbuhkan Budaya Membaca di Sekolah?",
-						"excerpt":       "Apakah yang paling dibutuhkan adalah koleksi buku, waktu membaca, teladan, atau ruang untuk membicarakan bacaan?",
-						"tags":          []string{"Literasi", "Sekolah"},
-						"engagement":    "1.095 views · 24 tanggapan",
-						"href":          "/forum-diskusi",
-					},
-					{
-						"initials":      "OT",
-						"avatarVariant": "sage",
-						"label":         "Orang Tua & Guru",
-						"date":          "4 Sep 2026",
-						"title":         "AI di Kelas: Membantu atau Membuat Bergantung?",
-						"excerpt":       "Bagaimana membedakan penggunaan AI sebagai alat bantu dengan penggunaan yang menghilangkan proses belajar?",
-						"tags":          []string{"Teknologi", "Etika"},
-						"engagement":    "644 views · 16 tanggapan",
-						"href":          "/forum-diskusi",
-					},
-					{
-						"initials":      "PB",
-						"avatarVariant": "gold",
-						"label":         "Pembaca",
-						"date":          "5 Sep 2026",
-						"title":         "Apa yang Membuat Siswa Berani Berpendapat?",
-						"excerpt":       "Rasa aman, cara orang dewasa merespons, dan budaya kelas mungkin sama pentingnya dengan keberanian personal.",
-						"tags":          []string{"Kelas", "Komunikasi"},
-						"engagement":    "391 views · 10 tanggapan",
-						"href":          "/forum-diskusi",
-					},
-				},
+			// Dynamic — fetch thread rubric=forum-diskusi dari DB.
+			block("GuruForumThreadListDynamic", map[string]any{
 				"moderationNote": map[string]any{
 					"badge": "Dimoderasi",
 					"title": "Ruang aman untuk berdiskusi",
@@ -511,13 +427,8 @@ func guruPembelajaranPage() map[string]any {
 				"subtitle": "Kumpulan materi Bahasa Indonesia yang saya susun sebagai catatan belajar ringkas, dengan contoh yang dekat dengan penggunaan bahasa sehari-hari.",
 				"iconKey":  "book",
 			}),
-			block("GuruArticleGrid", map[string]any{
-				"items": []map[string]any{
-					{"title": "Mengenal Teks Cerpen", "excerpt": "Mengenali unsur, struktur, dan cara membaca cerpen agar kita tidak hanya mengikuti alur, tetapi juga menangkap makna di balik cerita.", "meta": "Pembelajaran · 8 Sep 2026", "featured": true, "href": "/pembelajaran"},
-					{"title": "Menyusun Teks Eksposisi", "excerpt": "Memahami bagaimana gagasan, alasan, dan fakta disusun menjadi tulisan yang jelas, runtut, dan meyakinkan.", "meta": "Pembelajaran · 7 Sep 2026", "coverVariant": "red", "href": "/pembelajaran"},
-					{"title": "Memahami Teks Deskripsi", "excerpt": "Belajar memilih detail dan kata yang tepat agar pembaca dapat membayangkan objek, tempat, atau suasana yang sedang dijelaskan.", "meta": "Pembelajaran · 6 Sep 2026", "coverVariant": "sage", "href": "/pembelajaran"},
-					{"title": "Menyunting Kalimat dan Ejaan", "excerpt": "Latihan sederhana untuk melihat kembali pilihan kata, tanda baca, ejaan, dan susunan kalimat agar tulisan lebih mudah dipahami.", "meta": "Pembelajaran · 5 Sep 2026", "coverVariant": "gold", "href": "/pembelajaran"},
-				},
+			// Dynamic — fetch materi dari DB.
+			block("GuruLearningGridDynamic", map[string]any{
 				"sidebarTitle": "Tentang Pembelajaran",
 				"sidebarBody":  "Ruang ini berisi materi Bahasa Indonesia yang disusun dalam format ringkas untuk mendukung proses belajar.",
 				"sidebarTags":  []string{"Cerpen", "Eksposisi", "Deskripsi", "Ejaan"},
