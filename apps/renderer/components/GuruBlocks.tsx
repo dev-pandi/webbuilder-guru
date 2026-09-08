@@ -108,9 +108,12 @@ export function GuruHero(p: {
 }
 
 // ---------------------------------------------------------------------------
-// GuruPromoCarousel — Horizontal scroll-snap carousel. Pure CSS, no JS.
-// User bisa swipe / drag / scroll horizontal. Dots decorative (tidak clickable).
+// GuruPromoCarousel — Server wrapper yang delegate ke client component
+// GuruPromoCarouselClient untuk carousel dinamis (auto-play + click navigasi).
+// Client component sudah SSR-friendly: slide pertama render tanpa JS.
 // ---------------------------------------------------------------------------
+
+import { GuruPromoCarouselClient } from "./GuruPromoCarouselClient";
 
 export function GuruPromoCarousel(p: {
   items?: Array<{ image: string; alt?: string; href?: string; caption?: string }>;
@@ -120,45 +123,7 @@ export function GuruPromoCarousel(p: {
   return (
     <section className="guru-promo">
       <div className="guru-container">
-        <div className="guru-promo__viewport">
-          <div className="guru-promo__track">
-            {items.map((it, i) => {
-              const inner = (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={it.image}
-                    alt={it.alt ?? it.caption ?? ""}
-                    loading={i === 0 ? "eager" : "lazy"}
-                    decoding="async"
-                  />
-                </>
-              );
-              return it.href ? (
-                <a
-                  key={i}
-                  href={it.href}
-                  className="guru-promo__slide"
-                  aria-label={it.alt ?? it.caption ?? "Banner promosi"}
-                >
-                  {inner}
-                </a>
-              ) : (
-                <div key={i} className="guru-promo__slide" role="img" aria-label={it.alt ?? ""}>
-                  {inner}
-                </div>
-              );
-            })}
-          </div>
-          <div className="guru-promo__dots" aria-hidden>
-            {items.map((_, i) => (
-              <span
-                key={i}
-                className={`guru-promo__dot${i === 0 ? " is-active" : ""}`}
-              />
-            ))}
-          </div>
-        </div>
+        <GuruPromoCarouselClient items={items} />
       </div>
     </section>
   );
@@ -845,6 +810,12 @@ export function GuruStyles() {
   --guru-max: 1180px;
 }
 .guru-container{width:min(var(--guru-max),calc(100% - 40px));margin-inline:auto}
+/* Global focus ring for template (red-transparent per mockup :focus-visible) */
+.guru-hero :focus-visible,.guru-section :focus-visible,.guru-quote-section :focus-visible,
+.guru-rubric-hero :focus-visible,.guru-forum-layout :focus-visible,
+.guru-site-header :focus-visible,.guru-site-footer :focus-visible{
+  outline:3px solid rgba(182,66,61,.35);outline-offset:3px;border-radius:6px
+}
 .guru-eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--guru-red);font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;margin-bottom:16px}
 .guru-eyebrow:before{content:"";width:28px;height:2px;background:currentColor;border-radius:2px}
 .guru-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--guru-red)}
@@ -894,15 +865,29 @@ export function GuruStyles() {
 .guru-section-heading h2{font-family:var(--font-heading,Georgia),serif;font-size:clamp(34px,4.5vw,54px);letter-spacing:-.035em;color:var(--guru-navy);line-height:1.12;margin:0}
 .guru-section-heading p{margin:0;color:var(--guru-muted);max-width:640px;line-height:1.7}
 
-/* Promo carousel */
+/* Promo carousel — JS-driven (auto-play, clickable dots + prev/next, hover pause)
+ * CRITICAL: viewport overflow-hidden clips, track width:100% mengunci lebar
+ * track = 1 viewport supaya translateX(-N*100%) geser N slide (bukan N*track).
+ * Slide flex:0 0 100% + min-width:0 fit 1 viewport tanpa track auto-expand.
+ * Sebelumnya pakai min-width:100% bikin track = 3x viewport = misalign. */
 .guru-promo{padding:30px 0;background:var(--guru-cream)}
-.guru-promo__viewport{position:relative;overflow:hidden;border-radius:var(--guru-radius);box-shadow:var(--guru-shadow);background:#fff}
-.guru-promo__track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth}
-.guru-promo__track::-webkit-scrollbar{display:none}
-.guru-promo__slide{min-width:100%;aspect-ratio:2/1;display:block;overflow:hidden;position:relative;scroll-snap-align:start}
+.guru-promo__viewport{position:relative;overflow:hidden;border-radius:var(--guru-radius);box-shadow:var(--guru-shadow);background:#fff;width:100%}
+.guru-promo__track{display:flex;transition:transform .45s ease;width:100%;will-change:transform}
+.guru-promo__track--js{transform:translateX(0)}
+.guru-promo__slide{flex:0 0 100%;min-width:0;aspect-ratio:2/1;display:block;overflow:hidden;position:relative}
 .guru-promo__slide img{width:100%;height:100%;object-fit:cover}
-.guru-promo__dots{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;z-index:2;pointer-events:none}
-.guru-promo__dot{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.65);display:block}
+.guru-promo__slide:focus-visible{outline:4px solid var(--guru-gold);outline-offset:-4px}
+/* Prev/next control buttons — mockup .promo-control */
+.guru-promo__ctrl{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border:0;border-radius:50%;background:rgba(20,35,59,.86);color:#fff;cursor:pointer;z-index:2;font-size:22px;line-height:1;display:grid;place-items:center;transition:.2s;font-family:inherit}
+.guru-promo__ctrl:hover{background:var(--guru-navy);transform:translateY(-50%) scale(1.08)}
+.guru-promo__ctrl:focus-visible{outline:3px solid rgba(214,168,77,.65);outline-offset:2px}
+.guru-promo__ctrl--prev{left:16px}
+.guru-promo__ctrl--next{right:16px}
+/* Dots — active state = pill width 24px */
+.guru-promo__dots{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;z-index:2}
+.guru-promo__dot{width:9px;height:9px;border:0;border-radius:50%;background:rgba(255,255,255,.65);cursor:pointer;padding:0;transition:width .3s ease,background .3s ease}
+.guru-promo__dot:hover{background:rgba(255,255,255,.85)}
+.guru-promo__dot:focus-visible{outline:2px solid var(--guru-gold);outline-offset:3px}
 .guru-promo__dot.is-active{width:24px;border-radius:999px;background:#fff}
 
 /* Rubric grid */
@@ -1096,6 +1081,9 @@ export function GuruStyles() {
   .guru-website-stats{grid-template-columns:1fr}
   .guru-footer-links{grid-template-columns:1fr}
   .guru-footer-bottom{flex-direction:column}
+  .guru-promo__ctrl{width:38px;height:38px;font-size:18px}
+  .guru-promo__ctrl--prev{left:10px}
+  .guru-promo__ctrl--next{right:10px}
 }
 `,
       }}
