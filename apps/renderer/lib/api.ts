@@ -222,6 +222,203 @@ export function formatPrice(price: number, currency: string): string {
   return `${currency} ${price.toLocaleString("id-ID")}`;
 }
 
+// -------- Guru (Rumah Digital Guru) — Fase 4 renderer integration --------
+
+export const GURU_RUBRICS = [
+  "ceritaku",
+  "bacaanku",
+  "inspirasiku",
+  "bangsaku",
+  "peradaban",
+  "forum-diskusi",
+] as const;
+export type GuruRubric = (typeof GURU_RUBRICS)[number];
+
+export const GURU_RUBRIC_LABEL: Record<GuruRubric, string> = {
+  ceritaku: "Ceritaku",
+  bacaanku: "Bacaanku",
+  inspirasiku: "Inspirasiku",
+  bangsaku: "Bangsaku",
+  peradaban: "Peradaban",
+  "forum-diskusi": "Forum Diskusi",
+};
+
+export function isGuruRubric(s: string): s is GuruRubric {
+  return (GURU_RUBRICS as readonly string[]).includes(s);
+}
+
+export type Article = {
+  id: string;
+  site_id: string;
+  rubric: GuruRubric;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_md: string;
+  cover_image_url: string;
+  tags: string[] | null;
+  status: string;
+  comments_enabled: boolean;
+  reading_time_min: number;
+  view_count: number;
+  seo_title: string;
+  seo_description: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ArticleListItem — kartu di list endpoint punya field tambahan response_count.
+export type ArticleListItem = Article & {
+  response_count: number;
+};
+
+export type LearningMaterial = {
+  id: string;
+  site_id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_md: string;
+  cover_image_url: string;
+  tags: string[] | null;
+  summary: string;
+  status: string;
+  seo_title: string;
+  seo_description: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResponseRole = "guru" | "siswa" | "orang-tua" | "pembaca";
+export const RESPONSE_ROLE_LABEL: Record<ResponseRole, string> = {
+  guru: "Guru",
+  siswa: "Siswa",
+  "orang-tua": "Orang Tua",
+  pembaca: "Pembaca",
+};
+
+export type PublicResponse = {
+  id: string;
+  author_name: string;
+  author_role: ResponseRole;
+  body: string;
+  created_at: string;
+};
+
+export type PublicBanner = {
+  id: string;
+  image_url: string;
+  target_url: string;
+  alt_text: string;
+  sort_order: number;
+};
+
+export type SiteStats = {
+  total_views: number;
+  total_responses: number;
+  total_articles: number;
+};
+
+// ArticleDetail — response envelope untuk /public/sites/:id/articles/:rubric/:slug
+export type ArticleDetail = {
+  article: Article;
+  response_count: number;
+};
+
+// Detail endpoint bumps view counter — jangan cache. Listing OK cache pendek.
+const GURU_LIST_TTL = 15;
+
+export async function listArticles(
+  siteId: string,
+  rubric?: GuruRubric,
+  limit = 20,
+): Promise<ArticleListItem[]> {
+  const p = new URLSearchParams({ limit: String(limit) });
+  if (rubric) p.set("rubric", rubric);
+  const r = await fetchJson<ArticleListItem[]>(
+    `/public/sites/${siteId}/articles?${p}`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : [];
+}
+
+export async function getArticle(
+  siteId: string,
+  rubric: GuruRubric,
+  slug: string,
+): Promise<ArticleDetail | null> {
+  // No cache — detail endpoint increments view counter.
+  const r = await fetchJson<ArticleDetail>(
+    `/public/sites/${siteId}/articles/${rubric}/${encodeURIComponent(slug)}`,
+    0,
+  );
+  return r.ok ? r.data : null;
+}
+
+export async function listArticleResponses(
+  siteId: string,
+  articleId: string,
+  limit = 200,
+): Promise<PublicResponse[]> {
+  const r = await fetchJson<PublicResponse[]>(
+    `/public/sites/${siteId}/articles/${articleId}/responses?limit=${limit}`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : [];
+}
+
+export async function listLatestArticles(
+  siteId: string,
+  limit = 6,
+): Promise<Article[]> {
+  const r = await fetchJson<Article[]>(
+    `/public/sites/${siteId}/latest-articles?limit=${limit}`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : [];
+}
+
+export async function getSiteStats(siteId: string): Promise<SiteStats | null> {
+  const r = await fetchJson<SiteStats>(
+    `/public/sites/${siteId}/site-stats`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : null;
+}
+
+export async function listLearningMaterials(
+  siteId: string,
+  limit = 20,
+): Promise<LearningMaterial[]> {
+  const r = await fetchJson<LearningMaterial[]>(
+    `/public/sites/${siteId}/learning-materials?limit=${limit}`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : [];
+}
+
+export async function getLearningMaterial(
+  siteId: string,
+  slug: string,
+): Promise<LearningMaterial | null> {
+  const r = await fetchJson<LearningMaterial>(
+    `/public/sites/${siteId}/learning-materials/${encodeURIComponent(slug)}`,
+  );
+  return r.ok ? r.data : null;
+}
+
+export async function listPromotionBanners(
+  siteId: string,
+): Promise<PublicBanner[]> {
+  const r = await fetchJson<PublicBanner[]>(
+    `/public/sites/${siteId}/promotion-banners`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : [];
+}
+
 // -------- Template live preview (plan-admin-templates.md Phase 2) --------
 
 export type TemplatePreviewPage = {

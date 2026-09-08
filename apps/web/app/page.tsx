@@ -681,26 +681,27 @@ export default function Home() {
                 masing-masing.
               </p>
             </div>
-            {/* Directory tools — count + sort control */}
+            {/* Directory tools — sort links → halaman direktori penuh /guru */}
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <span className="whitespace-nowrap text-[.82rem] font-extrabold text-[#657387]">
-                {teachers.length} guru ditampilkan
-              </span>
+              <Link
+                href="/guru"
+                className="whitespace-nowrap text-[.82rem] font-extrabold text-[#285f9e] underline underline-offset-4 hover:text-[#172033]"
+              >
+                Lihat semua guru →
+              </Link>
               <div className="inline-flex gap-1 rounded-[13px] border border-[#e6e9ef] bg-white p-1 shadow-[0_10px_30px_rgba(24,34,53,.06)]">
-                <button
-                  type="button"
-                  aria-pressed="true"
-                  className="min-h-[38px] rounded-[10px] bg-[#285f9e] px-3.5 text-[.8rem] font-extrabold text-white shadow-[0_8px_18px_rgba(40,95,158,.18)]"
+                <Link
+                  href="/guru?sort=popular"
+                  className="min-h-[38px] rounded-[10px] bg-[#285f9e] px-3.5 text-[.8rem] font-extrabold text-white shadow-[0_8px_18px_rgba(40,95,158,.18)] flex items-center"
                 >
                   Terpopuler
-                </button>
-                <button
-                  type="button"
-                  aria-pressed="false"
-                  className="min-h-[38px] rounded-[10px] bg-transparent px-3.5 text-[.8rem] font-extrabold text-[#647286] hover:bg-[#f4f7fb]"
+                </Link>
+                <Link
+                  href="/guru?sort=newest"
+                  className="min-h-[38px] rounded-[10px] bg-transparent px-3.5 text-[.8rem] font-extrabold text-[#647286] hover:bg-[#f4f7fb] flex items-center"
                 >
                   Terbaru
-                </button>
+                </Link>
               </div>
             </div>
           </div>

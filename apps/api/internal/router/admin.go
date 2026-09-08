@@ -148,6 +148,12 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Post("/wallet/topups/:id/reject", deps.WalletLocal.AdminReject)
 	}
 
+	// Guru — promotion banner moderation cross-site (Ruang Promosi override).
+	if deps.Banners != nil {
+		g.Get("/banners", deps.Banners.AdminList)
+		g.Post("/banners/:id/set-enabled", deps.Banners.AdminSetEnabled)
+	}
+
 	// Cloudflare configs — CRUD untuk auto-attach domain baru ke akun CF
 	// (create zone → push NS ke registrar). Nil-safe kalau handler tidak dibuild.
 	if deps.Cloudflare != nil {

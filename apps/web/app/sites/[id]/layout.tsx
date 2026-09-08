@@ -32,9 +32,16 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       });
   }, [params.id, router]);
 
+  // Menu guru (spec §20) di-mark dengan `guru: true` supaya tampil pill kecil
+  // "Guru" di sidebar. Semua site tetap bisa akses menu ini — fitur backend
+  // sudah tenant-safe. Renderer akan menampilkan konten sesuai template.
   const tabs = [
     { href: `/sites/${params.id}/editor`, label: "Editor" },
     { href: `/sites/${params.id}/pages`, label: "Halaman" },
+    { href: `/sites/${params.id}/tulisan`, label: "Tulisan", guru: true },
+    { href: `/sites/${params.id}/tanggapan`, label: "Tanggapan", guru: true },
+    { href: `/sites/${params.id}/pembelajaran`, label: "Pembelajaran", guru: true },
+    { href: `/sites/${params.id}/promosi`, label: "Ruang Promosi", guru: true },
     { href: `/sites/${params.id}/products`, label: "Produk" },
     { href: `/sites/${params.id}/blog`, label: "Blog" },
     { href: `/sites/${params.id}/forms`, label: "Formulir" },
@@ -120,13 +127,25 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
                 key={t.href}
                 href={t.href}
                 className={cn(
-                  "whitespace-nowrap border-b-2 px-3 py-2 text-sm transition",
+                  "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition",
                   active
                     ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
                 {t.label}
+                {t.guru && (
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                      active
+                        ? "bg-violet-100 text-violet-700"
+                        : "bg-violet-500/10 text-violet-600",
+                    )}
+                  >
+                    Guru
+                  </span>
+                )}
               </Link>
             );
           })}

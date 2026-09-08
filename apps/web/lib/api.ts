@@ -59,6 +59,165 @@ export async function api<T>(
   return (body as { data: T }).data;
 }
 
+// --- Guru (Rumah Digital Guru) types + helpers ---
+// See spec: apps/api/internal/db/migrations/0048-0051.
+
+export const GURU_RUBRICS = [
+  "ceritaku",
+  "bacaanku",
+  "inspirasiku",
+  "bangsaku",
+  "peradaban",
+  "forum-diskusi",
+] as const;
+export type GuruRubric = (typeof GURU_RUBRICS)[number];
+
+export const GURU_RUBRIC_LABEL: Record<GuruRubric, string> = {
+  ceritaku: "Ceritaku",
+  bacaanku: "Bacaanku",
+  inspirasiku: "Inspirasiku",
+  bangsaku: "Bangsaku",
+  peradaban: "Peradaban",
+  "forum-diskusi": "Forum Diskusi",
+};
+
+export type ArticleStatus = "draft" | "published";
+
+export type Article = {
+  id: string;
+  site_id: string;
+  rubric: GuruRubric;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_md: string;
+  cover_image_url: string;
+  tags: string[] | null;
+  status: ArticleStatus;
+  comments_enabled: boolean;
+  reading_time_min: number;
+  view_count: number;
+  seo_title: string;
+  seo_description: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LearningMaterial = {
+  id: string;
+  site_id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_md: string;
+  cover_image_url: string;
+  tags: string[] | null;
+  summary: string;
+  status: ArticleStatus;
+  seo_title: string;
+  seo_description: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResponseStatus = "pending" | "approved" | "rejected";
+export type ResponseRole = "guru" | "siswa" | "orang-tua" | "pembaca";
+
+export const RESPONSE_ROLE_LABEL: Record<ResponseRole, string> = {
+  guru: "Guru",
+  siswa: "Siswa",
+  "orang-tua": "Orang Tua",
+  pembaca: "Pembaca",
+};
+
+export type ResponseItem = {
+  id: string;
+  site_id: string;
+  article_id: string;
+  author_name: string;
+  author_role: ResponseRole;
+  body: string;
+  status: ResponseStatus;
+  moderated_at: string | null;
+  moderated_by_teacher_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BannerEffectiveStatus =
+  | "active"
+  | "teacher_off"
+  | "admin_disabled"
+  | "not_started"
+  | "ended";
+
+export const BANNER_STATUS_LABEL: Record<BannerEffectiveStatus, string> = {
+  active: "Aktif",
+  teacher_off: "Nonaktif oleh Guru",
+  admin_disabled: "Dinonaktifkan oleh Admin",
+  not_started: "Belum Mulai",
+  ended: "Berakhir",
+};
+
+export type Banner = {
+  id: string;
+  site_id: string;
+  owner_user_id: string;
+  internal_title: string;
+  image_url: string;
+  target_url: string;
+  alt_text: string;
+  sort_order: number;
+  start_at: string | null;
+  end_at: string | null;
+  teacher_active: boolean;
+  admin_enabled: boolean;
+  admin_disabled_reason: string;
+  admin_disabled_by: string | null;
+  admin_disabled_at: string | null;
+  effective_status: BannerEffectiveStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SiteStats = {
+  total_views: number;
+  total_responses: number;
+  total_articles: number;
+};
+
+// AdminBannerView — admin cross-site banner list. Extends Banner dengan info
+// site + owner untuk moderasi platform (/admin/banners).
+export type AdminBannerView = Banner & {
+  site_name: string;
+  site_slug: string;
+  owner_name: string;
+};
+
+// TeacherDirectoryItem — kartu guru di portal direktori (§5.1).
+export type TeacherDirectoryItem = {
+  site_id: string;
+  user_id: string;
+  name: string;
+  subject_or_field: string;
+  profile_image: string;
+  domain: string;
+  total_views: number;
+  created_at: string;
+  is_new: boolean;
+};
+
+// PortalBanner — Ruang Promosi Portal (agregat cross-site).
+export type PortalBanner = {
+  id: string;
+  site_id: string;
+  image_url: string;
+  target_url: string;
+  alt_text: string;
+};
+
 // openBlob — fetch endpoint yang return binary (PDF, image) dengan Bearer
 // token, lalu buka blob URL di tab baru. Dipakai untuk tombol "Cetak PDF"
 // yang tidak bisa pakai <a href> biasa karena butuh Authorization header.

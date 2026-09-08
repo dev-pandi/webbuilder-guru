@@ -11,9 +11,11 @@ import (
 
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/analytics"
+	"github.com/webbuilder/api/internal/articles"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/banners"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/cloudflare"
@@ -26,6 +28,7 @@ import (
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/invoices"
+	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/payments"
 	"github.com/webbuilder/api/internal/paymentwh"
@@ -35,6 +38,7 @@ import (
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/reseller"
+	"github.com/webbuilder/api/internal/responses"
 	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
@@ -70,6 +74,14 @@ type Deps struct {
 
 	Caddy  *caddy.Handler
 	Public *public.Handler
+
+	// Guru content model — Phase 1 spec Rumah Digital Guru.
+	Articles  *articles.Handler
+	Learning  *learning.Handler
+	Responses *responses.Handler
+	Banners   *banners.Handler
+	// PublicGuru — public endpoints untuk website guru + portal directory.
+	PublicGuru *public.GuruHandler
 
 	// Registrar is the EPP client wrapping api-registry service. May be nil
 	// (feature disabled when API_REGISTRY_URL is empty) — callers must nil-check.

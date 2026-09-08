@@ -135,6 +135,36 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	pubBase.Get("/sites/:id/blog-posts", longCache, deps.Public.ListBlogPosts)
 	pubBase.Get("/sites/:id/blog-posts/:slug", longCache, deps.Public.BlogPostBySlug)
 
+	// Guru — public reads untuk website guru (articles/materials/banners/stats).
+	// Cache pendek: article detail bump view_count, jadi cache-nya di sisi
+	// renderer ISR (revalidate 30) — di sini short cache 5s untuk peak burst.
+	if deps.PublicGuru != nil {
+		pubBase.Get("/sites/:id/articles", shortCache, deps.PublicGuru.ListArticles)
+		pubBase.Get("/sites/:id/articles/:rubric/:slug", deps.PublicGuru.ArticleByRubricSlug)
+		pubBase.Get("/sites/:id/articles/:article_id/responses", shortCache, deps.PublicGuru.ListArticleResponses)
+		pubBase.Get("/sites/:id/latest-articles", shortCache, deps.PublicGuru.LatestArticles)
+		pubBase.Get("/sites/:id/site-stats", shortCache, deps.PublicGuru.SiteStats)
+		pubBase.Get("/sites/:id/learning-materials", longCache, deps.PublicGuru.ListLearningMaterials)
+		pubBase.Get("/sites/:id/learning-materials/:slug", longCache, deps.PublicGuru.LearningMaterialBySlug)
+		// Portal directory (§5) — daftar guru + search + sort.
+		pubBase.Get("/guru", shortCache, deps.PublicGuru.TeacherDirectory)
+	}
+
+	// Guru — public promotion banners (site + portal aggregate).
+	if deps.Banners != nil {
+		pubBase.Get("/sites/:id/promotion-banners", shortCache, deps.Banners.PublicListBySite)
+		pubBase.Get("/portal/promotion-banners", shortCache, deps.Banners.PublicListForPortal)
+	}
+
+	// Guru — public submit tanggapan. Rate-limit per IP defence anti-spam.
+	if deps.Responses != nil {
+		app.Post("/public/sites/:id/articles/:article_id/responses",
+			pubCORS,
+			RateLimitIP(formSubmitPerWindow, formSubmitWindow),
+			deps.Responses.PublicSubmit,
+		)
+	}
+
 	// Template live preview — dipakai renderer route /template-preview/:slug
 	// + wizard client modal iframe. Hanya status='published' yang accessible.
 	pubBase.Get("/template-preview/:slug", longCache, deps.Public.TemplatePreview)

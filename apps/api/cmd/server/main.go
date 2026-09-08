@@ -13,9 +13,11 @@ import (
 
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/analytics"
+	"github.com/webbuilder/api/internal/articles"
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/banners"
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/cachepurge"
 	"github.com/webbuilder/api/internal/caddy"
@@ -28,6 +30,7 @@ import (
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
+	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/logging"
 	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/metrics"
@@ -39,6 +42,7 @@ import (
 	"github.com/webbuilder/api/internal/public"
 	"github.com/webbuilder/api/internal/registrar"
 	"github.com/webbuilder/api/internal/reseller"
+	"github.com/webbuilder/api/internal/responses"
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/seed"
 	"github.com/webbuilder/api/internal/sites"
@@ -130,6 +134,10 @@ func main() {
 	assetRepo := assets.NewRepo(pool)
 	productRepo := products.NewRepo(pool)
 	blogRepo := blog.NewRepo(pool)
+	articlesRepo := articles.NewRepo(pool)
+	learningRepo := learning.NewRepo(pool)
+	responsesRepo := responses.NewRepo(pool)
+	bannersRepo := banners.NewRepo(pool)
 	snippetRepo := snippets.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
 	purchaseRepo := domain_purchase.NewRepo(pool)
@@ -305,6 +313,7 @@ func main() {
 	// inject lewat SetTemplates (nil-safe).
 	publicHandler := public.NewHandler(siteRepo, pageRepo, productRepo, blogRepo)
 	publicHandler.SetTemplates(templateRepo)
+	publicGuruHandler := public.NewGuruHandler(pool, articlesRepo, learningRepo, responsesRepo)
 	if purchaseRepo != nil {
 		adminHandler.SetPurchases(purchaseRepo)
 	}
@@ -505,6 +514,11 @@ func main() {
 		WalletLocal:    walletLocalHandler,
 		Documents:      documentsHandler,
 		Promos:         promosHandler,
+		Articles:       articles.NewHandler(articlesRepo, siteRepo),
+		Learning:       learning.NewHandler(learningRepo, siteRepo),
+		Responses:      responses.NewHandler(responsesRepo, siteRepo, articlesRepo),
+		Banners:        banners.NewHandler(bannersRepo, siteRepo),
+		PublicGuru:     publicGuruHandler,
 		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,
 	}

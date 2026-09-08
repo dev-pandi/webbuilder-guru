@@ -18,6 +18,13 @@ import {
   GuruTagList,
   GuruTimeline,
 } from "@/components/GuruBlocks";
+import {
+  GuruArticleGridDynamic,
+  GuruForumThreadListDynamic,
+  GuruLatestGridDynamic,
+  GuruPromoCarouselDynamic,
+  GuruStatsBarDynamic,
+} from "@/components/GuruBlocksDynamic";
 
 // marked configured once at module scope — strips raw HTML so a malicious
 // markdown payload (`<script>`) can't leak through. Matches the blog renderer
@@ -189,6 +196,64 @@ export async function RenderBlocks({
       }
       if (b.type === "Form") {
         return withLayout(b, i, <FormBlockAsync block={b} />);
+      }
+      // Guru dynamic blocks — fetch data live dari API guru (Fase 4).
+      if (b.type === "GuruPromoCarouselDynamic") {
+        return withLayout(b, i, <GuruPromoCarouselDynamic siteId={siteId} />);
+      }
+      if (b.type === "GuruStatsBarDynamic") {
+        const pp = b.props ?? {};
+        return withLayout(
+          b,
+          i,
+          <GuruStatsBarDynamic
+            siteId={siteId}
+            eyebrow={pp.eyebrow as string | undefined}
+            title={pp.title as string | undefined}
+            subtitle={pp.subtitle as string | undefined}
+          />,
+        );
+      }
+      if (b.type === "GuruLatestGridDynamic") {
+        const pp = b.props ?? {};
+        return withLayout(
+          b,
+          i,
+          <GuruLatestGridDynamic
+            siteId={siteId}
+            eyebrow={pp.eyebrow as string | undefined}
+            title={pp.title as string | undefined}
+            subtitle={pp.subtitle as string | undefined}
+          />,
+        );
+      }
+      if (b.type === "GuruArticleGridDynamic") {
+        const pp = b.props ?? {};
+        return withLayout(
+          b,
+          i,
+          <GuruArticleGridDynamic
+            siteId={siteId}
+            rubric={String(pp.rubric ?? "ceritaku")}
+            sidebarTitle={pp.sidebarTitle as string | undefined}
+            sidebarBody={pp.sidebarBody as string | undefined}
+            sidebarTags={pp.sidebarTags as string[] | undefined}
+            sidebarLinks={pp.sidebarLinks as Array<{ label: string; href: string }> | undefined}
+          />,
+        );
+      }
+      if (b.type === "GuruForumThreadListDynamic") {
+        const pp = b.props ?? {};
+        return withLayout(
+          b,
+          i,
+          <GuruForumThreadListDynamic
+            siteId={siteId}
+            moderationNote={pp.moderationNote as { badge: string; title: string; body: string } | undefined}
+            participants={pp.participants as string[] | undefined}
+            sidebarLinks={pp.sidebarLinks as Array<{ label: string; href: string }> | undefined}
+          />,
+        );
       }
       return withLayout(b, i, <BlockView block={b} />);
     }),
