@@ -18,7 +18,10 @@ import { config } from "./config.mjs";
  * @param {string} role — 'client' | 'agent' | 'reseller' | 'admin'
  */
 export async function loginViaToken(context, role) {
-  const account = config.accounts[role];
+  // Alias: "guru" login pakai akun `client` — guru bukan role terpisah di
+  // sistem, hanya client dengan template guru-pandi-upi.
+  const accountKey = role === "guru" ? "client" : role;
+  const account = config.accounts[accountKey];
   if (!account) {
     throw new Error(`Unknown role: ${role}`);
   }
@@ -78,7 +81,8 @@ export async function loginViaToken(context, role) {
  * @param {string} role
  */
 export async function loginViaUI(page, role) {
-  const account = config.accounts[role];
+  const accountKey = role === "guru" ? "client" : role;
+  const account = config.accounts[accountKey];
   console.log(`  → Login ${role} via UI form...`);
 
   await page.goto(`${config.baseUrl}/login`);

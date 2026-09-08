@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Loader2,
   MessageSquare,
+  MessagesSquare,
   Megaphone,
   Newspaper,
   Package,
@@ -93,6 +94,9 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       icon: GraduationCap,
       items: [
         { href: `/sites/${sid}/tulisan`, label: "Tulisan", icon: Newspaper, guru: true },
+        // Forum Diskusi terpisah dari Tulisan (spec §16, §20) — rubric fixed,
+        // tanggapan wajib aktif, UX diskusi berbeda dari tulisan rubrik biasa.
+        { href: `/sites/${sid}/forum`, label: "Forum Diskusi", icon: MessagesSquare, guru: true },
         { href: `/sites/${sid}/tanggapan`, label: "Tanggapan", icon: MessageSquare, guru: true },
         { href: `/sites/${sid}/pembelajaran`, label: "Pembelajaran", icon: BookOpen, guru: true },
         { href: `/sites/${sid}/promosi`, label: "Ruang Promosi", icon: Megaphone, guru: true },

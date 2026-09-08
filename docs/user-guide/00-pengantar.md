@@ -120,13 +120,14 @@ Kalau ada masalah teknis yang tidak bisa diselesaikan sendiri, hubungi:
 - **Email**: (isi sesuai config admin di `/admin/settings`)
 - **Telegram/WhatsApp**: (isi sesuai policy operator)
 
-Panduan ini terdiri dari 4 bab per role — baca bab yang sesuai dengan peran
-Anda:
+Panduan ini terdiri dari 5 bab per role/fitur — baca bab yang sesuai dengan
+peran Anda:
 
 - **Bab 1**: Panduan Client (regular user)
 - **Bab 2**: Panduan Agent
 - **Bab 3**: Panduan Reseller
 - **Bab 4**: Panduan Admin
+- **Bab 5**: Panduan Guru — Rumah Digital Guru (khusus template guru-pandi-upi)
 
 ---
 

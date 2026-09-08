@@ -17,6 +17,7 @@ Regenerate setelah edit markdown: `./generate-pdf-chrome.sh`
 - **[20-panduan-agent.md](20-panduan-agent.md)** — Freelancer/staff reseller
 - **[30-panduan-reseller.md](30-panduan-reseller.md)** — Mitra bisnis (invite agent, set harga)
 - **[40-panduan-admin.md](40-panduan-admin.md)** — Operator platform
+- **[50-panduan-guru.md](50-panduan-guru.md)** — Rumah Digital Guru (Tulisan 6-rubrik, Forum, Tanggapan, Pembelajaran, Ruang Promosi, Profil Guru)
 
 ## Screenshot
 

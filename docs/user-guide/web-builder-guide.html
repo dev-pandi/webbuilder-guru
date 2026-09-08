@@ -250,7 +250,7 @@
 <div class="cover">
   <div class="badge">DOKUMENTASI PENGGUNA</div>
   <h1>Panduan Web Builder</h1>
-  <p class="subtitle">Untuk Admin · Reseller · Agent · Client</p>
+  <p class="subtitle">Untuk Admin · Reseller · Agent · Client · Guru</p>
   <div class="meta">
     Web Builder Platform · Versi 1.0
   </div>
@@ -392,13 +392,14 @@ tepat berdasarkan role akun.</p>
 <li><strong>Email</strong>: (isi sesuai config admin di <code>/admin/settings</code>)</li>
 <li><strong>Telegram/WhatsApp</strong>: (isi sesuai policy operator)</li>
 </ul>
-<p>Panduan ini terdiri dari 4 bab per role — baca bab yang sesuai dengan peran
-Anda:</p>
+<p>Panduan ini terdiri dari 5 bab per role/fitur — baca bab yang sesuai dengan
+peran Anda:</p>
 <ul>
 <li><strong>Bab 1</strong>: Panduan Client (regular user)</li>
 <li><strong>Bab 2</strong>: Panduan Agent</li>
 <li><strong>Bab 3</strong>: Panduan Reseller</li>
 <li><strong>Bab 4</strong>: Panduan Admin</li>
+<li><strong>Bab 5</strong>: Panduan Guru — Rumah Digital Guru (khusus template guru-pandi-upi)</li>
 </ul>
 <hr />
 <p><em>Panduan ini di-generate dari Web Builder v1 — kalau ada fitur baru yang
@@ -1745,6 +1746,360 @@ kalau email otomatis tidak jalan.</p>
 - Reject applications yang tidak masuk akal
 - Kalau signup rate abnormal, tambah rate limit di <code>/api/v1/auth/reseller/apply</code>
   (config di code, butuh redeploy)</p>
+<h2 id="420-banner-guru-moderasi-cross-site">4.20 Banner Guru (Moderasi Cross-Site)</h2>
+<p><img alt="Moderasi Banner Guru" src="screenshots/admin-banners.png" /></p>
+<p>Menu <strong>Banner Guru</strong> — <code>/admin/banners</code>. Spec §27 (Rumah Digital Guru).</p>
+<p>List semua banner promosi milik guru lintas-site. Setiap banner ada 3
+lapis status:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Kontrol</th>
+<th>Efek</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>teacher_active</code></td>
+<td>Guru</td>
+<td>Toggle di dashboard guru sendiri</td>
+</tr>
+<tr>
+<td><code>admin_enabled</code></td>
+<td>Admin (Anda)</td>
+<td>Override platform</td>
+</tr>
+<tr>
+<td>Effective</td>
+<td>Kombinasi + periode</td>
+<td>Yang benar-benar tampil publik</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Aksi Admin</strong>:
+- <strong>Nonaktifkan</strong> — buka dialog konfirmasi + isi alasan (max 500 char).
+  Efek langsung: banner hilang dari beranda website guru DAN dari Ruang
+  Promosi Portal. Alasan tampil merah di dashboard guru pemilik.
+- <strong>Izinkan Kembali</strong> — set <code>admin_enabled=true</code>, alasan di-clear.</p>
+<p><strong>Filter</strong>:
+- <strong>Semua</strong> — default
+- <strong>Diizinkan Admin</strong> — banner yang admin approve
+- <strong>Dinonaktifkan Admin</strong> — banner yang admin block</p>
+<p><strong>Audit trail</strong> — setiap toggle admin di-log ke <code>audit_log</code> (event
+<code>admin.banner_enabled</code> / <code>admin.banner_disabled</code>) dengan actor + IP +
+alasan. Bisa dilihat di menu Audit Log (§4.17).</p><h1 id="panduan-guru-rumah-digital-guru">Panduan Guru — Rumah Digital Guru</h1>
+<p>Bab ini panduan lengkap untuk <strong>Guru</strong> yang menggunakan template <strong>Rumah
+Digital Guru</strong> (Guru PANDI × UPI). Fitur ini opsional — semua situs client
+bisa pakai fitur di sini, tapi tampilannya paling sesuai kalau situs
+dibangun dari template guru.</p>
+<h2 id="apa-itu-rumah-digital-guru">Apa itu Rumah Digital Guru?</h2>
+<p>Program kolaborasi PANDI × UPI untuk memberi guru Indonesia <strong>website
+pribadi</strong> yang menjadi rumah digital pribadi — bukan sekadar profil di
+platform milik orang lain. Konsep:</p>
+<ul>
+<li><strong>Website .id</strong> — alamat pribadi yang mewakili diri guru</li>
+<li><strong>Enam Ruang Utama</strong> untuk berbagi pengetahuan (Ceritaku, Bacaanku,
+  Inspirasiku, Bangsaku, Peradaban, Forum Diskusi)</li>
+<li><strong>Pembelajaran</strong> — materi ajar terpisah</li>
+<li><strong>Ruang Promosi</strong> — banner program pelatihan / literasi / komunitas</li>
+<li><strong>Direktori Portal</strong> — kartu guru tampil di portal publik <code>/guru</code></li>
+</ul>
+<p>Referensi lengkap spesifikasi produk: <a href="../../Spesifikasi-Developer-Portal-dan-Website-Guru-Final.md">Spesifikasi Developer Portal &amp;
+Website Guru Final</a>.</p>
+<h2 id="cara-memulai">Cara Memulai</h2>
+<h3 id="1-buat-website-dengan-template-guru">1. Buat Website dengan Template Guru</h3>
+<ol>
+<li>Login sebagai Client</li>
+<li>Klik <strong>"Beli Domain + Buat Situs"</strong> di dashboard</li>
+<li>Cari + beli domain (<code>.id</code> disarankan untuk guru Indonesia)</li>
+<li>Setelah domain aktif, pilih template <strong>Guru PANDI × UPI</strong></li>
+<li>Website otomatis ter-provisioning dengan:</li>
+<li>9 halaman (Beranda, Profil, 5 rubrik, Forum Diskusi, Pembelajaran)</li>
+<li><strong>8 sample tulisan</strong> — biar website tidak kosong sejak awal</li>
+<li><strong>4 sample materi pembelajaran</strong></li>
+<li><strong>3 sample banner promosi</strong></li>
+</ol>
+<p>Sample data ini boleh Anda hapus / edit — anggap sebagai starter.</p>
+<h3 id="2-isi-profil-guru">2. Isi Profil Guru</h3>
+<p>Sebelum menulis, isi profil terlebih dahulu supaya kartu guru di direktori
+portal terlihat lengkap. Buka <strong>Pengaturan → Profil Guru</strong>:</p>
+<ul>
+<li><strong>Mata Pelajaran / Bidang</strong> — muncul di bawah nama Anda di kartu</li>
+<li><strong>Foto Profil</strong> — URL gambar (upload dulu di menu Aset, salin URL)</li>
+<li><strong>Hero Statement</strong> — kalimat 1-2 baris di beranda website</li>
+<li><strong>Quote Pribadi</strong> — filosofi mengajar / motto</li>
+<li><strong>Bio Singkat</strong> — max 280 karakter, tampil di kartu preview</li>
+<li><strong>Bio Lengkap</strong> — max 4000 karakter, tampil di halaman Profil</li>
+<li><strong>Tautan Sosial</strong> — twitter, instagram, youtube, dll. (max 10)</li>
+</ul>
+<blockquote>
+<p>⚠️ Foto profil belum bisa upload dari halaman ini — upload dulu via menu
+<strong>Aset</strong> di dashboard situs, lalu salin URL-nya.</p>
+</blockquote>
+<p><img alt="Form Profil Guru — 4 section: Identitas, Hero &amp; Quote, Biografi, Tautan Sosial" src="screenshots/guru-profile-settings.png" /></p>
+<h2 id="menu-guru-di-dashboard-situs">Menu Guru di Dashboard Situs</h2>
+<p>Buka situs guru di dashboard, lalu perhatikan sidebar. Di grup <strong>Guru
+▾</strong> (dropdown ungu, dengan pill "GURU") ada 5 menu:</p>
+<table>
+<thead>
+<tr>
+<th>Menu</th>
+<th>Fungsi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tulisan</strong></td>
+<td>6 rubrik: Ceritaku, Bacaanku, Inspirasiku, Bangsaku, Peradaban, Forum Diskusi</td>
+</tr>
+<tr>
+<td><strong>Forum Diskusi</strong></td>
+<td>Sub-menu khusus untuk topik diskusi (tanggapan wajib aktif)</td>
+</tr>
+<tr>
+<td><strong>Tanggapan</strong></td>
+<td>Moderasi komentar pengunjung (approve/reject/hapus)</td>
+</tr>
+<tr>
+<td><strong>Pembelajaran</strong></td>
+<td>Materi belajar terpisah (tanpa tanggapan, tanpa views)</td>
+</tr>
+<tr>
+<td><strong>Ruang Promosi</strong></td>
+<td>Banner promo di beranda website + agregat portal</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Sidebar dashboard situs dengan dropdown Guru terbuka menampilkan 5 menu (pill ungu 'GURU')" src="screenshots/guru-sidebar-dropdown.png" /></p>
+<h2 id="kelola-tulisan-6-rubrik">Kelola Tulisan (6 Rubrik)</h2>
+<h3 id="rubrik-yang-tersedia">Rubrik yang tersedia</h3>
+<ol>
+<li><strong>Ceritaku</strong> — cerita pengalaman mengajar sehari-hari</li>
+<li><strong>Bacaanku</strong> — ulasan buku yang Anda baca</li>
+<li><strong>Inspirasiku</strong> — praktik baik, ide, orang yang menginspirasi</li>
+<li><strong>Bangsaku</strong> — kewargaan, keberagaman, bahasa Indonesia</li>
+<li><strong>Peradaban</strong> — sejarah, budaya, warisan Nusantara</li>
+<li><strong>Forum Diskusi</strong> — topik untuk diskusi terbuka</li>
+</ol>
+<h3 id="buat-tulisan-baru">Buat tulisan baru</h3>
+<ol>
+<li>Menu <strong>Guru → Tulisan</strong> → klik <strong>"Tulisan Baru"</strong></li>
+<li>Pilih <strong>rubrik</strong> (locked setelah simpan pertama — tidak bisa pindah rubrik)</li>
+<li>Isi:</li>
+<li><strong>Judul</strong> (wajib)</li>
+<li><strong>URL slug</strong> — auto-generate dari judul, boleh edit</li>
+<li><strong>Cover image</strong> (opsional)</li>
+<li><strong>Excerpt</strong> — ringkasan untuk kartu list</li>
+<li><strong>Isi tulisan</strong> — pakai rich editor (bold/italic/heading/list/link)</li>
+<li><strong>Tags</strong> — pisah dengan koma</li>
+<li><strong>Reading time</strong> — estimasi dalam menit (0 = disembunyikan)</li>
+<li><strong>Toggle "Aktifkan tanggapan"</strong> — spec §15</li>
+<li><strong>ON</strong>: pengunjung bisa kirim komentar (masuk moderasi)</li>
+<li><strong>OFF</strong>: form + jumlah tanggapan disembunyikan dari publik</li>
+<li><strong>Forum Diskusi</strong>: toggle di-force ON, tidak bisa di-nonaktifkan (spec §16)</li>
+<li>Klik <strong>"Simpan Draft"</strong> atau <strong>"Publikasikan"</strong></li>
+</ol>
+<p><img alt="Halaman list Tulisan — tabs 6 rubrik + tabel artikel + tombol Tulisan Baru" src="screenshots/guru-tulisan-list.png" /></p>
+<p><img alt="Form editor Tulisan — rubric selector, RichEditor, toggle Aktifkan Tanggapan di sidebar" src="screenshots/guru-tulisan-form.png" /></p>
+<h3 id="aturan-slug">Aturan slug</h3>
+<p>Slug harus unik dalam satu rubrik. Contoh:
+- <code>/ceritaku/hari-pertama-ngajar</code> ✅
+- <code>/bacaanku/hari-pertama-ngajar</code> ✅ (rubrik beda)
+- 2× <code>/ceritaku/hari-pertama-ngajar</code> ❌ (duplikat, ditolak backend)</p>
+<h2 id="forum-diskusi-menu-terpisah">Forum Diskusi (Menu Terpisah)</h2>
+<p>Sub-menu <strong>Forum Diskusi</strong> adalah alias untuk rubric <code>forum-diskusi</code> dengan
+UX berbeda dari tulisan biasa:</p>
+<ul>
+<li>CTA berbunyi <strong>"Topik Baru"</strong> (bukan "Tulisan Baru")</li>
+<li>Tanggapan <strong>wajib aktif</strong>, toggle disabled di form</li>
+<li>Info banner mengingatkan aturan spec §16</li>
+<li>Cocok untuk memulai percakapan dengan pembaca</li>
+</ul>
+<p>Topik forum akan tampil di halaman <code>/forum-diskusi</code> website Anda dan di
+block Forum di beranda template.</p>
+<p><img alt="Halaman Forum Diskusi — tabel topik + tombol Topik Baru + info banner 'tanggapan wajib aktif'" src="screenshots/guru-forum-list.png" /></p>
+<h2 id="moderasi-tanggapan">Moderasi Tanggapan</h2>
+<p>Semua tanggapan baru masuk sebagai <strong>Pending</strong> (spec §18). Hanya tanggapan
+yang <strong>Approved</strong> yang tampil publik dan dihitung ke total.</p>
+<h3 id="alur-moderasi">Alur moderasi</h3>
+<ol>
+<li>Menu <strong>Guru → Tanggapan</strong></li>
+<li>Tab filter: <strong>Semua / Pending / Approved / Rejected</strong></li>
+<li>Per tanggapan Anda bisa:</li>
+<li><strong>Setujui</strong> — status → approved, tampil publik</li>
+<li><strong>Tolak</strong> — status → rejected, tidak tampil (bisa di-approve lagi nanti)</li>
+<li><strong>Hapus</strong> — permanen (row dihapus dari DB)</li>
+</ol>
+<blockquote>
+<p>💡 <strong>Tip</strong>: cek dashboard ringkasan setiap hari — stat card "Menunggu
+Moderasi" akan warna kuning kalau ada backlog.</p>
+</blockquote>
+<p><img alt="Halaman Moderasi Tanggapan — tab filter Semua/Pending/Approved/Rejected + card feed dengan tombol Setujui/Tolak/Hapus" src="screenshots/guru-tanggapan-moderasi.png" /></p>
+<h3 id="form-pengunjung">Form pengunjung</h3>
+<p>Pengunjung mengisi 3 field:
+- <strong>Nama</strong> (wajib, max 60 char)
+- <strong>Peran</strong>: Guru / Siswa / Orang Tua / Pembaca
+- <strong>Isi tanggapan</strong> (wajib, max 2000 char)</p>
+<p>Email di-collect internal untuk anti-spam, tapi <strong>tidak</strong> ditampilkan di publik.</p>
+<h3 id="anti-spam">Anti-spam</h3>
+<p>Form dilengkapi honeypot — field tersembunyi yang bot cenderung isi.
+Kalau ke-fill, submit di-drop tanpa notice ke bot (spec §40). Rate limit
+per IP juga aktif untuk cegah flood.</p>
+<h2 id="ruang-promosi-banner">Ruang Promosi (Banner)</h2>
+<p>Banner promo tampil di <strong>beranda website Anda</strong> (langsung di bawah hero)
+dan bisa juga tampil di <strong>carousel portal publik</strong> kalau Admin platform
+mengizinkan.</p>
+<h3 id="buat-banner">Buat banner</h3>
+<ol>
+<li>Menu <strong>Guru → Ruang Promosi</strong> → klik <strong>"Banner Baru"</strong></li>
+<li>Isi:</li>
+<li><strong>Judul Internal</strong> — untuk memudahkan Anda kelola (tidak tampil publik)</li>
+<li><strong>Gambar</strong> — rasio <strong>2:1</strong> (contoh 1200×600 pixel)</li>
+<li><strong>URL Tujuan</strong> — http/https (external OK)</li>
+<li><strong>Alt Text</strong> — deskripsi gambar untuk aksesibilitas (wajib)</li>
+<li><strong>Urutan</strong> — angka kecil tampil dulu</li>
+<li><strong>Aktif</strong> — checkbox teacher_active</li>
+<li><strong>Periode</strong> — start_at / end_at opsional (kosong = selalu tampil)</li>
+<li>Simpan</li>
+</ol>
+<h3 id="status-banner">Status banner</h3>
+<p>Setiap banner punya 3 lapis status:</p>
+<table>
+<thead>
+<tr>
+<th>Status Efektif</th>
+<th>Arti</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Aktif</strong></td>
+<td>Tampil di beranda + portal</td>
+</tr>
+<tr>
+<td><strong>Nonaktif oleh Guru</strong></td>
+<td>Anda uncheck "Aktif"</td>
+</tr>
+<tr>
+<td><strong>Dinonaktifkan oleh Admin</strong></td>
+<td>Admin platform override — Anda tidak bisa force tampil</td>
+</tr>
+<tr>
+<td><strong>Belum Mulai</strong></td>
+<td><code>start_at</code> di masa depan</td>
+</tr>
+<tr>
+<td><strong>Berakhir</strong></td>
+<td><code>end_at</code> sudah lewat</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>⚠️ Kalau banner Anda <strong>Dinonaktifkan oleh Admin</strong>, alasan akan tampil
+merah di kartu. Baca alasannya sebelum edit/upload ulang.</p>
+</blockquote>
+<p><img alt="Halaman Ruang Promosi — grid kartu banner 2:1 dengan status badge + toggle Aktif per banner" src="screenshots/guru-promosi-list.png" /></p>
+<h2 id="pembelajaran-materi">Pembelajaran (Materi)</h2>
+<p>Materi pembelajaran adalah tipe konten <strong>terpisah</strong> dari tulisan:</p>
+<ul>
+<li><strong>Tidak ada tanggapan</strong> — pengunjung tidak bisa komentar</li>
+<li><strong>Tidak ada views</strong> — tidak masuk statistik total views situs</li>
+<li>Fokus pada <strong>isi materi</strong> + <strong>ringkasan</strong></li>
+</ul>
+<h3 id="buat-materi">Buat materi</h3>
+<ol>
+<li>Menu <strong>Guru → Pembelajaran</strong> → <strong>"Materi Baru"</strong></li>
+<li>Isi:</li>
+<li>Judul, slug, cover image</li>
+<li><strong>Deskripsi Singkat</strong> — ringkasan untuk kartu list</li>
+<li><strong>Isi Materi</strong> — full content</li>
+<li><strong>Ringkasan Materi</strong> — box khusus di bawah body (opsional)</li>
+<li><strong>Kata Kunci</strong> — tags</li>
+<li>Publikasikan</li>
+</ol>
+<p>Materi tampil di halaman <code>/pembelajaran/{slug}</code> website Anda.</p>
+<p><img alt="Halaman list Pembelajaran — tabel materi (tanpa kolom views/tanggapan sesuai spec §19)" src="screenshots/guru-pembelajaran-list.png" /></p>
+<h2 id="dashboard-ringkasan">Dashboard Ringkasan</h2>
+<p>Halaman utama situs (klik nama situs di dashboard) menampilkan <strong>6 stat
+card</strong> (spec §21):</p>
+<ul>
+<li><strong>Total Views</strong> — semua artikel + forum</li>
+<li><strong>Tulisan Published</strong> — jumlah artikel yang published (semua rubrik)</li>
+<li><strong>Tanggapan Approved</strong> — yang tampil publik</li>
+<li><strong>Menunggu Moderasi</strong> — tanggapan pending (warna kuning kalau &gt; 0)</li>
+<li><strong>Materi Pembelajaran</strong> — jumlah materi published</li>
+<li><strong>Banner Aktif</strong> — banner yang effective_status = "active"</li>
+</ul>
+<p>Di bawahnya ada 2 list:
+- <strong>Tulisan Terbaru</strong> — 5 artikel published terakhir
+- <strong>Tanggapan Terbaru</strong> — 5 tanggapan terbaru (mix status)</p>
+<p>Klik card / row untuk drill-down ke menu yang relevan.</p>
+<p><img alt="Dashboard Ringkasan situs guru — 6 stat card + list Tulisan Terbaru + Tanggapan Terbaru" src="screenshots/guru-dashboard-ringkasan.png" /></p>
+<h2 id="portal-direktori-guru-guru">Portal Direktori Guru (<code>/guru</code>)</h2>
+<p>Website Anda otomatis muncul di <strong>direktori guru publik</strong> di URL
+<code>https://&lt;domain-platform&gt;/guru</code> (spec §5) — asal:</p>
+<ul>
+<li>Status situs Anda <code>published</code></li>
+<li>Situs punya minimal 1 domain aktif ter-attach</li>
+</ul>
+<p>Kartu Anda menampilkan:
+- Nama guru + mata pelajaran (dari Profil Guru)
+- Foto profil (kalau ada) atau initial
+- Domain website
+- Total views semua tulisan
+- Badge "Baru" kalau situs &lt; 14 hari
+- Tombol <strong>"Kunjungi Website"</strong></p>
+<p>Sort default: <strong>Terbaru</strong>. Pengunjung bisa switch ke <strong>Terpopuler</strong> (by
+total views).</p>
+<p><img alt="Portal Direktori Guru publik (/guru) — grid kartu 3-kolom + toolbar search &amp; sort" src="screenshots/guru-portal-directory.png" /></p>
+<h2 id="sitemap-otomatis">Sitemap Otomatis</h2>
+<p>Sitemap <code>sitemap.xml</code> di setiap website guru sudah otomatis include:
+- Halaman utama + sub-page
+- Semua artikel <code>/{rubric}/{slug}</code> (per 6 rubric, max 100/rubric)
+- Semua materi <code>/pembelajaran/{slug}</code> (max 200)
+- Blog post + produk (kalau ada)</p>
+<p>Ini penting untuk <strong>SEO</strong> — Google akan tahu semua konten Anda.</p>
+<h2 id="tips-best-practice">Tips &amp; Best Practice</h2>
+<h3 id="untuk-guru-baru">Untuk Guru Baru</h3>
+<ol>
+<li><strong>Isi Profil Guru dulu</strong> sebelum publish tulisan pertama — supaya
+   kartu direktori tidak kosong</li>
+<li><strong>Ganti sample data</strong> — 8 sample tulisan + 4 materi yang di-generate
+   template hanya starter. Edit atau hapus supaya website terasa milik Anda</li>
+<li><strong>Mulai dari Ceritaku</strong> — rubric paling ringan, cocok latihan menulis</li>
+<li><strong>Aktifkan tanggapan</strong> di 1-2 tulisan pertama — biar pembaca terlibat</li>
+</ol>
+<h3 id="untuk-guru-aktif">Untuk Guru Aktif</h3>
+<ol>
+<li><strong>Cek dashboard tiap pagi</strong> — moderasi backlog tanggapan</li>
+<li><strong>Update banner</strong> sesuai program yang sedang berjalan</li>
+<li><strong>Publikasi konsisten</strong> — algoritma sort "Terbaru" di direktori favor
+   situs yang aktif</li>
+<li><strong>Isi tag</strong> di setiap tulisan — bantu pembaca menjelajah topik</li>
+</ol>
+<h2 id="faq">FAQ</h2>
+<p><strong>Q: Apa bedanya Tulisan dan Blog?</strong>
+A: Tulisan (menu Guru) khusus 6 rubrik guru dengan moderasi tanggapan
+per-tulisan. Blog (menu Konten) generic untuk artikel biasa tanpa rubric.
+Untuk template guru, gunakan <strong>Tulisan</strong>.</p>
+<p><strong>Q: Bisa disable tanggapan di Forum Diskusi?</strong>
+A: Tidak. Spec §16 forum wajib punya tanggapan aktif — kalau tidak, itu
+bukan forum. Kalau tidak butuh diskusi, pakai rubric lain.</p>
+<p><strong>Q: Banner saya di-nonaktifkan Admin, apa yang harus dilakukan?</strong>
+A: Baca alasan yang tampil di kartu banner (merah). Perbaiki sesuai
+alasan (misal ganti gambar yang tidak sesuai pedoman), lalu kontak admin
+platform untuk re-review.</p>
+<p><strong>Q: Views tidak bertambah walau tulisan sudah publish?</strong>
+A: View counter naik saat pengunjung buka halaman detail. Ada dedupe
+per-IP 60 menit — refresh cepat dari IP yang sama hanya dihitung 1x.
+Views merefleksikan pembaca unik, bukan click count.</p>
+<p><strong>Q: Sample data template bisa di-restore setelah dihapus?</strong>
+A: Tidak otomatis. Data sample di-seed sekali saat site pertama dibuat.
+Anda perlu buat manual kalau ingin balik.</p>
+<p><strong>Q: Kolaborator bisa moderasi tanggapan saya?</strong>
+A: Ya. Semua site member (owner + editor) bisa akses menu Tanggapan.
+Owner-only checks hanya untuk hapus site + transfer domain.</p>
 <footer style="margin-top: 4rem; padding-top: 2rem; border-top: 1px solid #e5e7eb; font-size: 0.85em; color: #9ca3af; text-align: center;">
   <p>Web Builder — Panduan Pengguna · Generated dari Markdown</p>
   <p>Untuk update terbaru, cek folder <code>docs/user-guide/</code> di repository</p>
