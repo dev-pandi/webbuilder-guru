@@ -144,17 +144,14 @@ export default function Home() {
             <Link href="#tentang" className="text-sm font-bold text-white/85 hover:text-white">
               Tentang
             </Link>
-            <Link href="#isi-website" className="text-sm font-bold text-white/85 hover:text-white">
-              Isi Website
-            </Link>
             <Link href="#manfaat" className="text-sm font-bold text-white/85 hover:text-white">
               Manfaat
             </Link>
-            <Link href="#guru-bergabung" className="text-sm font-bold text-white/85 hover:text-white">
-              Guru
+            <Link href="#isi-website" className="text-sm font-bold text-white/85 hover:text-white">
+              Isi Website
             </Link>
             <Link href="#mulai" className="text-sm font-bold text-white/85 hover:text-white">
-              Mulai
+              Cara Memulai
             </Link>
           </nav>
           <div className="flex items-center gap-3">
@@ -218,7 +215,9 @@ export default function Home() {
               <style> untuk pseudo-element (::before ::after) yang tidak bisa
               di Tailwind. Scoped via .rdg-* prefix (Rumah Digital Guru). */}
           <div className="rdg-hero-visual relative min-h-[520px] lg:min-h-[570px]">
-            <style>{`
+            <style
+              dangerouslySetInnerHTML={{
+                __html: `
               .rdg-hero-visual .rdg-orbit{position:absolute;inset:18px -16px 0 8px;border:1px dashed rgba(40,95,158,.22);border-radius:49% 51% 44% 56%/45% 44% 56% 55%;transform:rotate(-6deg)}
               .rdg-hero-visual .rdg-blob{position:absolute;width:410px;height:410px;right:5px;top:53px;border-radius:42% 58% 56% 44%/53% 41% 59% 47%;background:linear-gradient(145deg,#edf4fb 0%,#fbeef0 100%);transform:rotate(7deg)}
               .rdg-hero-visual .rdg-illustration{position:absolute;z-index:4;right:18px;top:28px;width:min(430px,78%);filter:drop-shadow(0 20px 42px rgba(20,31,53,.18));animation:rdg-float 6s ease-in-out infinite}
@@ -226,7 +225,7 @@ export default function Home() {
               @keyframes rdg-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
               .rdg-hero-visual .rdg-browser{position:absolute;left:-30px;bottom:10px;z-index:5;width:390px;overflow:hidden;border:1px solid rgba(222,227,235,.94);border-radius:20px;background:rgba(255,255,255,.96);box-shadow:0 30px 64px rgba(22,34,56,.17);transform:rotate(-2deg)}
               .rdg-chip{position:absolute;z-index:8;display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid rgba(225,229,236,.95);border-radius:999px;background:rgba(255,255,255,.92);box-shadow:0 10px 30px rgba(24,34,53,.06);color:#46566b;font-size:.75rem;font-weight:800}
-              .rdg-chip::before{content:"";width:7px;height:7px;border-radius:50%;background:#285f9e}
+              .rdg-chip::before{content:'';width:7px;height:7px;border-radius:50%;background:#285f9e}
               .rdg-chip-1{top:38px;left:4px}
               .rdg-chip-2{top:105px;left:-10px}
               .rdg-chip-3{top:28px;right:8px}
@@ -239,7 +238,9 @@ export default function Home() {
               @media(max-width:640px){
                 .rdg-hero-visual{transform:scale(.75)}
               }
-            `}</style>
+            `,
+              }}
+            />
             <div className="rdg-orbit" aria-hidden />
             <div className="rdg-blob" aria-hidden />
             {/* Actual teacher illustration image — floating animation subtle */}
@@ -479,14 +480,16 @@ export default function Home() {
 
       {/* Knowledge Flow — dark navy section, journey-shell + ai-panel side-by-side */}
       <section id="knowledge" className="rdg-knowledge relative overflow-hidden text-white">
-        <style>{`
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
           .rdg-knowledge{background:#192b43}
-          .rdg-knowledge::before{content:"";position:absolute;width:460px;height:460px;border-radius:50%;right:-160px;top:-160px;background:rgba(60,120,182,.19);filter:blur(4px);pointer-events:none}
+          .rdg-knowledge::before{content:'';position:absolute;width:460px;height:460px;border-radius:50%;right:-160px;top:-160px;background:rgba(60,120,182,.19);filter:blur(4px);pointer-events:none}
           .rdg-knowledge .rdg-eyebrow{color:#9cc4eb}
           .rdg-knowledge .rdg-lead{color:#c2cfdd}
           .rdg-journey-shell{position:relative;overflow:hidden;padding:30px 26px 26px;border:1px solid rgba(255,255,255,.10);border-radius:26px;background:radial-gradient(circle at 78% 15%,rgba(68,125,184,.13),transparent 28%),rgba(255,255,255,.035)}
           .rdg-journey{position:relative;display:grid;grid-template-columns:.72fr .9fr 1.28fr 1fr 1.35fr;gap:18px;align-items:start}
-          .rdg-journey::before{content:"";position:absolute;left:7%;right:7%;top:34px;height:2px;background:linear-gradient(90deg,rgba(143,190,233,.28),rgba(143,190,233,.88) 55%,rgba(216,63,69,.82));box-shadow:0 0 18px rgba(143,190,233,.18)}
+          .rdg-journey::before{content:'';position:absolute;left:7%;right:7%;top:34px;height:2px;background:linear-gradient(90deg,rgba(143,190,233,.28),rgba(143,190,233,.88) 55%,rgba(216,63,69,.82));box-shadow:0 0 18px rgba(143,190,233,.18)}
           .rdg-node{position:relative;z-index:1;min-width:0;text-align:center;color:#fff}
           .rdg-node-icon{width:68px;height:68px;display:grid;place-items:center;margin:0 auto 17px;border:1px solid rgba(156,196,235,.24);border-radius:22px;background:linear-gradient(145deg,rgba(89,141,196,.24),rgba(255,255,255,.07));color:#a9d0f4;box-shadow:0 14px 30px rgba(3,12,25,.16),inset 0 1px 0 rgba(255,255,255,.07)}
           .rdg-node-icon svg{width:30px;height:30px}
@@ -501,7 +504,7 @@ export default function Home() {
           .rdg-node.rdg-outcome p{color:#d7c4ca}
           .rdg-ai-panel{padding:28px;border:1px solid rgba(255,255,255,.12);border-radius:26px;background:linear-gradient(160deg,rgba(38,72,120,.35),rgba(24,42,72,.6));box-shadow:0 20px 44px rgba(4,12,26,.22)}
           .rdg-status-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:999px;background:rgba(215,63,69,.14);border:1px solid rgba(238,104,109,.3);color:#ffb6b9;font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px}
-          .rdg-status-badge::before{content:"";width:7px;height:7px;border-radius:50%;background:#ef777c;box-shadow:0 0 0 0 rgba(239,119,124,.6);animation:rdg-pulse 2s ease-out infinite}
+          .rdg-status-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:#ef777c;box-shadow:0 0 0 0 rgba(239,119,124,.6);animation:rdg-pulse 2s ease-out infinite}
           @keyframes rdg-pulse{0%{box-shadow:0 0 0 0 rgba(239,119,124,.6)}70%{box-shadow:0 0 0 8px rgba(239,119,124,0)}100%{box-shadow:0 0 0 0 rgba(239,119,124,0)}}
           .rdg-ai-panel h3{margin:0 0 13px;color:#fff;font-size:1.65rem;letter-spacing:-.02em;line-height:1.15;font-weight:800}
           .rdg-ai-panel p{margin:0;color:#cbd7e3;font-size:.93rem;line-height:1.7}
@@ -511,7 +514,9 @@ export default function Home() {
             .rdg-journey::before{display:none}
             .rdg-node.rdg-outcome{margin-top:0}
           }
-        `}</style>
+        `,
+          }}
+        />
         <div className="relative mx-auto max-w-6xl px-6 py-24">
           <div className="mb-10 max-w-3xl">
             <div className="rdg-eyebrow mb-4 inline-flex items-center gap-2.5 text-xs font-extrabold uppercase tracking-[.13em]">
