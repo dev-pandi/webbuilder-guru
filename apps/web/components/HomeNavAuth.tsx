@@ -49,11 +49,11 @@ export function HomeNavAuth() {
   return (
     <>
       <Button variant="ghost" asChild>
-        <Link href="/login">Masuk</Link>
+        <Link href="/register">Daftar Gratis</Link>
       </Button>
       <Button asChild className="gap-1.5 shadow-sm">
-        <Link href="/register">
-          Daftar Gratis
+        <Link href="/login">
+          Masuk
           <ArrowRight className="size-3.5" />
         </Link>
       </Button>
