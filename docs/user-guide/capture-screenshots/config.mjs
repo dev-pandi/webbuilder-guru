@@ -370,7 +370,10 @@ export const captures = {
     },
     {
       name: "guru-profile-settings",
-      path: "/settings/profile-guru",
+      // Profil guru dipindah dari /settings/profile-guru ke /sites/[id]/profil
+      // (per-site context sesuai spec §13, §25).
+      path: (ids) => `/sites/${ids.siteId}/profil`,
+      requiresSiteId: true,
       waitFor: 'main, h1',
     },
     {

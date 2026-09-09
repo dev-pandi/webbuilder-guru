@@ -313,17 +313,20 @@ test.describe("Guru — Pembelajaran (spec §19, §23)", () => {
   });
 });
 
-test.describe("Guru — Settings Profil Guru (spec §13, §25)", () => {
+test.describe("Guru — Profil Guru per-site (spec §13, §25)", () => {
   test.beforeEach(async ({ context }) => {
     await loginAs(context, "client");
   });
 
-  test("Halaman /settings/profile-guru render dengan 4 section (Identitas/Hero/Bio/Sosial)", async ({ page }, testInfo) => {
+  test("Halaman /sites/[id]/profil render dengan 4 section (Identitas/Hero/Bio/Sosial)", async ({ page }, testInfo) => {
     req(
       testInfo,
-      "GET /settings/profile-guru → 4 CardTitle: Identitas, Hero & Quote, Biografi, Tautan Sosial",
+      "GET /sites/[id]/profil → 4 CardTitle: Identitas, Hero & Quote, Biografi, Tautan Sosial",
     );
-    const res = await page.goto("/settings/profile-guru");
+    const siteId = await getFirstSiteId(page);
+    test.skip(!siteId, "User client belum punya site");
+
+    const res = await page.goto(`/sites/${siteId}/profil`);
     expect(res?.status()).toBeLessThan(400);
     await expect(page.locator("main")).toBeVisible();
 
@@ -341,15 +344,16 @@ test.describe("Guru — Settings Profil Guru (spec §13, §25)", () => {
     act(testInfo, `Profil Guru render dengan ${sectionsFound}/4 section`);
   });
 
-  test("Sidebar Settings punya menu Profil Guru", async ({ page }, testInfo) => {
+  test("Sidebar Settings tidak lagi punya menu Profil Guru (dipindah ke sites)", async ({ page }, testInfo) => {
     req(
       testInfo,
-      "GET /settings/profile → sidebar nav berisi link 'Profil Guru' (tab baru)",
+      "GET /settings/profile → sidebar nav TIDAK punya link 'Profil Guru' (sudah dipindah ke /sites/[id]/profil)",
     );
     await page.goto("/settings/profile");
     await expect(page.locator("main")).toBeVisible();
-    await expect(page.getByRole("link", { name: /Profil Guru/i }).first()).toBeVisible();
-    act(testInfo, "Menu 'Profil Guru' ada di sidebar settings");
+    const count = await page.getByRole("link", { name: /Profil Guru/i }).count();
+    expect(count).toBe(0);
+    act(testInfo, "Menu 'Profil Guru' sudah tidak ada di sidebar settings (moved to per-site)");
   });
 });
 
@@ -358,10 +362,10 @@ test.describe("Guru — Sidebar Navigation (spec §20)", () => {
     await loginAs(context, "client");
   });
 
-  test("Sidebar site dashboard punya dropdown Guru dengan 5 item", async ({ page }, testInfo) => {
+  test("Sidebar site dashboard punya dropdown Guru dengan 6 item", async ({ page }, testInfo) => {
     req(
       testInfo,
-      "GET /sites/[id]/editor → sidebar dropdown Guru buka dan berisi: Tulisan, Forum Diskusi, Tanggapan, Pembelajaran, Ruang Promosi",
+      "GET /sites/[id]/editor → sidebar dropdown Guru buka dan berisi: Profil, Tulisan, Forum Diskusi, Tanggapan, Pembelajaran, Ruang Promosi",
     );
     const siteId = await getFirstSiteId(page);
     test.skip(!siteId, "User client belum punya site");
@@ -373,15 +377,15 @@ test.describe("Guru — Sidebar Navigation (spec §20)", () => {
     const trigger = page.getByRole("button", { name: /Guru/i }).first();
     await trigger.click();
 
-    // Item dropdown muncul.
-    const items = ["Tulisan", "Forum Diskusi", "Tanggapan", "Pembelajaran", "Ruang Promosi"];
+    // Item dropdown muncul (Profil ditambahkan sebagai item pertama).
+    const items = ["Profil", "Tulisan", "Forum Diskusi", "Tanggapan", "Pembelajaran", "Ruang Promosi"];
     let found = 0;
     for (const label of items) {
       const count = await page.getByRole("menuitem").filter({ hasText: label }).count();
       if (count > 0) found++;
     }
-    expect(found).toBeGreaterThanOrEqual(4);
+    expect(found).toBeGreaterThanOrEqual(5);
 
-    act(testInfo, `Dropdown Guru terbuka, ${found}/5 item terlihat`);
+    act(testInfo, `Dropdown Guru terbuka, ${found}/6 item terlihat`);
   });
 });

@@ -53,7 +53,8 @@ export type BlockCategory =
   | "sosial"
   | "media"
   | "list"
-  | "dynamic";
+  | "dynamic"
+  | "guru";
 
 export const CATEGORY_LABELS: Record<BlockCategory, string> = {
   pro: "Pro ✨",
@@ -66,6 +67,7 @@ export const CATEGORY_LABELS: Record<BlockCategory, string> = {
   media: "Media",
   list: "List",
   dynamic: "Dynamic (DB)",
+  guru: "Rumah Digital Guru 🎓",
 };
 
 export type BlockSchema = {
@@ -1699,6 +1701,245 @@ export const blockSchemas: BlockSchema[] = [
       },
     ],
   },
+
+  // ==================== Rumah Digital Guru ====================
+  // Block ini di-render lengkap di renderer server-side. Di editor schema
+  // di sini hanya cover field yang benar-benar bisa di-edit user (text
+  // copy). Untuk yang butuh data live (articles/materials/banners/stats),
+  // pakai variant Dynamic — data di-fetch runtime, tidak perlu diisi user.
+  {
+    type: "GuruStyles",
+    label: "Guru Styles (CSS scoped)",
+    category: "guru",
+    emoji: "🎨",
+    description: "CSS `.guru-*` untuk semua block Guru (wajib ada 1× di halaman)",
+    defaults: {},
+    fields: [],
+  },
+  {
+    type: "GuruNavbar",
+    label: "Guru Navbar",
+    category: "guru",
+    emoji: "🎓",
+    description: "Header navigasi 9 menu (Beranda/6 rubrik/Forum/Pembelajaran)",
+    defaults: { brand: "Nama Guru" },
+    fields: [
+      { name: "brand", label: "Nama Brand", type: "string" },
+      { name: "activeSlug", label: "Active Slug (opsional)", type: "string" },
+    ],
+  },
+  {
+    type: "GuruHero",
+    label: "Guru Hero",
+    category: "guru",
+    emoji: "🌟",
+    description: "Hero beranda guru — foto + statement + CTA",
+    defaults: {
+      eyebrow: "Program guru Indonesia",
+      title: "Nama Guru",
+      subtitle: "Deskripsi singkat tentang Anda sebagai pengajar.",
+      image: "",
+      ctaLabel: "Baca Tulisan",
+      ctaHref: "/ceritaku",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Deskripsi", type: "textarea" },
+      { name: "image", label: "Foto/Ilustrasi (URL)", type: "image" },
+      { name: "ctaLabel", label: "CTA Label", type: "string" },
+      { name: "ctaHref", label: "CTA Link", type: "string" },
+    ],
+  },
+  {
+    type: "GuruRubricHero",
+    label: "Guru Rubric Hero",
+    category: "guru",
+    emoji: "📖",
+    description: "Hero untuk halaman rubrik (Ceritaku/Bacaanku/dst.)",
+    defaults: { eyebrow: "Rubrik pribadi", title: "Judul Rubrik", subtitle: "" },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Deskripsi", type: "textarea" },
+      {
+        name: "iconKey", label: "Ikon", type: "select",
+        options: [
+          { value: "book", label: "Buku" },
+          { value: "bookmark", label: "Bookmark" },
+          { value: "sparkle", label: "Sparkle" },
+          { value: "flag", label: "Bendera" },
+          { value: "temple", label: "Candi" },
+          { value: "chat", label: "Chat" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruQuote",
+    label: "Guru Quote",
+    category: "guru",
+    emoji: "💬",
+    description: "Kutipan pribadi guru",
+    defaults: { text: "Kutipan pendek yang mewakili filosofi mengajar.", author: "Nama Guru" },
+    fields: [
+      { name: "text", label: "Kutipan", type: "textarea" },
+      { name: "author", label: "Author", type: "string" },
+    ],
+  },
+  {
+    type: "GuruFooter",
+    label: "Guru Footer",
+    category: "guru",
+    emoji: "🦶",
+    description: "Footer standar website guru",
+    defaults: { copyright: "© Website Guru" },
+    fields: [
+      { name: "copyright", label: "Copyright", type: "string" },
+    ],
+  },
+  // Carousel promo — static: user isi banner manual via items array.
+  // Cocok untuk showcase/mockup. Untuk data live dari Guru dashboard
+  // pakai variant Dynamic di bawah.
+  {
+    type: "GuruPromoCarousel",
+    label: "Ruang Promosi (Static)",
+    category: "guru",
+    emoji: "📢",
+    description: "Carousel banner rasio 2:1 — items diisi manual (untuk mockup/demo)",
+    defaults: {
+      items: [
+        { image: "", alt: "Banner 1", href: "#" },
+        { image: "", alt: "Banner 2", href: "#" },
+        { image: "", alt: "Banner 3", href: "#" },
+      ],
+    },
+    fields: [
+      {
+        name: "items",
+        label: "Banner (rasio 2:1)",
+        type: "items",
+        itemFields: [
+          { name: "image", label: "URL Gambar (2:1)", type: "image" },
+          { name: "alt", label: "Alt Text", type: "string" },
+          { name: "href", label: "Tautan", type: "url" },
+          { name: "caption", label: "Caption (opsional)", type: "string" },
+        ],
+      },
+    ],
+  },
+  // --- Dynamic variants — data fetched at render time ---
+  {
+    type: "GuruPromoCarouselDynamic",
+    label: "Ruang Promosi (Dynamic)",
+    category: "guru",
+    emoji: "📢",
+    description: "Carousel banner promosi guru — data dari menu Guru → Ruang Promosi",
+    defaults: {},
+    fields: [],
+  },
+  {
+    type: "GuruStatsBarDynamic",
+    label: "Jejak Website Saya (Dynamic)",
+    category: "guru",
+    emoji: "📊",
+    description: "3 stat live: Total Views + Tanggapan + Tulisan (spec §12)",
+    defaults: {
+      eyebrow: "Jejak Website Saya",
+      title: "Tulisan yang tumbuh bersama pembaca.",
+      subtitle: "Catatan kecil tentang bagaimana tulisan di website ini dibaca dan ditanggapi.",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subtitle", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruLatestGridDynamic",
+    label: "Tulisan Terbaru (Dynamic)",
+    category: "guru",
+    emoji: "📰",
+    description: "4 tulisan published terbaru — featured + 3 side",
+    defaults: {
+      eyebrow: "Tulisan terbaru",
+      title: "Dari kelas, buku, dan sekitar.",
+      subtitle: "Beberapa catatan yang paling baru saya tulis.",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subtitle", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruArticleGridDynamic",
+    label: "Grid Artikel per Rubrik (Dynamic)",
+    category: "guru",
+    emoji: "📚",
+    description: "List artikel dari 1 rubrik tertentu — dipakai di halaman /ceritaku/dst.",
+    defaults: {
+      rubric: "ceritaku",
+      sidebarTitle: "Tentang rubrik",
+      sidebarBody: "Kumpulan tulisan pada rubrik ini.",
+    },
+    fields: [
+      {
+        name: "rubric", label: "Rubrik", type: "select",
+        options: [
+          { value: "ceritaku", label: "Ceritaku" },
+          { value: "bacaanku", label: "Bacaanku" },
+          { value: "inspirasiku", label: "Inspirasiku" },
+          { value: "bangsaku", label: "Bangsaku" },
+          { value: "peradaban", label: "Peradaban" },
+          { value: "forum-diskusi", label: "Forum Diskusi" },
+        ],
+      },
+      { name: "sidebarTitle", label: "Judul Sidebar", type: "string" },
+      { name: "sidebarBody", label: "Isi Sidebar", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruForumThreadListDynamic",
+    label: "Forum Thread List (Dynamic)",
+    category: "guru",
+    emoji: "💬",
+    description: "List topik forum — data dari rubric=forum-diskusi",
+    defaults: {},
+    fields: [],
+  },
+  {
+    type: "GuruLearningGridDynamic",
+    label: "Grid Materi Pembelajaran (Dynamic)",
+    category: "guru",
+    emoji: "🎒",
+    description: "List materi pembelajaran (tanpa views/tanggapan sesuai spec §19)",
+    defaults: {
+      sidebarTitle: "Tentang Pembelajaran",
+      sidebarBody: "Ruang ini berisi materi belajar yang disusun dalam format ringkas.",
+    },
+    fields: [
+      { name: "sidebarTitle", label: "Judul Sidebar", type: "string" },
+      { name: "sidebarBody", label: "Isi Sidebar", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruRubricGrid",
+    label: "6 Ruang Utama",
+    category: "guru",
+    emoji: "🏛",
+    description: "Grid 6 rubrik utama (spec §4.4)",
+    defaults: {
+      eyebrow: "Enam ruang utama",
+      title: "Apa yang saya simpan di sini?",
+      subtitle: "",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subtitle", type: "textarea" },
+    ],
+  },
 ];
 
 export function schemaFor(type: string): BlockSchema | undefined {
@@ -1722,6 +1963,7 @@ export function blockSchemasByCategory(): Array<{
     "sosial",
     "list",
     "dynamic",
+    "guru",
   ];
   return order.map((key) => ({
     key,

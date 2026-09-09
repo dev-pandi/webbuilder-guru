@@ -220,6 +220,48 @@ func (r *Repo) UpdateProfile(ctx context.Context, userID uuid.UUID, p ProfileUpd
 	return &u, err
 }
 
+// GuruProfileDefaults — struct untuk seed profil guru saat user pilih
+// template guru-pandi-upi. Field yang sudah diisi user tidak akan ditimpa
+// (COALESCE NULLIF pattern) — jadi aman idempotent kalau seed re-run.
+type GuruProfileDefaults struct {
+	SubjectOrField  string
+	ProfileImage    string
+	BioShort        string
+	BioLong         string
+	HeroStatement   string
+	Quote           string
+	SocialLinksJSON []byte
+}
+
+// SeedGuruProfileIfEmpty — populate field profil guru user HANYA kalau
+// masih kosong (string "" atau JSONB '[]'). Non-destructive: kalau user
+// sudah edit profil sebelumnya, seed tidak menimpa apa pun.
+func (r *Repo) SeedGuruProfileIfEmpty(ctx context.Context, userID uuid.UUID, d GuruProfileDefaults) error {
+	var socialArg any
+	if len(d.SocialLinksJSON) > 0 {
+		socialArg = d.SocialLinksJSON
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE users SET
+		    subject_or_field  = COALESCE(NULLIF(subject_or_field, ''), $2),
+		    profile_image     = COALESCE(NULLIF(profile_image, ''), $3),
+		    bio_short         = COALESCE(NULLIF(bio_short, ''), $4),
+		    bio_long          = COALESCE(NULLIF(bio_long, ''), $5),
+		    hero_statement    = COALESCE(NULLIF(hero_statement, ''), $6),
+		    quote             = COALESCE(NULLIF(quote, ''), $7),
+		    social_links_json = CASE
+		        WHEN social_links_json IS NULL OR social_links_json = '[]'::jsonb
+		            THEN COALESCE($8::jsonb, social_links_json)
+		        ELSE social_links_json
+		    END,
+		    updated_at = now()
+		WHERE id = $1
+	`, userID, d.SubjectOrField, d.ProfileImage, d.BioShort, d.BioLong,
+		d.HeroStatement, d.Quote, socialArg,
+	)
+	return err
+}
+
 // SetRegistrarContactID cache-back id contact registrar setelah first
 // successful sync via contactsync. Update idempoten — no-op kalau nilai
 // sama. Pass 0 tidak diperbolehkan (guard di caller).

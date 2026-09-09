@@ -319,7 +319,7 @@ func main() {
 	// Setelah CreateSiteFromTemplate untuk `guru-pandi-upi`, seeder ini
 	// otomatis populate articles/materials/banners sample.
 	templatesHandler := templates.NewHandler(templateRepo, siteRepo, pageRepo, productRepo, blogRepo, purchaseRepo)
-	templatesHandler.SetGuruSeeders(articlesRepo, learningRepo, bannersRepo)
+	templatesHandler.SetGuruSeeders(articlesRepo, learningRepo, bannersRepo, authRepo)
 
 	// Banners handler — extract ke var supaya audit repo bisa di-inject
 	// setelah audit dibangun (spec §27: track admin banner override).

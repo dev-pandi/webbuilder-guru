@@ -58,6 +58,21 @@ import { cn } from "@/lib/utils";
 import { hexToHslComponents, readableForeground } from "@/lib/color";
 import { buildCatalogFontsUrl } from "@/lib/fonts";
 import { PropEditor, type BlockData } from "./PropEditor";
+import {
+  GuruArticleGridEditorPreview,
+  GuruFooterEditor,
+  GuruForumThreadListEditorPreview,
+  GuruHeroEditor,
+  GuruLatestGridEditorPreview,
+  GuruLearningGridEditorPreview,
+  GuruNavbarEditor,
+  GuruPromoCarouselEditorPreview,
+  GuruQuoteEditor,
+  GuruRubricGridEditor,
+  GuruRubricHeroEditor,
+  GuruStatsBarEditorPreview,
+  GuruStylesEditor,
+} from "@/components/GuruEditorBlocks";
 import { LayoutPanel } from "./LayoutPanel";
 import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
 import { buildLayoutStyle, buildMaxWidthStyle, layoutForBreakpoint } from "@/lib/blockLayout";
@@ -2276,6 +2291,10 @@ function Preview({
   }
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      {/* Inject CSS `.guru-*` sekali — supaya semua block Guru render dengan
+          styling identik dengan template preview beneran. Aman untuk site
+          non-guru: CSS scoped ke class .guru-* + :root var yang read theme. */}
+      <GuruStylesEditor />
       <SortableContext
         items={blocks.map((_, i) => pathKey([i]))}
         strategy={verticalListSortingStrategy}
@@ -3809,6 +3828,137 @@ function BlockView({
         </div>
       );
     }
+
+    // -------- Guru (Rumah Digital Guru) — high-fidelity preview --------
+    // Pakai komponen shared di `@/components/GuruEditorBlocks` yang mirror
+    // struktur JSX + CSS `.guru-*` renderer. Visual match ~95% dengan
+    // template preview beneran. Dynamic blocks (Latest/ArticleGrid/dst.)
+    // render dengan sample data karena editor tidak fetch DB.
+    case "GuruStyles":
+      // CSS di-inject sekali di root Preview — di sini cukup marker kecil
+      // supaya user tahu block ini "wajib ada" tapi tidak render visual.
+      return (
+        <div className="mx-6 my-2 rounded-md border border-dashed border-violet-300 bg-violet-50 px-3 py-1.5 text-[11px] text-violet-700">
+          🎨 <strong>GuruStyles</strong> · CSS scoped `.guru-*` (tidak render visual — sudah aktif)
+        </div>
+      );
+    case "GuruNavbar":
+      return (
+        <GuruNavbarEditor
+          brand={p.brand as string | undefined}
+          activeSlug={p.activeSlug as string | undefined}
+        />
+      );
+    case "GuruHero":
+      return (
+        <GuruHeroEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          titleEm={p.titleEm as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          ctaLabel={p.ctaLabel as string | undefined}
+          ctaHref={p.ctaHref as string | undefined}
+          ctaSecondaryLabel={p.ctaSecondaryLabel as string | undefined}
+          ctaSecondaryHref={p.ctaSecondaryHref as string | undefined}
+          image={p.image as string | undefined}
+          imageAlt={p.imageAlt as string | undefined}
+          stats={p.stats as Array<{ value: string; label: string }> | undefined}
+          noteAText={p.noteAText as string | undefined}
+          noteASub={p.noteASub as string | undefined}
+          noteBText={p.noteBText as string | undefined}
+          noteBSub={p.noteBSub as string | undefined}
+        />
+      );
+    case "GuruPromoCarousel":
+      return (
+        <GuruPromoCarouselEditorPreview
+          items={p.items as Array<{ image?: string; alt?: string; href?: string; caption?: string }> | undefined}
+        />
+      );
+    case "GuruPromoCarouselDynamic":
+      return <GuruPromoCarouselEditorPreview isDynamic />;
+    case "GuruStatsBar":
+    case "GuruStatsBarDynamic":
+      return (
+        <GuruStatsBarEditorPreview
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          sample={block.type === "GuruStatsBar"}
+        />
+      );
+    case "GuruLatestGrid":
+    case "GuruLatestGridDynamic":
+      return (
+        <GuruLatestGridEditorPreview
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+        />
+      );
+    case "GuruRubricGrid":
+      return (
+        <GuruRubricGridEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          items={p.items as Array<{ title: string; desc?: string; href?: string; icon?: string }> | undefined}
+        />
+      );
+    case "GuruArticleGrid":
+    case "GuruArticleGridDynamic":
+      return (
+        <GuruArticleGridEditorPreview
+          rubric={p.rubric as string | undefined}
+          sidebarTitle={p.sidebarTitle as string | undefined}
+          sidebarBody={p.sidebarBody as string | undefined}
+          sidebarTags={p.sidebarTags as string[] | undefined}
+          sidebarLinks={p.sidebarLinks as Array<{ label: string; href: string }> | undefined}
+        />
+      );
+    case "GuruForumThreadList":
+    case "GuruForumThreadListDynamic":
+      return <GuruForumThreadListEditorPreview />;
+    case "GuruLearningGridDynamic":
+      return (
+        <GuruLearningGridEditorPreview
+          sidebarTitle={p.sidebarTitle as string | undefined}
+          sidebarBody={p.sidebarBody as string | undefined}
+        />
+      );
+    case "GuruRubricHero":
+      return (
+        <GuruRubricHeroEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          iconKey={p.iconKey as string | undefined}
+        />
+      );
+    case "GuruQuote":
+      return (
+        <GuruQuoteEditor
+          text={p.text as string | undefined}
+          author={p.author as string | undefined}
+        />
+      );
+    case "GuruProfileCard":
+    case "GuruTimeline":
+    case "GuruTagList":
+      // Block yang jarang dipakai di beranda — fallback minimal placeholder.
+      return (
+        <div className="mx-6 my-2 rounded-md border border-dashed border-violet-300 bg-violet-50 px-3 py-2 text-[11px] text-violet-700">
+          🎓 <strong>{block.type}</strong> · block Guru (preview lengkap di halaman profil renderer)
+        </div>
+      );
+    case "GuruFooter":
+      return (
+        <GuruFooterEditor
+          copyright={p.copyright as string | undefined}
+          brand={p.brand as string | undefined}
+          navLinks={p.navLinks as Array<{ label: string; href: string }> | undefined}
+        />
+      );
 
     default:
       return (

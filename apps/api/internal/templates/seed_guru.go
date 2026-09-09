@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/articles"
+	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/banners"
 	"github.com/webbuilder/api/internal/learning"
 )
@@ -37,6 +38,33 @@ func (h *Handler) seedSampleGuru(ctx context.Context, siteID, ownerID uuid.UUID)
 				slog.Warn("seed guru banner failed", "site_id", siteID, "title", b.InternalTitle, "error", err)
 			}
 		}
+	}
+	// Seed profil guru default — hanya field yang masih kosong (non-destructive).
+	// Kalau user sudah edit profil sebelumnya, seed skip field itu.
+	if h.auth != nil {
+		if err := h.auth.SeedGuruProfileIfEmpty(ctx, ownerID, sampleGuruProfile()); err != nil {
+			slog.Warn("seed guru profile failed", "user_id", ownerID, "error", err)
+		}
+	}
+}
+
+// sampleGuruProfile — default profil guru starter. Copy dari template
+// `guruProfilPage` yang mengasumsikan persona "Ratna Prameswari — Guru Bahasa
+// Indonesia". Fungsi seed hanya mengisi field kosong; kalau user sudah punya
+// nilai, tidak diganti.
+func sampleGuruProfile() auth.GuruProfileDefaults {
+	socialLinks, _ := json.Marshal([]map[string]string{
+		{"platform": "twitter", "url": "https://twitter.com/username"},
+		{"platform": "instagram", "url": "https://instagram.com/username"},
+	})
+	return auth.GuruProfileDefaults{
+		SubjectOrField: "Guru Bahasa Indonesia",
+		ProfileImage:   "", // biarkan kosong — dorong user upload asli
+		BioShort:       "Guru Bahasa Indonesia yang mendokumentasikan proses belajar-mengajar sebagai rekam jejak pribadi.",
+		BioLong:        "Selama lebih dari satu dekade, saya belajar bahwa mengajar bukan hanya memindahkan pengetahuan. Ia juga tentang mendengar, memberi ruang, dan membantu siswa menemukan bahasa untuk menjelaskan apa yang mereka pikirkan.\n\nWebsite ini saya gunakan untuk mendokumentasikan proses itu: praktik yang berhasil, hal yang tidak berjalan sesuai rencana, bacaan yang mengubah cara pandang, dan pertanyaan yang belum saya temukan jawabannya.",
+		HeroStatement:  "Mengajar adalah cara saya terus belajar.",
+		Quote:          "Saya tidak ingin website ini hanya menjadi etalase. Saya ingin ia menjadi tempat untuk mengingat apa yang sudah dipelajari — dan apa yang masih perlu diperbaiki.",
+		SocialLinksJSON: socialLinks,
 	}
 }
 

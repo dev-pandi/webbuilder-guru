@@ -1,10 +1,12 @@
 "use client";
 
-// /settings/profile-guru — edit field profil khusus untuk website guru
-// (spec §13, §25). Field ini dipakai di:
-//   - Portal Direktori Guru (§5) — kartu guru render name + subject +
-//     profile_image (kalau ada)
-//   - Website guru sendiri — hero_statement, quote, bio, social_links
+// GuruProfileForm — form edit profil guru (spec §13, §25).
+// Data disimpan per-user (kolom di `users` table) karena 1 guru = 1 user
+// dengan 1+ site. Dipakai di:
+//   - /sites/[id]/profil (context per-site — canonical UX untuk guru)
+//   - Portal Direktori Guru (§5) — kartu render name/subject/image dari sini
+//   - Website guru sendiri — hero_statement/quote/bio/social ditampilkan
+//     renderer di halaman /profil
 
 import { useEffect, useState } from "react";
 import {
@@ -56,7 +58,7 @@ const PLATFORM_SUGGEST = [
   "website",
 ];
 
-export default function ProfileGuruPage() {
+export function GuruProfileForm() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -144,7 +146,7 @@ export default function ProfileGuruPage() {
   if (!me) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <GuruFeatureNotice
         title="Profil Guru"
         description="Data di halaman ini tampil di direktori guru portal dan di website pribadi Anda (hero, bio, quote, tautan sosial). Isi seperlunya — semua opsional."

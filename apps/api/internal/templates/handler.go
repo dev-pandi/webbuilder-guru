@@ -33,6 +33,7 @@ type Handler struct {
 	articles *articles.Repo
 	learning *learning.Repo
 	banners  *banners.Repo
+	auth     *auth.Repo // optional — seed profil guru default (spec §13, §25)
 }
 
 func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo, dp *domain_purchase.Repo) *Handler {
@@ -43,10 +44,11 @@ func NewHandler(repo *Repo, s *sites.Repo, p *pages.Repo, pr *products.Repo, b *
 // template guru-pandi-upi. Optional (nil-safe di handler). Dipanggil di main.go
 // setelah semua handler dibangun (menghindari cyclic dep di NewHandler
 // signature yang sudah luas).
-func (h *Handler) SetGuruSeeders(a *articles.Repo, l *learning.Repo, b *banners.Repo) {
+func (h *Handler) SetGuruSeeders(a *articles.Repo, l *learning.Repo, b *banners.Repo, authRepo *auth.Repo) {
 	h.articles = a
 	h.learning = l
 	h.banners = b
+	h.auth = authRepo
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {

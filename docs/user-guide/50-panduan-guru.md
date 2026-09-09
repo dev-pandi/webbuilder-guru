@@ -34,13 +34,17 @@ Website Guru Final](../../Spesifikasi-Developer-Portal-dan-Website-Guru-Final.md
    - **8 sample tulisan** — biar website tidak kosong sejak awal
    - **4 sample materi pembelajaran**
    - **3 sample banner promosi**
+   - **Default profil guru** (subject: "Guru Bahasa Indonesia", hero statement,
+     quote, bio) — hanya diisi kalau profil Anda masih kosong (non-destruktif
+     kalau sudah edit sebelumnya)
 
 Sample data ini boleh Anda hapus / edit — anggap sebagai starter.
 
 ### 2. Isi Profil Guru
 
 Sebelum menulis, isi profil terlebih dahulu supaya kartu guru di direktori
-portal terlihat lengkap. Buka **Pengaturan → Profil Guru**:
+portal terlihat lengkap. Buka **dashboard situs → menu Guru ▾ → Profil**
+(URL: `/sites/[id]/profil`):
 
 - **Mata Pelajaran / Bidang** — muncul di bawah nama Anda di kartu
 - **Foto Profil** — URL gambar (upload dulu di menu Aset, salin URL)

@@ -8,6 +8,7 @@ import {
   BarChart3,
   BookOpen,
   LayoutDashboard,
+  UserCircle,
   CheckCircle2,
   ChevronDown,
   Code2,
@@ -93,6 +94,9 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       label: "Guru",
       icon: GraduationCap,
       items: [
+        // Profil guru diletakkan pertama — biasanya user isi ini dulu supaya
+        // kartu direktori + hero website terlihat lengkap (spec §13, §25).
+        { href: `/sites/${sid}/profil`, label: "Profil", icon: UserCircle, guru: true },
         { href: `/sites/${sid}/tulisan`, label: "Tulisan", icon: Newspaper, guru: true },
         // Forum Diskusi terpisah dari Tulisan (spec §16, §20) — rubric fixed,
         // tanggapan wajib aktif, UX diskusi berbeda dari tulisan rubrik biasa.
