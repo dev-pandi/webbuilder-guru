@@ -25,7 +25,7 @@ func (h *Handler) Current(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	site, err := h.sites.GetOwned(c.Context(), siteID, uid)
+	site, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c))
 	if err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -46,7 +46,7 @@ func (h *Handler) History(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	limit, _ := strconv.Atoi(c.Query("limit", "30"))

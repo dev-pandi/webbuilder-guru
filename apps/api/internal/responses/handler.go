@@ -37,7 +37,7 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	p := httpx.ParsePagination(c)
@@ -76,7 +76,7 @@ func (h *Handler) setStatus(c *fiber.Ctx, status string) error {
 		return httpx.Internal(c, "load failed")
 	}
 	// Ownership check: only guru pemilik site yang boleh moderasi.
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "response not found")
 	}
 	r, err := h.repo.SetStatus(c.Context(), id, status, uid)
@@ -100,7 +100,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "response not found")
 	}
 	if err := h.repo.Delete(c.Context(), id); err != nil {

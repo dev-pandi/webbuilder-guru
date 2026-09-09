@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import Link from "next/link";
 import {
   Globe2,
   Search,
@@ -10,6 +11,7 @@ import {
   HardDrive,
   Trash2,
   SlidersHorizontal,
+  SquarePen,
   AlertCircle,
   Loader2,
   CheckCircle2,
@@ -308,6 +310,21 @@ export default function AdminSitesPage() {
                             <Loader2 className="size-4 animate-spin text-muted-foreground" />
                           ) : (
                             <>
+                              {/* Admin bypass — buka editor sebagai owner
+                                  untuk support tickets / inspect visual.
+                                  Backend admit lewat sites.GetOwnedOrAdmin. */}
+                              <Button
+                                asChild
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 gap-1.5 text-xs hover:bg-primary/10 hover:text-primary"
+                                title="Buka editor sebagai owner untuk debugging"
+                              >
+                                <Link href={`/sites/${s.id}/editor`}>
+                                  <SquarePen className="size-3.5" />
+                                  Buka Editor
+                                </Link>
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"

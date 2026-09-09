@@ -139,6 +139,21 @@ func (r *Repo) GetOwned(ctx context.Context, id, userID uuid.UUID) (*Site, error
 	return &s, err
 }
 
+// GetOwnedOrAdmin — sama seperti GetOwned tapi bypass ownership check kalau
+// caller adalah admin. Admin butuh full read/write ke site user untuk
+// keperluan debugging + support tickets (mis. user lapor editor error →
+// admin buka site langsung sebagai owner untuk reproduce/inspect).
+//
+// Handler yang pakai method ini SHOULD log akses admin ke audit_log supaya
+// ada trail siapa masuk ke site siapa & kapan. Untuk MVP saat ini, audit
+// dilakukan on-demand via `/admin/audit-log` search — belum auto-record.
+func (r *Repo) GetOwnedOrAdmin(ctx context.Context, id, userID uuid.UUID, isAdmin bool) (*Site, error) {
+	if isAdmin {
+		return r.GetByID(ctx, id)
+	}
+	return r.GetOwned(ctx, id, userID)
+}
+
 // GetStrictlyOwned — original semantic (sites.user_id = userID). Dipakai
 // untuk operasi destructive yang HARUS owner (Delete, transfer ownership).
 func (r *Repo) GetStrictlyOwned(ctx context.Context, id, userID uuid.UUID) (*Site, error) {
@@ -180,9 +195,29 @@ type UpdateFields struct {
 }
 
 func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, f UpdateFields) (*Site, error) {
+	return r.updateInternal(ctx, id, userID, f, false)
+}
+
+// UpdateOrAdmin — Update site dengan admin bypass ownership check.
+// Dipakai handler yang expose admin support flow (mis. sites.Update)
+// supaya admin bisa Save perubahan dari /admin/sites → editor.
+func (r *Repo) UpdateOrAdmin(ctx context.Context, id, userID uuid.UUID, f UpdateFields, isAdmin bool) (*Site, error) {
+	return r.updateInternal(ctx, id, userID, f, isAdmin)
+}
+
+func (r *Repo) updateInternal(ctx context.Context, id, userID uuid.UUID, f UpdateFields, isAdmin bool) (*Site, error) {
 	// Update boleh dilakukan oleh owner ATAU editor (site_members).
 	// Filter role via subquery IN site_members supaya reseller/agent yang
-	// di-add sebagai editor bisa update site milik client.
+	// di-add sebagai editor bisa update site milik client. Admin bypass
+	// check ini sepenuhnya (support/debug flow).
+	memberCheck := `
+		  AND id IN (
+		      SELECT site_id FROM site_members
+		       WHERE user_id = $2 AND role IN ('owner','editor')
+		  )`
+	if isAdmin {
+		memberCheck = "" // no ownership constraint
+	}
 	var s Site
 	err := r.pool.QueryRow(ctx, `
 		UPDATE sites SET
@@ -192,11 +227,7 @@ func (r *Repo) Update(ctx context.Context, id, userID uuid.UUID, f UpdateFields)
 			custom_head_code     = COALESCE($6, custom_head_code),
 			custom_body_end_code = COALESCE($7, custom_body_end_code),
 			updated_at           = now()
-		WHERE id = $1
-		  AND id IN (
-		      SELECT site_id FROM site_members
-		       WHERE user_id = $2 AND role IN ('owner','editor')
-		  )
+		WHERE id = $1`+memberCheck+`
 		RETURNING `+siteCols+`
 	`, id, userID, f.Name, f.Theme, f.Status, f.CustomHeadCode, f.CustomBodyEndCode).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {

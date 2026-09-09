@@ -54,7 +54,7 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	p := httpx.ParsePagination(c)
@@ -75,7 +75,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	var req createReq
@@ -117,7 +117,7 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), m.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), m.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "material not found")
 	}
 	return httpx.OK(c, m)
@@ -136,7 +136,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "material not found")
 	}
 	var req updateReq
@@ -180,7 +180,7 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "material not found")
 	}
 	status := "published"
@@ -204,7 +204,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "material not found")
 	}
 	if err := h.repo.Delete(c.Context(), id); err != nil {

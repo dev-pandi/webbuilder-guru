@@ -175,9 +175,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             variant="ghost"
             size="sm"
             onClick={logout}
-            className="mt-1 w-full justify-start gap-2 text-slate-400 hover:bg-white/5 hover:text-slate-100"
+            className="mt-1 w-full justify-start gap-2 text-red-600 hover:bg-red-600 hover:text-slate-100"
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-4 mr-2" />
             Keluar
           </Button>
         </div>

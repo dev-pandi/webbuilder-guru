@@ -236,32 +236,38 @@ const RUBRIC_ICONS: Record<string, JSX.Element> = {
 // Static components — match renderer JSX
 // ---------------------------------------------------------------------------
 
-export function GuruNavbarEditor(p: { brand?: string; activeSlug?: string }) {
-  const menu = [
-    { slug: "", label: "Beranda" },
-    { slug: "profil", label: "Profil" },
-    { slug: "ceritaku", label: "Ceritaku" },
-    { slug: "bacaanku", label: "Bacaanku" },
-    { slug: "inspirasiku", label: "Inspirasiku" },
-    { slug: "bangsaku", label: "Bangsaku" },
-    { slug: "peradaban", label: "Peradaban" },
-    { slug: "forum-diskusi", label: "Forum" },
-    { slug: "pembelajaran", label: "Pembelajaran" },
+export function GuruNavbarEditor(p: {
+  brandName?: string;
+  brandRole?: string;
+  brandMark?: string;
+  links?: Array<{ label: string; href: string; active?: boolean }>;
+}) {
+  const links = p.links && p.links.length > 0 ? p.links : [
+    { label: "Beranda", href: "/", active: true },
+    { label: "Profil", href: "/profil" },
+    { label: "Ceritaku", href: "/ceritaku" },
+    { label: "Bacaanku", href: "/bacaanku" },
+    { label: "Inspirasiku", href: "/inspirasiku" },
+    { label: "Bangsaku", href: "/bangsaku" },
+    { label: "Peradaban", href: "/peradaban" },
+    { label: "Forum Diskusi", href: "/forum-diskusi" },
+    { label: "Pembelajaran", href: "/pembelajaran" },
   ];
+  const mark = p.brandMark || (p.brandName ?? "G").charAt(0);
   return (
     <header className="guru-site-header">
       <div className="guru-container guru-nav-shell">
-        <a className="guru-brand" href="#">
-          <span className="guru-brand__mark">{(p.brand ?? "G").charAt(0)}</span>
-          <div className="guru-brand__copy">
-            {p.brand ?? "Website Guru"}
-            <small>Rumah Digital Guru</small>
-          </div>
+        <a className="guru-brand" href="#" aria-label={`Beranda ${p.brandName ?? ""}`}>
+          <span className="guru-brand__mark">{mark}</span>
+          <span className="guru-brand__copy">
+            {p.brandName ?? "Nama Guru"}
+            {p.brandRole ? <small>{p.brandRole}</small> : null}
+          </span>
         </a>
         <nav className="guru-site-nav">
-          {menu.map((m) => (
-            <a key={m.slug} href="#" className={m.slug === p.activeSlug ? "is-active" : undefined}>
-              {m.label}
+          {links.map((l, i) => (
+            <a key={i} href={l.href || "#"} className={l.active ? "is-active" : undefined}>
+              {l.label}
             </a>
           ))}
         </nav>
@@ -411,38 +417,56 @@ export function GuruQuoteEditor(p: { text?: string; author?: string }) {
 }
 
 export function GuruFooterEditor(p: {
-  copyright?: string;
-  navLinks?: Array<{ label: string; href: string }>;
-  brand?: string;
+  brandName?: string;
+  brandRole?: string;
+  brandMark?: string;
+  copyText?: string;
+  builderTitle?: string;
+  builderBrand?: string;
+  builderNote?: string;
+  links?: Array<{ label: string; href: string }>;
+  bottomLeft?: string;
+  bottomRight?: string;
 }) {
-  const navLinks = p.navLinks ?? [
-    { label: "Ceritaku", href: "#" },
-    { label: "Bacaanku", href: "#" },
-    { label: "Inspirasiku", href: "#" },
-    { label: "Bangsaku", href: "#" },
-    { label: "Peradaban", href: "#" },
-    { label: "Forum Diskusi", href: "#" },
-    { label: "Pembelajaran", href: "#" },
-    { label: "Profil", href: "#" },
+  const links = p.links && p.links.length > 0 ? p.links : [
+    { label: "Ceritaku", href: "/ceritaku" },
+    { label: "Bacaanku", href: "/bacaanku" },
+    { label: "Inspirasiku", href: "/inspirasiku" },
+    { label: "Bangsaku", href: "/bangsaku" },
+    { label: "Peradaban", href: "/peradaban" },
+    { label: "Forum Diskusi", href: "/forum-diskusi" },
+    { label: "Pembelajaran", href: "/pembelajaran" },
+    { label: "Profil", href: "/profil" },
   ];
+  const mark = p.brandMark || (p.brandName ?? "G").charAt(0);
   return (
     <footer className="guru-site-footer">
       <div className="guru-container">
         <div className="guru-footer-grid">
           <div>
-            <a className="guru-brand" href="#">
-              <span className="guru-brand__mark">{(p.brand ?? "G").charAt(0)}</span>
-              <div className="guru-brand__copy">{p.brand ?? "Website Guru"}<small>Rumah Digital Guru</small></div>
+            <a className="guru-brand" href="/">
+              <span className="guru-brand__mark">{mark}</span>
+              <span className="guru-brand__copy">
+                {p.brandName ?? "Nama Guru"}
+                {p.brandRole ? <small>{p.brandRole}</small> : null}
+              </span>
             </a>
-            <p className="guru-footer-copy">{p.copyright ?? "© Website Guru — Rumah digital pribadi guru Indonesia."}</p>
+            {p.copyText ? <p className="guru-footer-copy">{p.copyText}</p> : null}
+            {(p.builderTitle || p.builderBrand) && (
+              <div className="guru-builder-credit">
+                {p.builderTitle ? <span>{p.builderTitle}</span> : null}
+                {p.builderBrand ? <strong>{p.builderBrand}</strong> : null}
+                {p.builderNote ? <small>{p.builderNote}</small> : null}
+              </div>
+            )}
           </div>
-          <nav className="guru-footer-links">
-            {navLinks.map((l, i) => <a key={i} href="#">{l.label}</a>)}
+          <nav className="guru-footer-links" aria-label="Navigasi footer">
+            {links.map((l, i) => <a key={i} href={l.href || "#"}>{l.label}</a>)}
           </nav>
         </div>
         <div className="guru-footer-bottom">
-          <span>© {new Date().getFullYear()}</span>
-          <span>Dibuat dengan Web Builder</span>
+          {p.bottomLeft ? <span>{p.bottomLeft}</span> : null}
+          {p.bottomRight ? <span>{p.bottomRight}</span> : null}
         </div>
       </div>
     </footer>

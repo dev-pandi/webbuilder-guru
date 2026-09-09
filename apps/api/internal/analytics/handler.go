@@ -73,7 +73,7 @@ func (h *Handler) GetSummary(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		if errors.Is(err, sites.ErrNotFound) {
 			return httpx.NotFound(c, "site not found")
 		}

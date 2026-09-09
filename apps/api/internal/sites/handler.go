@@ -197,7 +197,10 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid id")
 	}
-	s, err := h.repo.GetOwned(c.Context(), id, uid)
+	// Admin bypass — supaya support/debug bisa buka editor site user.
+	// Editor layout gunakan endpoint ini; kalau 404, layout clearTokens +
+	// redirect ke /login. Sebelumnya admin non-member gagal disini.
+	s, err := h.repo.GetOwnedOrAdmin(c.Context(), id, uid, auth.IsAdminFrom(c))
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -230,13 +233,13 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	if req.CustomBodyEndCode != nil && len(*req.CustomBodyEndCode) > MaxCustomCodeBytes {
 		return httpx.BadRequest(c, "custom body-end code melebihi 16 KB")
 	}
-	s, err := h.repo.Update(c.Context(), id, uid, UpdateFields{
+	s, err := h.repo.UpdateOrAdmin(c.Context(), id, uid, UpdateFields{
 		Name:              req.Name,
 		Theme:             req.Theme,
 		Status:            req.Status,
 		CustomHeadCode:    req.CustomHeadCode,
 		CustomBodyEndCode: req.CustomBodyEndCode,
-	})
+	}, auth.IsAdminFrom(c))
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -283,7 +286,7 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "invalid id")
 	}
 	st := "published"
-	s, err := h.repo.Update(c.Context(), id, uid, UpdateFields{Status: &st})
+	s, err := h.repo.UpdateOrAdmin(c.Context(), id, uid, UpdateFields{Status: &st}, auth.IsAdminFrom(c))
 	if errors.Is(err, ErrNotFound) {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -309,8 +312,11 @@ func (h *Handler) ListMembers(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid id")
 	}
-	if _, err := h.repo.HasAccess(c.Context(), id, uid); err != nil {
-		return httpx.NotFound(c, "site not found")
+	// Admin bypass — support/debug perlu lihat siapa collab site user.
+	if !auth.IsAdminFrom(c) {
+		if _, err := h.repo.HasAccess(c.Context(), id, uid); err != nil {
+			return httpx.NotFound(c, "site not found")
+		}
 	}
 	members, err := h.repo.ListMembersForSite(c.Context(), id)
 	if err != nil {

@@ -67,7 +67,7 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	site, err := h.sites.GetOwned(c.Context(), siteID, uid)
+	site, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c))
 	if err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -215,7 +215,7 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	p := httpx.ParsePagination(c)
@@ -245,7 +245,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.NotFound(c, "asset not found")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), asset.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), asset.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		// Return NotFound (bukan Forbidden) supaya tidak leak keberadaan asset.
 		return httpx.NotFound(c, "asset not found")
 	}

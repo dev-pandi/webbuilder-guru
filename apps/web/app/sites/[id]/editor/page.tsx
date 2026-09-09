@@ -3848,8 +3848,10 @@ function BlockView({
     case "GuruNavbar":
       return (
         <GuruNavbarEditor
-          brand={p.brand as string | undefined}
-          activeSlug={p.activeSlug as string | undefined}
+          brandName={p.brandName as string | undefined}
+          brandRole={p.brandRole as string | undefined}
+          brandMark={p.brandMark as string | undefined}
+          links={p.links as Array<{ label: string; href: string; active?: boolean }> | undefined}
         />
       );
     case "GuruHero":
@@ -3972,9 +3974,16 @@ function BlockView({
     case "GuruFooter":
       return (
         <GuruFooterEditor
-          copyright={p.copyright as string | undefined}
-          brand={p.brand as string | undefined}
-          navLinks={p.navLinks as Array<{ label: string; href: string }> | undefined}
+          brandName={p.brandName as string | undefined}
+          brandRole={p.brandRole as string | undefined}
+          brandMark={p.brandMark as string | undefined}
+          copyText={p.copyText as string | undefined}
+          builderTitle={p.builderTitle as string | undefined}
+          builderBrand={p.builderBrand as string | undefined}
+          builderNote={p.builderNote as string | undefined}
+          links={p.links as Array<{ label: string; href: string }> | undefined}
+          bottomLeft={p.bottomLeft as string | undefined}
+          bottomRight={p.bottomRight as string | undefined}
         />
       );
 

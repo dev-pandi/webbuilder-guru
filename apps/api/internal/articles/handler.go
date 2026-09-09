@@ -58,7 +58,7 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	p := httpx.ParsePagination(c)
@@ -84,7 +84,7 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	site, err := h.sites.GetOwned(c.Context(), siteID, uid)
+	site, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c))
 	if err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
@@ -144,7 +144,7 @@ func (h *Handler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), a.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), a.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "article not found")
 	}
 	return httpx.OK(c, a)
@@ -164,7 +164,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "article not found")
 	}
 	var req updateReq
@@ -217,7 +217,7 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "article not found")
 	}
 	status := "published"
@@ -242,7 +242,7 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "load failed")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), existing.SiteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "article not found")
 	}
 	if err := h.repo.Delete(c.Context(), id); err != nil {
@@ -258,7 +258,7 @@ func (h *Handler) Stats(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "site not found")
 	}
 	s, err := h.repo.SiteStats(c.Context(), siteID)

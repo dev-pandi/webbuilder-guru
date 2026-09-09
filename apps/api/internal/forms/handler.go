@@ -40,7 +40,7 @@ func (h *Handler) ListBySite(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "invalid site id")
 	}
 	// Ownership check via sites repo — sama pattern dengan pages/products.
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		if errors.Is(err, sites.ErrNotFound) {
 			return httpx.NotFound(c, "site not found")
 		}
@@ -69,7 +69,7 @@ func (h *Handler) CreateForSite(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid site id")
 	}
-	if _, err := h.sites.GetOwned(c.Context(), siteID, uid); err != nil {
+	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), siteID, uid, auth.IsAdminFrom(c)); err != nil {
 		if errors.Is(err, sites.ErrNotFound) {
 			return httpx.NotFound(c, "site not found")
 		}

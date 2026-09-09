@@ -39,6 +39,16 @@ func UserIDFrom(c *fiber.Ctx) uuid.UUID {
 	return uuid.Nil
 }
 
+// IsAdminFrom — helper cek role admin dari JWT claims di context. Dipakai
+// handler yang punya "admin bypass" policy (mis. sites/pages editor supaya
+// admin bisa lihat/edit situs user untuk debugging & support tickets).
+func IsAdminFrom(c *fiber.Ctx) bool {
+	if cl := ClaimsFrom(c); cl != nil {
+		return cl.Role == "admin"
+	}
+	return false
+}
+
 // RequireAdmin must follow Required(). It 403s if the JWT role isn't "admin".
 func RequireAdmin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
