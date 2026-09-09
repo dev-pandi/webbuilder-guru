@@ -1924,6 +1924,92 @@ export const blockSchemas: BlockSchema[] = [
     ],
   },
   {
+    type: "GuruProfileCard",
+    label: "Guru Profile Card",
+    category: "guru",
+    emoji: "👤",
+    description: "Kartu profil guru (foto + kontak + panels bio) untuk halaman /profil",
+    defaults: {
+      image: "",
+      name: "Nama Guru",
+      role: "Guru Bahasa Indonesia · Sekolah",
+      contacts: [
+        { icon: "📍", label: "Kota, Indonesia" },
+        { icon: "✉️", label: "email@example.id" },
+      ],
+      panels: [
+        { eyebrow: "Tentang Saya", title: "Ruang kelas sebagai ruang tumbuh.", body: "Cerita singkat tentang perjalanan mengajar Anda." },
+      ],
+    },
+    fields: [
+      { name: "image", label: "Foto (URL)", type: "image" },
+      { name: "name", label: "Nama", type: "string" },
+      { name: "role", label: "Peran/Sekolah", type: "string" },
+      {
+        name: "contacts",
+        label: "Kontak",
+        type: "items",
+        itemFields: [
+          { name: "icon", label: "Ikon (emoji)", type: "string" },
+          { name: "label", label: "Label", type: "string" },
+        ],
+      },
+      {
+        name: "panels",
+        label: "Panels Bio",
+        type: "items",
+        itemFields: [
+          { name: "eyebrow", label: "Eyebrow", type: "string" },
+          { name: "title", label: "Judul Panel", type: "string" },
+          { name: "body", label: "Isi Panel", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruTimeline",
+    label: "Guru Timeline",
+    category: "guru",
+    emoji: "🗓",
+    description: "Timeline jejak mengajar (date + title + description per item)",
+    defaults: {
+      title: "Jejak mengajar",
+      items: [
+        { date: "2014—2018", title: "Guru Bahasa Indonesia", desc: "Mengembangkan kebiasaan jurnal membaca." },
+        { date: "2019—Kini", title: "Koordinator literasi", desc: "Mendampingi klub baca dan lokakarya menulis." },
+      ],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Timeline",
+        type: "items",
+        itemFields: [
+          { name: "date", label: "Tanggal / Periode", type: "string" },
+          { name: "title", label: "Judul", type: "string" },
+          { name: "desc", label: "Deskripsi", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruTagList",
+    label: "Guru Tag List",
+    category: "guru",
+    emoji: "🏷",
+    description: "Chip tag (fokus, minat, topik) untuk halaman profil",
+    defaults: {
+      title: "Fokus & minat",
+      tags: ["Literasi", "Bahasa Indonesia", "Sastra", "Refleksi Mengajar"],
+    },
+    fields: [
+      { name: "title", label: "Judul", type: "string" },
+      // tags = string[] — edit inline via template config saat ini (spec
+      // ItemField belum support primitive array; refactor kemudian).
+    ],
+  },
+  {
     type: "GuruRubricGrid",
     label: "6 Ruang Utama",
     category: "guru",

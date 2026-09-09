@@ -66,12 +66,15 @@ import {
   GuruLatestGridEditorPreview,
   GuruLearningGridEditorPreview,
   GuruNavbarEditor,
+  GuruProfileCardEditor,
   GuruPromoCarouselEditorPreview,
   GuruQuoteEditor,
   GuruRubricGridEditor,
   GuruRubricHeroEditor,
   GuruStatsBarEditorPreview,
   GuruStylesEditor,
+  GuruTagListEditor,
+  GuruTimelineEditor,
 } from "@/components/GuruEditorBlocks";
 import { LayoutPanel } from "./LayoutPanel";
 import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
@@ -3943,13 +3946,28 @@ function BlockView({
         />
       );
     case "GuruProfileCard":
-    case "GuruTimeline":
-    case "GuruTagList":
-      // Block yang jarang dipakai di beranda — fallback minimal placeholder.
       return (
-        <div className="mx-6 my-2 rounded-md border border-dashed border-violet-300 bg-violet-50 px-3 py-2 text-[11px] text-violet-700">
-          🎓 <strong>{block.type}</strong> · block Guru (preview lengkap di halaman profil renderer)
-        </div>
+        <GuruProfileCardEditor
+          image={p.image as string | undefined}
+          name={p.name as string | undefined}
+          role={p.role as string | undefined}
+          contacts={p.contacts as Array<{ icon?: string; label: string }> | undefined}
+          panels={p.panels as Array<{ eyebrow?: string; title?: string; body?: string }> | undefined}
+        />
+      );
+    case "GuruTimeline":
+      return (
+        <GuruTimelineEditor
+          title={p.title as string | undefined}
+          items={p.items as Array<{ date: string; title: string; desc?: string }> | undefined}
+        />
+      );
+    case "GuruTagList":
+      return (
+        <GuruTagListEditor
+          title={p.title as string | undefined}
+          tags={p.tags as string[] | undefined}
+        />
       );
     case "GuruFooter":
       return (

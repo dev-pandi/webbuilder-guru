@@ -141,6 +141,27 @@ export function GuruStylesEditor() {
 .guru-sidebar-card p{color:var(--guru-muted);font-size:12px;margin:0;line-height:1.6}
 .guru-tag-list{display:flex;flex-wrap:wrap;gap:6px}
 .guru-tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:#f4f1eb;border:1px solid var(--guru-line);font-size:11px;font-weight:700;color:#596273}
+/* Profile page layout — halaman /profil template guru */
+.guru-profile-layout{display:grid;grid-template-columns:340px 1fr;gap:28px;align-items:start}
+.guru-profile-card{background:#fff;border:1px solid var(--guru-line);border-radius:26px;overflow:hidden}
+.guru-profile-card__photo{background:linear-gradient(160deg,#e3ecf3,#f2e7dc);height:340px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
+.guru-profile-card__photo img{height:94%;width:auto;object-fit:contain}
+.guru-profile-card__body{padding:22px}
+.guru-profile-card h2{font-family:var(--font-heading,Georgia),serif;font-size:26px;color:var(--guru-navy);margin:0;line-height:1.15}
+.guru-profile-card p{color:var(--guru-muted);margin:6px 0 16px;line-height:1.6;font-size:13px}
+.guru-profile-contact{display:grid;gap:8px;font-size:13px;color:#5d6777}
+.guru-profile-contact span{display:flex;gap:9px;align-items:center}
+.guru-profile-content{display:grid;gap:16px}
+.guru-content-panel{background:#fff;border:1px solid var(--guru-line);border-radius:22px;padding:24px}
+.guru-content-panel h2{font-family:var(--font-heading,Georgia),serif;color:var(--guru-navy);font-size:24px;margin:0 0 10px;line-height:1.2}
+.guru-content-panel p{color:#5d6777;line-height:1.7;margin:0;font-size:14px}
+/* Timeline — dipakai di halaman profil untuk jejak mengajar */
+.guru-timeline{display:grid;gap:16px;margin-top:14px}
+.guru-timeline-item{display:grid;grid-template-columns:80px 1fr;gap:16px;padding-top:16px;border-top:1px solid var(--guru-line)}
+.guru-timeline-item:first-child{border-top:0;padding-top:0}
+.guru-timeline-item time{font-size:11px;color:var(--guru-red);font-weight:800;letter-spacing:.08em}
+.guru-timeline-item strong{color:var(--guru-navy);font-size:14px}
+.guru-timeline-item span{color:var(--guru-muted);font-size:13px;line-height:1.6}
 .guru-topic-list{display:grid;gap:0}
 .guru-topic-link{padding:9px 0;border-top:1px solid var(--guru-line);font-size:12px;color:#566174;text-decoration:none}
 .guru-topic-link:first-child{border-top:0}
@@ -434,20 +455,35 @@ export function GuruFooterEditor(p: {
 // visual mirip result live.
 // ---------------------------------------------------------------------------
 
-// Sample fallback — 3 slide dengan gradient warna berbeda + label copy.
-// Dipakai kalau `items` kosong (user belum isi banner) supaya editor tidak
-// menampilkan area 2:1 blank yang membingungkan.
+// Sample fallback untuk kondisi kosong (belum ada items) — 3 slide gradient
+// warna dengan label copy.
 const FALLBACK_PROMO_SLIDES = [
   { bg: "linear-gradient(135deg,#dce8ef 0%,#f2e3d6 100%)", label: "Contoh Banner 1", sub: "1200 × 600" },
   { bg: "linear-gradient(135deg,#f1deda 0%,#e7edf3 100%)", label: "Contoh Banner 2", sub: "1200 × 600" },
   { bg: "linear-gradient(135deg,#dce8df 0%,#f2eadb 100%)", label: "Contoh Banner 3", sub: "1200 × 600" },
 ];
 
+// Sample banners untuk Dynamic variant — image path match backend seed
+// (seed_guru.go → sampleGuruBanners). Kalau file asset ada di renderer
+// static, akan render image asli; kalau tidak, browser tampil broken +
+// fallback ke gradient bg CSS `.guru-promo__slide`.
+const DYNAMIC_SAMPLE_BANNERS: Array<{ image: string; alt: string }> = [
+  { image: "/templates/guru-pandi-upi/promo-pelatihan-guru.png",
+    alt: "Program pelatihan pengembangan guru" },
+  { image: "/templates/guru-pandi-upi/promo-literasi-kelas.png",
+    alt: "Program literasi kelas" },
+  { image: "/templates/guru-pandi-upi/promo-komunitas-guru.png",
+    alt: "Komunitas berbagi praktik baik guru" },
+];
+
 export function GuruPromoCarouselEditorPreview(p: {
   items?: Array<{ image?: string; alt?: string; href?: string; caption?: string }>;
   isDynamic?: boolean;
 }) {
-  // Kalau ada items dengan image, pakai; kalau tidak, fallback ke sample slides.
+  // Kalau ada items dengan image, pakai; kalau tidak:
+  //   - isDynamic → tampil sample banner asli dari asset seed (biar preview
+  //     mirip yang akan muncul di /template-preview beneran)
+  //   - static → tampil fallback gradient dengan label placeholder
   const userItems = (p.items ?? []).filter((it) => it && (it.image || it.alt));
   const hasUserItems = userItems.length > 0;
 
@@ -456,6 +492,8 @@ export function GuruPromoCarouselEditorPreview(p: {
         image: it.image ?? "",
         alt: it.alt ?? `Banner ${i + 1}`,
       }))
+    : p.isDynamic
+    ? DYNAMIC_SAMPLE_BANNERS
     : FALLBACK_PROMO_SLIDES.map((s) => ({ image: "", alt: s.label, bg: s.bg, sub: s.sub, isFallback: true as const }));
 
   const total = slides.length;
@@ -695,6 +733,155 @@ export function GuruForumThreadListEditorPreview() {
             <p>List topik akan diambil dari rubric <strong>forum-diskusi</strong> di DB.</p>
           </div>
         </aside>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Profile page components — dipakai di halaman /profil template guru
+// ---------------------------------------------------------------------------
+
+// Sample profil default — mirror seed dari sampleGuruProfile() di
+// seed_guru.go supaya editor preview identik dengan tampilan live setelah
+// user pilih template guru.
+const SAMPLE_PROFILE_CONTACTS = [
+  { icon: "📍", label: "Bandung, Indonesia" },
+  { icon: "✉️", label: "guru@rumahguru.id" },
+  { icon: "🌐", label: "rumahguru.id" },
+];
+
+const SAMPLE_PROFILE_PANELS = [
+  {
+    eyebrow: "Tentang Saya",
+    title: "Ruang kelas sebagai ruang tumbuh.",
+    body: "Selama lebih dari satu dekade, saya belajar bahwa mengajar bukan hanya memindahkan pengetahuan. Ia juga tentang mendengar, memberi ruang, dan membantu siswa menemukan bahasa untuk menjelaskan apa yang mereka pikirkan.",
+  },
+  {
+    title: "Nilai yang saya pegang",
+    body: "Keingintahuan lebih penting daripada terlihat selalu benar. Bahasa dapat menjadi jembatan, bukan sekadar mata pelajaran.",
+  },
+];
+
+const SAMPLE_TIMELINE_ITEMS = [
+  { date: "2014—2018", title: "Guru Bahasa Indonesia", desc: "Mengembangkan kebiasaan jurnal membaca dan presentasi buku." },
+  { date: "2019—2023", title: "Koordinator program literasi sekolah", desc: "Mendampingi klub baca, pojok literasi, dan lokakarya menulis sederhana." },
+  { date: "2024—Kini", title: "Guru & pembelajar", desc: "Fokus pada dokumentasi praktik baik dan percakapan antarguru." },
+];
+
+const SAMPLE_TAGS = ["Literasi", "Bahasa Indonesia", "Sastra", "Refleksi Mengajar", "Budaya Nusantara", "Diskusi Kelas"];
+
+export function GuruProfileCardEditor(p: {
+  image?: string;
+  name?: string;
+  role?: string;
+  contacts?: Array<{ icon?: string; label: string }>;
+  panels?: Array<{ eyebrow?: string; title?: string; body?: string }>;
+}) {
+  // Kalau semua kosong (block baru drag ke canvas), tampilkan sample
+  // supaya user lihat contoh layout — bukan card kosong.
+  const isEmpty = !p.image && !p.name && !p.role
+    && (!p.contacts || p.contacts.length === 0)
+    && (!p.panels || p.panels.length === 0);
+  const contacts = p.contacts && p.contacts.length > 0 ? p.contacts : (isEmpty ? SAMPLE_PROFILE_CONTACTS : []);
+  const panels = p.panels && p.panels.length > 0 ? p.panels : (isEmpty ? SAMPLE_PROFILE_PANELS : []);
+  const name = p.name ?? (isEmpty ? "Nama Guru" : "");
+  const role = p.role ?? (isEmpty ? "Guru Bahasa Indonesia · SMP Nusantara Raya" : "");
+
+  return (
+    <section className="guru-section">
+      <div className="guru-container guru-profile-layout">
+        <aside className="guru-profile-card">
+          <div
+            className="guru-profile-card__photo"
+            style={p.image ? undefined : { alignItems: "center", justifyContent: "center", color: "#a5aebf" }}
+          >
+            {p.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.image} alt={name} decoding="async" />
+            ) : (
+              <div style={{ textAlign: "center", padding: 20 }}>
+                <div style={{ fontSize: 48, marginBottom: 8 }}>👤</div>
+                <div style={{ fontSize: 12, letterSpacing: ".05em", color: "#8790a1" }}>
+                  Placeholder foto profil
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="guru-profile-card__body">
+            {name ? <h2>{name}</h2> : null}
+            {role ? <p>{role}</p> : null}
+            {contacts.length > 0 ? (
+              <div className="guru-profile-contact">
+                {contacts.map((c, i) => (
+                  <span key={i}>
+                    {c.icon ? <em aria-hidden>{c.icon} </em> : null}
+                    {c.label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </aside>
+        <div className="guru-profile-content">
+          {panels.map((panel, i) => (
+            <div key={i} className="guru-content-panel">
+              {panel.eyebrow ? <div className="guru-eyebrow">{panel.eyebrow}</div> : null}
+              {panel.title ? <h2>{panel.title}</h2> : null}
+              {panel.body ? <p>{panel.body}</p> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function GuruTimelineEditor(p: {
+  title?: string;
+  items?: Array<{ date: string; title: string; desc?: string }>;
+}) {
+  const items = p.items && p.items.length > 0 ? p.items : SAMPLE_TIMELINE_ITEMS;
+  return (
+    <section className="guru-section">
+      <div className="guru-container">
+        <div className="guru-content-panel">
+          <h2>{p.title ?? "Jejak mengajar"}</h2>
+          <div className="guru-timeline">
+            {items.map((it, i) => (
+              <div key={i} className="guru-timeline-item">
+                <time>{it.date}</time>
+                <div>
+                  <strong>{it.title}</strong>
+                  {it.desc ? (
+                    <>
+                      <br />
+                      <span>{it.desc}</span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function GuruTagListEditor(p: { title?: string; tags?: string[] }) {
+  const tags = p.tags && p.tags.length > 0 ? p.tags : SAMPLE_TAGS;
+  return (
+    <section className="guru-section">
+      <div className="guru-container">
+        <div className="guru-content-panel">
+          <h2>{p.title ?? "Fokus & minat"}</h2>
+          <div className="guru-tag-list">
+            {tags.map((t, i) => (
+              <span key={i} className="guru-tag">{t}</span>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
