@@ -31,6 +31,7 @@ import (
 	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/payments"
+	platform_articles "github.com/webbuilder/api/internal/platform_articles"
 	"github.com/webbuilder/api/internal/paymentwh"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
@@ -82,6 +83,10 @@ type Deps struct {
 	Banners   *banners.Handler
 	// PublicGuru — public endpoints untuk website guru + portal directory.
 	PublicGuru *public.GuruHandler
+
+	// PlatformArticles — blog / knowledge base level platform (bukan per-site).
+	// Admin CRUD + public read. Konsumer: homepage marketing + /artikel.
+	PlatformArticles *platform_articles.Handler
 
 	// Registrar is the EPP client wrapping api-registry service. May be nil
 	// (feature disabled when API_REGISTRY_URL is empty) — callers must nil-check.

@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { HomeNavAuth } from "@/components/HomeNavAuth";
+import { HomeArticlesSection } from "@/components/HomeArticlesSection";
 import { IsiWebsitePreview } from "@/components/IsiWebsitePreview";
 import { RuangPromosiCarousel } from "@/components/RuangPromosiCarousel";
 import { Button } from "@/components/ui/button";
@@ -957,6 +958,10 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Blog Platform — 1 featured + 3 side. Client component fetch dari
+          /public/platform-articles. Hide kalau kosong (loaded && 0 items). */}
+      <HomeArticlesSection />
 
       {/* Footer */}
       <footer className="border-t border-white/10 bg-[#0a1428] text-white/70">

@@ -88,6 +88,17 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Delete("/pricing/platform/:id", deps.Pricing.AdminDeletePlatform)
 	}
 
+	// Platform Articles — CRUD artikel blog / knowledge base level platform.
+	// Konsumer public: homepage + /artikel + /artikel/:slug.
+	if deps.PlatformArticles != nil {
+		g.Get("/platform-articles", deps.PlatformArticles.AdminList)
+		g.Post("/platform-articles", deps.PlatformArticles.AdminCreate)
+		g.Get("/platform-articles/:id", deps.PlatformArticles.AdminGet)
+		g.Patch("/platform-articles/:id", deps.PlatformArticles.AdminUpdate)
+		g.Post("/platform-articles/:id/publish", deps.PlatformArticles.AdminPublish)
+		g.Delete("/platform-articles/:id", deps.PlatformArticles.AdminDelete)
+	}
+
 	// Promos — admin CRUD kupon diskon + redemption history.
 	if deps.Promos != nil {
 		g.Get("/promos", deps.Promos.AdminList)

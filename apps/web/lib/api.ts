@@ -218,6 +218,41 @@ export type PortalBanner = {
   alt_text: string;
 };
 
+// PlatformArticle — blog / knowledge base platform-level. Berbeda dari
+// per-site Article (rubrik guru). Dipakai di homepage marketing + /artikel.
+export type PlatformArticleCategory =
+  | "umum" | "tutorial" | "cerita" | "tips" | "panduan" | "pengumuman";
+
+export const PLATFORM_ARTICLE_CATEGORIES: Array<{ value: PlatformArticleCategory; label: string }> = [
+  { value: "umum", label: "Umum" },
+  { value: "tutorial", label: "Tutorial" },
+  { value: "cerita", label: "Cerita" },
+  { value: "tips", label: "Tips" },
+  { value: "panduan", label: "Panduan" },
+  { value: "pengumuman", label: "Pengumuman" },
+];
+
+export type PlatformArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_md: string;
+  cover_image_url: string;
+  category: PlatformArticleCategory;
+  author_name: string;
+  tags: string[] | null;
+  status: "draft" | "published";
+  featured: boolean;
+  reading_time_min: number;
+  view_count: number;
+  seo_title: string;
+  seo_description: string;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // openBlob — fetch endpoint yang return binary (PDF, image) dengan Bearer
 // token, lalu buka blob URL di tab baru. Dipakai untuk tombol "Cetak PDF"
 // yang tidak bisa pakai <a href> biasa karena butuh Authorization header.

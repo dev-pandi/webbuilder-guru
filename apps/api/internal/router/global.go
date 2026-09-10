@@ -150,6 +150,13 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		pubBase.Get("/guru", shortCache, deps.PublicGuru.TeacherDirectory)
 	}
 
+	// Platform Articles — public read (list + detail by slug) untuk homepage
+	// blog / knowledge base. Cache pendek supaya admin publish langsung visible.
+	if deps.PlatformArticles != nil {
+		pubBase.Get("/platform-articles", shortCache, deps.PlatformArticles.PublicList)
+		pubBase.Get("/platform-articles/:slug", shortCache, deps.PlatformArticles.PublicGetBySlug)
+	}
+
 	// Guru — public promotion banners (site + portal aggregate).
 	if deps.Banners != nil {
 		pubBase.Get("/sites/:id/promotion-banners", shortCache, deps.Banners.PublicListBySite)

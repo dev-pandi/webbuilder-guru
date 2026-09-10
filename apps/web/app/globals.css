@@ -103,6 +103,82 @@
 /* Tight variant — used inside the editor for compact spacing */
 .wb-prose.prose-tight > * + * { margin-top: 0.5em; }
 
+/* ---- Article prose (public /artikel/[slug]) — palette landing (cream/navy/red)
+ * mirror struktur wb-prose supaya HTML dari TipTap tampil identik dengan editor,
+ * tapi typography Georgia serif untuk heading + warna navy #172033.
+ */
+.article-prose { line-height: 1.75; color: #172033; font-size: 1.05rem; }
+.article-prose > * + * { margin-top: 1.1em; }
+.article-prose h1, .article-prose h2, .article-prose h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  color: #172033;
+  line-height: 1.2;
+  font-weight: 700;
+}
+.article-prose h1 { font-size: 2rem; margin-top: 2em; letter-spacing: -0.02em; }
+.article-prose h2 { font-size: 1.6rem; margin-top: 2em; letter-spacing: -0.015em; }
+.article-prose h3 { font-size: 1.3rem; margin-top: 1.6em; }
+.article-prose p { margin: 0 0 1.1em; }
+.article-prose a { color: #d73f45; text-decoration: underline; text-underline-offset: 3px; }
+.article-prose a:hover { color: #c23238; }
+.article-prose ul, .article-prose ol { margin: 1em 0 1.1em; padding-left: 1.5em; }
+.article-prose ul { list-style: disc; }
+.article-prose ol { list-style: decimal; }
+.article-prose li { margin: 0.35em 0; }
+.article-prose li > p { margin: 0; display: inline; }
+.article-prose blockquote {
+  border-left: 3px solid #d73f45;
+  padding: 0.15em 0 0.15em 1.2em;
+  margin: 1.6em 0;
+  color: #4c5b70;
+  font-style: italic;
+}
+.article-prose blockquote p { margin: 0; }
+.article-prose code {
+  background: #f4f1eb;
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #be185d;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.article-prose pre {
+  background: #172033;
+  color: #eaf2fb;
+  padding: 1.15em 1.25em;
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.article-prose pre code { background: none; padding: 0; color: inherit; }
+.article-prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  display: block;
+  margin: 1.6em auto;
+}
+.article-prose hr { border: 0; border-top: 1px solid #e6e9ef; margin: 2em 0; }
+.article-prose strong { font-weight: 700; color: #172033; }
+.article-prose em { font-style: italic; }
+.article-prose s { text-decoration: line-through; opacity: 0.75; }
+/* Table styling — GFM tables via marked */
+.article-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.4em 0;
+  font-size: 0.95em;
+}
+.article-prose th, .article-prose td {
+  border: 1px solid #e6e9ef;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.article-prose th { background: #fbfaf7; font-weight: 700; color: #172033; }
+.article-prose tbody tr:nth-child(even) { background: #fbfaf7; }
+
 /* ---- Editor block preview animations (mirror renderer) ---- */
 
 @keyframes wb-spotlight {

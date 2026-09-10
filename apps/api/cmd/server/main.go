@@ -36,6 +36,7 @@ import (
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/notifier"
 	"github.com/webbuilder/api/internal/pages"
+	platform_articles "github.com/webbuilder/api/internal/platform_articles"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
 	"github.com/webbuilder/api/internal/promos"
@@ -138,6 +139,7 @@ func main() {
 	learningRepo := learning.NewRepo(pool)
 	responsesRepo := responses.NewRepo(pool)
 	bannersRepo := banners.NewRepo(pool)
+	platformArticlesRepo := platform_articles.NewRepo(pool)
 	snippetRepo := snippets.NewRepo(pool)
 	adminRepo := admin.NewRepo(pool)
 	purchaseRepo := domain_purchase.NewRepo(pool)
@@ -530,9 +532,19 @@ func main() {
 		Responses:      responses.NewHandler(responsesRepo, siteRepo, articlesRepo),
 		Banners:        bannersHandler,
 		PublicGuru:     publicGuruHandler,
+		PlatformArticles: platform_articles.NewHandler(platformArticlesRepo),
 		AssetStorage:   assetStorage,
 		ErrorTracker: tracker,
 	}
+
+	// Seed platform articles kalau kosong (fire-and-forget, safe: idempotent).
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := platform_articles.SeedIfEmpty(bgCtx, platformArticlesRepo); err != nil {
+			slog.Warn("platform_articles seed failed", "error", err)
+		}
+	}()
 	if assetStorage != nil {
 		deps.Assets = assets.NewHandler(assetRepo, assetStorage, siteRepo, assets.HandlerOptions{
 			Compress:     cfg.ImageCompressEnabled,
