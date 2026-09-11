@@ -154,6 +154,9 @@ export default function Home() {
             <Link href="#mulai" className="text-sm font-bold text-white/85 hover:text-white">
               Cara Memulai
             </Link>
+            <Link href="/artikel" className="text-sm font-bold text-white/85 hover:text-white">
+              Artikel
+            </Link>
           </nav>
           <div className="flex items-center gap-3">
             <HomeNavAuth />
