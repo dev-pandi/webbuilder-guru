@@ -1,18 +1,17 @@
 "use client";
 
-// Forum list — mirror mockup dashboard-guru/forum.html.
+// Forum list — mirror mockup dashboard-guru/forum.html. Filter Article
+// dengan rubric=forum-diskusi. Tanggapan selalu aktif untuk rubrik ini.
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { MessagesSquare, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, MessagesSquare, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { api, type Article } from "@/lib/api";
+import type { PaginatedResult } from "@/components/Pagination";
 
 type ChipTone = "green" | "gray";
-
-const TOPICS: Array<{ title: string; status: string; tone: ChipTone; views: string; tanggapan: string; last: string }> = [
-  { title: "Apakah AI membantu siswa belajar menulis?", status: "Published", tone: "green", views: "862", tanggapan: "27", last: "2 jam lalu" },
-  { title: "Membaca novel di kelas: efektif atau tidak?", status: "Published", tone: "green", views: "521", tanggapan: "14", last: "1 hari lalu" },
-  { title: "Bahasa gaul dalam tugas sekolah", status: "Draft", tone: "gray", views: "0", tanggapan: "0", last: "3 hari lalu" },
-];
 
 function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode }) {
   const tones: Record<ChipTone, string> = {
@@ -26,9 +25,56 @@ function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode })
   );
 }
 
+function fmtDate(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.round(diff / 60000);
+  if (min < 1) return "baru saja";
+  if (min < 60) return `${min} menit lalu`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} jam lalu`;
+  const day = Math.round(hr / 24);
+  return `${day} hari lalu`;
+}
+
 export default function ForumListPage() {
   const params = useParams<{ id: string }>();
   const sid = params.id;
+  const [items, setItems] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const r = await api<PaginatedResult<Article>>(
+        `/api/v1/sites/${sid}/articles?rubric=forum-diskusi&sort=newest&page_size=50`,
+      );
+      setItems(r.items);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid]);
+
+  async function remove(a: Article) {
+    if (!confirm(`Hapus topik "${a.title}"?`)) return;
+    setBusyId(a.id);
+    try {
+      await api(`/api/v1/articles/${a.id}`, { method: "DELETE" });
+      toast.success("Topik dihapus");
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -42,7 +88,7 @@ export default function ForumListPage() {
           </p>
         </div>
         <Link
-          href={`/sites/${sid}/forum/new`}
+          href={`/sites/${sid}/tulisan/new?rubric=forum-diskusi`}
           className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
         >
           <Plus className="size-4" />
@@ -51,11 +97,11 @@ export default function ForumListPage() {
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+        <div className={`overflow-x-auto ${loading ? "opacity-60" : ""}`}>
           <table className="w-full min-w-[760px] border-collapse">
             <thead>
               <tr>
-                {["Topik", "Status", "Views", "Tanggapan", "Terakhir Aktif", "Aksi"].map((h) => (
+                {["Topik", "Status", "Views", "Terakhir Aktif", "Aksi"].map((h) => (
                   <th
                     key={h}
                     className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500"
@@ -66,8 +112,8 @@ export default function ForumListPage() {
               </tr>
             </thead>
             <tbody>
-              {TOPICS.map((t) => (
-                <tr key={t.title} className="border-b border-slate-100 last:border-0">
+              {items.map((t) => (
+                <tr key={t.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <div className="grid h-9 w-11 place-items-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 text-slate-500">
@@ -77,21 +123,47 @@ export default function ForumListPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3.5">
-                    <Chip tone={t.tone}>{t.status}</Chip>
+                    <Chip tone={t.status === "published" ? "green" : "gray"}>
+                      {t.status === "published" ? "Published" : "Draft"}
+                    </Chip>
                   </td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{t.views}</td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{t.tanggapan}</td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{t.last}</td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-700">
+                    {t.view_count.toLocaleString("id-ID")}
+                  </td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{fmtDate(t.updated_at)}</td>
                   <td className="px-4 py-3.5">
-                    <Link
-                      href={`/sites/${sid}/forum/new`}
-                      className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
-                    >
-                      Edit
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/sites/${sid}/tulisan/${t.id}/edit`}
+                        className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+                      >
+                        Edit
+                      </Link>
+                      <button
+                        onClick={() => remove(t)}
+                        disabled={busyId === t.id}
+                        className="rounded-lg bg-rose-50 px-3 py-1.5 text-[12px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      >
+                        {busyId === t.id ? "…" : "Hapus"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+              {!loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500">
+                    Belum ada topik forum. Klik &quot;Buat Topik Baru&quot; untuk mulai.
+                  </td>
+                </tr>
+              )}
+              {loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
+                    <Loader2 className="mx-auto size-4 animate-spin" />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

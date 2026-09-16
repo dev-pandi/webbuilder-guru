@@ -8,6 +8,7 @@ import {
   BookOpen,
   CheckCircle2,
   Home,
+  ImageIcon,
   LayoutTemplate,
   Loader2,
   LogOut,
@@ -41,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: (id) => `/sites/${id}/pembelajaran`, label: "Pembelajaran", icon: BookOpen },
   { href: (id) => `/sites/${id}/tanggapan`, label: "Tanggapan", icon: MessageSquare },
   { href: (id) => `/sites/${id}/promosi`, label: "Ruang Promosi", icon: Megaphone },
+  { href: (id) => `/sites/${id}/assets`, label: "Aset", icon: ImageIcon },
   { href: (id) => `/sites/${id}/profil`, label: "Profil", icon: UserCircle },
   { href: (id) => `/sites/${id}/tampilan`, label: "Tampilan Website", icon: LayoutTemplate },
 ];
@@ -52,6 +54,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   pembelajaran: { title: "Pembelajaran", subtitle: "Kelola materi pembelajaran" },
   tanggapan: { title: "Tanggapan", subtitle: "Moderasi komentar pembaca" },
   promosi: { title: "Ruang Promosi", subtitle: "Kelola banner 2:1" },
+  assets: { title: "Aset", subtitle: "Kelola gambar & berkas untuk website" },
   profil: { title: "Profil", subtitle: "Kelola identitas profesional" },
   tampilan: { title: "Tampilan Website", subtitle: "Pilih template dan personalisasi" },
 };

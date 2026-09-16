@@ -1,29 +1,17 @@
 "use client";
 
 // Tanggapan moderation — mirror mockup dashboard-guru/tanggapan.html.
-// 4 tab: Pending / Approved / Rejected / Semua. Action tombol update
-// local state (mockup) — belum panggil API.
+// Wired ke /api/v1/sites/:id/responses + POST /responses/:id/approve|reject
+// + DELETE /responses/:id. Tab filter server-side (query ?status=).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { api, RESPONSE_ROLE_LABEL, type ResponseItem, type ResponseStatus } from "@/lib/api";
+import type { PaginatedResult } from "@/components/Pagination";
 
-type Status = "pending" | "approved" | "rejected";
-type Tab = Status | "all";
-
-type Comment = {
-  id: string;
-  source: string;
-  author: string;
-  date: string;
-  text: string;
-  status: Status;
-};
-
-const INITIAL: Comment[] = [
-  { id: "1", source: "Hati-hati dengan Spasi", author: "Andi Saputra", date: "15 Sep 2026", text: "Artikel ini sangat menginspirasi, terima kasih Bu!", status: "pending" },
-  { id: "2", source: "Ketika Buku Mengubah Cara Pandang", author: "Siti Nurhaliza", date: "14 Sep 2026", text: "Saya jadi ingin membaca buku yang Ibu rekomendasikan.", status: "approved" },
-  { id: "3", source: "Forum Diskusi: AI dalam Menulis", author: "Rizky Maulana", date: "13 Sep 2026", text: "Komentar contoh yang tidak sesuai pedoman diskusi.", status: "rejected" },
-];
+type Tab = ResponseStatus | "all";
 
 const TAB_LABEL: Record<Tab, string> = {
   pending: "Pending",
@@ -32,13 +20,13 @@ const TAB_LABEL: Record<Tab, string> = {
   all: "Semua",
 };
 
-function StatusChip({ status }: { status: Status }) {
-  const map: Record<Status, string> = {
+function StatusChip({ status }: { status: ResponseStatus }) {
+  const map: Record<ResponseStatus, string> = {
     pending: "bg-amber-100 text-amber-800",
     approved: "bg-emerald-100 text-emerald-800",
     rejected: "bg-rose-100 text-rose-800",
   };
-  const label: Record<Status, string> = {
+  const label: Record<ResponseStatus, string> = {
     pending: "Pending",
     approved: "Approved",
     rejected: "Rejected",
@@ -50,23 +38,70 @@ function StatusChip({ status }: { status: Status }) {
   );
 }
 
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function TanggapanPage() {
+  const params = useParams<{ id: string }>();
+  const sid = params.id;
   const [tab, setTab] = useState<Tab>("pending");
-  const [comments, setComments] = useState<Comment[]>(INITIAL);
+  const [items, setItems] = useState<ResponseItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const visible = useMemo(() => {
-    if (tab === "all") return comments;
-    return comments.filter((c) => c.status === tab);
-  }, [comments, tab]);
-
-  function setStatus(id: string, next: Status) {
-    setComments((prev) => prev.map((c) => (c.id === id ? { ...c, status: next } : c)));
-    toast.success(next === "approved" ? "Tanggapan disetujui" : "Tanggapan ditolak");
+  async function refresh() {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ page: "1", page_size: "50" });
+      if (tab !== "all") p.set("status", tab);
+      const r = await api<PaginatedResult<ResponseItem>>(
+        `/api/v1/sites/${sid}/responses?${p}`,
+      );
+      setItems(r.items);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function remove(id: string) {
-    setComments((prev) => prev.filter((c) => c.id !== id));
-    toast.success("Tanggapan dihapus");
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, tab]);
+
+  const visible = useMemo(() => items, [items]);
+
+  async function moderate(id: string, action: "approve" | "reject") {
+    setBusyId(id);
+    try {
+      await api(`/api/v1/responses/${id}/${action}`, { method: "POST" });
+      toast.success(action === "approve" ? "Tanggapan disetujui" : "Tanggapan ditolak");
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Hapus tanggapan ini?")) return;
+    setBusyId(id);
+    try {
+      await api(`/api/v1/responses/${id}`, { method: "DELETE" });
+      toast.success("Tanggapan dihapus");
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -95,44 +130,57 @@ export default function TanggapanPage() {
           ))}
         </div>
 
-        <div className="grid gap-3 p-5">
+        <div className={`grid gap-3 p-5 ${loading ? "opacity-60" : ""}`}>
           {visible.map((c) => (
             <div key={c.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="text-[12px] font-bold text-blue-700">{c.source}</div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                {c.author} · {c.date}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[12px] font-bold text-blue-700">Artikel #{c.article_id.slice(0, 8)}</div>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  {RESPONSE_ROLE_LABEL[c.author_role]}
+                </span>
               </div>
-              <p className="mt-2 text-[13px] leading-relaxed text-slate-700">{c.text}</p>
+              <div className="mt-1 text-[11px] text-slate-500">
+                {c.author_name} · {fmtDate(c.created_at)}
+              </div>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-700">{c.body}</p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <StatusChip status={c.status} />
-                {c.status === "pending" && (
-                  <>
-                    <button
-                      onClick={() => setStatus(c.id, "approved")}
-                      className="rounded-lg bg-emerald-100 px-3 py-1.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-200"
-                    >
-                      Setujui
-                    </button>
-                    <button
-                      onClick={() => setStatus(c.id, "rejected")}
-                      className="rounded-lg bg-rose-100 px-3 py-1.5 text-[12px] font-bold text-rose-700 hover:bg-rose-200"
-                    >
-                      Tolak
-                    </button>
-                  </>
+                {c.status !== "approved" && (
+                  <button
+                    onClick={() => moderate(c.id, "approve")}
+                    disabled={busyId === c.id}
+                    className="rounded-lg bg-emerald-100 px-3 py-1.5 text-[12px] font-bold text-emerald-700 hover:bg-emerald-200 disabled:opacity-50"
+                  >
+                    Setujui
+                  </button>
+                )}
+                {c.status !== "rejected" && (
+                  <button
+                    onClick={() => moderate(c.id, "reject")}
+                    disabled={busyId === c.id}
+                    className="rounded-lg bg-rose-100 px-3 py-1.5 text-[12px] font-bold text-rose-700 hover:bg-rose-200 disabled:opacity-50"
+                  >
+                    Tolak
+                  </button>
                 )}
                 <button
                   onClick={() => remove(c.id)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                  disabled={busyId === c.id}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   Hapus
                 </button>
               </div>
             </div>
           ))}
-          {visible.length === 0 && (
+          {!loading && visible.length === 0 && (
             <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-sm text-slate-500">
               Tidak ada tanggapan pada tab ini
+            </div>
+          )}
+          {loading && visible.length === 0 && (
+            <div className="py-8 text-center text-sm text-slate-500">
+              <Loader2 className="mx-auto size-4 animate-spin" />
             </div>
           )}
         </div>

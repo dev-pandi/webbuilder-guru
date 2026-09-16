@@ -1,18 +1,17 @@
 "use client";
 
 // Pembelajaran list — mirror mockup dashboard-guru/pembelajaran.html.
+// Wired ke /api/v1/sites/:id/learning-materials.
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { BookOpen, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BookOpen, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { api, type LearningMaterial } from "@/lib/api";
+import type { PaginatedResult } from "@/components/Pagination";
 
 type ChipTone = "green" | "gray";
-
-const MATERIALS: Array<{ title: string; status: string; tone: ChipTone; date: string }> = [
-  { title: "Mengenal Teks Cerpen", status: "Published", tone: "green", date: "12 Sep 2026" },
-  { title: "Menyusun Teks Eksposisi", status: "Published", tone: "green", date: "8 Sep 2026" },
-  { title: "Memahami Teks Deskripsi", status: "Draft", tone: "gray", date: "4 Sep 2026" },
-];
 
 function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode }) {
   const tones: Record<ChipTone, string> = {
@@ -26,9 +25,53 @@ function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode })
   );
 }
 
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function PembelajaranListPage() {
   const params = useParams<{ id: string }>();
   const sid = params.id;
+  const [items, setItems] = useState<LearningMaterial[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const r = await api<PaginatedResult<LearningMaterial>>(
+        `/api/v1/sites/${sid}/learning-materials?sort=newest&page_size=50`,
+      );
+      setItems(r.items);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid]);
+
+  async function remove(m: LearningMaterial) {
+    if (!confirm(`Hapus materi "${m.title}"?`)) return;
+    setBusyId(m.id);
+    try {
+      await api(`/api/v1/learning-materials/${m.id}`, { method: "DELETE" });
+      toast.success("Materi dihapus");
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -51,7 +94,7 @@ export default function PembelajaranListPage() {
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+        <div className={`overflow-x-auto ${loading ? "opacity-60" : ""}`}>
           <table className="w-full min-w-[640px] border-collapse">
             <thead>
               <tr>
@@ -66,30 +109,58 @@ export default function PembelajaranListPage() {
               </tr>
             </thead>
             <tbody>
-              {MATERIALS.map((m) => (
-                <tr key={m.title} className="border-b border-slate-100 last:border-0">
+              {items.map((m) => (
+                <tr key={m.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <div className="grid h-9 w-11 place-items-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 text-slate-500">
                         <BookOpen className="size-4" />
                       </div>
-                      <span className="text-[13px] font-semibold text-slate-900">{m.title}</span>
+                      <div>
+                        <div className="text-[13px] font-semibold text-slate-900">{m.title}</div>
+                        <div className="text-[11px] text-slate-500">{m.slug}</div>
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3.5">
-                    <Chip tone={m.tone}>{m.status}</Chip>
+                    <Chip tone={m.status === "published" ? "green" : "gray"}>
+                      {m.status === "published" ? "Published" : "Draft"}
+                    </Chip>
                   </td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{m.date}</td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{fmtDate(m.updated_at)}</td>
                   <td className="px-4 py-3.5">
-                    <Link
-                      href={`/sites/${sid}/pembelajaran/new`}
-                      className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
-                    >
-                      Edit
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/sites/${sid}/pembelajaran/${m.id}/edit`}
+                        className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+                      >
+                        Edit
+                      </Link>
+                      <button
+                        onClick={() => remove(m)}
+                        disabled={busyId === m.id}
+                        className="rounded-lg bg-rose-50 px-3 py-1.5 text-[12px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      >
+                        {busyId === m.id ? "…" : "Hapus"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+              {!loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-500">
+                    Belum ada materi. Klik &quot;Tambah Materi&quot; untuk mulai.
+                  </td>
+                </tr>
+              )}
+              {loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-500">
+                    <Loader2 className="mx-auto size-4 animate-spin" />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

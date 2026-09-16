@@ -1,39 +1,32 @@
 "use client";
 
-// Tulisan list — mirror mockup dashboard-guru/tulisan.html.
-// Filter by rubrik + search live pakai state lokal (data mockup).
+// Tulisan list — mirror mockup dashboard-guru/tulisan.html, wired ke
+// /api/v1/sites/:id/articles. Filter rubrik pakai 5 rubrik utama (bukan
+// forum-diskusi — itu ada di menu Forum terpisah).
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
-import { FileText, Plus, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FileText, Loader2, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
+import { api, GURU_RUBRIC_LABEL, type Article, type GuruRubric } from "@/lib/api";
+import { useDebounced, type PaginatedResult } from "@/components/Pagination";
 
-type ChipTone = "green" | "gray" | "amber";
-
-const RUBRICS = ["Semua", "Ceritaku", "Bacaanku", "Inspirasiku", "Bangsaku", "Peradaban"] as const;
-
-const ROWS: Array<{
-  title: string;
-  slug: string;
-  rubrik: string;
-  status: string;
-  tone: ChipTone;
-  views: string;
-  tanggapan: string;
-  updated: string;
-}> = [
-  { title: "Hati-hati dengan Spasi", slug: "hati-hati-dengan-spasi", rubrik: "Ceritaku", status: "Published", tone: "green", views: "1.248", tanggapan: "18", updated: "15 Sep 2026" },
-  { title: "Ketika Buku Mengubah Cara Pandang", slug: "ketika-buku-mengubah-cara-pandang", rubrik: "Bacaanku", status: "Published", tone: "green", views: "972", tanggapan: "12", updated: "14 Sep 2026" },
-  { title: "Kelas yang Hidup dengan Pertanyaan", slug: "kelas-yang-hidup", rubrik: "Inspirasiku", status: "Draft", tone: "gray", views: "0", tanggapan: "0", updated: "13 Sep 2026" },
-  { title: "Bahasa, Jembatan yang Menyatukan", slug: "bahasa-jembatan-yang-menyatukan", rubrik: "Bangsaku", status: "Published", tone: "green", views: "1.084", tanggapan: "16", updated: "12 Sep 2026" },
-  { title: "Jejak Kearifan Lokal di Sekitar Kita", slug: "jejak-kearifan-lokal", rubrik: "Peradaban", status: "Review", tone: "amber", views: "320", tanggapan: "3", updated: "10 Sep 2026" },
+const RUBRIC_TABS: Array<{ value: GuruRubric | "_all"; label: string }> = [
+  { value: "_all", label: "Semua" },
+  { value: "ceritaku", label: "Ceritaku" },
+  { value: "bacaanku", label: "Bacaanku" },
+  { value: "inspirasiku", label: "Inspirasiku" },
+  { value: "bangsaku", label: "Bangsaku" },
+  { value: "peradaban", label: "Peradaban" },
 ];
+
+type ChipTone = "green" | "gray";
 
 function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode }) {
   const tones: Record<ChipTone, string> = {
     green: "bg-emerald-100 text-emerald-800",
     gray: "bg-slate-100 text-slate-600",
-    amber: "bg-amber-100 text-amber-800",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tones[tone]}`}>
@@ -42,19 +35,61 @@ function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode })
   );
 }
 
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function TulisanListPage() {
   const params = useParams<{ id: string }>();
   const sid = params.id;
   const [query, setQuery] = useState("");
-  const [rubrik, setRubrik] = useState<(typeof RUBRICS)[number]>("Semua");
+  const debouncedQ = useDebounced(query, 300);
+  const [rubric, setRubric] = useState<GuruRubric | "_all">("_all");
+  const [items, setItems] = useState<Article[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    return ROWS.filter((r) => {
-      if (rubrik !== "Semua" && r.rubrik !== rubrik) return false;
-      if (query && !r.title.toLowerCase().includes(query.toLowerCase())) return false;
-      return true;
-    });
-  }, [query, rubrik]);
+  async function refresh() {
+    setLoading(true);
+    try {
+      const p = new URLSearchParams({ page: "1", page_size: "50", sort: "newest" });
+      if (debouncedQ) p.set("q", debouncedQ);
+      if (rubric !== "_all") p.set("rubric", rubric);
+      const r = await api<PaginatedResult<Article>>(`/api/v1/sites/${sid}/articles?${p}`);
+      // Exclude forum-diskusi dari daftar Tulisan — itu domain menu Forum.
+      const filtered = r.items.filter((a) => a.rubric !== "forum-diskusi");
+      setItems(filtered);
+      setTotal(filtered.length);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, debouncedQ, rubric]);
+
+  async function remove(a: Article) {
+    if (!confirm(`Hapus tulisan "${a.title}"?`)) return;
+    setBusyId(a.id);
+    try {
+      await api(`/api/v1/articles/${a.id}`, { method: "DELETE" });
+      toast.success("Tulisan dihapus");
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -64,7 +99,7 @@ export default function TulisanListPage() {
             Kelola Tulisan
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Kelola artikel dari lima rubrik utama Website Pribadi Guru.
+            {loading ? "Memuat…" : `${total} tulisan dalam 5 rubrik utama.`}
           </p>
         </div>
         <Link
@@ -89,28 +124,28 @@ export default function TulisanListPage() {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {RUBRICS.map((r) => (
+              {RUBRIC_TABS.map((r) => (
                 <button
-                  key={r}
-                  onClick={() => setRubrik(r)}
+                  key={r.value}
+                  onClick={() => setRubric(r.value)}
                   className={`rounded-full border px-3.5 py-2 text-[12px] font-bold transition ${
-                    rubrik === r
+                    rubric === r.value
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  {r}
+                  {r.label}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className={`overflow-x-auto ${loading ? "opacity-60" : ""}`}>
           <table className="w-full min-w-[820px] border-collapse">
             <thead>
               <tr>
-                {["Judul", "Rubrik", "Status", "Views", "Tanggapan", "Diperbarui", "Aksi"].map((h) => (
+                {["Judul", "Rubrik", "Status", "Views", "Diperbarui", "Aksi"].map((h) => (
                   <th
                     key={h}
                     className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500"
@@ -121,40 +156,61 @@ export default function TulisanListPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
-                <tr key={row.slug} className="border-b border-slate-100 last:border-0">
+              {items.map((a) => (
+                <tr key={a.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <div className="grid h-9 w-11 place-items-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 text-slate-500">
                         <FileText className="size-4" />
                       </div>
                       <div>
-                        <div className="text-[13px] font-semibold text-slate-900">{row.title}</div>
-                        <div className="text-[11px] text-slate-500">{row.slug}</div>
+                        <div className="text-[13px] font-semibold text-slate-900">{a.title}</div>
+                        <div className="text-[11px] text-slate-500">{a.slug}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{row.rubrik}</td>
-                  <td className="px-4 py-3.5">
-                    <Chip tone={row.tone}>{row.status}</Chip>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-600">
+                    {GURU_RUBRIC_LABEL[a.rubric]}
                   </td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{row.views}</td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{row.tanggapan}</td>
-                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{row.updated}</td>
                   <td className="px-4 py-3.5">
-                    <Link
-                      href={`/sites/${sid}/tulisan/new`}
-                      className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
-                    >
-                      Edit
-                    </Link>
+                    <Chip tone={a.status === "published" ? "green" : "gray"}>
+                      {a.status === "published" ? "Published" : "Draft"}
+                    </Chip>
+                  </td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{a.view_count.toLocaleString("id-ID")}</td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{fmtDate(a.updated_at)}</td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/sites/${sid}/tulisan/${a.id}/edit`}
+                        className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+                      >
+                        Edit
+                      </Link>
+                      <button
+                        onClick={() => remove(a)}
+                        disabled={busyId === a.id}
+                        className="rounded-lg bg-rose-50 px-3 py-1.5 text-[12px] font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      >
+                        {busyId === a.id ? "…" : "Hapus"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {!loading && items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">
-                    Tidak ada tulisan yang cocok
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-500">
+                    {query || rubric !== "_all"
+                      ? "Tidak ada tulisan yang cocok"
+                      : "Belum ada tulisan. Klik “Tulis Artikel Baru” untuk mulai."}
+                  </td>
+                </tr>
+              )}
+              {loading && items.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                    <Loader2 className="mx-auto size-4 animate-spin" />
                   </td>
                 </tr>
               )}
