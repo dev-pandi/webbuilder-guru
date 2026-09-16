@@ -1,456 +1,167 @@
 "use client";
 
+// Tulisan list — mirror mockup dashboard-guru/tulisan.html.
+// Filter by rubrik + search live pakai state lokal (data mockup).
+
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import {
-  Newspaper,
-  Plus,
-  Search,
-  SortAsc,
-  Send,
-  Pencil,
-  Trash2,
-  AlertCircle,
-  Loader2,
-  Calendar,
-  FileText,
-  CheckCircle2,
-  Clock,
-  Eye,
-  MessageSquare,
-  MessageSquareOff,
-} from "lucide-react";
-import { toast } from "sonner";
-import {
-  api,
-  GURU_RUBRICS,
-  GURU_RUBRIC_LABEL,
-  type Article,
-  type GuruRubric,
-} from "@/lib/api";
-import {
-  Pagination,
-  useDebounced,
-  type PaginatedResult,
-} from "@/components/Pagination";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { GuruFeatureNotice } from "@/components/GuruFeatureNotice";
+import { useParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import { FileText, Plus, Search } from "lucide-react";
 
-const SORT_OPTIONS = [
-  { value: "newest", label: "Terbaru Dibuat" },
-  { value: "oldest", label: "Terlama" },
-  { value: "published_desc", label: "Terbaru Publish" },
-  { value: "views_desc", label: "Terbanyak Dibaca" },
-  { value: "title_asc", label: "Judul A → Z" },
+type ChipTone = "green" | "gray" | "amber";
+
+const RUBRICS = ["Semua", "Ceritaku", "Bacaanku", "Inspirasiku", "Bangsaku", "Peradaban"] as const;
+
+const ROWS: Array<{
+  title: string;
+  slug: string;
+  rubrik: string;
+  status: string;
+  tone: ChipTone;
+  views: string;
+  tanggapan: string;
+  updated: string;
+}> = [
+  { title: "Hati-hati dengan Spasi", slug: "hati-hati-dengan-spasi", rubrik: "Ceritaku", status: "Published", tone: "green", views: "1.248", tanggapan: "18", updated: "15 Sep 2026" },
+  { title: "Ketika Buku Mengubah Cara Pandang", slug: "ketika-buku-mengubah-cara-pandang", rubrik: "Bacaanku", status: "Published", tone: "green", views: "972", tanggapan: "12", updated: "14 Sep 2026" },
+  { title: "Kelas yang Hidup dengan Pertanyaan", slug: "kelas-yang-hidup", rubrik: "Inspirasiku", status: "Draft", tone: "gray", views: "0", tanggapan: "0", updated: "13 Sep 2026" },
+  { title: "Bahasa, Jembatan yang Menyatukan", slug: "bahasa-jembatan-yang-menyatukan", rubrik: "Bangsaku", status: "Published", tone: "green", views: "1.084", tanggapan: "16", updated: "12 Sep 2026" },
+  { title: "Jejak Kearifan Lokal di Sekitar Kita", slug: "jejak-kearifan-lokal", rubrik: "Peradaban", status: "Review", tone: "amber", views: "320", tanggapan: "3", updated: "10 Sep 2026" },
 ];
 
-const STATUS_OPTIONS = [
-  { value: "_all", label: "Semua Status" },
-  { value: "published", label: "Published" },
-  { value: "draft", label: "Draft" },
-];
-
-function SkeletonRow() {
+function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode }) {
+  const tones: Record<ChipTone, string> = {
+    green: "bg-emerald-100 text-emerald-800",
+    gray: "bg-slate-100 text-slate-600",
+    amber: "bg-amber-100 text-amber-800",
+  };
   return (
-    <TableRow className="animate-pulse">
-      <TableCell className="pl-5">
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-16 rounded-md bg-muted" />
-          <div className="space-y-1.5">
-            <div className="h-4 w-56 rounded bg-muted" />
-            <div className="h-3 w-32 rounded bg-muted" />
-          </div>
-        </div>
-      </TableCell>
-      <TableCell><div className="h-5 w-20 rounded-full bg-muted" /></TableCell>
-      <TableCell><div className="h-3 w-16 rounded bg-muted" /></TableCell>
-      <TableCell><div className="h-3 w-24 rounded bg-muted" /></TableCell>
-      <TableCell className="pr-5"><div className="ml-auto h-8 w-32 rounded bg-muted" /></TableCell>
-    </TableRow>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tones[tone]}`}>
+      {children}
+    </span>
   );
 }
 
-export default function TulisanPage() {
+export default function TulisanListPage() {
   const params = useParams<{ id: string }>();
-  const search = useSearchParams();
-  const initialRubric = (search.get("rubric") as GuruRubric | null) ?? "_all";
+  const sid = params.id;
+  const [query, setQuery] = useState("");
+  const [rubrik, setRubrik] = useState<(typeof RUBRICS)[number]>("Semua");
 
-  const [rubric, setRubric] = useState<GuruRubric | "_all">(initialRubric);
-  const [page, setPage] = useState(1);
-  const [sort, setSort] = useState("newest");
-  const [status, setStatus] = useState<string>("_all");
-  const [q, setQ] = useState("");
-  const debouncedQ = useDebounced(q, 300);
-  const [data, setData] = useState<PaginatedResult<Article> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedQ, sort, status, rubric]);
-
-  async function refresh() {
-    setLoading(true);
-    try {
-      const p = new URLSearchParams({
-        page: String(page),
-        page_size: "20",
-        sort,
-      });
-      if (debouncedQ) p.set("q", debouncedQ);
-      if (status !== "_all") p.set("status", status);
-      if (rubric !== "_all") p.set("rubric", rubric);
-      const r = await api<PaginatedResult<Article>>(
-        `/api/v1/sites/${params.id}/articles?${p}`,
-      );
-      setData(r);
-      setErr(null);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id, page, debouncedQ, sort, status, rubric]);
-
-  async function publish(a: Article) {
-    setActionLoading(`publish-${a.id}`);
-    try {
-      await api(`/api/v1/articles/${a.id}/publish`, { method: "POST" });
-      toast.success(`"${a.title}" dipublikasikan`);
-      refresh();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function remove(a: Article) {
-    if (!confirm(`Hapus tulisan "${a.title}"?\n\nTindakan ini tidak dapat dibatalkan.`)) return;
-    setActionLoading(`delete-${a.id}`);
-    try {
-      await api(`/api/v1/articles/${a.id}`, { method: "DELETE" });
-      toast.success("Tulisan dihapus");
-      refresh();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  const items = data?.items ?? [];
-  const rubricTabs = useMemo(
-    () => [{ value: "_all" as const, label: "Semua" }, ...GURU_RUBRICS.map((r) => ({
-      value: r,
-      label: GURU_RUBRIC_LABEL[r],
-    }))],
-    [],
-  );
+  const filtered = useMemo(() => {
+    return ROWS.filter((r) => {
+      if (rubrik !== "Semua" && r.rubrik !== rubrik) return false;
+      if (query && !r.title.toLowerCase().includes(query.toLowerCase())) return false;
+      return true;
+    });
+  }, [query, rubrik]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <GuruFeatureNotice
-        title="Tulisan"
-        description="Kelola tulisan di 6 rubrik: Ceritaku, Bacaanku, Inspirasiku, Bangsaku, Peradaban, dan Forum Diskusi. Untuk Forum Diskusi, tanggapan selalu aktif dan tidak bisa dinonaktifkan."
-      />
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
         <div>
-          <div className="mb-1 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/10">
-              <Newspaper className="size-4 text-violet-600" />
-            </div>
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Kelola Tulisan
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">Tulisan</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {data ? `${data.total} tulisan` : "Memuat data…"}
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            Kelola Tulisan
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Kelola artikel dari lima rubrik utama Website Pribadi Guru.
           </p>
         </div>
-        <Button asChild className="gap-2 shadow-sm">
-          <Link href={`/sites/${params.id}/tulisan/new${rubric !== "_all" ? `?rubric=${rubric}` : ""}`}>
-            <Plus className="size-4" />
-            Tulisan Baru
-          </Link>
-        </Button>
+        <Link
+          href={`/sites/${sid}/tulisan/new`}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
+        >
+          <Plus className="size-4" />
+          Tulis Artikel Baru
+        </Link>
       </div>
 
-      {/* Rubric tabs */}
-      <div className="flex flex-wrap gap-1.5 border-b">
-        {rubricTabs.map((t) => {
-          const active = rubric === t.value;
-          return (
-            <button
-              key={t.value}
-              type="button"
-              onClick={() => setRubric(t.value)}
-              className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition ${
-                active
-                  ? "border-primary font-semibold text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
-        <div className="relative w-80">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari judul atau slug…"
-            className="h-9 border-transparent bg-muted/40 pl-9 transition-colors focus:border-input focus:bg-background"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="h-9 w-40 border-transparent bg-muted/40 focus:border-input">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-5 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative flex-1 lg:min-w-[280px]">
+              <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Cari judul tulisan..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3.5 text-sm outline-none focus:border-blue-400 focus:bg-white"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {RUBRICS.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRubrik(r)}
+                  className={`rounded-full border px-3.5 py-2 text-[12px] font-bold transition ${
+                    rubrik === r
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {r}
+                </button>
               ))}
-            </SelectContent>
-          </Select>
-          <SortAsc className="size-4 text-muted-foreground" />
-          <Select value={sort} onValueChange={setSort}>
-            <SelectTrigger className="h-9 w-44 border-transparent bg-muted/40 focus:border-input">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {err && (
-        <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
-          <span><span className="font-medium">Gagal memuat:</span> {err}</span>
-        </div>
-      )}
-
-      <Card className="overflow-hidden rounded-xl p-0 shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/30 hover:bg-muted/30">
-              <TableHead className="pl-5 font-semibold text-foreground">
-                <div className="flex items-center gap-1.5">
-                  <FileText className="size-3.5" /> Tulisan
-                </div>
-              </TableHead>
-              <TableHead className="font-semibold text-foreground">Rubrik</TableHead>
-              <TableHead className="font-semibold text-foreground">Status</TableHead>
-              <TableHead className="font-semibold text-foreground">
-                <div className="flex items-center gap-1.5">
-                  <Eye className="size-3.5" /> Views
-                </div>
-              </TableHead>
-              <TableHead className="font-semibold text-foreground">
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="size-3.5" /> Terbit
-                </div>
-              </TableHead>
-              <TableHead className="pr-5 text-right font-semibold text-foreground">Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className={loading ? "opacity-60" : ""}>
-            {loading && !data ? (
-              <>
-                <SkeletonRow />
-                <SkeletonRow />
-                <SkeletonRow />
-              </>
-            ) : items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-16 text-center">
-                  <div className="mx-auto flex max-w-sm flex-col items-center gap-3">
-                    <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                      <Newspaper className="size-5 text-muted-foreground" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="font-medium">
-                        {debouncedQ || status !== "_all" || rubric !== "_all"
-                          ? "Tidak ada tulisan sesuai filter"
-                          : "Belum ada tulisan"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {debouncedQ
-                          ? `Tidak ada hasil untuk "${debouncedQ}".`
-                          : "Mulai dari draft, publikasikan saat siap."}
-                      </p>
-                    </div>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              items.map((a) => (
-                <TableRow key={a.id} className="group">
-                  <TableCell className="pl-5">
-                    <div className="flex items-center gap-3">
-                      {a.cover_image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={a.cover_image_url}
-                          alt=""
-                          className="size-12 rounded-md object-cover"
-                        />
-                      ) : (
-                        <div className="flex size-12 items-center justify-center rounded-md bg-muted">
-                          <FileText className="size-4 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <Link
-                          href={`/sites/${params.id}/tulisan/${a.id}/edit`}
-                          className="line-clamp-1 font-medium hover:underline"
-                        >
-                          {a.title}
-                        </Link>
-                        <p className="mt-0.5 line-clamp-1 font-mono text-[11px] text-muted-foreground">
-                          /{a.rubric}/{a.slug}
-                        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] border-collapse">
+            <thead>
+              <tr>
+                {["Judul", "Rubrik", "Status", "Views", "Tanggapan", "Diperbarui", "Aksi"].map((h) => (
+                  <th
+                    key={h}
+                    className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row) => (
+                <tr key={row.slug} className="border-b border-slate-100 last:border-0">
+                  <td className="px-4 py-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="grid h-9 w-11 place-items-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 text-slate-500">
+                        <FileText className="size-4" />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-semibold text-slate-900">{row.title}</div>
+                        <div className="text-[11px] text-slate-500">{row.slug}</div>
                       </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="gap-1">
-                      {GURU_RUBRIC_LABEL[a.rubric]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {a.status === "published" ? (
-                      <Badge variant="success" className="gap-1">
-                        <CheckCircle2 className="size-3" /> Published
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="gap-1">
-                        <Clock className="size-3" /> Draft
-                      </Badge>
-                    )}
-                    {!a.comments_enabled && (
-                      <span
-                        title="Tanggapan dinonaktifkan"
-                        className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"
-                      >
-                        <MessageSquareOff className="size-3" /> tanggapan off
-                      </span>
-                    )}
-                    {a.comments_enabled && a.rubric === "forum-diskusi" && (
-                      <span
-                        title="Forum Diskusi: tanggapan wajib aktif"
-                        className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-emerald-700"
-                      >
-                        <MessageSquare className="size-3" /> forum
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums text-muted-foreground">
-                    {a.view_count.toLocaleString("id-ID")}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {a.published_at
-                      ? new Date(a.published_at).toLocaleDateString("id-ID", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="pr-5">
-                    <div className="flex items-center justify-end gap-1">
-                      {a.status !== "published" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => publish(a)}
-                          disabled={actionLoading !== null}
-                          className="h-8 gap-1"
-                        >
-                          {actionLoading === `publish-${a.id}` ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <Send className="size-3.5" />
-                          )}
-                          Publish
-                        </Button>
-                      )}
-                      <Button asChild size="sm" variant="ghost" className="h-8 gap-1">
-                        <Link href={`/sites/${params.id}/tulisan/${a.id}/edit`}>
-                          <Pencil className="size-3.5" /> Edit
-                        </Link>
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => remove(a)}
-                        disabled={actionLoading !== null}
-                        className="h-8 gap-1 text-destructive hover:text-destructive"
-                      >
-                        {actionLoading === `delete-${a.id}` ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </Card>
-
-      {data && data.total_pages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={data.total_pages}
-          total={data.total}
-          pageSize={data.page_size}
-          onPage={setPage}
-        />
-      )}
+                  </td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{row.rubrik}</td>
+                  <td className="px-4 py-3.5">
+                    <Chip tone={row.tone}>{row.status}</Chip>
+                  </td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{row.views}</td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-700">{row.tanggapan}</td>
+                  <td className="px-4 py-3.5 text-[13px] text-slate-600">{row.updated}</td>
+                  <td className="px-4 py-3.5">
+                    <Link
+                      href={`/sites/${sid}/tulisan/new`}
+                      className="rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+                    >
+                      Edit
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">
+                    Tidak ada tulisan yang cocok
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

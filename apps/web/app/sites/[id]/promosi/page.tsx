@@ -1,302 +1,204 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import {
-  Megaphone,
-  Plus,
-  Pencil,
-  Trash2,
-  AlertCircle,
-  Loader2,
-  ExternalLink,
-  ShieldAlert,
-  ImageIcon,
-} from "lucide-react";
+// Ruang Promosi — mirror mockup dashboard-guru/promosi.html.
+// Banner rasio 2:1, dual approval Status Guru + Status Admin.
+
+import { useState } from "react";
 import { toast } from "sonner";
-import {
-  api,
-  BANNER_STATUS_LABEL,
-  type Banner,
-  type BannerEffectiveStatus,
-} from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { GuruFeatureNotice } from "@/components/GuruFeatureNotice";
-import { BannerForm } from "./BannerForm";
+import { Plus } from "lucide-react";
 
-function statusBadge(s: BannerEffectiveStatus) {
-  const label = BANNER_STATUS_LABEL[s];
-  switch (s) {
-    case "active":
-      return <Badge variant="success">{label}</Badge>;
-    case "teacher_off":
-      return <Badge variant="secondary">{label}</Badge>;
-    case "admin_disabled":
-      return (
-        <Badge variant="destructive" className="gap-1">
-          <ShieldAlert className="size-3" /> {label}
-        </Badge>
-      );
-    case "not_started":
-      return <Badge variant="warning">{label}</Badge>;
-    case "ended":
-      return <Badge variant="secondary">{label}</Badge>;
-  }
-}
+type AdminStatus = "allowed" | "blocked";
 
-function fmtDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+type Banner = {
+  id: string;
+  title: string;
+  url: string;
+  startDate: string;
+  endDate: string;
+  order: number;
+  guruActive: boolean;
+  adminStatus: AdminStatus;
+  gradient: string;
+};
+
+const INITIAL: Banner[] = [
+  {
+    id: "1",
+    title: "Membaca Membuka Dunia",
+    url: "https://contoh.id/program-literasi",
+    startDate: "2026-09-01",
+    endDate: "2026-09-30",
+    order: 1,
+    guruActive: true,
+    adminStatus: "allowed",
+    gradient: "linear-gradient(135deg,#1e4f89,#77a9d9)",
+  },
+  {
+    id: "2",
+    title: "Pendidikan untuk Masa Depan",
+    url: "https://contoh.id/pelatihan",
+    startDate: "2026-09-10",
+    endDate: "2026-10-10",
+    order: 2,
+    guruActive: true,
+    adminStatus: "blocked",
+    gradient: "linear-gradient(135deg,#8b5e3c,#e3b57a)",
+  },
+  {
+    id: "3",
+    title: "Berbagi Praktik Baik",
+    url: "https://contoh.id/komunitas",
+    startDate: "2026-10-01",
+    endDate: "2026-10-31",
+    order: 3,
+    guruActive: false,
+    adminStatus: "allowed",
+    gradient: "linear-gradient(135deg,#4f6577,#8faabd)",
+  },
+];
 
 export default function PromosiPage() {
-  const params = useParams<{ id: string }>();
-  const [items, setItems] = useState<Banner[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Banner | null>(null);
+  const [banners, setBanners] = useState<Banner[]>(INITIAL);
 
-  async function refresh() {
-    setLoading(true);
-    try {
-      const r = await api<Banner[]>(`/api/v1/sites/${params.id}/banners`);
-      setItems(r);
-      setErr(null);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
+  function update<K extends keyof Banner>(id: string, key: K, value: Banner[K]) {
+    setBanners((prev) => prev.map((b) => (b.id === id ? { ...b, [key]: value } : b)));
   }
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id]);
-
-  async function toggleActive(b: Banner) {
-    setActionLoading(`toggle-${b.id}`);
-    try {
-      await api(`/api/v1/banners/${b.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ teacher_active: !b.teacher_active }),
-      });
-      toast.success(
-        b.teacher_active ? "Banner dinonaktifkan" : "Banner diaktifkan",
-      );
-      refresh();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  async function remove(b: Banner) {
-    if (!confirm(`Hapus banner "${b.internal_title}"?\n\nTindakan ini tidak dapat dibatalkan.`))
-      return;
-    setActionLoading(`delete-${b.id}`);
-    try {
-      await api(`/api/v1/banners/${b.id}`, { method: "DELETE" });
-      toast.success("Banner dihapus");
-      refresh();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setActionLoading(null);
-    }
-  }
-
-  const list = items ?? [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <GuruFeatureNotice
-        title="Ruang Promosi"
-        description="Banner promosi tampil di beranda website Anda dengan rasio 2:1 dan carousel otomatis. Semua banner harus disetujui admin platform. Gambar ideal 1200×600 pixel."
-      />
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
         <div>
-          <div className="mb-1 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/10">
-              <Megaphone className="size-4 text-violet-600" />
-            </div>
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Kelola Banner
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">Ruang Promosi</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {items ? `${items.length} banner` : "Memuat…"}
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            Ruang Promosi
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Kelola banner promosi yang tampil di Beranda Website Pribadi Guru.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setShowForm(true);
-          }}
-          className="gap-2 shadow-sm"
+        <button
+          onClick={() => toast.success("Fitur tambah banner masih mockup")}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
         >
-          <Plus className="size-4" /> Banner Baru
-        </Button>
+          <Plus className="size-4" />
+          Tambah Banner
+        </button>
       </div>
 
-      {err && (
-        <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>
-            <span className="font-medium">Gagal memuat:</span> {err}
-          </span>
-        </div>
-      )}
+      <div className="rounded-xl bg-blue-50 px-4 py-3 text-[13px] text-blue-800">
+        <strong>Rasio 2:1</strong> — gunakan banner full-image. Banner tampil hanya jika Status Guru aktif dan Status Admin diizinkan.
+      </div>
 
-      <div className={loading ? "opacity-60" : ""}>
-        {loading && !items ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="aspect-[2/1] animate-pulse rounded-xl bg-muted" />
-            <div className="aspect-[2/1] animate-pulse rounded-xl bg-muted" />
-          </div>
-        ) : list.length === 0 ? (
-          <Card className="flex flex-col items-center gap-3 py-16 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-              <Megaphone className="size-5 text-muted-foreground" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">Belum ada banner</p>
-              <p className="text-sm text-muted-foreground">
-                Buat banner promosi pertama Anda. Gunakan rasio 2:1 agar tampil optimal.
-              </p>
-            </div>
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setShowForm(true);
-              }}
-              className="mt-2 gap-2"
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {banners.map((b) => (
+          <div key={b.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div
+              className="flex aspect-[2/1] items-end rounded-xl p-4 text-lg font-bold text-white"
+              style={{ background: b.gradient }}
             >
-              <Plus className="size-4" /> Buat Banner
-            </Button>
-          </Card>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {list.map((b) => (
-              <Card key={b.id} className="overflow-hidden">
-                <div className="relative aspect-[2/1] bg-muted">
-                  {b.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={b.image_url}
-                      alt={b.alt_text}
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex size-full items-center justify-center">
-                      <ImageIcon className="size-8 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div className="absolute right-3 top-3">{statusBadge(b.effective_status)}</div>
+              {b.title}
+            </div>
+
+            <div className="mt-3 grid gap-3">
+              <div className="grid gap-1.5">
+                <label className="text-[12px] font-bold text-slate-600">URL Tujuan</label>
+                <input
+                  value={b.url}
+                  onChange={(e) => update(b.id, "url", e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <label className="text-[12px] font-bold text-slate-600">Tanggal Mulai</label>
+                  <input
+                    type="date"
+                    value={b.startDate}
+                    onChange={(e) => update(b.id, "startDate", e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                  />
                 </div>
-                <div className="space-y-3 p-4">
-                  <div>
-                    <p className="line-clamp-1 font-semibold">{b.internal_title}</p>
-                    <a
-                      href={b.target_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
-                    >
-                      <ExternalLink className="size-3" />
-                      <span className="line-clamp-1">{b.target_url}</span>
-                    </a>
-                  </div>
-
-                  {!b.admin_enabled && b.admin_disabled_reason && (
-                    <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
-                      <ShieldAlert className="size-3.5 shrink-0" />
-                      <span>
-                        <span className="font-semibold">Admin: </span>
-                        {b.admin_disabled_reason}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                    <div>
-                      <span className="font-medium text-foreground">Mulai:</span>{" "}
-                      {fmtDate(b.start_at)}
-                    </div>
-                    <div>
-                      <span className="font-medium text-foreground">Berakhir:</span>{" "}
-                      {fmtDate(b.end_at)}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 border-t pt-3">
-                    <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={b.teacher_active}
-                        disabled={actionLoading !== null}
-                        onChange={() => toggleActive(b)}
-                        className="size-3.5"
-                      />
-                      Aktif (dari Guru)
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEditing(b);
-                          setShowForm(true);
-                        }}
-                        disabled={actionLoading !== null}
-                        className="h-8 gap-1"
-                      >
-                        <Pencil className="size-3.5" /> Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => remove(b)}
-                        disabled={actionLoading !== null}
-                        className="h-8 gap-1 text-destructive hover:text-destructive"
-                      >
-                        {actionLoading === `delete-${b.id}` ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+                <div className="grid gap-1.5">
+                  <label className="text-[12px] font-bold text-slate-600">Tanggal Selesai</label>
+                  <input
+                    type="date"
+                    value={b.endDate}
+                    onChange={(e) => update(b.id, "endDate", e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                  />
                 </div>
-              </Card>
-            ))}
+              </div>
+
+              <div className="flex items-center justify-between text-[13px]">
+                <strong className="text-slate-700">Urutan</strong>
+                <select
+                  value={b.order}
+                  onChange={(e) => update(b.id, "order", Number(e.target.value))}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                >
+                  {[1, 2, 3].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between text-[13px]">
+                <strong className="text-slate-700">Status Guru</strong>
+                <label className="inline-flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={b.guruActive}
+                    onChange={(e) => update(b.id, "guruActive", e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors peer-checked:bg-emerald-500">
+                    <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
+                  </span>
+                  <span className="text-[12px] font-bold text-slate-700">
+                    {b.guruActive ? "Aktif" : "Nonaktif"}
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between text-[13px]">
+                <strong className="text-slate-700">Status Admin</strong>
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                    b.adminStatus === "allowed"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-rose-100 text-rose-800"
+                  }`}
+                >
+                  {b.adminStatus === "allowed" ? "Diizinkan" : "Tidak diizinkan"}
+                </span>
+              </div>
+
+              {b.adminStatus === "blocked" && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12px] font-bold text-rose-700">
+                  Dinonaktifkan oleh Admin
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => toast.success("Urutan banner diperbarui")}
+                  className="rounded-lg bg-blue-50 px-3 py-2 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Atur Urutan
+                </button>
+                <button
+                  onClick={() => toast.success("Perubahan disimpan")}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Simpan
+                </button>
+              </div>
+            </div>
           </div>
-        )}
+        ))}
       </div>
-
-      <BannerForm
-        siteId={params.id}
-        banner={editing}
-        open={showForm}
-        onClose={() => setShowForm(false)}
-        onSaved={() => {
-          setShowForm(false);
-          refresh();
-        }}
-      />
     </div>
   );
 }

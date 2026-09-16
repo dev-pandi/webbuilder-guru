@@ -1,413 +1,380 @@
 "use client";
 
-// Dashboard Ringkasan (spec §21) — landing setiap site setelah user pilih
-// dari dashboard. Menampilkan agregat statistik + list tulisan/tanggapan
-// terbaru. Semua endpoint sudah tenant-safe; angka 0 kalau site belum
-// pakai fitur guru (bukan error).
+// Dashboard Guru — landing setiap site. Mirror mockup dashboard-guru/index.html:
+// header aksi + 4 stat card + Aksi Cepat + Konten Terbaru (table) + chart +
+// Tanggapan pending + Promosi preview + Template mini.
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
 import {
-  AlertCircle,
-  ArrowRight,
-  BarChart3,
+  ArrowUpRight,
   BookOpen,
-  Clock,
+  ExternalLink,
   Eye,
   FileText,
-  Loader2,
-  Megaphone,
   MessageSquare,
+  Megaphone,
   Newspaper,
-  Pencil,
-  Rocket,
+  PenLine,
+  Plus,
 } from "lucide-react";
-import {
-  api,
-  GURU_RUBRIC_LABEL,
-  RESPONSE_ROLE_LABEL,
-  type Article,
-  type Banner,
-  type LearningMaterial,
-  type ResponseItem,
-  type SiteStats,
-} from "@/lib/api";
-import type { PaginatedResult } from "@/components/Pagination";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-type StatCardProps = {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  sub?: string;
-  tone?: "default" | "warning";
-  href?: string;
-};
+type ChipTone = "green" | "gray" | "amber" | "red" | "blue" | "purple";
 
-function StatCard({ label, value, icon: Icon, sub, tone = "default", href }: StatCardProps) {
-  const inner = (
-    <Card
-      className={`transition-all ${
-        href ? "hover:border-primary/40 hover:shadow-md" : ""
-      }`}
+function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode }) {
+  const tones: Record<ChipTone, string> = {
+    green: "bg-emerald-100 text-emerald-800",
+    gray: "bg-slate-100 text-slate-600",
+    amber: "bg-amber-100 text-amber-800",
+    red: "bg-rose-100 text-rose-800",
+    blue: "bg-blue-100 text-blue-800",
+    purple: "bg-violet-100 text-violet-800",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tones[tone]}`}
     >
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {label}
-            </p>
-            <p className="mt-2 text-2xl font-bold tabular-nums text-foreground">
-              {value}
-            </p>
-            {sub && (
-              <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
-            )}
-          </div>
-          <div
-            className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
-              tone === "warning"
-                ? "bg-amber-500/10 text-amber-600"
-                : "bg-violet-500/10 text-violet-600"
-            }`}
-          >
-            <Icon className="size-4" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+      {children}
+    </span>
   );
-  return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const min = Math.round(diff / 60000);
-  if (min < 1) return "baru saja";
-  if (min < 60) return `${min}m lalu`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}j lalu`;
-  const day = Math.round(hr / 24);
-  if (day < 30) return `${day}h lalu`;
-  return new Date(iso).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "short",
-  });
-}
+const stats = [
+  {
+    label: "Total Tulisan",
+    value: "28",
+    trend: "+12% bulan ini",
+    trendPositive: true,
+    icon: Newspaper,
+    tint: "bg-orange-100 text-orange-600",
+  },
+  {
+    label: "Total Views",
+    value: "12.430",
+    trend: "+18% bulan ini",
+    trendPositive: true,
+    icon: Eye,
+    tint: "bg-blue-100 text-blue-600",
+  },
+  {
+    label: "Tanggapan Pending",
+    value: "5",
+    trend: "Perlu ditinjau",
+    trendPositive: false,
+    icon: MessageSquare,
+    tint: "bg-violet-100 text-violet-600",
+  },
+  {
+    label: "Banner Promosi Aktif",
+    value: "2",
+    trend: "2 dari 3 banner",
+    trendPositive: true,
+    icon: Megaphone,
+    tint: "bg-emerald-100 text-emerald-600",
+  },
+];
+
+const contentRows = [
+  { title: "Hati-hati dengan Spasi", rubrik: "Ceritaku", status: "Published", views: "1.248", tanggapan: "18", tone: "green" as ChipTone },
+  { title: "Ketika Buku Mengubah Cara Pandang", rubrik: "Bacaanku", status: "Published", views: "972", tanggapan: "12", tone: "green" as ChipTone },
+  { title: "Kelas yang Hidup dengan Pertanyaan", rubrik: "Inspirasiku", status: "Draft", views: "0", tanggapan: "0", tone: "gray" as ChipTone },
+  { title: "Bahasa, Jembatan yang Menyatukan", rubrik: "Bangsaku", status: "Published", views: "1.084", tanggapan: "16", tone: "green" as ChipTone },
+];
+
+const chartBars = [28, 38, 46, 42, 57, 49, 68, 61, 76, 69, 89, 78];
+const chartValues = ["410", "562", "681", "625", "842", "721", "1.008", "906", "1.129", "1.021", "1.318", "1.156"];
+
+const pendingComments = [
+  { initials: "AS", name: "Andi Saputra", time: "2 jam lalu", text: "Artikel ini sangat menginspirasi, terima kasih Bu!" },
+  { initials: "SN", name: "Siti Nurhaliza", time: "5 jam lalu", text: "Saya jadi lebih semangat belajar setelah membaca tulisan ini." },
+];
+
+const themeMini = [
+  { name: "Hangat & Personal", note: "Sedang digunakan", active: true, gradient: "linear-gradient(135deg,#f0d9cc,#fff)" },
+  { name: "Modern", note: "Profesional", active: false, gradient: "linear-gradient(135deg,#e8eff7,#fff)" },
+  { name: "Ceria", note: "Edukatif", active: false, gradient: "linear-gradient(135deg,#fff2b8,#e9f8ef)" },
+  { name: "Minimal", note: "Editorial", active: false, gradient: "linear-gradient(135deg,#eceae5,#fff)" },
+];
 
 export default function SiteDashboardPage() {
   const params = useParams<{ id: string }>();
   const sid = params.id;
 
-  const [stats, setStats] = useState<SiteStats | null>(null);
-  const [pendingCount, setPendingCount] = useState<number | null>(null);
-  const [latestArticles, setLatestArticles] = useState<Article[]>([]);
-  const [latestResponses, setLatestResponses] = useState<ResponseItem[]>([]);
-  const [materialsCount, setMaterialsCount] = useState<number | null>(null);
-  const [bannersCount, setBannersCount] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-
-    (async () => {
-      try {
-        // Parallel fetch — kalau ada yg gagal (mis. rate-limit), yang lain
-        // tetap tampil. Fallback ke null / [] per section.
-        const [statsRes, pendingRes, articlesRes, respRes, materialsRes, bannersRes] =
-          await Promise.all([
-            api<SiteStats>(`/api/v1/sites/${sid}/site-stats`).catch(() => null),
-            api<PaginatedResult<ResponseItem>>(
-              `/api/v1/sites/${sid}/responses?status=pending&page_size=1`,
-            ).catch(() => null),
-            api<PaginatedResult<Article>>(
-              `/api/v1/sites/${sid}/articles?status=published&sort=published_desc&page_size=5`,
-            ).catch(() => null),
-            api<PaginatedResult<ResponseItem>>(
-              `/api/v1/sites/${sid}/responses?page_size=5`,
-            ).catch(() => null),
-            api<PaginatedResult<LearningMaterial>>(
-              `/api/v1/sites/${sid}/learning-materials?page_size=1`,
-            ).catch(() => null),
-            api<Banner[]>(`/api/v1/sites/${sid}/banners`).catch(() => null),
-          ]);
-
-        if (cancelled) return;
-        setStats(statsRes);
-        setPendingCount(pendingRes?.total ?? 0);
-        setLatestArticles(articlesRes?.items ?? []);
-        setLatestResponses(respRes?.items ?? []);
-        setMaterialsCount(materialsRes?.total ?? 0);
-        // Banner aktif = teacher_active && admin_enabled && period valid.
-        const activeBanners = (bannersRes ?? []).filter(
-          (b) => b.effective_status === "active",
-        );
-        setBannersCount(activeBanners.length);
-      } catch (e) {
-        if (!cancelled) setErr((e as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sid]);
-
-  if (loading) {
-    return (
-      <div className="mx-auto flex max-w-5xl items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" />
-        Memuat ringkasan…
-      </div>
-    );
-  }
-
-  if (err) {
-    return (
-      <div className="mx-auto max-w-5xl">
-        <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>
-            <span className="font-medium">Gagal memuat:</span> {err}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  const s = stats ?? { total_views: 0, total_responses: 0, total_articles: 0 };
-  const totalContent = s.total_articles + (materialsCount ?? 0);
-  const hasContent = totalContent > 0 || (bannersCount ?? 0) > 0;
-
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-5">
+      {/* Page head */}
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
         <div>
-          <div className="mb-1 flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/10">
-              <BarChart3 className="size-4 text-violet-600" />
-            </div>
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Ringkasan Situs
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Aktivitas dan statistik terkini dari website Anda.
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            Selamat datang di Website Pribadi Guru
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Ringkasan aktivitas dan konten Website Pribadi Guru Anda.
           </p>
         </div>
-        <Button asChild className="gap-2 shadow-sm">
-          <Link href={`/sites/${sid}/editor`}>
-            <Pencil className="size-4" />
-            Buka Editor
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/sites/${sid}/tampilan`}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
+          >
+            Preview Website
+            <ExternalLink className="size-4" />
           </Link>
-        </Button>
+          <Link
+            href={`/sites/${sid}/tulisan/new`}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
+          >
+            <Plus className="size-4" />
+            Tulis Baru
+          </Link>
+        </div>
       </div>
 
-      {/* Empty state — situs baru tanpa konten sama sekali */}
-      {!hasContent && (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-violet-500/10">
-              <Rocket className="size-5 text-violet-600" />
+      {/* Stats */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div
+              key={s.label}
+              className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className={`grid h-12 w-12 place-items-center rounded-xl ${s.tint}`}>
+                <Icon className="size-5" />
+              </div>
+              <div>
+                <div className="text-[12px] text-slate-500">{s.label}</div>
+                <div className="text-2xl font-bold leading-tight text-slate-900">{s.value}</div>
+                <div
+                  className={`text-[11px] font-bold ${
+                    s.trendPositive ? "text-emerald-600" : "text-amber-600"
+                  }`}
+                >
+                  {s.trend}
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <p className="font-semibold">Selamat datang!</p>
-              <p className="max-w-md text-sm text-muted-foreground">
-                Mulai isi website Anda dari salah satu menu di atas. Anda bisa
-                langsung menulis, menambahkan materi, atau memasang banner
-                promosi.
-              </p>
-            </div>
-            <div className="mt-2 flex flex-wrap justify-center gap-2">
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/sites/${sid}/tulisan/new`}>
-                  <Newspaper className="size-3.5" /> Tulisan Baru
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/sites/${sid}/pembelajaran/new`}>
-                  <BookOpen className="size-3.5" /> Materi Baru
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/sites/${sid}/promosi`}>
-                  <Megaphone className="size-3.5" /> Buat Banner
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Stat cards — spec §21 */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <StatCard
-          label="Total Views"
-          value={s.total_views.toLocaleString("id-ID")}
-          sub="Semua tulisan + forum"
-          icon={Eye}
-        />
-        <StatCard
-          label="Tulisan Published"
-          value={s.total_articles.toLocaleString("id-ID")}
-          sub={`${(materialsCount ?? 0).toLocaleString("id-ID")} materi pembelajaran`}
-          icon={FileText}
-          href={`/sites/${sid}/tulisan`}
-        />
-        <StatCard
-          label="Tanggapan Approved"
-          value={s.total_responses.toLocaleString("id-ID")}
-          sub="Tampil publik"
-          icon={MessageSquare}
-          href={`/sites/${sid}/tanggapan?status=approved`}
-        />
-        <StatCard
-          label="Menunggu Moderasi"
-          value={(pendingCount ?? 0).toLocaleString("id-ID")}
-          sub="Tanggapan pending"
-          icon={Clock}
-          tone={pendingCount && pendingCount > 0 ? "warning" : "default"}
-          href={`/sites/${sid}/tanggapan?status=pending`}
-        />
-        <StatCard
-          label="Materi Pembelajaran"
-          value={(materialsCount ?? 0).toLocaleString("id-ID")}
-          sub="Dipublikasikan"
-          icon={BookOpen}
-          href={`/sites/${sid}/pembelajaran`}
-        />
-        <StatCard
-          label="Banner Aktif"
-          value={(bannersCount ?? 0).toLocaleString("id-ID")}
-          sub="Tampil di beranda"
-          icon={Megaphone}
-          href={`/sites/${sid}/promosi`}
-        />
+          );
+        })}
       </div>
 
-      {/* Latest content lists */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Latest articles */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-sm font-semibold">Tulisan Terbaru</CardTitle>
-            <Link
-              href={`/sites/${sid}/tulisan`}
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              Semua <ArrowRight className="size-3" />
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-0 p-0">
-            {latestArticles.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 px-5 py-8 text-center">
-                <Newspaper className="size-6 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Belum ada tulisan yang dipublikasikan.
-                </p>
-                <Button asChild size="sm" variant="ghost" className="gap-1.5">
-                  <Link href={`/sites/${sid}/tulisan/new`}>
-                    <Pencil className="size-3.5" /> Tulis pertama
-                  </Link>
-                </Button>
-              </div>
-            ) : (
-              <ul className="divide-y">
-                {latestArticles.map((a) => (
-                  <li key={a.id}>
-                    <Link
-                      href={`/sites/${sid}/tulisan/${a.id}/edit`}
-                      className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="line-clamp-1 text-sm font-medium">
-                          {a.title}
-                        </p>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                            {GURU_RUBRIC_LABEL[a.rubric]}
-                          </Badge>
-                          <span>{a.view_count.toLocaleString("id-ID")} views</span>
-                          {a.published_at && <span>· {timeAgo(a.published_at)}</span>}
-                        </div>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      {/* Main grid */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.8fr)]">
+        {/* Left column */}
+        <div className="space-y-5">
+          {/* Aksi Cepat */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Aksi Cepat</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <QuickAction href={`/sites/${sid}/tulisan/new`} icon={PenLine} label="Tulis Artikel Baru" />
+              <QuickAction href={`/sites/${sid}/forum/new`} icon={MessageSquare} label="Buat Topik Forum" />
+              <QuickAction href={`/sites/${sid}/pembelajaran/new`} icon={BookOpen} label="Tambah Materi" />
+              <QuickAction href={`/sites/${sid}/promosi`} icon={Megaphone} label="Unggah Banner Promo" />
+            </div>
+          </section>
 
-        {/* Latest responses */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-sm font-semibold">Tanggapan Terbaru</CardTitle>
-            <Link
-              href={`/sites/${sid}/tanggapan`}
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              Semua <ArrowRight className="size-3" />
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-0 p-0">
-            {latestResponses.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 px-5 py-8 text-center">
-                <MessageSquare className="size-6 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Belum ada tanggapan.
-                </p>
-              </div>
-            ) : (
-              <ul className="divide-y">
-                {latestResponses.map((r) => (
-                  <li key={r.id}>
-                    <Link
-                      href={`/sites/${sid}/tanggapan?status=${r.status}`}
-                      className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <p className="text-sm font-medium">{r.author_name}</p>
-                          {r.status === "pending" ? (
-                            <Badge variant="warning" className="h-4 px-1.5 text-[10px]">
-                              Pending
-                            </Badge>
-                          ) : r.status === "approved" ? (
-                            <Badge variant="success" className="h-4 px-1.5 text-[10px]">
-                              Approved
-                            </Badge>
-                          ) : (
-                            <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
-                              Rejected
-                            </Badge>
-                          )}
+          {/* Konten Terbaru */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Konten Terbaru</h2>
+              <Link
+                href={`/sites/${sid}/tulisan`}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+              >
+                Lihat Semua →
+              </Link>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] border-collapse">
+                <thead>
+                  <tr>
+                    {["Judul", "Rubrik", "Status", "Views", "Tanggapan", "Aksi"].map((h) => (
+                      <th
+                        key={h}
+                        className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {contentRows.map((row) => (
+                    <tr key={row.title} className="border-b border-slate-100 last:border-0">
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="grid h-9 w-11 place-items-center rounded-lg bg-gradient-to-br from-slate-200 to-slate-300 text-slate-500">
+                            <FileText className="size-4" />
+                          </div>
+                          <span className="text-[13px] font-semibold text-slate-900">
+                            {row.title}
+                          </span>
                         </div>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                          {r.body}
-                        </p>
-                        <p className="mt-1 text-[10px] text-muted-foreground">
-                          {RESPONSE_ROLE_LABEL[r.author_role]} · {timeAgo(r.created_at)}
-                        </p>
-                      </div>
-                    </Link>
-                  </li>
+                      </td>
+                      <td className="px-4 py-3.5 text-[13px] text-slate-600">{row.rubrik}</td>
+                      <td className="px-4 py-3.5">
+                        <Chip tone={row.tone}>{row.status}</Chip>
+                      </td>
+                      <td className="px-4 py-3.5 text-[13px] text-slate-700">{row.views}</td>
+                      <td className="px-4 py-3.5 text-[13px] text-slate-700">{row.tanggapan}</td>
+                      <td className="px-4 py-3.5 text-slate-400">⋯</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Chart */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Statistik Kunjungan</h2>
+              <Chip tone="blue">30 hari terakhir</Chip>
+            </div>
+            <div className="p-5">
+              <div className="flex h-52 items-end gap-2.5 border-b border-slate-200 pt-4">
+                {chartBars.map((h, i) => (
+                  <div
+                    key={i}
+                    className="group relative flex-1 rounded-t-md bg-gradient-to-t from-blue-500 to-blue-400"
+                    style={{ height: `${h}%` }}
+                  >
+                    <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 rounded-md bg-slate-900 px-1.5 py-1 text-[10px] font-bold text-white group-hover:block">
+                      {chartValues[i]}
+                    </span>
+                  </div>
                 ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* Right column */}
+        <div className="space-y-5">
+          {/* Tanggapan pending */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Tanggapan Menunggu</h2>
+              <Link
+                href={`/sites/${sid}/tanggapan`}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+              >
+                Lihat Semua →
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {pendingComments.map((c) => (
+                <div key={c.name} className="px-5 py-4">
+                  <div className="flex gap-3">
+                    <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-orange-200 to-orange-400 text-[12px] font-bold text-orange-900">
+                      {c.initials}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="text-[13px] text-slate-900">{c.name}</strong>
+                        <span className="text-[11px] text-slate-500">{c.time}</span>
+                      </div>
+                      <p className="mt-1.5 text-[12px] leading-relaxed text-slate-600">{c.text}</p>
+                      <div className="mt-2.5 flex gap-2">
+                        <Link
+                          href={`/sites/${sid}/tanggapan`}
+                          className="rounded-lg bg-emerald-100 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-200"
+                        >
+                          Setujui
+                        </Link>
+                        <Link
+                          href={`/sites/${sid}/tanggapan`}
+                          className="rounded-lg bg-rose-100 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 hover:bg-rose-200"
+                        >
+                          Tolak
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Ruang promosi preview */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Ruang Promosi</h2>
+              <Link
+                href={`/sites/${sid}/promosi`}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+              >
+                Kelola Banner →
+              </Link>
+            </div>
+            <div className="p-5">
+              <div className="relative flex aspect-[2/1] items-end overflow-hidden rounded-xl bg-gradient-to-br from-blue-800 to-blue-500 p-5 text-white">
+                <span className="absolute -right-8 -top-14 h-44 w-44 rounded-full bg-white/10" />
+                <strong className="relative z-10 text-lg">Membaca Membuka Dunia</strong>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-[12px]">
+                <Chip tone="green">Aktif</Chip>
+                <span className="text-slate-500">01 Sep – 30 Sep 2026</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Template aktif */}
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Template Website Aktif</h2>
+              <Link
+                href={`/sites/${sid}/tampilan`}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+              >
+                Ubah Template →
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 p-4">
+              {themeMini.map((t) => (
+                <div
+                  key={t.name}
+                  className={`rounded-xl border-2 p-2 ${
+                    t.active ? "border-orange-500 bg-orange-50" : "border-transparent bg-slate-50"
+                  }`}
+                >
+                  <div
+                    className="mb-2 aspect-[16/10] rounded-md border border-slate-200"
+                    style={{ background: t.gradient }}
+                  />
+                  <div className="text-[12px] font-bold text-slate-900">{t.name}</div>
+                  <div className="text-[10px] text-slate-500">{t.note}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
+  );
+}
+
+function QuickAction({
+  href,
+  icon: Icon,
+  label,
+}: {
+  href: string;
+  icon: React.ElementType;
+  label: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-[13px] font-bold text-slate-800 hover:bg-white hover:shadow-sm"
+    >
+      <span className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-white">
+        <Icon className="size-4 text-slate-700" />
+      </span>
+      {label}
+      <ArrowUpRight className="ml-auto size-3.5 text-slate-400" />
+    </Link>
   );
 }
