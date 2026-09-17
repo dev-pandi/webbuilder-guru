@@ -216,11 +216,11 @@ export function TulisanForm({
                   </option>
                 ))}
               </select>
-              {isEdit && (
-                <p className="text-[11px] text-slate-500">
-                  Rubrik tidak dapat diubah setelah tulisan dibuat.
-                </p>
-              )}
+              <p className="text-[11px] text-slate-500">
+                {isEdit
+                  ? "Rubrik tidak dapat diubah setelah tulisan dibuat."
+                  : "Pilih salah satu rubrik utama untuk tulisan ini."}
+              </p>
             </Field>
 
             <Field label="Status Publikasi">
