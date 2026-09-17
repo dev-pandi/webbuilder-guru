@@ -28,6 +28,52 @@ import {
   type SiteStats,
 } from "@/lib/api";
 import type { PaginatedResult } from "@/components/Pagination";
+import { toast } from "sonner";
+
+// Domain purchase (dari GET /api/v1/domains/purchases). Row punya site_id
+// yang di-populate saat user attach purchase ke site lewat "Buat Situs".
+// Ini sumber authoritative untuk domain-per-site di purchase flow.
+type PurchaseItem = {
+  job_id: string;
+  domain: string;
+  status: string; // pending_payment | pending_provisioning | active | failed | expired
+  kind: string; // "register" | "renew"
+  site_id?: string | null;
+};
+
+// Legacy custom domain (bring-your-own) — dari GET /api/v1/sites/:id/domains.
+// Status 'verified' = DNS sudah divalidasi + SSL provisioned.
+type CustomDomain = {
+  id: string;
+  hostname: string;
+  status: string;
+  verified_at: string | null;
+};
+
+type SiteMeta = {
+  id: string;
+  slug: string;
+  template_id: string | null;
+};
+
+type TemplateMini = {
+  id: string;
+  slug: string;
+  category: string;
+  variant: string;
+  name: string;
+  description: string;
+  theme?: { colors?: { primary?: string; bg?: string } };
+};
+
+// Filter template yang relevan untuk guru — konsisten dengan /tampilan.
+const GURU_TEMPLATE_CATEGORIES = new Set(["guru-pandi"]);
+
+function gradientFromTheme(t: TemplateMini): string {
+  const p = t.theme?.colors?.primary ?? "#c9795a";
+  const b = t.theme?.colors?.bg ?? "#ffffff";
+  return `linear-gradient(135deg, ${p}33, ${b})`;
+}
 
 type AnalyticsSummary = {
   total_views: number;
@@ -139,13 +185,25 @@ export default function SiteDashboardPage() {
   const [activeBanner, setActiveBanner] = useState<Banner | null>(null);
   const [activeBannerCount, setActiveBannerCount] = useState<number>(0);
   const [totalBanners, setTotalBanners] = useState<number>(0);
+  const [publicURL, setPublicURL] = useState<string | null>(null);
+  const [siteMeta, setSiteMeta] = useState<SiteMeta | null>(null);
+  const [templates, setTemplates] = useState<TemplateMini[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [statsRes, articlesRes, pendingRes, bannersRes] = await Promise.all([
+      const [
+        statsRes,
+        articlesRes,
+        pendingRes,
+        bannersRes,
+        purchasesRes,
+        customRes,
+        siteRes,
+        tplRes,
+      ] = await Promise.all([
         api<SiteStats>(`/api/v1/sites/${sid}/site-stats`).catch(() => null),
         api<PaginatedResult<Article>>(
           `/api/v1/sites/${sid}/articles?sort=newest&page_size=4`,
@@ -154,6 +212,16 @@ export default function SiteDashboardPage() {
           `/api/v1/sites/${sid}/responses?status=pending&page_size=2`,
         ).catch(() => null),
         api<Banner[]>(`/api/v1/sites/${sid}/banners`).catch(() => null),
+        // Purchase-flow domains — primary path (1 domain = 1 site).
+        // purchase.site_id di-set saat user pilih template + create site (bukan
+        // registered_domains.site_id yang tidak pernah di-populate).
+        api<PurchaseItem[]>("/api/v1/domains/purchases").catch(() => null),
+        // Legacy BYO custom domain — fallback kalau user attach domain manual.
+        api<CustomDomain[]>(`/api/v1/sites/${sid}/domains`).catch(() => null),
+        api<SiteMeta>(`/api/v1/sites/${sid}`).catch(() => null),
+        api<TemplateMini[]>("/api/v1/templates", { auth: false }).catch(
+          () => [] as TemplateMini[],
+        ),
       ]);
       if (cancelled) return;
       setStats(statsRes);
@@ -165,6 +233,22 @@ export default function SiteDashboardPage() {
       const active = list.filter((b) => b.effective_status === "active");
       setActiveBannerCount(active.length);
       setActiveBanner(active[0] ?? list[0] ?? null);
+      // Resolve public URL. Prioritas:
+      //   1. Purchase-flow domain: purchase.site_id === current + kind=register + status=active
+      //   2. Legacy custom-domain (BYO): status='verified' di /sites/:id/domains
+      // Kalau tidak ada, tombol Preview dinonaktifkan.
+      const purchase = (purchasesRes ?? []).find(
+        (p) => p.site_id === sid && p.kind === "register" && p.status === "active",
+      );
+      const verified = purchase
+        ? null
+        : (customRes ?? []).find((d) => d.status === "verified");
+      const host = purchase?.domain ?? verified?.hostname ?? null;
+      setPublicURL(host ? `https://${host}` : null);
+      setSiteMeta(siteRes);
+      setTemplates(
+        (tplRes ?? []).filter((t) => GURU_TEMPLATE_CATEGORIES.has(t.category)),
+      );
       setLoading(false);
     })();
     return () => {
@@ -221,13 +305,32 @@ export default function SiteDashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/sites/${sid}/tampilan`}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
-          >
-            Preview Website
-            <ExternalLink className="size-4" />
-          </Link>
+          {publicURL ? (
+            <a
+              href={publicURL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
+              title={publicURL}
+            >
+              Preview Website
+              <ExternalLink className="size-4" />
+            </a>
+          ) : (
+            <button
+              onClick={() =>
+                toast.info("Domain belum aktif", {
+                  description:
+                    "Tunggu sampai domain selesai proses registrasi, atau attach custom domain terverifikasi supaya bisa preview.",
+                })
+              }
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-400 hover:bg-slate-50"
+              title="Belum ada domain aktif"
+            >
+              Preview Website
+              <ExternalLink className="size-4" />
+            </button>
+          )}
           <Link
             href={`/sites/${sid}/tulisan/new`}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
@@ -432,8 +535,65 @@ export default function SiteDashboardPage() {
               )}
             </div>
           </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <h2 className="text-[15px] font-bold text-slate-900">Template Website Aktif</h2>
+              <Link
+                href={`/sites/${sid}/tampilan`}
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+              >
+                Ubah Template →
+              </Link>
+            </div>
+            <div className="p-4">
+              <ActiveTemplateCard
+                templates={templates}
+                activeId={siteMeta?.template_id ?? null}
+              />
+            </div>
+          </section>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ActiveTemplateCard — kartu template yang sedang dipakai.
+// Kalau site.template_id match dengan salah satu template guru → render
+// gradient dari theme + badge "Sedang digunakan".
+// Kalau tidak match (site pakai custom theme atau template lain), render
+// kartu "Belum menggunakan template guru" + link ke Tampilan.
+function ActiveTemplateCard({
+  templates,
+  activeId,
+}: {
+  templates: TemplateMini[];
+  activeId: string | null;
+}) {
+  const applied = templates.find((t) => t.id === activeId);
+  if (applied) {
+    return (
+      <div className="relative rounded-xl border-2 border-orange-500 bg-orange-50/30 p-3 shadow-sm shadow-orange-500/10">
+        <span className="absolute right-3 top-3 rounded-full bg-orange-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+          Sedang digunakan
+        </span>
+        <div
+          className="aspect-[16/10] rounded-lg border border-slate-200"
+          style={{ background: gradientFromTheme(applied) }}
+        />
+        <div className="mt-3">
+          <div className="text-[13px] font-bold text-slate-900">{applied.name}</div>
+          <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-500">
+            {applied.description}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">
+      Belum menggunakan template guru. Pilih template di menu Tampilan.
     </div>
   );
 }
