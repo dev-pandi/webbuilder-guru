@@ -156,7 +156,7 @@ export default function Home() {
               Cara Memulai
             </Link>
             <Link href="/artikel" className="text-sm font-bold text-white/85 hover:text-white">
-              Artikel
+              Indonesia Hebat!
             </Link>
           </nav>
           <div className="flex items-center gap-3">

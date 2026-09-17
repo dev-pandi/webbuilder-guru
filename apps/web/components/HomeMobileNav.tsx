@@ -21,7 +21,7 @@ const LINKS: NavLink[] = [
   { href: "#manfaat", label: "Manfaat" },
   { href: "#isi-website", label: "Isi Website" },
   { href: "#mulai", label: "Cara Memulai" },
-  { href: "/artikel", label: "Artikel" },
+  { href: "/artikel", label: "Indonesia Hebat!" },
 ];
 
 export function HomeMobileNav() {
