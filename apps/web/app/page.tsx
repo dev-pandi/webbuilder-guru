@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { HomeNavAuth } from "@/components/HomeNavAuth";
+import { HomeMobileNav } from "@/components/HomeMobileNav";
 import { HomeArticlesSection } from "@/components/HomeArticlesSection";
 import { IsiWebsitePreview } from "@/components/IsiWebsitePreview";
 import { RuangPromosiCarousel } from "@/components/RuangPromosiCarousel";
@@ -160,6 +161,7 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-3">
             <HomeNavAuth />
+            <HomeMobileNav />
           </div>
         </div>
       </header>
