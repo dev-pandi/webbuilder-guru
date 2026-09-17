@@ -1,24 +1,37 @@
 "use client";
 
+// Halaman Login — mirror mockup dashboard-guru/login.html.
+// Split-panel: kiri brand storytelling (dark navy), kanan form.
+// Mobile: brand panel di-hide, form full width.
+// Login tetap generic (semua persona), tapi brand identity dipoles ala guru.
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ArrowRight, Globe2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  BookOpen,
+  Eye,
+  EyeOff,
+  LayoutTemplate,
+  Loader2,
+  Lock,
+  Mail,
+  Megaphone,
+  PenLine,
+} from "lucide-react";
 import { api, clearTokens, getAccessToken, setTokens } from "@/lib/api";
 import { defaultRouteForRole } from "@/lib/roles";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { GoogleButton } from "@/components/GoogleButton";
 
-// Human-friendly copy for the ?error=<code> that the API's OAuth callback
-// appends to /login on failure. Anything unknown falls back to the raw code.
 const OAUTH_ERROR_COPY: Record<string, string> = {
   state_mismatch: "Sesi login Google kedaluwarsa. Silakan coba lagi.",
   google_access_denied: "Anda membatalkan proses login di halaman Google.",
   exchange_failed: "Gagal memverifikasi login Google. Coba beberapa saat lagi.",
   profile_failed: "Gagal membaca profil Google. Coba lagi.",
-  profile_incomplete: "Profil Google tidak lengkap. Pastikan akun Google Anda punya email publik.",
+  profile_incomplete:
+    "Profil Google tidak lengkap. Pastikan akun Google Anda punya email publik.",
   email_unverified: "Alamat email Google Anda belum diverifikasi.",
   user_upsert_failed: "Terjadi kesalahan saat menyimpan akun Anda.",
   token_failed: "Terjadi kesalahan saat membuat sesi login.",
@@ -30,12 +43,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [nextPath, setNextPath] = useState<string | undefined>(undefined);
 
-  // Read ?error= + ?next= from URL on mount (avoids useSearchParams Suspense
-  // requirement for a page that's already 'use client').
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const errCode = params.get("error");
@@ -44,11 +56,6 @@ export default function LoginPage() {
     }
     const next = params.get("next");
     if (next) setNextPath(next);
-
-    // Kalau user sudah login (token valid), skip login form + redirect ke
-    // portal sesuai role. Kalau token expired/invalid, clearTokens supaya
-    // form tetap accessible. Ada ?error= = jangan redirect (user perlu lihat
-    // pesan gagal login Google).
     if (errCode) return;
     if (!getAccessToken()) return;
     api<{ role: string }>("/api/v1/auth/me")
@@ -71,9 +78,6 @@ export default function LoginPage() {
         { method: "POST", body: JSON.stringify({ email, password }), auth: false },
       );
       setTokens(data.access_token, data.refresh_token);
-      // Redirect berdasarkan role — reseller/agent punya portal terpisah.
-      // Kalau ada `?next=` (mis. deep link), respect itu — kecuali `next` mengarah
-      // ke portal yang tidak match role user (edge case, biarkan role gate handle).
       if (nextPath) {
         router.push(nextPath);
         return;
@@ -92,145 +96,243 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
-      {/* Background decoration */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-40 -right-40 h-[600px] w-[600px] rounded-full bg-primary/5 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 h-[600px] w-[600px] rounded-full bg-primary/5 blur-3xl" />
-      </div>
+    <main className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+      {/* Brand panel — hidden di mobile, full di lg+ */}
+      <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#142741] to-[#0b1829] text-white lg:flex lg:flex-col lg:justify-between lg:px-14 lg:py-14 xl:px-20">
+        {/* Ornament rings */}
+        <div className="pointer-events-none absolute -bottom-40 -right-44 h-[420px] w-[420px] rounded-full border border-white/10 shadow-[0_0_0_70px_rgba(255,255,255,0.025),0_0_0_140px_rgba(255,255,255,0.018)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(233,133,85,0.22),transparent_35%)]" />
 
-      <div className="w-full max-w-sm">
-        {/* Brand */}
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/20">
-            <Globe2 className="size-6 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Web<span className="text-primary">Builder</span>
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Masuk untuk melanjutkan ke dashboard
-            </p>
+        <div className="relative z-10 max-w-[560px]">
+          <Link href="/" className="mb-16 flex items-center gap-3">
+            <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-[#ffbc85] to-[#e98555] shadow-lg shadow-orange-500/25">
+              <BookOpen className="size-6 text-white" />
+            </div>
+            <div>
+              <div className="text-[16px] font-bold text-white">Dashboard Guru</div>
+              <div className="text-[12px] text-slate-400">Website Pribadi Guru</div>
+            </div>
+          </Link>
+
+          <span className="inline-block text-[11px] font-black uppercase tracking-[0.12em] text-orange-300">
+            Ruang kerja digital untuk guru
+          </span>
+          <h1 className="mt-4 max-w-xl text-[clamp(2.15rem,3.4vw,3.4rem)] font-bold leading-[1.05] tracking-tight">
+            Kelola tulisan, pembelajaran, diskusi, dan website Anda dari satu tempat.
+          </h1>
+          <p className="mt-5 max-w-[560px] text-[15px] leading-relaxed text-slate-300">
+            Masuk untuk melanjutkan pengelolaan Website Pribadi Guru dengan tampilan yang
+            sederhana dan terarah.
+          </p>
+
+          <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <FeatureCard
+              icon={PenLine}
+              title="Kelola Konten"
+              subtitle="Tulisan, materi, forum, dan tanggapan."
+            />
+            <FeatureCard
+              icon={LayoutTemplate}
+              title="Atur Tampilan"
+              subtitle="Pilih template, hero, dan warna aksen."
+            />
+            <FeatureCard
+              icon={Megaphone}
+              title="Ruang Promosi"
+              subtitle="Kelola banner 2:1 dan periode tayangnya."
+            />
           </div>
         </div>
 
-        {/* Card */}
-        <div className="rounded-2xl border bg-card shadow-xl shadow-black/5 p-7">
-          <GoogleButton next={nextPath} />
+        <div className="relative z-10 text-[11px] tracking-wider text-slate-500">
+          Website Pribadi Guru · PANDI × UPI
+        </div>
+      </section>
 
-          <div className="my-5 flex items-center gap-3">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">atau login pakai email</span>
-            <div className="h-px flex-1 bg-border" />
+      {/* Form panel */}
+      <section className="flex items-center justify-center bg-gradient-to-b from-[#f7f9fc] to-[#eef3f8] px-4 py-10 sm:px-6">
+        <div className="w-full max-w-[470px]">
+          {/* Mobile brand — hanya tampil di layar sempit karena panel kiri di-hide */}
+          <div className="mb-7 flex items-center gap-3 lg:hidden">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-[#ffbc85] to-[#e98555] shadow-lg shadow-orange-500/20">
+              <BookOpen className="size-5 text-white" />
+            </div>
+            <div>
+              <div className="text-[15px] font-bold text-slate-900">Dashboard Guru</div>
+              <div className="text-[11px] text-slate-500">Website Pribadi Guru</div>
+            </div>
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-4">
-            {/* Email */}
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm font-medium">
-                Email
-              </Label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                  placeholder="nama@email.com"
-                  className="pl-9 h-10"
-                />
-              </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-7 shadow-2xl shadow-slate-900/10 sm:p-8">
+            <div className="mb-6">
+              <span className="inline-block text-[11px] font-black uppercase tracking-[0.12em] text-orange-500">
+                Selamat datang kembali
+              </span>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-[28px]">
+                Masuk ke Dashboard Guru
+              </h2>
+              <p className="mt-1.5 text-sm text-slate-500">
+                Gunakan akun Anda untuk melanjutkan.
+              </p>
             </div>
 
-            {/* Password */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-medium">
-                  Password
-                </Label>
+            <GoogleButton next={nextPath} />
+
+            <div className="my-5 flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <div className="h-px flex-1 bg-slate-200" />
+              atau login pakai email
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <form onSubmit={onSubmit} className="space-y-4">
+              <Field label="Email" htmlFor="email">
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="email"
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    placeholder="nama@sekolah.id"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10"
+                  />
+                </div>
+              </Field>
+
+              <Field label="Password" htmlFor="password">
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="password"
+                    type={showPw ? "text" : "password"}
+                    required
+                    minLength={8}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    placeholder="Masukkan password"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-11 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw((v) => !v)}
+                    className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                    aria-label={showPw ? "Sembunyikan password" : "Tampilkan password"}
+                    tabIndex={-1}
+                  >
+                    {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </Field>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="size-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/40"
+                  />
+                  <span>Ingat Saya</span>
+                </label>
                 <Link
                   href="/forgot-password"
-                  className="text-xs text-muted-foreground underline-offset-4 hover:underline hover:text-foreground"
+                  className="font-bold text-blue-700 hover:text-blue-800"
                 >
-                  Lupa password?
+                  Lupa Password?
                 </Link>
               </div>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPw ? "text" : "password"}
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  className="pl-9 pr-10 h-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                  tabIndex={-1}
-                >
-                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
-              </div>
-            </div>
 
-            {/* Error */}
-            {err && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-                <AlertCircle className="size-4 shrink-0" />
-                <span>{err}</span>
-              </div>
-            )}
-
-            {/* Submit */}
-            <Button
-              type="submit"
-              className="mt-1 w-full h-10 gap-2 font-medium shadow-sm"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Memproses…
-                </>
-              ) : (
-                <>
-                  Masuk
-                  <ArrowRight className="size-4" />
-                </>
+              {err && (
+                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] text-rose-700">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  <span>{err}</span>
+                </div>
               )}
-            </Button>
-          </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Belum punya akun?{" "}
-            <Link
-              href="/register"
-              className="font-medium text-foreground underline underline-offset-4 hover:text-primary transition-colors"
-            >
-              Daftar gratis
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            Agency atau reseller?{" "}
-            <Link
-              href="/daftar-reseller"
-              className="font-medium text-primary underline underline-offset-4"
-            >
-              Daftar sebagai reseller
-            </Link>
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-1 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Memproses…
+                  </>
+                ) : (
+                  <>
+                    Masuk
+                    <ArrowRight className="size-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-slate-500">
+              Belum punya akun?{" "}
+              <Link
+                href="/register"
+                className="font-bold text-slate-900 underline underline-offset-4 hover:text-slate-700"
+              >
+                Daftar gratis
+              </Link>
+            </p>
+            <p className="mt-1.5 text-center text-xs text-slate-500">
+              Agency atau reseller?{" "}
+              <Link
+                href="/daftar-reseller"
+                className="font-bold text-orange-600 underline underline-offset-4 hover:text-orange-700"
+              >
+                Daftar sebagai reseller
+              </Link>
+            </p>
+          </div>
+
+          <p className="mt-5 text-center text-[11px] text-slate-500">
+            Butuh bantuan? Hubungi administrator platform.
           </p>
         </div>
-      </div>
+      </section>
     </main>
+  );
+}
+
+function FeatureCard({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ElementType;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-sm">
+      <Icon className="size-5 text-orange-300" />
+      <div className="mt-2 text-[13px] font-bold text-white">{title}</div>
+      <div className="mt-1 text-[11px] leading-relaxed text-slate-400">{subtitle}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={htmlFor} className="text-[13px] font-semibold text-slate-700">
+        {label}
+      </label>
+      {children}
+    </div>
   );
 }

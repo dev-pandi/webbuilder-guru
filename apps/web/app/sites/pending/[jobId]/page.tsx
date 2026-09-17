@@ -691,7 +691,11 @@ function TemplatePicker({
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Template[]>("/api/v1/templates", { auth: false }).then(setTemplates).catch(() => {});
+    api<Template[]>("/api/v1/templates", { auth: false })
+      // Filter — untuk sekarang tampilkan hanya template co-branded PANDI × UPI.
+      // Template kategori lain di-hide dulu; toggle di sini kalau mau expose lagi.
+      .then((all) => setTemplates(all.filter((t) => t.category === "guru-pandi")))
+      .catch(() => {});
   }, []);
 
   async function onCreate() {

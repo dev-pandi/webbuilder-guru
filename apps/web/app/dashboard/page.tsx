@@ -448,7 +448,7 @@ export default function DashboardPage() {
 
               <div className="border-t bg-muted/20 px-3 py-2.5 grid grid-cols-3 gap-1.5">
                 <Button variant="default" size="sm" className="h-8 gap-1.5 text-xs" asChild>
-                  <Link href={`/sites/${s.id}/editor`}>
+                  <Link href={`/sites/${s.id}/`}>
                     <Pencil className="size-3.5" />
                     Edit
                   </Link>

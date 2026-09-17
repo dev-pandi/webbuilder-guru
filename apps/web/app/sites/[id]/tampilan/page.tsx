@@ -10,11 +10,11 @@
 //   PATCH /api/v1/auth/me            → save hero + deskripsi + quote
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
-import { CheckCircle2, ImageIcon, Loader2, Upload } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { ImagePicker } from "@/components/ImagePicker";
 
 type ThemeJson = {
   colors?: { primary?: string; secondary?: string; bg?: string; fg?: string };
@@ -54,10 +54,10 @@ const ACCENT_PRESETS = [
   { name: "Violet", color: "#7c6bd6" },
 ];
 
-// Filter template yang relevan untuk guru — category `teacher` (matrix) atau
-// `guru-pandi` (co-branded). Kategori lain (business, restaurant, dll) tidak
-// muncul di menu ini karena persona mockup fokus guru.
-const GURU_CATEGORIES = new Set(["teacher", "guru-pandi"]);
+// Filter template — untuk sekarang hanya tampilkan co-branded PANDI × UPI.
+// Template `teacher` matrix (Hangat & Personal / Modern / Ceria / Minimal)
+// di-hide dulu sampai siap ditampilkan sebagai opsi tambahan.
+const GURU_CATEGORIES = new Set(["guru-pandi"]);
 
 function gradientFrom(t: ThemeJson): string {
   const p = t.colors?.primary ?? "#c9795a";
@@ -344,59 +344,10 @@ export default function TampilanPage() {
             </div>
             <div className="grid gap-4 p-5">
               <Field label="Foto Hero">
-                {heroImage ? (
-                  <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={heroImage}
-                      alt="Preview foto hero"
-                      className="h-20 w-32 rounded-lg object-cover"
-                    />
-                    <div className="flex flex-1 flex-col gap-2">
-                      <input
-                        value={heroImage}
-                        onChange={(e) => setHeroImage(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-                      />
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/sites/${sid}/assets`}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
-                        >
-                          <Upload className="size-3.5" />
-                          Ganti via Aset
-                        </Link>
-                        <button
-                          onClick={() => setHeroImage("")}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
-                        >
-                          Hapus
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-slate-500">
-                    <ImageIcon className="mx-auto size-6" />
-                    <div className="text-sm font-bold text-slate-700">Belum ada foto hero</div>
-                    <p className="text-[12px] text-slate-500">
-                      Upload gambar di menu Aset lalu paste URL-nya di sini.
-                    </p>
-                    <Link
-                      href={`/sites/${sid}/assets`}
-                      className="mx-auto inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-700"
-                    >
-                      <Upload className="size-3.5" />
-                      Buka Aset
-                    </Link>
-                    <input
-                      value={heroImage}
-                      onChange={(e) => setHeroImage(e.target.value)}
-                      placeholder="…atau paste URL gambar"
-                      className="mx-auto w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-                    />
-                  </div>
-                )}
+                <ImagePicker value={heroImage} onChange={setHeroImage} />
+                <p className="text-[11px] text-slate-500">
+                  Pilih dari library aset, upload baru, atau paste URL eksternal.
+                </p>
               </Field>
               <Field label="Judul Hero (max 500)">
                 <input

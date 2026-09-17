@@ -10,9 +10,12 @@ import {
   Clock,
   FileDown,
   Filter,
+  Globe,
   Loader2,
   Receipt,
+  RefreshCw,
   Search,
+  Wallet,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,6 +44,21 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
+// Metadata JSONB — populated saat invoice dibuat (invoices/service.go).
+//   register/renew: { kind, domain, years, unit_price, promo_code?, job_id? }
+//   topup:          { kind: "topup", amount, topup_id? }
+// Field ini opsional supaya invoice lama tanpa metadata (kind "") tetap
+// tampil "—" di kolom Untuk, bukan crash.
+type InvoiceMetadata = {
+  kind?: "register" | "renew" | "topup" | string;
+  domain?: string;
+  years?: number;
+  amount?: number;
+  topup_id?: string;
+  promo_code?: string;
+  job_id?: string;
+};
+
 type Invoice = {
   id: string;
   number: string;
@@ -56,6 +74,7 @@ type Invoice = {
   paid_at?: string;
   due_at: string;
   created_at: string;
+  metadata?: InvoiceMetadata | null;
 };
 
 const STATUS_FILTERS = [
@@ -180,6 +199,7 @@ export default function AdminInvoicesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Nomor</TableHead>
+              <TableHead>Untuk</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Metode</TableHead>
               <TableHead className="text-right">Total</TableHead>
@@ -191,7 +211,7 @@ export default function AdminInvoicesPage() {
           <TableBody className={loading ? "opacity-60" : ""}>
             {loading && items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center">
+                <TableCell colSpan={8} className="py-10 text-center">
                   <Loader2 className="mx-auto size-4 animate-spin text-muted-foreground" />
                 </TableCell>
               </TableRow>
@@ -211,6 +231,9 @@ export default function AdminInvoicesPage() {
                 <TableRow key={inv.id}>
                   <TableCell className="font-mono text-xs font-medium">
                     {inv.number}
+                  </TableCell>
+                  <TableCell>
+                    <SubjectCell meta={inv.metadata} />
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={inv.status} />
@@ -548,6 +571,49 @@ function CancelDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+// SubjectCell — tampilkan apa yang invoice ini ditagih untuk.
+//   register: 🌐 Domain (register) — domain.id (N tahun)
+//   renew:    🔁 Perpanjangan   — domain.id (N tahun)
+//   topup:    💳 Top-up wallet  — Rp X
+//   fallback: — (invoice legacy tanpa metadata)
+function SubjectCell({ meta }: { meta?: InvoiceMetadata | null }) {
+  const kind = meta?.kind;
+  if (kind === "topup") {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
+          <Wallet className="size-3.5" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-foreground">Top-up wallet</div>
+          <div className="truncate font-mono text-[11px] text-muted-foreground">
+            {meta?.amount ? formatIDR(meta.amount) : "—"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (kind === "register" || kind === "renew") {
+    const label = kind === "renew" ? "Perpanjangan" : "Register domain";
+    const Icon = kind === "renew" ? RefreshCw : Globe;
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-600">
+          <Icon className="size-3.5" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-foreground">{label}</div>
+          <div className="truncate font-mono text-[11px] text-muted-foreground">
+            {meta?.domain ?? "—"}
+            {meta?.years ? ` · ${meta.years} th` : ""}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <span className="text-xs text-muted-foreground">—</span>;
 }
 
 function StatusBadge({ status }: { status: string }) {

@@ -1,28 +1,22 @@
 "use client";
 
+// Editor Materi Pembelajaran — mirror mockup dashboard-guru/materi-form.html.
+// Wired ke POST /sites/:id/learning-materials + PATCH /learning-materials/:id.
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  BookOpen,
-  CheckCircle2,
-  Clock,
+  Image as ImageIcon,
   Loader2,
   Save,
   Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type LearningMaterial } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { ImagePicker } from "@/components/ImagePicker";
 import { RichEditor } from "@/components/RichEditor";
-import { GuruFeatureNotice } from "@/components/GuruFeatureNotice";
 
 function slugify(s: string): string {
   return s
@@ -32,6 +26,16 @@ function slugify(s: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+function fmtStamp(iso: string): string {
+  return new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function MateriForm({
@@ -113,147 +117,212 @@ export function MateriForm({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="sticky top-0 z-10 -mx-6 -mt-6 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`/sites/${siteId}/pembelajaran`}>
-                <ArrowLeft />
-                Kembali
-              </Link>
-            </Button>
-            <div className="hidden h-5 w-px bg-border sm:block" />
-            <div className="hidden items-center gap-2 sm:flex">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-500/10">
-                <BookOpen className="size-4 text-violet-600" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold leading-none">
-                  {isEdit ? "Edit Materi" : "Materi Baru"}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {isEdit ? title || "Tanpa judul" : "Buat draft atau publikasikan"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Badge variant={status === "published" ? "success" : "secondary"} className="gap-1">
-              {status === "published" ? (
-                <CheckCircle2 className="size-3" />
-              ) : (
-                <Clock className="size-3" />
-              )}
-              {status === "published" ? "Published" : "Draft"}
-            </Badge>
-            <Button variant="outline" onClick={() => save("draft")} disabled={saving !== null} className="gap-2">
-              {saving === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              Simpan Draft
-            </Button>
-            <Button onClick={() => save("published")} disabled={saving !== null} className="gap-2 shadow-sm">
-              {saving === "published" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              {status === "published" ? "Update" : "Publikasikan"}
-            </Button>
-          </div>
+    <div className="space-y-5">
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            {isEdit ? "Edit Materi" : "Tambah Materi"}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Buat bahan pembelajaran untuk dibagikan melalui website.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/sites/${siteId}/pembelajaran`}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
+          >
+            <ArrowLeft className="size-4" />
+            Kembali
+          </Link>
+          <button
+            onClick={() => save("draft")}
+            disabled={saving !== null}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {saving === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Simpan Draft
+          </button>
+          <button
+            onClick={() => save("published")}
+            disabled={saving !== null}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {saving === "published" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            {status === "published" ? "Update" : "Publikasikan"}
+          </button>
         </div>
       </div>
 
-      <GuruFeatureNotice
-        title="Pembelajaran"
-        description="Materi tidak memiliki tanggapan atau views. Fokus pada isi dan ringkasan supaya mudah diikuti pembaca."
-      />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
+            <Field label="Judul Materi" className="col-span-full">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Contoh: Mengenal Teks Cerpen"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+              />
+            </Field>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-4">
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Judul materi…"
-            className="h-auto border-0 bg-transparent px-0 text-3xl font-bold tracking-tight shadow-none focus-visible:ring-0"
-          />
-          <div className="flex items-center gap-2 text-sm">
-            <Label htmlFor="slug" className="shrink-0 text-muted-foreground">
-              URL slug
-            </Label>
-            <span className="font-mono text-muted-foreground">/pembelajaran/</span>
-            <Input
-              id="slug"
-              value={slug}
-              onChange={(e) => {
-                setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
-                setSlugTouched(true);
-              }}
-              placeholder="auto-dari-judul"
-              className="h-8 max-w-md font-mono text-sm"
-            />
-          </div>
+            <Field label="Status Publikasi">
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as "draft" | "published")}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+              >
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+              </select>
+            </Field>
 
-          <RichEditor
-            value={bodyMD}
-            onChange={setBodyMD}
-            placeholder="Tulis isi materi di sini."
-          />
-        </div>
+            <Field label="Tanggal">
+              <input
+                type="text"
+                readOnly
+                value={
+                  material?.published_at
+                    ? fmtStamp(material.published_at)
+                    : status === "published"
+                      ? "Segera setelah disimpan"
+                      : "Belum dipublikasikan"
+                }
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 outline-none"
+              />
+            </Field>
 
-        <aside className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Cover Image</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ImagePicker value={coverImageURL} onChange={setCoverImageURL} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">Metadata</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="excerpt" className="text-xs">Deskripsi Singkat</Label>
-                <Textarea
-                  id="excerpt"
-                  value={excerpt}
-                  onChange={(e) => setExcerpt(e.target.value)}
-                  rows={3}
-                  placeholder="Ringkasan pendek untuk kartu materi."
+            <Field label="URL Slug" className="col-span-full">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <span className="text-slate-500">/pembelajaran/</span>
+                <input
+                  value={slug}
+                  onChange={(e) => {
+                    setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
+                    setSlugTouched(true);
+                  }}
+                  placeholder="auto-dari-judul"
+                  className="flex-1 bg-transparent font-mono text-[13px] outline-none"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="summary" className="text-xs">Ringkasan Materi</Label>
-                <Textarea
-                  id="summary"
+            </Field>
+
+            <Field label="Ringkasan" className="col-span-full">
+              <textarea
+                value={excerpt}
+                onChange={(e) => setExcerpt(e.target.value)}
+                rows={3}
+                placeholder="Ringkasan pendek untuk kartu materi."
+                className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+              />
+            </Field>
+
+            <Field label="Thumbnail" className="col-span-full">
+              {coverImageURL ? (
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:flex-row md:items-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={coverImageURL}
+                    alt="Thumbnail"
+                    className="h-24 w-40 rounded-lg object-cover"
+                  />
+                  <div className="flex-1">
+                    <ImagePicker value={coverImageURL} onChange={setCoverImageURL} size="sm" />
+                    <p className="mt-2 text-[11px] text-slate-500">JPG/PNG/WebP.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-3 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-slate-500">
+                  <ImageIcon className="mx-auto size-6" />
+                  <div className="text-sm font-bold text-slate-700">Unggah gambar materi</div>
+                  <p className="text-[12px] text-slate-500">JPG/PNG</p>
+                  <div className="mx-auto w-full max-w-xs">
+                    <ImagePicker value={coverImageURL} onChange={setCoverImageURL} size="sm" />
+                  </div>
+                </div>
+              )}
+            </Field>
+
+            <Field label="Isi Materi" className="col-span-full">
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <RichEditor
+                  value={bodyMD}
+                  onChange={setBodyMD}
+                  placeholder="Tulis isi materi di sini."
+                />
+              </div>
+            </Field>
+          </div>
+        </section>
+
+        <aside className="space-y-5">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-[15px] font-bold text-slate-900">Publikasi</h3>
+            </div>
+            <div className="p-5">
+              <div className="rounded-xl bg-blue-50 px-4 py-3 text-[12px] text-blue-800">
+                Materi ditampilkan sebagai konten pembelajaran sederhana di website guru.
+                Tidak ada tanggapan atau views yang tercatat.
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-[15px] font-bold text-slate-900">Metadata</h3>
+            </div>
+            <div className="grid gap-4 p-5">
+              <Field label="Ringkasan Materi (bawah halaman)">
+                <textarea
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
                   rows={3}
                   placeholder="Ringkasan yang tampil di bagian bawah halaman detail materi."
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="tags" className="text-xs">Kata Kunci</Label>
-                <Input
-                  id="tags"
+              </Field>
+              <Field label="Kata Kunci (pisah dengan koma)">
+                <input
                   value={tagsText}
                   onChange={(e) => setTagsText(e.target.value)}
                   placeholder="matematika, kelas 4, geometri"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
                 />
                 {tags.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5 pt-1">
                     {tags.map((t) => (
-                      <Badge key={t} variant="secondary" className="text-[10px]">
+                      <span
+                        key={t}
+                        className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600"
+                      >
                         {t}
-                      </Badge>
+                      </span>
                     ))}
                   </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
+              </Field>
+            </div>
+          </section>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`grid gap-1.5 ${className ?? ""}`}>
+      <label className="text-[12px] font-bold text-slate-600">{label}</label>
+      {children}
     </div>
   );
 }

@@ -25,6 +25,7 @@ package invoices
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -68,9 +69,12 @@ type Invoice struct {
 	PaymentGwRef  *string    `json:"payment_gw_ref,omitempty"`
 	PaidAt        *time.Time `json:"paid_at,omitempty"`
 	DueAt         time.Time  `json:"due_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	Metadata      []byte     `json:"metadata"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	// Metadata pakai json.RawMessage supaya frontend menerima JSON object mentah
+	// (bukan base64 seperti default []byte). Digunakan admin panel untuk baca
+	// metadata.kind/domain/topup_id supaya kolom "Untuk" bisa dirender.
+	Metadata json.RawMessage `json:"metadata"`
 
 	Lines []InvoiceLine `json:"lines,omitempty"` // hydrated by GetWithLines
 }

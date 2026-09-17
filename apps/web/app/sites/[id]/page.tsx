@@ -29,6 +29,24 @@ import {
 } from "@/lib/api";
 import type { PaginatedResult } from "@/components/Pagination";
 
+type AnalyticsSummary = {
+  total_views: number;
+  total_days: number;
+  daily: Array<{ date: string; views: number }>;
+  top_pages: Array<{ page_slug: string; views: number }>;
+  views_today: number;
+  views_yesterday: number;
+};
+
+type ChartRange = "7d" | "30d" | "12w";
+
+// Konfigurasi range chart: window API + bucket size (hari) + label.
+const CHART_RANGES: Record<ChartRange, { days: number; bucketDays: number; label: string; shortLabel: string }> = {
+  "7d": { days: 7, bucketDays: 1, label: "7 hari terakhir", shortLabel: "7 hari" },
+  "30d": { days: 30, bucketDays: 1, label: "30 hari terakhir", shortLabel: "30 hari" },
+  "12w": { days: 84, bucketDays: 7, label: "12 minggu terakhir", shortLabel: "12 minggu" },
+};
+
 type ChipTone = "green" | "gray" | "amber" | "red" | "blue" | "purple";
 
 function Chip({ tone, children }: { tone: ChipTone; children: React.ReactNode }) {
@@ -63,8 +81,52 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
 }
 
-// Chart bar heights placeholder — proper analytics endpoint belum ada per-hari.
-const chartBars = [28, 38, 46, 42, 57, 49, 68, 61, 76, 69, 89, 78];
+// Fill missing daily buckets dengan 0 supaya chart tidak lompat-lompat.
+// Backend hanya return baris dengan view > 0.
+function fillDailyGaps(
+  raw: Array<{ date: string; views: number }>,
+  days: number,
+): Array<{ date: Date; views: number }> {
+  const map = new Map<string, number>();
+  for (const r of raw) {
+    // Normalize ke YYYY-MM-DD (backend kirim ISO timestamp).
+    const key = new Date(r.date).toISOString().slice(0, 10);
+    map.set(key, (map.get(key) ?? 0) + r.views);
+  }
+  const out: Array<{ date: Date; views: number }> = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    out.push({ date: d, views: map.get(key) ?? 0 });
+  }
+  return out;
+}
+
+// Group daily points ke bucket N-hari (untuk weekly view).
+function bucketize(
+  daily: Array<{ date: Date; views: number }>,
+  bucketDays: number,
+): Array<{ label: string; views: number }> {
+  if (bucketDays <= 1) {
+    return daily.map((d) => ({
+      label: d.date.toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
+      views: d.views,
+    }));
+  }
+  const out: Array<{ label: string; views: number }> = [];
+  for (let i = 0; i < daily.length; i += bucketDays) {
+    const slice = daily.slice(i, i + bucketDays);
+    const sum = slice.reduce((a, b) => a + b.views, 0);
+    const start = slice[0].date;
+    const end = slice[slice.length - 1].date;
+    const label = `${start.getDate()}–${end.getDate()} ${end.toLocaleDateString("id-ID", { month: "short" })}`;
+    out.push({ label, views: sum });
+  }
+  return out;
+}
 
 export default function SiteDashboardPage() {
   const params = useParams<{ id: string }>();
@@ -285,26 +347,7 @@ export default function SiteDashboardPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <h2 className="text-[15px] font-bold text-slate-900">Statistik Kunjungan</h2>
-              <Chip tone="blue">30 hari terakhir</Chip>
-            </div>
-            <div className="p-5">
-              <div className="flex h-52 items-end gap-2.5 border-b border-slate-200 pt-4">
-                {chartBars.map((h, i) => (
-                  <div
-                    key={i}
-                    className="relative flex-1 rounded-t-md bg-gradient-to-t from-blue-500 to-blue-400"
-                    style={{ height: `${h}%` }}
-                  />
-                ))}
-              </div>
-              <div className="mt-2 text-[11px] text-slate-500">
-                Grafik ilustratif — analitik harian per-tanggal menyusul.
-              </div>
-            </div>
-          </section>
+          <AnalyticsChart sid={sid} />
         </div>
 
         <div className="space-y-5">
@@ -415,5 +458,124 @@ function QuickAction({
       {label}
       <ArrowUpRight className="ml-auto size-3.5 text-slate-400" />
     </Link>
+  );
+}
+
+function AnalyticsChart({ sid }: { sid: string }) {
+  const [range, setRange] = useState<ChartRange>("30d");
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const cfg = CHART_RANGES[range];
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api<AnalyticsSummary>(`/api/v1/sites/${sid}/analytics?days=${cfg.days}`)
+      .then((r) => {
+        if (!cancelled) setSummary(r);
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sid, cfg.days]);
+
+  const daily = summary ? fillDailyGaps(summary.daily, cfg.days) : [];
+  const bars = bucketize(daily, cfg.bucketDays);
+  const maxViews = Math.max(1, ...bars.map((b) => b.views));
+
+  const trend =
+    summary && summary.views_yesterday > 0
+      ? Math.round(((summary.views_today - summary.views_yesterday) / summary.views_yesterday) * 100)
+      : null;
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-[15px] font-bold text-slate-900">Statistik Kunjungan</h2>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            {loading
+              ? "Memuat…"
+              : summary
+                ? `Total ${fmtNumber(summary.total_views)} views · Hari ini ${fmtNumber(summary.views_today)}${
+                    trend !== null ? ` (${trend >= 0 ? "+" : ""}${trend}% dari kemarin)` : ""
+                  }`
+                : "Belum ada data"}
+          </p>
+        </div>
+        <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
+          {(Object.keys(CHART_RANGES) as ChartRange[]).map((r) => {
+            const active = r === range;
+            return (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-bold transition ${
+                  active
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {CHART_RANGES[r].shortLabel}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="p-5">
+        {loading ? (
+          <div className="flex h-52 items-center justify-center text-sm text-slate-500">
+            <Loader2 className="mr-2 size-4 animate-spin" /> Memuat grafik…
+          </div>
+        ) : bars.every((b) => b.views === 0) ? (
+          <div className="flex h-52 flex-col items-center justify-center gap-1 text-sm text-slate-500">
+            <Eye className="size-6 text-slate-300" />
+            <div>Belum ada kunjungan dalam {cfg.label}.</div>
+            <div className="text-[12px] text-slate-400">
+              Publikasikan situs dan bagikan link untuk mulai melacak.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex h-52 items-end gap-1.5 border-b border-slate-200 pt-4">
+              {bars.map((b, i) => (
+                <div
+                  key={i}
+                  className="group relative flex-1 rounded-t-md bg-gradient-to-t from-blue-500 to-blue-400 transition hover:from-blue-600 hover:to-blue-500"
+                  style={{
+                    height: `${Math.max(2, (b.views / maxViews) * 100)}%`,
+                    minHeight: "2px",
+                  }}
+                  title={`${b.label}: ${fmtNumber(b.views)} views`}
+                >
+                  <span className="pointer-events-none absolute -top-9 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-bold text-white group-hover:block">
+                    {fmtNumber(b.views)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {/* X-axis labels — sparse supaya tidak crowded. Tampilkan setiap ~N-th
+                bucket sesuai lebar range. */}
+            <div className="mt-2 flex gap-1.5 text-[10px] text-slate-500">
+              {bars.map((b, i) => {
+                const step = Math.max(1, Math.ceil(bars.length / 6));
+                const show = i % step === 0 || i === bars.length - 1;
+                return (
+                  <div key={i} className="flex-1 text-center">
+                    {show ? b.label : ""}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
   );
 }

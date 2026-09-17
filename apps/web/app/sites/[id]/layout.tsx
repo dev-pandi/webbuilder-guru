@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Bell,
+  ArrowLeft,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
+  Globe2,
   Home,
   ImageIcon,
   LayoutTemplate,
@@ -18,13 +20,31 @@ import {
   MessageSquare,
   PenLine,
   Rocket,
+  Settings,
+  ShieldCheck,
+  User,
   UserCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 type Site = { id: string; name: string; slug: string; status: string };
+
+type Me = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+};
 
 type NavItem = {
   href: (id: string) => string;
@@ -69,6 +89,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   const params = useParams<{ id: string }>();
   const pathname = usePathname();
   const [site, setSite] = useState<Site | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -83,6 +104,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
         clearTokens();
         router.replace("/login");
       });
+    api<Me>("/api/v1/auth/me").then(setMe).catch(() => {});
   }, [params.id, router]);
 
   // Close drawer on route change.
@@ -160,13 +182,13 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
             <div className="font-semibold text-white">{site?.name ?? "Website Anda"}</div>
             <div className="text-slate-500">Kelola konten website pribadi Anda dari satu tempat.</div>
           </div>
-          <button
-            onClick={logout}
+          <Link
+            href="/dashboard"
             className="flex w-full items-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-[13px] font-bold text-slate-200 transition hover:bg-white/5 hover:text-white"
           >
-            <LogOut className="size-4" />
-            Keluar
-          </button>
+            <ArrowLeft className="size-4" />
+            Kembali ke Dashboard
+          </Link>
         </div>
       </aside>
 
@@ -220,27 +242,123 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
               </>
             )}
           </button>
-          <button
-            className="relative grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            aria-label="Notifikasi"
-          >
-            <Bell className="size-4" />
-            <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
-              5
-            </span>
-          </button>
-          <div className="flex items-center gap-2.5 pl-1">
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-orange-200 to-orange-400 text-sm font-bold text-orange-900">
-              {(site?.name ?? "GR").slice(0, 2).toUpperCase()}
-            </div>
-            <div className="hidden sm:block">
-              <div className="text-[13px] font-bold text-slate-900">Guru</div>
-              <div className="text-[11px] text-slate-500">Website Pribadi</div>
-            </div>
-          </div>
+          {me && <UserMenu me={me} onLogout={logout} />}
         </header>
         <main className="mx-auto max-w-[1600px] px-6 py-7">{children}</main>
       </div>
     </div>
   );
+}
+
+// UserMenu — sama dengan dashboard header (apps/web/app/dashboard/layout.tsx).
+// Trigger compact (avatar + email) → dropdown identitas + quick actions.
+function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-full border border-slate-200 bg-white pr-2 pl-1 py-1 text-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+          aria-label="Menu akun"
+        >
+          <Avatar name={me.name} email={me.email} />
+          <span className="hidden max-w-[180px] truncate text-xs font-medium text-slate-600 sm:inline">
+            {me.email}
+          </span>
+          <ChevronDown className="size-3.5 text-slate-500" />
+        </button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent align="end" className="w-64">
+        <div className="flex items-center gap-3 px-2.5 pb-3 pt-2">
+          <Avatar name={me.name} email={me.email} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{me.name || "Pengguna"}</div>
+            <div className="truncate text-xs text-muted-foreground">{me.email}</div>
+            {me.role === "admin" && (
+              <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                <ShieldCheck className="size-2.5" />
+                Admin
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuLabel>Akun</DropdownMenuLabel>
+        <DropdownMenuItem asChild>
+          <Link href="/settings/profile">
+            <User className="size-4 text-muted-foreground" />
+            Profil
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings/domains">
+            <Globe2 className="size-4 text-muted-foreground" />
+            Domain Saya
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/dashboard">
+            <Home className="size-4 text-muted-foreground" />
+            Semua Situs
+          </Link>
+        </DropdownMenuItem>
+
+        {me.role === "admin" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Admin</DropdownMenuLabel>
+            <DropdownMenuItem asChild>
+              <Link href="/admin">
+                <Settings className="size-4 text-muted-foreground" />
+                Admin Panel
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={onLogout}
+          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+        >
+          <LogOut className="size-4" />
+          Keluar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function Avatar({
+  name,
+  email,
+  size = "sm",
+}: {
+  name: string;
+  email: string;
+  size?: "sm" | "lg";
+}) {
+  const initials = getInitials(name, email);
+  const cls = size === "lg" ? "size-10 text-sm" : "size-7 text-[11px]";
+  return (
+    <div
+      className={
+        "flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 font-bold text-white " +
+        cls
+      }
+    >
+      {initials}
+    </div>
+  );
+}
+
+function getInitials(name: string, email: string): string {
+  const source = name.trim() || email;
+  const parts = source.split(/[\s._@-]+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }

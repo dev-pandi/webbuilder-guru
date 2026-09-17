@@ -13,8 +13,9 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Image as ImageIcon, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
+import { ImagePicker } from "@/components/ImagePicker";
 
 type SocialLink = { platform: string; url: string };
 
@@ -137,38 +138,23 @@ export default function ProfilPage() {
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
             <div className="col-span-full grid gap-1.5">
-              <label className="text-[12px] font-bold text-slate-600">Foto Profil (URL)</label>
-              {image ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+              <label className="text-[12px] font-bold text-slate-600">Foto Profil</label>
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+                {image && (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={image}
                     alt="Preview foto profil"
-                    className="h-16 w-16 rounded-full object-cover"
+                    className="h-20 w-20 shrink-0 rounded-full object-cover ring-2 ring-slate-100"
                   />
-                  <div className="flex-1">
-                    <input
-                      value={image}
-                      onChange={(e) => setImage(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-                    />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Upload dulu lewat menu Aset, lalu paste URL-nya.
-                    </p>
-                  </div>
+                )}
+                <div className="w-full max-w-sm">
+                  <ImagePicker value={image} onChange={setImage} />
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    Pilih dari library aset, upload baru, atau paste URL eksternal.
+                  </p>
                 </div>
-              ) : (
-                <div className="grid gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-slate-500">
-                  <ImageIcon className="mx-auto size-6" />
-                  <div className="text-sm font-bold text-slate-700">Belum ada foto</div>
-                  <input
-                    value={image}
-                    onChange={(e) => setImage(e.target.value)}
-                    placeholder="Paste URL gambar di sini"
-                    className="mx-auto w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-                  />
-                </div>
-              )}
+              </div>
             </div>
 
             <TextField label="Nama Lengkap" value={name} onChange={setName} />
