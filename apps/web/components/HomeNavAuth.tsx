@@ -48,7 +48,7 @@ export function HomeNavAuth() {
 
   return (
     <>
-      <Button variant="ghost" asChild>
+      <Button variant="outline" asChild>
         <Link href="/register">Daftar Gratis</Link>
       </Button>
       <Button asChild className="gap-1.5 shadow-sm">
