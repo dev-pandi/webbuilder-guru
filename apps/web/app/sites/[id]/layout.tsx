@@ -8,6 +8,9 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Files,
   Globe2,
   Home,
   ImageIcon,
@@ -22,6 +25,7 @@ import {
   Rocket,
   Settings,
   ShieldCheck,
+  SquarePen,
   User,
   UserCircle,
 } from "lucide-react";
@@ -57,6 +61,8 @@ type NavItem = {
 // (route lama tetap accessible via URL langsung, tidak dihapus).
 const NAV_ITEMS: NavItem[] = [
   { href: (id) => `/sites/${id}`, label: "Dashboard", icon: Home, exact: true },
+  { href: (id) => `/sites/${id}/editor`, label: "Editor", icon: SquarePen },
+  { href: (id) => `/sites/${id}/pages`, label: "Halaman", icon: Files },
   { href: (id) => `/sites/${id}/tulisan`, label: "Tulisan", icon: PenLine },
   { href: (id) => `/sites/${id}/forum`, label: "Forum Diskusi", icon: MessagesSquare },
   { href: (id) => `/sites/${id}/pembelajaran`, label: "Pembelajaran", icon: BookOpen },
@@ -69,6 +75,8 @@ const NAV_ITEMS: NavItem[] = [
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   "": { title: "Dashboard", subtitle: "Kelola website pribadi Anda" },
+  editor: { title: "Editor", subtitle: "Susun blok halaman dengan drag-and-drop" },
+  pages: { title: "Halaman", subtitle: "Kelola daftar halaman website" },
   tulisan: { title: "Tulisan", subtitle: "Kelola artikel dan rubrik" },
   forum: { title: "Forum Diskusi", subtitle: "Kelola topik dan percakapan" },
   pembelajaran: { title: "Pembelajaran", subtitle: "Kelola materi pembelajaran" },
@@ -84,6 +92,9 @@ function pageMeta(pathname: string, sid: string) {
   return TITLES[rest] ?? TITLES[""];
 }
 
+// Key untuk persist state collapse sidebar antar reload.
+const SIDEBAR_COLLAPSED_KEY = "guru_sidebar_collapsed";
+
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -92,6 +103,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   const [me, setMe] = useState<Me | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -106,6 +118,29 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       });
     api<Me>("/api/v1/auth/me").then(setMe).catch(() => {});
   }, [params.id, router]);
+
+  // Restore collapse state dari localStorage. Client-only, jadi tidak ada
+  // hydration mismatch — default expand kalau nilai tidak valid.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (raw === "1") setCollapsed(true);
+    } catch {
+      // localStorage disabled / private mode — biarkan default.
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // ignore write failure
+      }
+      return next;
+    });
+  }
 
   // Close drawer on route change.
   useEffect(() => {
@@ -135,20 +170,36 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     router.replace("/login");
   }
 
+  // Width sidebar diatur di sini supaya main margin + aside width sync.
+  // Kalau lagi di mobile drawer, tetap render lebar penuh (drawer mode)
+  // supaya isi tidak terpotong; collapse hanya berlaku di lg+.
+  const sidebarWidth = collapsed ? 72 : 250;
+
   return (
     <div className="min-h-screen bg-[#f5f7fb]">
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-[250px] flex-col overflow-y-auto bg-gradient-to-b from-[#13243d] to-[#0d1b2e] px-4 py-6 text-slate-300 transition-transform lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex flex-col overflow-y-auto bg-gradient-to-b from-[#13243d] to-[#0d1b2e] text-slate-300 transition-[transform,width] duration-200 lg:translate-x-0",
+          collapsed ? "lg:w-[72px] lg:px-2" : "lg:w-[250px] lg:px-4",
+          // Mobile drawer: selalu render lebar penuh (250px) supaya UX drawer
+          // tetap enak — collapse mode adalah desktop concern.
+          "w-[250px] px-4 py-6",
           drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <Link href="/dashboard" className="flex items-center gap-3 px-2 pb-6">
-          <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-[#ffbc85] to-[#e98555] shadow-lg shadow-orange-500/20">
+        <Link
+          href="/dashboard"
+          className={cn(
+            "flex items-center gap-3 pb-6",
+            collapsed ? "lg:justify-center lg:px-0 px-2" : "px-2",
+          )}
+          title={collapsed ? "Dashboard Guru" : undefined}
+        >
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#ffbc85] to-[#e98555] shadow-lg shadow-orange-500/20">
             <BookOpen className="size-5 text-white" />
           </div>
-          <div>
+          <div className={cn(collapsed && "lg:hidden")}>
             <div className="text-[15px] font-bold text-white">Dashboard Guru</div>
             <div className="text-[11px] text-slate-400">Website Pribadi Guru</div>
           </div>
@@ -163,34 +214,55 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
               <Link
                 key={href}
                 href={href}
+                title={collapsed ? item.label : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
+                  "flex items-center gap-3 rounded-xl text-sm transition",
+                  collapsed
+                    ? "lg:justify-center lg:px-0 lg:py-3 px-3 py-2.5"
+                    : "px-3 py-2.5",
                   active
                     ? "border border-white/10 bg-gradient-to-r from-orange-500/30 to-orange-500/10 text-white"
                     : "text-slate-300 hover:bg-white/5 hover:text-white",
                 )}
               >
-                <Icon className="size-4" />
-                {item.label}
+                <Icon className="size-4 shrink-0" />
+                <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
         <div className="mt-auto space-y-2 border-t border-white/5 pt-5 text-[12px] leading-relaxed text-slate-400">
-          <div className="px-2">
+          <div className={cn("px-2", collapsed && "lg:hidden")}>
             <div className="font-semibold text-white">{site?.name ?? "Website Anda"}</div>
             <div className="text-slate-500">Kelola konten website pribadi Anda dari satu tempat.</div>
           </div>
           <Link
             href="/dashboard"
-            className="flex w-full items-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-[13px] font-bold text-slate-200 transition hover:bg-white/5 hover:text-white"
+            title={collapsed ? "Kembali ke Dashboard" : undefined}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-xl border border-white/10 text-[13px] font-bold text-slate-200 transition hover:bg-white/5 hover:text-white",
+              collapsed ? "lg:justify-center lg:px-0 lg:py-3 px-3 py-2.5" : "px-3 py-2.5",
+            )}
           >
-            <ArrowLeft className="size-4" />
-            Kembali ke Dashboard
+            <ArrowLeft className="size-4 shrink-0" />
+            <span className={cn(collapsed && "lg:hidden")}>Kembali ke Dashboard</span>
           </Link>
         </div>
       </aside>
+
+      {/* Collapse toggle — floating button di edge kanan sidebar. Hidden di
+          mobile karena mobile pakai drawer full-width. */}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Buka sidebar" : "Ciutkan sidebar"}
+        title={collapsed ? "Buka sidebar" : "Ciutkan sidebar"}
+        className="fixed top-[68px] z-50 hidden h-7 w-7 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-[left] hover:bg-slate-50 hover:text-slate-900 lg:grid"
+        style={{ left: `${sidebarWidth - 14}px` }}
+      >
+        {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+      </button>
 
       {/* Drawer backdrop */}
       {drawerOpen && (
@@ -201,7 +273,12 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       )}
 
       {/* Main */}
-      <div className="lg:ml-[250px]">
+      <div
+        className={cn(
+          "transition-[margin] duration-200",
+          collapsed ? "lg:ml-[72px]" : "lg:ml-[250px]",
+        )}
+      >
         <header className="sticky top-0 z-20 flex h-[76px] items-center gap-4 border-b border-slate-200 bg-white/90 px-6 backdrop-blur-md">
           <button
             onClick={() => setDrawerOpen((v) => !v)}
