@@ -1,6 +1,7 @@
 package router
 
 import (
+	"net/url"
 	"strings"
 	"time"
 
@@ -273,8 +274,9 @@ func dashboardCORS(cfg config.Config) fiber.Handler {
 
 // publicCORS — CORS permissive untuk /public/* (renderer-facing). Origin =
 // domain user yang dinamis. Approve semua HTTPS origin (semua domain user
-// pasti HTTPS via on-demand TLS Caddy). Localhost di-allow di dev/staging
-// untuk renderer dev server. AllowCredentials=false — endpoint publik tidak
+// pasti HTTPS via on-demand TLS Caddy). Localhost + *.localhost di-allow di
+// dev/staging untuk renderer dev server (Caddy multi-tenant sering pakai
+// pola `<slug>.localhost`). AllowCredentials=false — endpoint publik tidak
 // butuh session/JWT.
 func publicCORS(cfg config.Config) fiber.Handler {
 	isProd := cfg.AppEnv == "production"
@@ -289,10 +291,18 @@ func publicCORS(cfg config.Config) fiber.Handler {
 			if strings.HasPrefix(origin, "https://") {
 				return true
 			}
-			// Dev/staging: allow localhost untuk renderer local (port bebas).
-			if !isProd && (strings.HasPrefix(origin, "http://localhost") ||
-				strings.HasPrefix(origin, "http://127.0.0.1")) {
-				return true
+			// Dev/staging: allow http origin dengan hostname localhost /
+			// *.localhost / 127.0.0.1. Parse URL supaya port + subdomain
+			// tidak bikin false-negative (contoh: http://myshop.localhost:3001).
+			if !isProd {
+				u, err := url.Parse(origin)
+				if err == nil && u.Scheme == "http" {
+					h := u.Hostname()
+					if h == "localhost" || strings.HasSuffix(h, ".localhost") ||
+						h == "127.0.0.1" {
+						return true
+					}
+				}
 			}
 			return false
 		},
