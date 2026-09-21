@@ -260,9 +260,43 @@ func New(deps Deps) *fiber.App {
 // dashboardCORS — CORS strict untuk /api/v1/* (dashboard + admin). Allowlist
 // dari CORS_ORIGINS env. AllowCredentials=true supaya JWT via Authorization
 // header + refresh cookie diterima browser. Pakai di MountUser + MountAdmin.
+//
+// Origin matching toleran `www.` prefix: kalau `https://kubaca.id` ada di
+// whitelist, `https://www.kubaca.id` juga match — hindari user harus
+// double-list tiap variant.
 func dashboardCORS(cfg config.Config) fiber.Handler {
+	// Normalize whitelist ke set: strip trailing slash, lowercase host.
+	allowed := make(map[string]struct{}, len(cfg.CORSOrigins))
+	for _, o := range cfg.CORSOrigins {
+		o = strings.TrimRight(strings.TrimSpace(o), "/")
+		if o == "" {
+			continue
+		}
+		allowed[strings.ToLower(o)] = struct{}{}
+	}
 	return cors.New(cors.Config{
-		AllowOrigins:     strings.Join(cfg.CORSOrigins, ","),
+		AllowOriginsFunc: func(origin string) bool {
+			if origin == "" {
+				return false
+			}
+			o := strings.TrimRight(strings.ToLower(origin), "/")
+			if _, ok := allowed[o]; ok {
+				return true
+			}
+			// Terima `www.` variant kalau non-www ada di whitelist (dan
+			// sebaliknya) — mis. Origin: https://www.kubaca.id vs whitelist
+			// https://kubaca.id.
+			if strings.HasPrefix(o, "https://www.") {
+				if _, ok := allowed["https://"+o[len("https://www."):]]; ok {
+					return true
+				}
+			} else if strings.HasPrefix(o, "https://") {
+				if _, ok := allowed["https://www."+o[len("https://"):]]; ok {
+					return true
+				}
+			}
+			return false
+		},
 		AllowCredentials: true,
 		// Idempotency-Key wajib di whitelist — dipakai POST /domains/purchase +
 		// /domains/renew supaya browser tidak block preflight (CORS spec: custom

@@ -266,81 +266,99 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		}
 	}
 
-	// Resolve gateway.
-	gw, err := h.gwRegistry.Get(c.Context(), req.PaymentMethod)
-	if err != nil {
-		return httpx.Err(c, fiber.StatusBadRequest, "gateway_unavailable",
-			fmt.Sprintf("Payment method %q tidak tersedia: %v", req.PaymentMethod, err))
-	}
+	// Zero-total short-circuit — kalau promo bikin total = 0, semua gateway
+	// (Midtrans/Paylabs/wallet/manual_bank) reject Amount <= 0 dengan
+	// "amount harus > 0". Handle sync flow: skip gateway, MarkPaid langsung,
+	// lalu ExecuteAfterPayment inline (register EPP). Provider ref pakai
+	// sentinel `free_promo_<invoice_id>` supaya audit trail tetap ada.
+	isFreeInvoice := total == 0
 
-	// Charge — order_id = invoice.id string. Provider POST webhook nanti
-	// dengan order_id ini, paymentwh lookup invoice by GetByGatewayRef
-	// (setelah SavePaymentRef).
-	//
-	// Untuk wallet gateway (Type=="wallet"), CreateCharge sync debit —
-	// balance dikurangi langsung + return ledger.id sebagai providerRef.
-	//
-	// Wallet payer resolution:
-	//   - Reseller self-purchase / on-behalf-of → wallet reseller (caller)
-	//   - Agent (self-purchase atau on-behalf-of) → wallet PARENT reseller,
-	//     metadata catat agent_id supaya reseller bisa report per-agent.
-	walletPayerID := ""
-	var walletMeta []byte
-	if req.PaymentMethod == "deposit_wallet" {
-		if caller.Role == auth.RoleAgent && caller.ParentResellerID != nil {
-			walletPayerID = caller.ParentResellerID.String()
-			walletMeta = buildWalletMetadata(caller.ID, purchasedBy)
-		} else {
-			walletPayerID = caller.ID.String()
-			walletMeta = buildWalletMetadata(uuid.Nil, purchasedBy)
+	var paymentURL string
+	var providerRef string
+	var isWalletGateway bool
+
+	if isFreeInvoice {
+		providerRef = "free_promo_" + invoiceID.String()
+		// Skip gateway — no charge. Purchase status akan sync path (mirip wallet).
+	} else {
+		// Resolve gateway.
+		gw, gwErr := h.gwRegistry.Get(c.Context(), req.PaymentMethod)
+		if gwErr != nil {
+			return httpx.Err(c, fiber.StatusBadRequest, "gateway_unavailable",
+				fmt.Sprintf("Payment method %q tidak tersedia: %v", req.PaymentMethod, gwErr))
 		}
-	}
-	paymentURL, providerRef, err := gw.CreateCharge(c.Context(), GatewayChargeRequest{
-		OrderID:        invoiceID.String(),
-		UserID:         owner.ID.String(),
-		Amount:         total,
-		Description:    fmt.Sprintf("Register %s (%d tahun)", req.Domain, req.Years),
-		CustomerName:   owner.Name,
-		CustomerEmail:  owner.Email,
-		CustomerPhone:  owner.PhoneNumber,
-		ReturnURL:      req.ReturnURL,
-		ExpiresAt:      dueAt,
-		WalletPayerID:  walletPayerID,
-		WalletMetadata: walletMeta,
-	})
-	if err != nil {
-		// Detect wallet insufficient — return 402 dengan message spesifik.
-		if strings.Contains(strings.ToLower(err.Error()), "saldo") ||
-			strings.Contains(strings.ToLower(err.Error()), "insufficient") {
+		isWalletGateway = gw.Type() == "wallet"
+
+		// Charge — order_id = invoice.id string. Provider POST webhook nanti
+		// dengan order_id ini, paymentwh lookup invoice by GetByGatewayRef
+		// (setelah SavePaymentRef).
+		//
+		// Untuk wallet gateway (Type=="wallet"), CreateCharge sync debit —
+		// balance dikurangi langsung + return ledger.id sebagai providerRef.
+		//
+		// Wallet payer resolution:
+		//   - Reseller self-purchase / on-behalf-of → wallet reseller (caller)
+		//   - Agent (self-purchase atau on-behalf-of) → wallet PARENT reseller,
+		//     metadata catat agent_id supaya reseller bisa report per-agent.
+		walletPayerID := ""
+		var walletMeta []byte
+		if req.PaymentMethod == "deposit_wallet" {
+			if caller.Role == auth.RoleAgent && caller.ParentResellerID != nil {
+				walletPayerID = caller.ParentResellerID.String()
+				walletMeta = buildWalletMetadata(caller.ID, purchasedBy)
+			} else {
+				walletPayerID = caller.ID.String()
+				walletMeta = buildWalletMetadata(uuid.Nil, purchasedBy)
+			}
+		}
+		var chargeErr error
+		paymentURL, providerRef, chargeErr = gw.CreateCharge(c.Context(), GatewayChargeRequest{
+			OrderID:        invoiceID.String(),
+			UserID:         owner.ID.String(),
+			Amount:         total,
+			Description:    fmt.Sprintf("Register %s (%d tahun)", req.Domain, req.Years),
+			CustomerName:   owner.Name,
+			CustomerEmail:  owner.Email,
+			CustomerPhone:  owner.PhoneNumber,
+			ReturnURL:      req.ReturnURL,
+			ExpiresAt:      dueAt,
+			WalletPayerID:  walletPayerID,
+			WalletMetadata: walletMeta,
+		})
+		if chargeErr != nil {
+			// Detect wallet insufficient — return 402 dengan message spesifik.
+			if strings.Contains(strings.ToLower(chargeErr.Error()), "saldo") ||
+				strings.Contains(strings.ToLower(chargeErr.Error()), "insufficient") {
+				metrics.Default.CounterInc(metricPurchasesCreated,
+					"Purchase checkout by outcome",
+					map[string]string{"result": "wallet_insufficient", "gateway": req.PaymentMethod},
+				)
+				return httpx.Err(c, fiber.StatusPaymentRequired, "wallet_insufficient", chargeErr.Error())
+			}
+			slog.Error("purchase: charge failed",
+				"gateway", req.PaymentMethod, "invoice_id", invoiceID, "error", chargeErr)
 			metrics.Default.CounterInc(metricPurchasesCreated,
 				"Purchase checkout by outcome",
-				map[string]string{"result": "wallet_insufficient", "gateway": req.PaymentMethod},
+				map[string]string{"result": "charge_failed", "gateway": req.PaymentMethod},
 			)
-			return httpx.Err(c, fiber.StatusPaymentRequired, "wallet_insufficient", err.Error())
+			return httpx.Err(c, fiber.StatusBadGateway, "charge_failed", chargeErr.Error())
 		}
-		slog.Error("purchase: charge failed",
-			"gateway", req.PaymentMethod, "invoice_id", invoiceID, "error", err)
-		metrics.Default.CounterInc(metricPurchasesCreated,
-			"Purchase checkout by outcome",
-			map[string]string{"result": "charge_failed", "gateway": req.PaymentMethod},
-		)
-		return httpx.Err(c, fiber.StatusBadGateway, "charge_failed", err.Error())
+
+		// Persist provider ref supaya webhook nanti bisa lookup + promote invoice
+		// draft → unpaid.
+		if err := h.invoicesSvc.SavePaymentRef(c.Context(), invoiceID, providerRef); err != nil {
+			// Non-fatal — invoice tetap ada (status draft). Log + lanjut.
+			slog.Warn("purchase: save payment ref failed",
+				"invoice_id", invoiceID, "provider_ref", providerRef, "error", err)
+		}
 	}
 
-	// Persist provider ref supaya webhook nanti bisa lookup + promote invoice
-	// draft → unpaid.
-	if err := h.invoicesSvc.SavePaymentRef(c.Context(), invoiceID, providerRef); err != nil {
-		// Non-fatal — invoice tetap ada (status draft). Log + lanjut.
-		slog.Warn("purchase: save payment ref failed",
-			"invoice_id", invoiceID, "provider_ref", providerRef, "error", err)
-	}
-
-	// Determine initial Purchase status. Wallet gateway = sync (langsung
-	// active setelah debit + EPP execute). Gateway lain = pending_payment
-	// (menunggu webhook).
-	isWalletGateway := gw.Type() == "wallet"
+	// Determine initial Purchase status. Wallet gateway + free invoice = sync
+	// (langsung active setelah MarkPaid + EPP execute). Gateway lain =
+	// pending_payment (menunggu webhook).
+	syncFlow := isFreeInvoice || isWalletGateway
 	purchaseStatus := StatusPendingPayment
-	if isWalletGateway {
+	if syncFlow {
 		purchaseStatus = StatusPendingProvisioning
 	}
 
@@ -386,24 +404,28 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	}
 	h.logAudit(c.Context(), caller.ID, auditEvt, "domain_purchase", jobID, auditMeta)
 
-	// Wallet gateway = synchronous flow — mark paid + EPP execute inline.
-	// Kalau gagal, invoice tetap paid (money debited); admin/user retry
-	// EPP execute manual nanti.
+	// Sync flow — wallet gateway (langsung debit) atau free invoice (total=0
+	// via promo 100%). MarkPaid + EPP execute inline. Kalau gagal, invoice
+	// tetap paid; admin/user retry manual via /purchases/:job_id/retry.
 	finalStatus := purchaseStatus
 	respPaymentURL := paymentURL
-	if isWalletGateway {
+	if syncFlow {
+		flowLabel := "wallet"
+		if isFreeInvoice {
+			flowLabel = "free"
+		}
 		if err := h.invoicesSvc.MarkPaid(c.Context(), invoiceID, time.Now(), providerRef); err != nil {
-			slog.Error("purchase (wallet): MarkPaid failed",
+			slog.Error("purchase ("+flowLabel+"): MarkPaid failed",
 				"invoice_id", invoiceID, "error", err)
 			// Non-fatal for response — invoice biasanya bisa di-mark via admin panel.
 		}
 		inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
 		if err != nil {
-			slog.Error("purchase (wallet): fetch invoice for execute failed",
+			slog.Error("purchase ("+flowLabel+"): fetch invoice for execute failed",
 				"invoice_id", invoiceID, "error", err)
 		} else if inv != nil {
 			if execErr := h.ExecuteAfterPayment(c.Context(), inv); execErr != nil {
-				slog.Error("purchase (wallet): ExecuteAfterPayment failed",
+				slog.Error("purchase ("+flowLabel+"): ExecuteAfterPayment failed",
 					"invoice_id", invoiceID, "error", execErr)
 				// Purchase status akan updated ke failed via ExecuteAfterPayment.
 				finalStatus = StatusFailed
@@ -411,7 +433,7 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 				finalStatus = StatusActive
 			}
 		}
-		respPaymentURL = "" // no redirect untuk wallet
+		respPaymentURL = "" // no redirect untuk sync flow
 	}
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseCreatedResp{

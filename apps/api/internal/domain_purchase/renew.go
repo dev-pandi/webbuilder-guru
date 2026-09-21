@@ -189,55 +189,72 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		}
 	}
 
-	// Gateway charge.
-	gw, err := h.gwRegistry.Get(c.Context(), req.PaymentMethod)
-	if err != nil {
-		return httpx.Err(c, fiber.StatusBadRequest, "gateway_unavailable",
-			fmt.Sprintf("Payment method %q tidak tersedia: %v", req.PaymentMethod, err))
-	}
-	// Wallet payer resolution — agent debit dari wallet parent reseller,
-	// metadata catat agent_id supaya reseller bisa report per-agent.
-	walletPayerID := ""
-	var walletMeta []byte
-	if req.PaymentMethod == "deposit_wallet" {
-		if owner.Role == auth.RoleAgent && owner.ParentResellerID != nil {
-			walletPayerID = owner.ParentResellerID.String()
-			walletMeta = buildWalletMetadata(owner.ID, nil)
-		} else {
-			walletPayerID = owner.ID.String()
+	// Zero-total short-circuit — promo 100% bikin total=0, semua gateway
+	// reject Amount<=0. Skip gateway, langsung sync flow (MarkPaid + EPP
+	// execute). Provider ref pakai sentinel `free_promo_<invoice_id>`.
+	isFreeInvoice := total == 0
+
+	var paymentURL string
+	var providerRef string
+	var isWalletGateway bool
+
+	if isFreeInvoice {
+		providerRef = "free_promo_" + invoiceID.String()
+	} else {
+		// Gateway charge.
+		gw, gwErr := h.gwRegistry.Get(c.Context(), req.PaymentMethod)
+		if gwErr != nil {
+			return httpx.Err(c, fiber.StatusBadRequest, "gateway_unavailable",
+				fmt.Sprintf("Payment method %q tidak tersedia: %v", req.PaymentMethod, gwErr))
+		}
+		isWalletGateway = gw.Type() == "wallet"
+
+		// Wallet payer resolution — agent debit dari wallet parent reseller,
+		// metadata catat agent_id supaya reseller bisa report per-agent.
+		walletPayerID := ""
+		var walletMeta []byte
+		if req.PaymentMethod == "deposit_wallet" {
+			if owner.Role == auth.RoleAgent && owner.ParentResellerID != nil {
+				walletPayerID = owner.ParentResellerID.String()
+				walletMeta = buildWalletMetadata(owner.ID, nil)
+			} else {
+				walletPayerID = owner.ID.String()
+			}
+		}
+		var chargeErr error
+		paymentURL, providerRef, chargeErr = gw.CreateCharge(c.Context(), GatewayChargeRequest{
+			OrderID:        invoiceID.String(),
+			UserID:         owner.ID.String(),
+			Amount:         total,
+			Description:    fmt.Sprintf("Perpanjangan %s (%d tahun)", domain, req.Years),
+			CustomerName:   owner.Name,
+			CustomerEmail:  owner.Email,
+			CustomerPhone:  owner.PhoneNumber,
+			ReturnURL:      req.ReturnURL,
+			ExpiresAt:      dueAt,
+			WalletPayerID:  walletPayerID,
+			WalletMetadata: walletMeta,
+		})
+		if chargeErr != nil {
+			metrics.Default.CounterInc(metricRenewsCreated,
+				"Renew checkout by outcome",
+				map[string]string{"result": "charge_failed", "gateway": req.PaymentMethod},
+			)
+			return httpx.Err(c, fiber.StatusBadGateway, "charge_failed", chargeErr.Error())
+		}
+
+		if err := h.invoicesSvc.SavePaymentRef(c.Context(), invoiceID, providerRef); err != nil {
+			slog.Warn("renew: save payment ref failed",
+				"invoice_id", invoiceID, "error", err)
 		}
 	}
-	paymentURL, providerRef, err := gw.CreateCharge(c.Context(), GatewayChargeRequest{
-		OrderID:        invoiceID.String(),
-		UserID:         owner.ID.String(),
-		Amount:         total,
-		Description:    fmt.Sprintf("Perpanjangan %s (%d tahun)", domain, req.Years),
-		CustomerName:   owner.Name,
-		CustomerEmail:  owner.Email,
-		CustomerPhone:  owner.PhoneNumber,
-		ReturnURL:      req.ReturnURL,
-		ExpiresAt:      dueAt,
-		WalletPayerID:  walletPayerID,
-		WalletMetadata: walletMeta,
-	})
-	if err != nil {
-		metrics.Default.CounterInc(metricRenewsCreated,
-			"Renew checkout by outcome",
-			map[string]string{"result": "charge_failed", "gateway": req.PaymentMethod},
-		)
-		return httpx.Err(c, fiber.StatusBadGateway, "charge_failed", err.Error())
-	}
 
-	if err := h.invoicesSvc.SavePaymentRef(c.Context(), invoiceID, providerRef); err != nil {
-		slog.Warn("renew: save payment ref failed",
-			"invoice_id", invoiceID, "error", err)
-	}
-
-	// Wallet gateway = sync flow (langsung active tanpa tunggu webhook).
-	// Selaras dengan Purchase — UX konsisten untuk deposit_wallet.
-	isWalletGateway := gw.Type() == "wallet"
+	// Sync flow: wallet gateway (langsung debit) atau free invoice (promo=100%).
+	// Selaras dengan Purchase — response bisa langsung return status=active
+	// tanpa client polling.
+	syncFlow := isFreeInvoice || isWalletGateway
 	initialStatus := StatusPendingPayment
-	if isWalletGateway {
+	if syncFlow {
 		initialStatus = StatusPendingProvisioning
 	}
 
@@ -265,29 +282,34 @@ func (h *Handler) Renew(c *fiber.Ctx) error {
 		"domain", domain, "years", req.Years, "total", total,
 		"is_wallet", isWalletGateway)
 
-	// Wallet gateway = sync flow. MarkPaid + ExecuteAfterPayment inline supaya
-	// response bisa langsung return status=active tanpa client polling.
+	// Sync flow — wallet gateway atau free invoice (promo 100%). MarkPaid +
+	// ExecuteAfterPayment inline supaya response bisa langsung return
+	// status=active tanpa client polling.
 	finalStatus := initialStatus
 	respPaymentURL := paymentURL
-	if isWalletGateway {
+	if syncFlow {
+		flowLabel := "wallet"
+		if isFreeInvoice {
+			flowLabel = "free"
+		}
 		if err := h.invoicesSvc.MarkPaid(c.Context(), invoiceID, time.Now(), providerRef); err != nil {
-			slog.Error("renew (wallet): MarkPaid failed",
+			slog.Error("renew ("+flowLabel+"): MarkPaid failed",
 				"invoice_id", invoiceID, "error", err)
 		}
 		inv, err := h.invoicesSvc.GetInvoiceForCallback(c.Context(), invoiceID)
 		if err != nil {
-			slog.Error("renew (wallet): fetch invoice for execute failed",
+			slog.Error("renew ("+flowLabel+"): fetch invoice for execute failed",
 				"invoice_id", invoiceID, "error", err)
 		} else if inv != nil {
 			if execErr := h.ExecuteAfterPayment(c.Context(), inv); execErr != nil {
-				slog.Error("renew (wallet): ExecuteAfterPayment failed",
+				slog.Error("renew ("+flowLabel+"): ExecuteAfterPayment failed",
 					"invoice_id", invoiceID, "error", execErr)
 				finalStatus = StatusFailed
 			} else {
 				finalStatus = StatusActive
 			}
 		}
-		respPaymentURL = "" // no redirect untuk wallet
+		respPaymentURL = "" // no redirect untuk sync flow
 	}
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"data": purchaseCreatedResp{
