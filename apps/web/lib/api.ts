@@ -37,6 +37,39 @@ export function getAccessToken(): string | null {
   return localStorage.getItem(tokenKey());
 }
 
+// Paths yang tidak boleh trigger auto-redirect ke /login (mencegah loop).
+// Semua route auth-related (login/register/verify/reset) di-skip.
+const AUTH_PATH_PREFIXES = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/daftar-reseller",
+];
+
+function isOnAuthPage(): boolean {
+  if (typeof window === "undefined") return false;
+  const p = window.location.pathname;
+  return AUTH_PATH_PREFIXES.some((prefix) => p === prefix || p.startsWith(prefix + "/"));
+}
+
+// handleUnauthorized — dipanggil saat API return 401 (token invalid/expired).
+// Clear tokens + redirect ke /login dengan ?next=<path saat ini> supaya user
+// setelah login balik ke halaman yang dituju. Skip kalau:
+//   - SSR (window undefined)
+//   - Sudah di halaman auth (cegah redirect loop)
+//   - Endpoint dipanggil dengan auth:false (public API, 401 bukan token issue)
+function handleUnauthorized() {
+  if (typeof window === "undefined") return;
+  if (isOnAuthPage()) return;
+  clearTokens();
+  const current = window.location.pathname + window.location.search;
+  const next = encodeURIComponent(current);
+  // Pakai replace supaya user tidak bisa back ke halaman expired (bakal 401 lagi).
+  window.location.replace(`/login?next=${next}`);
+}
+
 export async function api<T>(
   path: string,
   opts: RequestInit & { auth?: boolean } = {},
@@ -45,7 +78,8 @@ export async function api<T>(
     "Content-Type": "application/json",
     ...(opts.headers as Record<string, string> | undefined),
   };
-  if (opts.auth !== false) {
+  const useAuth = opts.auth !== false;
+  if (useAuth) {
     const t = getAccessToken();
     if (t) headers["Authorization"] = `Bearer ${t}`;
   }
@@ -54,6 +88,11 @@ export async function api<T>(
   if (!res.ok || "error" in body) {
     const code = "error" in body ? body.error.code : "";
     const msg = "error" in body ? body.error.message : `HTTP ${res.status}`;
+    // Global 401 handler — token invalid/expired. Skip untuk request public
+    // (auth:false) karena 401 di sana bukan issue token user.
+    if (res.status === 401 && useAuth) {
+      handleUnauthorized();
+    }
     throw new ApiError(res.status, code, msg);
   }
   return (body as { data: T }).data;

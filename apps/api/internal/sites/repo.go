@@ -250,31 +250,46 @@ func (r *Repo) Delete(ctx context.Context, id, userID uuid.UUID) error {
 // GetByHost looks up a published site by associated domain hostname.
 //
 // Dual lookup — dua tabel bisa link domain ke situs:
-//  1. `domains` — legacy BYO flow (user hubungkan domain yang dibeli di
-//     registrar lain, verify via A record). Status = 'verified'.
-//  2. `domain_purchases` — flow utama sekarang: domain dibeli via PANDI
-//     wizard, auto-attach ke site setelah checkout. Status = 'active'.
+//  1. `domain_purchases` — flow utama: domain dibeli via PANDI wizard,
+//     auto-attach ke site setelah checkout. Status = 'active', kind =
+//     'register' (renew jobs tidak attach, hanya extend expiry).
+//  2. `domains` — legacy BYO flow (user hubungkan domain dari registrar
+//     lain, verify via A record). Status = 'verified'.
 //
-// Kalau salah satu match, return site. Site harus status = 'published' —
-// draft tidak muncul di renderer.
+// DETERMINISTIC: sub-query menghasilkan tepat 1 site_id (dengan COALESCE +
+// ORDER BY), lalu SELECT site by ID. Cegah cross-tenant leak yang bisa
+// terjadi kalau `WHERE ... EXISTS ... LIMIT 1` non-deterministic — misal
+// domain sama muncul di 2 domain_purchases row karena data anomali
+// (register orphan + register baru site lain).
+//
+// Site harus status='published' — draft tidak muncul di renderer.
 func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 	var s Site
 	err := r.pool.QueryRow(ctx, `
 		SELECT `+sitePrefixedCols("s")+`
 		FROM sites s
 		WHERE s.status = 'published'
-		  AND (
-			EXISTS (
-				SELECT 1 FROM domains d
-				 WHERE d.site_id = s.id
-				   AND d.hostname = $1
-				   AND d.status = 'verified'
-			)
-			OR EXISTS (
-				SELECT 1 FROM domain_purchases dp
-				 WHERE dp.site_id = s.id
-				   AND dp.domain = $1
+		  AND s.id = COALESCE(
+			-- Priority 1: purchase-flow domain, ambil register row aktif
+			-- paling baru (ORDER BY created_at DESC). Filter kind='register'
+			-- penting — renew row tidak attach ke site (site_id nullable).
+			(
+				SELECT dp.site_id
+				  FROM domain_purchases dp
+				 WHERE dp.domain = $1
 				   AND dp.status = 'active'
+				   AND dp.kind = 'register'
+				   AND dp.site_id IS NOT NULL
+				 ORDER BY dp.created_at DESC
+				 LIMIT 1
+			),
+			-- Priority 2: legacy BYO domain (UNIQUE hostname, aman deterministic).
+			(
+				SELECT d.site_id
+				  FROM domains d
+				 WHERE d.hostname = $1
+				   AND d.status = 'verified'
+				 LIMIT 1
 			)
 		  )
 		LIMIT 1
@@ -290,18 +305,19 @@ func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 //   - HasSite=false → domain belum di-attach ke situs mana pun
 //   - HasSite=true tapi GetByHost tidak return → site ada tapi belum publish
 // Backend: dual-check di domains + domain_purchases, tanpa filter status.
+// Kind filter 'register' konsisten dengan GetByHost — renew row bukan
+// indikator bahwa site punya domain (renew tidak attach).
 func (r *Repo) HasSiteForHost(ctx context.Context, host string) (bool, error) {
 	var exists bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM sites s
-			 WHERE EXISTS (
-				SELECT 1 FROM domains d
-				 WHERE d.site_id = s.id AND d.hostname = $1
-			) OR EXISTS (
-				SELECT 1 FROM domain_purchases dp
-				 WHERE dp.site_id = s.id AND dp.domain = $1
-			)
+			SELECT 1 FROM domains d
+			 WHERE d.hostname = $1 AND d.site_id IS NOT NULL
+		) OR EXISTS (
+			SELECT 1 FROM domain_purchases dp
+			 WHERE dp.domain = $1
+			   AND dp.kind = 'register'
+			   AND dp.site_id IS NOT NULL
 		)
 	`, host).Scan(&exists)
 	return exists, err
