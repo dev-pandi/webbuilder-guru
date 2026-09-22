@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -9,6 +10,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -62,18 +64,23 @@ export function SortableBlockList({
   // konsisten dengan blocks array.
   hiddenIndices?: Set<number>;
 }) {
-  // Pointer sensor with small activation distance so a click still selects
-  // (not every mousedown turns into a drag). Touch sensor pakai delay 250ms
-  // supaya scroll native tetap smooth di mobile — long-press = mulai drag.
+  // Pointer sensor 8px activation — kurangi false positive drag saat guru
+  // click cepat untuk select (sebelumnya 4px terasa terlalu sensitif). Touch
+  // pakai delay 250ms + tolerance 5px supaya scroll native smooth di mobile.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, {
       activationConstraint: { delay: 250, tolerance: 5 },
     }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  function onDragStart(_: DragStartEvent) {
+    setIsDragging(true);
+  }
+
   function onDragEnd(e: DragEndEvent) {
+    setIsDragging(false);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const from = keys.indexOf(String(active.id));
@@ -82,10 +89,34 @@ export function SortableBlockList({
     onReorder(from, to);
   }
 
-  const hidden = hiddenIndices ?? new Set<number>();
+  function onDragCancel() {
+    setIsDragging(false);
+  }
+
+  // Freeze hidden set selama drag aktif — kalau parent update hiddenIndices
+  // di tengah drag (mis. autosave completes → layout state re-sync), dnd-kit
+  // items/render bisa diverge dan bikin crash / drop ke posisi salah.
+  const [isDragging, setIsDragging] = useState(false);
+  const frozenHiddenRef = useRef<Set<number> | null>(null);
+  const liveHidden = hiddenIndices ?? new Set<number>();
+  useEffect(() => {
+    if (!isDragging) frozenHiddenRef.current = null;
+  }, [isDragging]);
+  if (isDragging && frozenHiddenRef.current == null) {
+    frozenHiddenRef.current = new Set(liveHidden);
+  }
+  const hidden = isDragging && frozenHiddenRef.current
+    ? frozenHiddenRef.current
+    : liveHidden;
   const visibleKeys = keys.filter((_, i) => !hidden.has(i));
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragCancel={onDragCancel}
+    >
       <SortableContext items={visibleKeys} strategy={verticalListSortingStrategy}>
         <ul className="space-y-1">
           {blocks.map((b, i) => {

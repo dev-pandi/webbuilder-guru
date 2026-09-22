@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createElement, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bookmark,
   CalendarClock,
@@ -104,6 +104,7 @@ import {
 } from "./paths";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   TouchSensor,
   closestCenter,
@@ -111,6 +112,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -384,6 +386,13 @@ export default function EditorPage() {
   // Warn kalau ada dirty changes supaya tidak hilang tanpa sengaja.
   function selectTarget(next: EditorTarget) {
     if (targetsEqual(target, next)) return;
+    // Blokir switch saat save in-flight — kalau autosave PATCH /pages/A masih
+    // berjalan lalu user pindah ke Layout, response save bisa datang belakangan
+    // dan overwrite state Layout yang baru di-load. Toast singkat + skip.
+    if (saving) {
+      toast.info("Tunggu save selesai sebelum pindah target");
+      return;
+    }
     if (blocksDirty && !confirm("Ada perubahan belum disimpan. Pindah target edit?")) return;
     let bs: BlockData[] = [];
     if (next.kind === "page") {
@@ -407,29 +416,50 @@ export default function EditorPage() {
   }
 
   // toggleSectionEnabled langsung PATCH site — flag terpisah dari edit
-  // blocks, jadi tidak perlu tunggu tombol Simpan. Kalau save utama sedang
-  // jalan, kita skip supaya tidak race.
+  // blocks, jadi tidak perlu tunggu tombol Simpan. Set `saving=true` selama
+  // request supaya autosave layout-mode tidak race (autosave check `!saving`
+  // di useEffect autosave). Rollback + reset saving di finally.
   async function toggleSectionEnabled(section: "header" | "footer", next: boolean) {
     if (saving) return;
     const prevHeader = headerEnabled;
     const prevFooter = footerEnabled;
     const newHeader = section === "header" ? next : headerEnabled;
     const newFooter = section === "footer" ? next : footerEnabled;
-    // Optimistic update.
+    // Optimistic update UI + block autosave dari layout-mode edit yang lagi
+    // dirty (autosave PATCH /sites/:id juga → potensi order-of-write).
     if (section === "header") setHeaderEnabled(next);
     else setFooterEnabled(next);
+    setSaving(true);
     try {
+      // Kalau target = layout mode DAN dirty, kirim blocks yang sedang
+      // di-edit sebagai payload section itu — supaya toggle sekaligus commit
+      // edit yang belum ke-save. Section lain pakai state layoutHeader/Footer
+      // (last-saved).
+      const currentHeader =
+        target?.kind === "layout" && target.section === "header" ? blocks : layoutHeader;
+      const currentFooter =
+        target?.kind === "layout" && target.section === "footer" ? blocks : layoutFooter;
       await api(`/api/v1/sites/${params.id}`, {
         method: "PATCH",
         body: JSON.stringify({
           layout: {
-            header: layoutHeader,
-            footer: layoutFooter,
+            header: currentHeader,
+            footer: currentFooter,
             header_enabled: newHeader,
             footer_enabled: newFooter,
           },
         }),
       });
+      // Sync state supaya originalBlocks/layoutHeader/Footer merefleksikan
+      // apa yang baru saja di-persist — cegah blocksDirty stuck true.
+      if (target?.kind === "layout" && target.section === "header") {
+        setLayoutHeader(blocks);
+        setOriginalBlocks(blocks);
+      } else if (target?.kind === "layout" && target.section === "footer") {
+        setLayoutFooter(blocks);
+        setOriginalBlocks(blocks);
+      }
+      setSavedAt(Date.now());
       toast.success(
         next
           ? `${section === "header" ? "Header" : "Footer"} aktif di semua halaman`
@@ -440,6 +470,8 @@ export default function EditorPage() {
       setHeaderEnabled(prevHeader);
       setFooterEnabled(prevFooter);
       toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -2016,10 +2048,20 @@ function LayoutReadonlyStrip({
       onClick={onEdit}
       title={`${label} bersama — berlaku di semua halaman. Klik untuk edit.`}
     >
-      {/* Konten render dengan pointer-events off supaya klik anywhere pindah
-          ke edit layout mode. Opacity slight supaya visually berbeda dari
-          page content yang editable. */}
-      <div className="pointer-events-none opacity-90">
+      {/*
+        Konten render read-only. Tiga guard supaya guru tidak "keluar" editor:
+        1. pointer-events:none → mouse click pass-through ke onEdit
+        2. `inert` attribute → browser skip Tab focus + block synthetic click
+           via keyboard (Enter di link → no navigate)
+        3. `aria-hidden` → screen reader skip (duplikat dari mode Layout)
+        Opacity slight supaya visually berbeda dari page editable content.
+      */}
+      <div
+        className="pointer-events-none opacity-90"
+        // @ts-expect-error — `inert` is a valid HTML attr, TS types lag
+        inert=""
+        aria-hidden="true"
+      >
         {blocks.map((b, i) => (
           <BlockView
             key={`layout-${section}-${i}`}
@@ -2628,14 +2670,27 @@ function Preview({
   // Dipakai untuk hide Navbar/Footer di page tree saat shared layout aktif.
   hiddenIndices?: Set<number>;
 }) {
-  // Pointer sensor with an activation distance so clicks (select) don't get
-  // hijacked by drag intent. 4px is enough to distinguish deliberate drag.
+  // Pointer sensor 8px activation — align dengan SortableBlockList sidebar.
+  // Sebelumnya 4px terlalu sensitif: klik untuk select block sering ke-hijack
+  // jadi drag start kalau cursor drift sedikit.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
+  // Track active drag untuk render DragOverlay ghost. Ghost = label +
+  // ikon block type, ringan, tidak render full BlockView (bikin drag laggy
+  // untuk block besar). Cukup untuk beri cue "block ini lagi di-drag".
+  const [activeDragBlock, setActiveDragBlock] = useState<BlockData | null>(null);
+
+  function handleDragStart(e: DragStartEvent) {
+    const activePath = keyToPath(String(e.active.id));
+    const b = getAt(blocks, activePath);
+    setActiveDragBlock(b ?? null);
+  }
+
   function handleDragEnd(e: DragEndEvent) {
+    setActiveDragBlock(null);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const fromPath = keyToPath(String(active.id));
@@ -2658,6 +2713,10 @@ function Preview({
     const toParent = overPath.slice(0, -1);
     const toIdx = overPath[overPath.length - 1];
     onMoveTo(fromPath, toParent, toIdx);
+  }
+
+  function handleDragCancel() {
+    setActiveDragBlock(null);
   }
 
   // Compute visible blocks (setelah filter hiddenIndices). Kalau setelah
@@ -2692,7 +2751,13 @@ function Preview({
     );
   }
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
       {/* Inject CSS `.guru-*` sekali — supaya semua block Guru render dengan
           styling identik dengan template preview beneran. Aman untuk site
           non-guru: CSS scoped ke class .guru-* + :root var yang read theme. */}
@@ -2721,7 +2786,28 @@ function Preview({
           ))}
         </div>
       </SortableContext>
+      {/* Ghost badge yang follow cursor selama drag. Tidak render full block
+          (avoid re-layout thrash + performance issue untuk block berat).
+          Cukup pill kecil dengan label + emoji dari schema. */}
+      <DragOverlay dropAnimation={null}>
+        {activeDragBlock ? <DragGhostBadge block={activeDragBlock} /> : null}
+      </DragOverlay>
     </DndContext>
+  );
+}
+
+// DragGhostBadge — pill ringan yang jadi cursor follower selama drag block
+// di canvas. Ambil emoji + label dari schema supaya guru langsung tau block
+// apa yang lagi di-pindah.
+function DragGhostBadge({ block }: { block: BlockData }) {
+  const schema = schemaFor(block.type);
+  return (
+    <div className="pointer-events-none inline-flex items-center gap-2 rounded-full border-2 border-primary bg-background/95 px-3 py-1.5 text-xs font-semibold shadow-xl backdrop-blur">
+      <span className="grid size-5 place-items-center rounded-md bg-primary/10 text-sm">
+        {schema?.emoji ?? "🧩"}
+      </span>
+      <span>{schema?.label ?? block.type}</span>
+    </div>
   );
 }
 
@@ -2940,6 +3026,77 @@ function BlockView({
     const next = [...arr];
     next[idx] = { ...next[idx], [key]: value };
     onUpdate({ ...block, props: { ...p, [arrName]: next } });
+  }
+  // Field — helper compact untuk render text prop dengan inline edit saat
+  // `editable`, atau plain element saat read-only. Reduce boilerplate 5-baris
+  // ternary jadi 1-liner. Semua HTML attr pass through via className.
+  //
+  // Kalau field kosong DAN not editable → return null (existing conditional
+  // render behavior). Kalau editable → tetap render supaya EditableText
+  // placeholder muncul (guru bisa klik untuk isi).
+  function Field({
+    as,
+    field,
+    className,
+    placeholder,
+    multiline,
+    hideWhenEmpty = false,
+  }: {
+    as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "div" | "span" | "blockquote";
+    field: string;
+    className?: string;
+    placeholder?: string;
+    multiline?: boolean;
+    hideWhenEmpty?: boolean;
+  }) {
+    const value = String(p[field] ?? "");
+    if (!editable) {
+      if (hideWhenEmpty && !value) return null;
+      return createElement(as, { className }, value);
+    }
+    return (
+      <EditableText
+        as={as}
+        className={className}
+        value={value}
+        onChange={(v) => setProp(field, v)}
+        placeholder={placeholder}
+        multiline={multiline}
+      />
+    );
+  }
+  // ItemField — sama seperti Field tapi untuk items[] arrays. Update lewat
+  // setItemProp supaya array integrity terjaga.
+  function ItemField({
+    as,
+    arrName,
+    idx,
+    field,
+    className,
+    placeholder,
+    multiline,
+    value,
+  }: {
+    as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "div" | "span" | "blockquote";
+    arrName: string;
+    idx: number;
+    field: string;
+    className?: string;
+    placeholder?: string;
+    multiline?: boolean;
+    value: string;
+  }) {
+    if (!editable) return createElement(as, { className }, value);
+    return (
+      <EditableText
+        as={as}
+        className={className}
+        value={value}
+        onChange={(v) => setItemProp(arrName, idx, field, v)}
+        placeholder={placeholder}
+        multiline={multiline}
+      />
+    );
   }
   switch (block.type) {
     case "Navbar":
@@ -3182,10 +3339,8 @@ function BlockView({
           <div className="grid grid-cols-2 gap-y-4 rounded-lg border p-4 sm:grid-cols-4">
             {(p.items as Array<{ value: string; label: string }> | undefined)?.map((it, i) => (
               <div key={i} className="text-center">
-                <div className="text-2xl font-bold text-primary">{it.value}</div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {it.label}
-                </div>
+                <ItemField as="div" arrName="items" idx={i} field="value" className="text-2xl font-bold text-primary" value={it.value} placeholder="123" />
+                <ItemField as="div" arrName="items" idx={i} field="label" className="text-[10px] uppercase tracking-wider text-muted-foreground" value={it.label} placeholder="Label…" />
               </div>
             ))}
           </div>
@@ -3194,16 +3349,10 @@ function BlockView({
     case "LogoCloud":
       return (
         <div className="px-6 py-6">
-          {p.title ? (
-            <p className="mb-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-              {String(p.title)}
-            </p>
-          ) : null}
+          <Field as="p" field="title" className="mb-3 text-center text-[10px] uppercase tracking-widest text-muted-foreground" placeholder="Judul (opsional)…" hideWhenEmpty />
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 opacity-60">
             {(p.items as Array<{ name: string; image?: string }> | undefined)?.map((it, i) => (
-              <span key={i} className="text-sm font-semibold">
-                {it.name}
-              </span>
+              <ItemField key={i} as="span" arrName="items" idx={i} field="name" className="text-sm font-semibold" value={it.name} placeholder="Nama…" />
             ))}
           </div>
         </div>
@@ -3219,20 +3368,14 @@ function BlockView({
             }}
           >
             <div className="wb-grid-pattern pointer-events-none absolute inset-0 opacity-10" />
-            <h2 className="relative text-3xl font-bold tracking-tight sm:text-4xl">
-              {String(p.title ?? "")}
-            </h2>
-            {p.subtitle ? (
-              <p className="relative mx-auto mt-3 max-w-2xl opacity-90">
-                {String(p.subtitle ?? "")}
-              </p>
-            ) : null}
-            {p.ctaLabel ? (
+            <Field as="h2" field="title" className="relative text-3xl font-bold tracking-tight sm:text-4xl" placeholder="Judul CTA…" />
+            <Field as="p" field="subtitle" className="relative mx-auto mt-3 max-w-2xl opacity-90" placeholder="Subjudul…" multiline hideWhenEmpty />
+            {(editable || p.ctaLabel) ? (
               <button
                 className="relative mt-8 inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 font-medium shadow-xl"
                 style={{ color: "var(--color-fg)" }}
               >
-                {String(p.ctaLabel)} →
+                <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" /> →
               </button>
             ) : null}
           </div>
@@ -3946,19 +4089,27 @@ function BlockView({
     case "AuroraHero":
       return (
         <div className="wb-pro-aurora">
-          {p.eyebrow ? <div className="wb-pro-eyebrow">{String(p.eyebrow)}</div> : null}
-          <h1>{String(p.title ?? "")}</h1>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+          <Field as="div" field="eyebrow" className="wb-pro-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
+          <Field as="h1" field="title" placeholder="Judul hero…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+            </a>
+          ) : null}
         </div>
       );
 
     case "SpotlightHero":
       return (
         <div className="wb-pro-spotlight">
-          <h1>{String(p.title ?? "")}</h1>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+          <Field as="h1" field="title" placeholder="Judul hero…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+            </a>
+          ) : null}
         </div>
       );
 
@@ -3966,19 +4117,29 @@ function BlockView({
       return (
         <div className="wb-pro-highlight">
           <h1>
-            {String(p.title ?? "")} <span className="wb-pro-mark">{String(p.highlight ?? "")}</span> {String(p.titleAfter ?? "")}
+            <Field as="span" field="title" placeholder="Judul…" />{" "}
+            <Field as="span" field="highlight" className="wb-pro-mark" placeholder="highlight" />{" "}
+            <Field as="span" field="titleAfter" placeholder="lanjutan…" />
           </h1>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+            </a>
+          ) : null}
         </div>
       );
 
     case "LampHero":
       return (
         <div className="wb-pro-lamp">
-          <h1>{String(p.title ?? "")}</h1>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+          <Field as="h1" field="title" placeholder="Judul hero…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+            </a>
+          ) : null}
         </div>
       );
 
@@ -3986,28 +4147,37 @@ function BlockView({
       return (
         <div className="wb-pro-typewriter">
           <h1>
-            {String(p.prefix ?? "")} <span className="wb-pro-typed">{String(p.typed ?? "")}</span>
+            <Field as="span" field="prefix" placeholder="Prefix…" />{" "}
+            <Field as="span" field="typed" className="wb-pro-typed" placeholder="typed text" />
           </h1>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+            </a>
+          ) : null}
         </div>
       );
 
     case "GradientTextHero":
       return (
         <div className="wb-pro-gtext">
-          {p.eyebrow ? <div className="wb-pro-eyebrow">{String(p.eyebrow)}</div> : null}
-          <h1>{String(p.title ?? "")}</h1>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">{String(p.ctaLabel)}</a> : null}
+          <Field as="div" field="eyebrow" className="wb-pro-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
+          <Field as="h1" field="title" placeholder="Judul hero…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
+            <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
+              <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+            </a>
+          ) : null}
         </div>
       );
 
     case "BeamsSection":
       return (
         <div className="wb-pro-beams">
-          <h2>{String(p.title ?? "")}</h2>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          <Field as="h2" field="title" placeholder="Judul section…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
       );
 
@@ -4019,8 +4189,8 @@ function BlockView({
           <span className="wb-pro-meteor" />
           <span className="wb-pro-meteor" />
           <span className="wb-pro-meteor" />
-          <h2>{String(p.title ?? "")}</h2>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          <Field as="h2" field="title" placeholder="Judul section…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
       );
 
@@ -4030,8 +4200,8 @@ function BlockView({
           <span className="wb-pro-mesh-blob" />
           <span className="wb-pro-mesh-blob" />
           <span className="wb-pro-mesh-blob" />
-          <h2>{String(p.title ?? "")}</h2>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          <Field as="h2" field="title" placeholder="Judul section…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
       );
 
@@ -4047,28 +4217,28 @@ function BlockView({
               />
             </svg>
           </div>
-          {p.label ? <div className="wb-pro-wave-label">{String(p.label)}</div> : null}
+          <Field as="div" field="label" className="wb-pro-wave-label" placeholder="Label divider…" hideWhenEmpty />
         </div>
       );
 
     case "DotPatternSection":
       return (
         <div className="wb-pro-dots">
-          <h2>{String(p.title ?? "")}</h2>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
+          <Field as="h2" field="title" placeholder="Judul section…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
       );
 
     case "GlowCardGrid":
       return (
         <div className="wb-pro-glow-grid">
-          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <Field as="h2" field="title" placeholder="Judul grid…" hideWhenEmpty />
           <div className="wb-pro-grid">
             {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
               <div key={i} className="wb-pro-glow-card">
                 <div className="wb-pro-glow-inner">
-                  <h3>{it.title}</h3>
-                  <p>{it.desc}</p>
+                  <ItemField as="h3" arrName="items" idx={i} field="title" value={it.title} placeholder="Judul item…" />
+                  <ItemField as="p" arrName="items" idx={i} field="desc" value={it.desc} placeholder="Deskripsi…" multiline />
                 </div>
               </div>
             ))}
@@ -4079,12 +4249,12 @@ function BlockView({
     case "TiltCardGrid":
       return (
         <div className="wb-pro-tilt-grid">
-          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <Field as="h2" field="title" placeholder="Judul grid…" hideWhenEmpty />
           <div className="wb-pro-grid">
             {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
               <div key={i} className="wb-pro-tilt-card">
-                <h3>{it.title}</h3>
-                <p>{it.desc}</p>
+                <ItemField as="h3" arrName="items" idx={i} field="title" value={it.title} placeholder="Judul item…" />
+                <ItemField as="p" arrName="items" idx={i} field="desc" value={it.desc} placeholder="Deskripsi…" multiline />
               </div>
             ))}
           </div>
@@ -4096,20 +4266,22 @@ function BlockView({
         <div className="wb-pro-beam-card">
           <div className="wb-pro-beam-wrap">
             <div className="wb-pro-beam-inner">
-              <div className="text-xs uppercase tracking-widest opacity-60">{String(p.subtitle ?? "")}</div>
-              <h3 className="mt-1 text-lg font-bold">{String(p.title ?? "")}</h3>
+              <Field as="div" field="subtitle" className="text-xs uppercase tracking-widest opacity-60" placeholder="Subtitle…" />
+              <Field as="h3" field="title" className="mt-1 text-lg font-bold" placeholder="Judul paket…" />
               <div className="wb-pro-beam-price">
-                {String(p.price ?? "")}
-                <span className="wb-pro-beam-period">{String(p.period ?? "")}</span>
+                <Field as="span" field="price" placeholder="Harga…" />
+                <Field as="span" field="period" className="wb-pro-beam-period" placeholder="/bulan" />
               </div>
               <ul>
                 {(p.bullets as Array<{ text: string }> | undefined)?.map((b, i) => (
-                  <li key={i}>{b.text}</li>
+                  <li key={i}>
+                    <ItemField as="span" arrName="bullets" idx={i} field="text" value={b.text} placeholder="Fitur…" />
+                  </li>
                 ))}
               </ul>
-              {p.ctaLabel ? (
+              {(editable || p.ctaLabel) ? (
                 <a href={String(p.ctaHref ?? "#")} className="wb-pro-cta">
-                  {String(p.ctaLabel)}
+                  <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
                 </a>
               ) : null}
             </div>
@@ -4120,16 +4292,18 @@ function BlockView({
     case "CardStackShowcase":
       return (
         <div className="wb-pro-stack">
-          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <Field as="h2" field="title" placeholder="Judul showcase…" hideWhenEmpty />
           <div className="wb-pro-stack-wrap">
             {(p.items as Array<{ quote: string; name: string; role: string }> | undefined)
               ?.slice(0, 3)
               .map((it, i) => (
                 <div key={i} className="wb-pro-stack-card">
-                  <blockquote>&ldquo;{it.quote}&rdquo;</blockquote>
+                  <blockquote>
+                    &ldquo;<ItemField as="span" arrName="items" idx={i} field="quote" value={it.quote} placeholder="Kutipan…" multiline />&rdquo;
+                  </blockquote>
                   <div className="wb-pro-stack-meta">
-                    <div className="wb-pro-stack-name">{it.name}</div>
-                    <div className="wb-pro-stack-role">{it.role}</div>
+                    <ItemField as="div" arrName="items" idx={i} field="name" className="wb-pro-stack-name" value={it.name} placeholder="Nama…" />
+                    <ItemField as="div" arrName="items" idx={i} field="role" className="wb-pro-stack-role" value={it.role} placeholder="Jabatan…" />
                   </div>
                 </div>
               ))}
@@ -4140,12 +4314,12 @@ function BlockView({
     case "HoverGlowGrid":
       return (
         <div className="wb-pro-hover-grid">
-          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <Field as="h2" field="title" placeholder="Judul grid…" hideWhenEmpty />
           <div className="wb-pro-grid">
             {(p.items as Array<{ title: string; desc: string }> | undefined)?.map((it, i) => (
               <div key={i} className="wb-pro-hover-card">
-                <h3>{it.title}</h3>
-                <p>{it.desc}</p>
+                <ItemField as="h3" arrName="items" idx={i} field="title" value={it.title} placeholder="Judul item…" />
+                <ItemField as="p" arrName="items" idx={i} field="desc" value={it.desc} placeholder="Deskripsi…" multiline />
               </div>
             ))}
           </div>
@@ -4155,14 +4329,12 @@ function BlockView({
     case "AnimatedCounterStats":
       return (
         <div className="wb-pro-counters">
-          {p.title ? <h2>{String(p.title)}</h2> : null}
+          <Field as="h2" field="title" placeholder="Judul counter…" hideWhenEmpty />
           <div className="wb-pro-grid">
             {(p.items as Array<{ value: string; label: string }> | undefined)?.map((it, i) => (
               <div key={i} className="wb-pro-counter-cell">
-                <div className="wb-pro-counter-value" style={{ animationDelay: `${i * 0.15}s` }}>
-                  {it.value}
-                </div>
-                <div className="wb-pro-counter-label">{it.label}</div>
+                <ItemField as="div" arrName="items" idx={i} field="value" className="wb-pro-counter-value" value={it.value} placeholder="123" />
+                <ItemField as="div" arrName="items" idx={i} field="label" className="wb-pro-counter-label" value={it.label} placeholder="Label…" />
               </div>
             ))}
           </div>
@@ -4172,11 +4344,13 @@ function BlockView({
     case "MovingBorderCTA":
       return (
         <div className="wb-pro-mb-cta">
-          <h2>{String(p.title ?? "")}</h2>
-          {p.subtitle ? <p className="wb-pro-sub">{String(p.subtitle)}</p> : null}
-          {p.ctaLabel ? (
+          <Field as="h2" field="title" placeholder="Judul CTA…" />
+          <Field as="p" field="subtitle" className="wb-pro-sub" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(editable || p.ctaLabel) ? (
             <a href={String(p.ctaHref ?? "#")} className="wb-pro-mb-btn">
-              <span className="wb-pro-mb-inner">{String(p.ctaLabel)}</span>
+              <span className="wb-pro-mb-inner">
+                <Field as="span" field="ctaLabel" placeholder="Tombol CTA…" />
+              </span>
             </a>
           ) : null}
         </div>

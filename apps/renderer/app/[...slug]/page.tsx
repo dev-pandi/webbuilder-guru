@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
+import { GuruStyles } from "@/components/GuruBlocks";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { getPage, getSiteByHost } from "@/lib/api";
@@ -40,6 +41,12 @@ export default async function CatchAll({ params }: { params: { slug: string[] } 
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: wrap(schemas) }}
       />
+      {/* Guru CSS injected unconditionally — scoped ke .guru-* jadi aman
+          untuk non-Guru site. Previously bergantung block GuruStyles ada di
+          tree, tapi setelah extraction migration blocks bisa geser posisi
+          dan shared layout header (GuruNavbar) render sebelum GuruStyles
+          block. */}
+      <GuruStyles />
       <SiteHeadCode site={site} />
       <RenderBlocks blocks={blocks} siteId={site.id} />
       <PageViewBeacon siteId={site.id} pageSlug={page.is_home ? "" : slug} />
