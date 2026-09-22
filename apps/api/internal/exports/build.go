@@ -62,10 +62,14 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 		return err
 	}
 
+	// Shared layout (header/footer) — parse sekali, dipakai untuk semua page,
+	// product detail, dan blog detail supaya konsisten dengan live renderer.
+	headerBlocks, footerBlocks := parseLayout(site.Layout)
+
 	// Pages
 	for _, p := range ps {
 		path := pageZipPath(p)
-		html := renderPageHTML(site, p, ps, prods, posts)
+		html := renderPageHTML(site, p, ps, prods, posts, headerBlocks, footerBlocks)
 		if err := writeFile(z, path, html); err != nil {
 			return err
 		}
@@ -74,7 +78,7 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 	// Product detail pages
 	for _, pr := range prods {
 		path := "produk/" + pr.Slug + "/index.html"
-		html := renderProductHTML(site, pr)
+		html := renderProductHTML(site, pr, headerBlocks, footerBlocks)
 		if err := writeFile(z, path, html); err != nil {
 			return err
 		}
@@ -83,13 +87,29 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 	// Blog detail pages
 	for _, post := range posts {
 		path := "blog/" + post.Slug + "/index.html"
-		html := renderBlogPostHTML(site, post)
+		html := renderBlogPostHTML(site, post, headerBlocks, footerBlocks)
 		if err := writeFile(z, path, html); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// parseLayout decodes sites.layout_json into header + footer block slices.
+// Empty/invalid JSON returns empty slices (renderer falls back to page-only).
+func parseLayout(raw json.RawMessage) ([]Block, []Block) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var l struct {
+		Header []Block `json:"header"`
+		Footer []Block `json:"footer"`
+	}
+	if err := json.Unmarshal(raw, &l); err != nil {
+		return nil, nil
+	}
+	return l.Header, l.Footer
 }
 
 func writeFile(z *zip.Writer, name, content string) error {
@@ -119,8 +139,18 @@ func pageRelHref(p pages.Page) string {
 	return "/" + p.Slug + "/"
 }
 
-func renderPageHTML(site *sites.Site, p pages.Page, all []pages.Page, prods []products.Product, posts []blog.Post) string {
+func renderPageHTML(site *sites.Site, p pages.Page, all []pages.Page, prods []products.Product, posts []blog.Post, headerBlocks, footerBlocks []Block) string {
 	tree := parseTree(p.Tree)
+	// Shared layout wrap — prepend header + append footer supaya exported HTML
+	// konsisten dengan live renderer. Concat sebelum rewriteLinks agar link
+	// di navbar header ikut di-rewrite ke relative path exported.
+	if len(headerBlocks) > 0 || len(footerBlocks) > 0 {
+		merged := make([]Block, 0, len(headerBlocks)+len(tree.Blocks)+len(footerBlocks))
+		merged = append(merged, headerBlocks...)
+		merged = append(merged, tree.Blocks...)
+		merged = append(merged, footerBlocks...)
+		tree.Blocks = merged
+	}
 	// Rewrite navbar links from in-app paths to relative exported paths.
 	rewriteLinks(&tree, all)
 

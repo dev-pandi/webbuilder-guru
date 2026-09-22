@@ -20,6 +20,7 @@ import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { GuruStyles } from "@/components/GuruBlocks";
 import { GuruResponseForm } from "@/components/GuruResponseForm";
+import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,8 @@ export default async function ArticleDetail({
       <SiteHeadCode site={site} />
       <PageViewBeacon siteId={site.id} pageSlug={`/${rubric}/${params.slug}`} />
 
+      <SiteHeaderBlocks site={site} />
+
       <article className="guru-article-detail">
         <div className="guru-article-detail__meta">
           <a href={`/${rubric}`}>{GURU_RUBRIC_LABEL[rubric]}</a>
@@ -167,6 +170,8 @@ export default async function ArticleDetail({
           </section>
         )}
       </article>
+
+      <SiteFooterBlocks site={site} />
 
       <SiteBodyEndCode site={site} />
     </>

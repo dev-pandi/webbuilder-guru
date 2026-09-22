@@ -932,8 +932,9 @@ func renderBlogListDynamic(b *strings.Builder, blk Block, posts []blog.Post) {
 }
 
 // renderProductHTML produces a standalone product detail page.
-func renderProductHTML(site *sites.Site, pr products.Product) string {
+func renderProductHTML(site *sites.Site, pr products.Product, headerBlocks, footerBlocks []Block) string {
 	var body strings.Builder
+	renderLayoutBlocks(&body, headerBlocks)
 	body.WriteString(`<main class="wb-detail">`)
 	body.WriteString(`<nav class="wb-breadcrumb"><a href="/">← Beranda</a></nav>`)
 	body.WriteString(`<div class="wb-detail-grid">`)
@@ -975,13 +976,15 @@ func renderProductHTML(site *sites.Site, pr products.Product) string {
 		fmt.Fprintf(&body, `<div class="wb-detail-desc">%s</div>`, escMultiline(pr.Description))
 	}
 	body.WriteString(`</div></div></main>`)
+	renderLayoutBlocks(&body, footerBlocks)
 
 	return wrapHTML(site, pr.Name+" — "+site.Name, descFromText(pr.Description, 160), body.String())
 }
 
 // renderBlogPostHTML produces a standalone blog post page (markdown → HTML).
-func renderBlogPostHTML(site *sites.Site, post blog.Post) string {
+func renderBlogPostHTML(site *sites.Site, post blog.Post, headerBlocks, footerBlocks []Block) string {
 	var body strings.Builder
+	renderLayoutBlocks(&body, headerBlocks)
 	body.WriteString(`<main class="wb-article">`)
 	body.WriteString(`<nav class="wb-breadcrumb"><a href="/">← Beranda</a></nav>`)
 	if post.CoverImageURL != "" {
@@ -1012,8 +1015,20 @@ func renderBlogPostHTML(site *sites.Site, post blog.Post) string {
 	// Body (markdown → HTML, already escaped by parser)
 	fmt.Fprintf(&body, `<article class="wb-prose">%s</article>`, renderMarkdown(post.ContentMD))
 	body.WriteString(`</main>`)
+	renderLayoutBlocks(&body, footerBlocks)
 
 	return wrapHTML(site, post.Title+" — "+site.Name, descFromText(post.Excerpt, 160), body.String())
+}
+
+// renderLayoutBlocks emits header/footer blocks from site.layout_json. Uses
+// the same layout-wrap + responsive CSS pipeline as the page renderer so
+// exported HTML for detail pages (product/blog) matches live output.
+// No-op when blocks is empty — safe to call unconditionally.
+func renderLayoutBlocks(b *strings.Builder, blocks []Block) {
+	if len(blocks) == 0 {
+		return
+	}
+	renderTree(b, Tree{Blocks: blocks})
 }
 
 func descFromText(s string, max int) string {

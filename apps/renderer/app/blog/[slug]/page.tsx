@@ -6,6 +6,7 @@ import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { buildArticle, wrap } from "@/lib/schema";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
+import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: articleLD }} />
       <SiteHeadCode site={site} />
       <PageViewBeacon siteId={site.id} pageSlug={`/blog/${params.slug}`} />
+      <SiteHeaderBlocks site={site} />
       <main className="mx-auto max-w-3xl px-6 py-12">
         <nav className="mb-6 text-sm opacity-70">
           <a href="/" className="hover:underline">
@@ -90,6 +92,7 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
           dangerouslySetInnerHTML={{ __html: html }}
         />
       </main>
+      <SiteFooterBlocks site={site} />
       <SiteBodyEndCode site={site} />
     </>
   );

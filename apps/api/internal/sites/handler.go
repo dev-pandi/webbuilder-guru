@@ -73,6 +73,7 @@ type createReq struct {
 type updateReq struct {
 	Name              *string         `json:"name"`
 	Theme             json.RawMessage `json:"theme"`
+	Layout            json.RawMessage `json:"layout"`
 	Status            *string         `json:"status"`
 	CustomHeadCode    *string         `json:"custom_head_code"`
 	CustomBodyEndCode *string         `json:"custom_body_end_code"`
@@ -236,6 +237,7 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	s, err := h.repo.UpdateOrAdmin(c.Context(), id, uid, UpdateFields{
 		Name:              req.Name,
 		Theme:             req.Theme,
+		Layout:            req.Layout,
 		Status:            req.Status,
 		CustomHeadCode:    req.CustomHeadCode,
 		CustomBodyEndCode: req.CustomBodyEndCode,

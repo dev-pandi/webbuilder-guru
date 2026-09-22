@@ -22,7 +22,12 @@ export default async function PreviewPage({
   const data = await getPagePreview(params.token);
   if (!data) notFound();
   const { page, site } = data;
-  const blocks = page.tree?.blocks ?? [];
+  // Shared layout wrap — mirrors public renderer supaya draft preview
+  // konsisten dengan yang dilihat pembaca setelah publish.
+  const headerBlocks = site.layout?.header ?? [];
+  const footerBlocks = site.layout?.footer ?? [];
+  const pageBlocks = page.tree?.blocks ?? [];
+  const blocks = [...headerBlocks, ...pageBlocks, ...footerBlocks];
   const fontHref = googleFontsUrl(site.theme);
   return (
     <>

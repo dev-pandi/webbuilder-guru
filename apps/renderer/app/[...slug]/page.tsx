@@ -16,7 +16,13 @@ export default async function CatchAll({ params }: { params: { slug: string[] } 
   const slug = params.slug.join("/");
   const page = await getPage(site.id, slug);
   if (!page) notFound();
-  const blocks = page.tree?.blocks ?? [];
+  // Compose blocks: site.layout.header (kalau ada) + page.tree.blocks +
+  // site.layout.footer (kalau ada). Layout kosong `{}` → render page apa
+  // adanya (backward compat sites lama).
+  const headerBlocks = site.layout?.header ?? [];
+  const footerBlocks = site.layout?.footer ?? [];
+  const pageBlocks = page.tree?.blocks ?? [];
+  const blocks = [...headerBlocks, ...pageBlocks, ...footerBlocks];
   const fontHref = googleFontsUrl(site.theme);
   // Schema.org JSON-LD — inject WebSite + Organization di homepage, Organization
   // saja di sub-pages (WebSite cukup 1x per site sesuai Google guideline).

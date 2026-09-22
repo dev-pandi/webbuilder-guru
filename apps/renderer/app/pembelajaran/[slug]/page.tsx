@@ -10,6 +10,7 @@ import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { GuruStyles } from "@/components/GuruBlocks";
+import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,8 @@ export default async function LearningMaterialDetail({
         siteId={site.id}
         pageSlug={`/pembelajaran/${params.slug}`}
       />
+
+      <SiteHeaderBlocks site={site} />
 
       <article className="guru-article-detail">
         <div className="guru-article-detail__meta">
@@ -102,6 +105,8 @@ export default async function LearningMaterialDetail({
           </div>
         )}
       </article>
+
+      <SiteFooterBlocks site={site} />
 
       <SiteBodyEndCode site={site} />
     </>

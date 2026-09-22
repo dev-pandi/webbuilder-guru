@@ -20,6 +20,12 @@ type Site struct {
 	Name                 string          `json:"name"`
 	TemplateID           *uuid.UUID      `json:"template_id,omitempty"`
 	Theme                json.RawMessage `json:"theme"`
+	// Layout — shared header/footer per site. Renderer prepend header +
+	// append footer ke setiap page saat render. Struktur:
+	//   { "header": [BlockData...], "footer": [BlockData...] }
+	// Kosong `{}` = renderer render page.tree apa adanya (backward compat
+	// untuk sites lama sebelum data migration).
+	Layout               json.RawMessage `json:"layout"`
 	Status               string          `json:"status"`
 	QuotaMaxPages        int             `json:"quota_max_pages"`
 	QuotaMaxStorageBytes int64           `json:"quota_max_storage_bytes"`
@@ -39,7 +45,7 @@ type Site struct {
 const MaxCustomCodeBytes = 16 * 1024
 
 // siteCols is the SELECT column list, kept in sync with scanArgs.
-const siteCols = `id, user_id, slug, name, template_id, theme_json, status,
+const siteCols = `id, user_id, slug, name, template_id, theme_json, layout_json, status,
     quota_max_pages, quota_max_storage_bytes, quota_max_products, quota_max_blog_posts,
     custom_head_code, custom_body_end_code,
     created_at, updated_at`
@@ -92,7 +98,7 @@ func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, 
 // scanArgs returns the pointer list matching siteCols, in order.
 func scanArgs(s *Site) []any {
 	return []any{
-		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Status,
+		&s.ID, &s.UserID, &s.Slug, &s.Name, &s.TemplateID, &s.Theme, &s.Layout, &s.Status,
 		&s.QuotaMaxPages, &s.QuotaMaxStorageBytes, &s.QuotaMaxProducts, &s.QuotaMaxBlogPosts,
 		&s.CustomHeadCode, &s.CustomBodyEndCode,
 		&s.CreatedAt, &s.UpdatedAt,
@@ -189,6 +195,7 @@ func (r *Repo) GetByID(ctx context.Context, id uuid.UUID) (*Site, error) {
 type UpdateFields struct {
 	Name              *string
 	Theme             json.RawMessage
+	Layout            json.RawMessage
 	Status            *string
 	CustomHeadCode    *string
 	CustomBodyEndCode *string
@@ -223,13 +230,14 @@ func (r *Repo) updateInternal(ctx context.Context, id, userID uuid.UUID, f Updat
 		UPDATE sites SET
 			name                 = COALESCE($3, name),
 			theme_json           = COALESCE($4, theme_json),
-			status               = COALESCE($5, status),
-			custom_head_code     = COALESCE($6, custom_head_code),
-			custom_body_end_code = COALESCE($7, custom_body_end_code),
+			layout_json          = COALESCE($5, layout_json),
+			status               = COALESCE($6, status),
+			custom_head_code     = COALESCE($7, custom_head_code),
+			custom_body_end_code = COALESCE($8, custom_body_end_code),
 			updated_at           = now()
 		WHERE id = $1`+memberCheck+`
 		RETURNING `+siteCols+`
-	`, id, userID, f.Name, f.Theme, f.Status, f.CustomHeadCode, f.CustomBodyEndCode).Scan(scanArgs(&s)...)
+	`, id, userID, f.Name, f.Theme, f.Layout, f.Status, f.CustomHeadCode, f.CustomBodyEndCode).Scan(scanArgs(&s)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -326,7 +334,7 @@ func (r *Repo) HasSiteForHost(ctx context.Context, host string) (bool, error) {
 // sitePrefixedCols returns siteCols with a table alias for JOIN queries.
 func sitePrefixedCols(alias string) string {
 	cols := []string{
-		"id", "user_id", "slug", "name", "template_id", "theme_json", "status",
+		"id", "user_id", "slug", "name", "template_id", "theme_json", "layout_json", "status",
 		"quota_max_pages", "quota_max_storage_bytes", "quota_max_products", "quota_max_blog_posts",
 		"custom_head_code", "custom_body_end_code",
 		"created_at", "updated_at",

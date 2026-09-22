@@ -1440,7 +1440,21 @@ export default function EditorPage() {
                 {current ? `${current.slug === "home" ? "" : "/" + current.slug}` : "/"}
               </div>
             </div>
-            <div className="wb-canvas" style={canvasStyle}>
+            <div
+              className="wb-canvas"
+              style={canvasStyle}
+              // Editor-mode: cegah navigasi keluar saat klik <a> (Navbar link,
+              // Hero CTA, Footer link, dsb.) — user hampir selalu bermaksud
+              // pilih block, bukan pindah halaman. Capture phase supaya jalan
+              // sebelum browser trigger default anchor action, tapi tidak
+              // stopPropagation → onClick block wrapper tetap fire untuk select.
+              // Form submit juga dicegah supaya block Form tidak POST.
+              onClickCapture={(e) => {
+                const el = e.target as HTMLElement;
+                if (el.closest("a")) e.preventDefault();
+              }}
+              onSubmitCapture={(e) => e.preventDefault()}
+            >
               <Preview
                 blocks={blocks}
                 keys={blockKeys}
