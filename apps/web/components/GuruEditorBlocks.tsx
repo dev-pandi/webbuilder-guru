@@ -1,6 +1,96 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
+import { EditableText } from "@/app/sites/[id]/editor/EditableText";
+
+// ---------------------------------------------------------------------------
+// GuruEditCtx — konteks inline editing yang dilempar dari BlockView dispatch
+// ke setiap Guru editor. Kalau `editable=false` (atau tidak di-set), semua
+// EditableField render sebagai plain element. Kalau `true`, guru bisa klik
+// text mana pun di preview untuk edit langsung. Callback route ke setProp /
+// setItemProp di BlockView supaya block state ter-update konsisten.
+// ---------------------------------------------------------------------------
+export type GuruEditCtx = {
+  editable?: boolean;
+  onFieldChange?: (field: string, value: unknown) => void;
+  onItemChange?: (arrName: string, idx: number, field: string, value: unknown) => void;
+};
+
+type EditableTag = "span" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "div" | "blockquote" | "strong" | "small" | "cite";
+
+// EditableField — wrap text prop dengan inline edit saat edit.editable=true.
+// hideWhenEmpty: kalau read-only + value kosong → return null (existing
+// conditional render behavior). Kalau editable → tetap render supaya
+// placeholder muncul (guru bisa klik untuk isi).
+function EditableField({
+  edit,
+  field,
+  value,
+  as = "span",
+  className,
+  placeholder,
+  multiline,
+  hideWhenEmpty = false,
+}: {
+  edit?: GuruEditCtx;
+  field: string;
+  value: string;
+  as?: EditableTag;
+  className?: string;
+  placeholder?: string;
+  multiline?: boolean;
+  hideWhenEmpty?: boolean;
+}) {
+  if (!edit?.editable) {
+    if (hideWhenEmpty && !value) return null;
+    return createElement(as, { className }, value);
+  }
+  return (
+    <EditableText
+      as={as as "span" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "div" | "blockquote"}
+      className={className}
+      value={value}
+      onChange={(v) => edit.onFieldChange?.(field, v)}
+      placeholder={placeholder}
+      multiline={multiline}
+    />
+  );
+}
+
+// EditableItemField — sama untuk items[]. Update lewat onItemChange callback.
+function EditableItemField({
+  edit,
+  arrName,
+  idx,
+  field,
+  value,
+  as = "span",
+  className,
+  placeholder,
+  multiline,
+}: {
+  edit?: GuruEditCtx;
+  arrName: string;
+  idx: number;
+  field: string;
+  value: string;
+  as?: EditableTag;
+  className?: string;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  if (!edit?.editable) return createElement(as, { className }, value);
+  return (
+    <EditableText
+      as={as as "span" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "div" | "blockquote"}
+      className={className}
+      value={value}
+      onChange={(v) => edit.onItemChange?.(arrName, idx, field, v)}
+      placeholder={placeholder}
+      multiline={multiline}
+    />
+  );
+}
 
 // GuruEditorBlocks.tsx — Client-side copies of renderer's GuruBlocks
 // dengan CSS scoped `.guru-*`. Dipakai HANYA di editor canvas untuk
@@ -245,6 +335,7 @@ export function GuruNavbarEditor(p: {
   brandRole?: string;
   brandMark?: string;
   links?: Array<{ label: string; href: string; active?: boolean }>;
+  edit?: GuruEditCtx;
 }) {
   const links = p.links && p.links.length > 0 ? p.links : [
     { label: "Beranda", href: "/", active: true },
@@ -258,20 +349,24 @@ export function GuruNavbarEditor(p: {
     { label: "Pembelajaran", href: "/pembelajaran" },
   ];
   const mark = p.brandMark || (p.brandName ?? "G").charAt(0);
+  // Kalau editable, render items dari props asli (bukan sample) supaya edit
+  // link commit balik ke state. Kalau tidak editable dan p.links kosong,
+  // pakai fallback sample (backward compat).
+  const editableItems = p.edit?.editable ? p.links ?? [] : links;
   return (
     <header className="guru-site-header">
       <div className="guru-container guru-nav-shell">
         <a className="guru-brand" href="#" aria-label={`Beranda ${p.brandName ?? ""}`}>
-          <span className="guru-brand__mark">{mark}</span>
+          <EditableField edit={p.edit} field="brandMark" value={mark} as="span" className="guru-brand__mark" placeholder="G" />
           <span className="guru-brand__copy">
-            {p.brandName ?? "Nama Guru"}
-            {p.brandRole ? <small>{p.brandRole}</small> : null}
+            <EditableField edit={p.edit} field="brandName" value={p.brandName ?? ""} placeholder="Nama Guru" />
+            <EditableField edit={p.edit} field="brandRole" value={p.brandRole ?? ""} as="small" placeholder="Jabatan/peran" hideWhenEmpty />
           </span>
         </a>
         <nav className="guru-site-nav">
-          {links.map((l, i) => (
+          {editableItems.map((l, i) => (
             <a key={i} href={l.href || "#"} className={l.active ? "is-active" : undefined}>
-              {l.label}
+              <EditableItemField edit={p.edit} arrName="links" idx={i} field="label" value={l.label} placeholder="Menu" />
             </a>
           ))}
         </nav>
@@ -412,25 +507,39 @@ export function GuruHeroEditor(p: {
   // Callback dipanggil saat user selesai drag salah satu note. Callback
   // update block props di editor state → posisi persist saat save.
   onNoteMove?: (which: "A" | "B", x: number, y: number) => void;
+  edit?: GuruEditCtx;
 }) {
+  const isEditable = p.edit?.editable;
   return (
     <section className="guru-hero">
       <div className="guru-hero__blob" aria-hidden />
       <div className="guru-container guru-hero__grid">
         <div>
-          {p.eyebrow ? <div className="guru-eyebrow">{p.eyebrow}</div> : null}
+          <EditableField edit={p.edit} field="eyebrow" value={p.eyebrow ?? ""} as="div" className="guru-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
           <h1 className="guru-hero__title">
-            {p.title}
-            {p.titleEm ? (<><br /><em>{p.titleEm}</em></>) : null}
+            <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="span" placeholder="Judul hero…" />
+            {isEditable || p.titleEm ? (
+              <>
+                <br />
+                <em>
+                  <EditableField edit={p.edit} field="titleEm" value={p.titleEm ?? ""} as="span" placeholder="Judul emphasis…" />
+                </em>
+              </>
+            ) : null}
           </h1>
-          {p.subtitle ? <p className="guru-hero__lead">{p.subtitle}</p> : null}
-          {(p.ctaLabel || p.ctaSecondaryLabel) && (
+          <EditableField edit={p.edit} field="subtitle" value={p.subtitle ?? ""} as="p" className="guru-hero__lead" placeholder="Subjudul…" multiline hideWhenEmpty />
+          {(isEditable || p.ctaLabel || p.ctaSecondaryLabel) && (
             <div className="guru-hero__actions">
-              {p.ctaLabel ? (
-                <a className="guru-btn guru-btn--primary" href="#">{p.ctaLabel} <span>→</span></a>
+              {(isEditable || p.ctaLabel) ? (
+                <a className="guru-btn guru-btn--primary" href="#">
+                  <EditableField edit={p.edit} field="ctaLabel" value={p.ctaLabel ?? ""} placeholder="Tombol utama…" />
+                  {" "}<span>→</span>
+                </a>
               ) : null}
-              {p.ctaSecondaryLabel ? (
-                <a className="guru-btn guru-btn--secondary" href="#">{p.ctaSecondaryLabel}</a>
+              {(isEditable || p.ctaSecondaryLabel) ? (
+                <a className="guru-btn guru-btn--secondary" href="#">
+                  <EditableField edit={p.edit} field="ctaSecondaryLabel" value={p.ctaSecondaryLabel ?? ""} placeholder="Tombol kedua…" />
+                </a>
               ) : null}
             </div>
           )}
@@ -438,8 +547,8 @@ export function GuruHeroEditor(p: {
             <div className="guru-hero__stats">
               {p.stats.map((s, i) => (
                 <div key={i} className="guru-hero__stat">
-                  <strong>{s.value}</strong>
-                  <span>{s.label}</span>
+                  <EditableItemField edit={p.edit} arrName="stats" idx={i} field="value" value={s.value} as="strong" placeholder="123" />
+                  <EditableItemField edit={p.edit} arrName="stats" idx={i} field="label" value={s.label} as="span" placeholder="Label…" />
                 </div>
               ))}
             </div>
@@ -459,8 +568,8 @@ export function GuruHeroEditor(p: {
               y={p.noteAY}
               onMoved={(x, y) => p.onNoteMove?.("A", x, y)}
             >
-              <strong>{p.noteAText}</strong>
-              {p.noteASub ? <span>{p.noteASub}</span> : null}
+              <EditableField edit={p.edit} field="noteAText" value={p.noteAText ?? ""} as="strong" placeholder="Note A…" />
+              <EditableField edit={p.edit} field="noteASub" value={p.noteASub ?? ""} as="span" placeholder="Sub A…" hideWhenEmpty />
             </DraggableNote>
           ) : null}
           {p.noteBText && p.noteBShow !== "hide" ? (
@@ -471,8 +580,8 @@ export function GuruHeroEditor(p: {
               y={p.noteBY}
               onMoved={(x, y) => p.onNoteMove?.("B", x, y)}
             >
-              <strong>{p.noteBText}</strong>
-              {p.noteBSub ? <span>{p.noteBSub}</span> : null}
+              <EditableField edit={p.edit} field="noteBText" value={p.noteBText ?? ""} as="strong" placeholder="Note B…" />
+              <EditableField edit={p.edit} field="noteBSub" value={p.noteBSub ?? ""} as="span" placeholder="Sub B…" hideWhenEmpty />
             </DraggableNote>
           ) : null}
         </div>
@@ -484,8 +593,9 @@ export function GuruHeroEditor(p: {
 export function GuruRubricGridEditor(p: {
   eyebrow?: string; title?: string; subtitle?: string;
   items?: Array<{ title: string; desc?: string; href?: string; icon?: string }>;
+  edit?: GuruEditCtx;
 }) {
-  const items = p.items ?? [
+  const sample = [
     { title: "Ceritaku", desc: "Cerita keseharian dan pengalaman mengajar.", icon: "book" },
     { title: "Bacaanku", desc: "Buku yang saya baca dan bawa kembali ke ruang kelas.", icon: "bookmark" },
     { title: "Inspirasiku", desc: "Praktik baik, ide sederhana, dan orang yang menginspirasi.", icon: "sparkle" },
@@ -493,15 +603,18 @@ export function GuruRubricGridEditor(p: {
     { title: "Peradaban", desc: "Membaca sejarah, budaya, dan warisan sebagai percakapan.", icon: "temple" },
     { title: "Forum Diskusi", desc: "Ruang percakapan bersama pembaca dan sesama guru.", icon: "chat" },
   ];
+  // Kalau editable, render p.items apa adanya supaya edit commit ke state
+  // yang benar. Fallback sample cuma untuk visual preview kondisi kosong.
+  const items = p.edit?.editable ? p.items ?? [] : (p.items ?? sample);
   return (
     <section className="guru-section guru-section--alt">
       <div className="guru-container">
         <div className="guru-section-heading">
           <div>
-            {p.eyebrow ? <div className="guru-eyebrow">{p.eyebrow}</div> : null}
-            {p.title ? <h2>{p.title}</h2> : null}
+            <EditableField edit={p.edit} field="eyebrow" value={p.eyebrow ?? ""} as="div" className="guru-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
+            <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="h2" placeholder="Judul rubric…" hideWhenEmpty />
           </div>
-          {p.subtitle ? <p>{p.subtitle}</p> : null}
+          <EditableField edit={p.edit} field="subtitle" value={p.subtitle ?? ""} as="p" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
         <div className="guru-rubric-grid">
           {items.map((it, i) => {
@@ -510,8 +623,8 @@ export function GuruRubricGridEditor(p: {
             return (
               <a key={i} href="#" className={`guru-rubric-card guru-rubric-card--v${(i % 3) + 1}`}>
                 <div className="guru-rubric-card__icon">{iconEl}</div>
-                <h3>{it.title}</h3>
-                {it.desc ? <p>{it.desc}</p> : null}
+                <EditableItemField edit={p.edit} arrName="items" idx={i} field="title" value={it.title} as="h3" placeholder="Judul rubric" />
+                <EditableItemField edit={p.edit} arrName="items" idx={i} field="desc" value={it.desc ?? ""} as="p" placeholder="Deskripsi rubric" multiline />
                 <span className="guru-rubric-card__arrow" aria-hidden>→</span>
               </a>
             );
@@ -524,15 +637,16 @@ export function GuruRubricGridEditor(p: {
 
 export function GuruRubricHeroEditor(p: {
   eyebrow?: string; title?: string; subtitle?: string; iconKey?: string;
+  edit?: GuruEditCtx;
 }) {
   const iconEl = RUBRIC_ICONS[p.iconKey ?? "book"];
   return (
     <section className="guru-rubric-hero">
       <div className="guru-container guru-rubric-hero__grid">
         <div>
-          {p.eyebrow ? <div className="guru-eyebrow">{p.eyebrow}</div> : null}
-          {p.title ? <h1>{p.title}</h1> : null}
-          {p.subtitle ? <p>{p.subtitle}</p> : null}
+          <EditableField edit={p.edit} field="eyebrow" value={p.eyebrow ?? ""} as="div" className="guru-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
+          <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="h1" placeholder="Judul rubric…" hideWhenEmpty />
+          <EditableField edit={p.edit} field="subtitle" value={p.subtitle ?? ""} as="p" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
         <div className="guru-rubric-badge">{iconEl}</div>
       </div>
@@ -540,16 +654,17 @@ export function GuruRubricHeroEditor(p: {
   );
 }
 
-export function GuruQuoteEditor(p: { text?: string; author?: string }) {
-  if (!p.text) return null;
+export function GuruQuoteEditor(p: { text?: string; author?: string; edit?: GuruEditCtx }) {
+  // Editable mode → tetap render walaupun text kosong, guru bisa klik untuk isi.
+  if (!p.text && !p.edit?.editable) return null;
   return (
     <section className="guru-quote-section">
       <div className="guru-container">
         <div className="guru-quote-card">
           <div className="guru-quote-card__mark" aria-hidden>&ldquo;</div>
           <blockquote>
-            {p.text}
-            {p.author ? <cite>{p.author}</cite> : null}
+            <EditableField edit={p.edit} field="text" value={p.text ?? ""} as="span" placeholder="Kutipan…" multiline />
+            <EditableField edit={p.edit} field="author" value={p.author ?? ""} as="cite" placeholder="Nama penulis…" hideWhenEmpty />
           </blockquote>
         </div>
       </div>
@@ -568,8 +683,9 @@ export function GuruFooterEditor(p: {
   links?: Array<{ label: string; href: string }>;
   bottomLeft?: string;
   bottomRight?: string;
+  edit?: GuruEditCtx;
 }) {
-  const links = p.links && p.links.length > 0 ? p.links : [
+  const sample = [
     { label: "Ceritaku", href: "/ceritaku" },
     { label: "Bacaanku", href: "/bacaanku" },
     { label: "Inspirasiku", href: "/inspirasiku" },
@@ -579,35 +695,41 @@ export function GuruFooterEditor(p: {
     { label: "Pembelajaran", href: "/pembelajaran" },
     { label: "Profil", href: "/profil" },
   ];
+  const links = p.edit?.editable ? p.links ?? [] : (p.links && p.links.length > 0 ? p.links : sample);
   const mark = p.brandMark || (p.brandName ?? "G").charAt(0);
+  const isEditable = p.edit?.editable;
   return (
     <footer className="guru-site-footer">
       <div className="guru-container">
         <div className="guru-footer-grid">
           <div>
             <a className="guru-brand" href="/">
-              <span className="guru-brand__mark">{mark}</span>
+              <EditableField edit={p.edit} field="brandMark" value={mark} as="span" className="guru-brand__mark" placeholder="G" />
               <span className="guru-brand__copy">
-                {p.brandName ?? "Nama Guru"}
-                {p.brandRole ? <small>{p.brandRole}</small> : null}
+                <EditableField edit={p.edit} field="brandName" value={p.brandName ?? ""} placeholder="Nama Guru" />
+                <EditableField edit={p.edit} field="brandRole" value={p.brandRole ?? ""} as="small" placeholder="Peran…" hideWhenEmpty />
               </span>
             </a>
-            {p.copyText ? <p className="guru-footer-copy">{p.copyText}</p> : null}
-            {(p.builderTitle || p.builderBrand) && (
+            <EditableField edit={p.edit} field="copyText" value={p.copyText ?? ""} as="p" className="guru-footer-copy" placeholder="Tagline / deskripsi footer…" multiline hideWhenEmpty />
+            {(isEditable || p.builderTitle || p.builderBrand) && (
               <div className="guru-builder-credit">
-                {p.builderTitle ? <span>{p.builderTitle}</span> : null}
-                {p.builderBrand ? <strong>{p.builderBrand}</strong> : null}
-                {p.builderNote ? <small>{p.builderNote}</small> : null}
+                <EditableField edit={p.edit} field="builderTitle" value={p.builderTitle ?? ""} as="span" placeholder="Dibuat dengan" hideWhenEmpty />
+                <EditableField edit={p.edit} field="builderBrand" value={p.builderBrand ?? ""} as="strong" placeholder="Nama builder" hideWhenEmpty />
+                <EditableField edit={p.edit} field="builderNote" value={p.builderNote ?? ""} as="small" placeholder="Catatan builder…" hideWhenEmpty />
               </div>
             )}
           </div>
           <nav className="guru-footer-links" aria-label="Navigasi footer">
-            {links.map((l, i) => <a key={i} href={l.href || "#"}>{l.label}</a>)}
+            {links.map((l, i) => (
+              <a key={i} href={l.href || "#"}>
+                <EditableItemField edit={p.edit} arrName="links" idx={i} field="label" value={l.label} placeholder="Menu" />
+              </a>
+            ))}
           </nav>
         </div>
         <div className="guru-footer-bottom">
-          {p.bottomLeft ? <span>{p.bottomLeft}</span> : null}
-          {p.bottomRight ? <span>{p.bottomRight}</span> : null}
+          <EditableField edit={p.edit} field="bottomLeft" value={p.bottomLeft ?? ""} as="span" placeholder="Bottom kiri…" hideWhenEmpty />
+          <EditableField edit={p.edit} field="bottomRight" value={p.bottomRight ?? ""} as="span" placeholder="Bottom kanan…" hideWhenEmpty />
         </div>
       </div>
     </footer>
@@ -732,6 +854,7 @@ export function GuruPromoCarouselEditorPreview(p: {
 
 export function GuruStatsBarEditorPreview(p: {
   eyebrow?: string; title?: string; subtitle?: string; sample?: boolean;
+  edit?: GuruEditCtx;
 }) {
   const items = p.sample === false
     ? [
@@ -749,10 +872,10 @@ export function GuruStatsBarEditorPreview(p: {
       <div className="guru-container">
         <div className="guru-section-heading">
           <div>
-            {p.eyebrow ? <div className="guru-eyebrow">{p.eyebrow}</div> : null}
-            {p.title ? <h2>{p.title}</h2> : null}
+            <EditableField edit={p.edit} field="eyebrow" value={p.eyebrow ?? ""} as="div" className="guru-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
+            <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="h2" placeholder="Judul stats…" hideWhenEmpty />
           </div>
-          {p.subtitle ? <p>{p.subtitle}</p> : null}
+          <EditableField edit={p.edit} field="subtitle" value={p.subtitle ?? ""} as="p" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
         <div className="guru-website-stats">
           {items.map((s, i) => (
@@ -769,16 +892,17 @@ export function GuruStatsBarEditorPreview(p: {
 
 export function GuruLatestGridEditorPreview(p: {
   eyebrow?: string; title?: string; subtitle?: string;
+  edit?: GuruEditCtx;
 }) {
   return (
     <section className="guru-section">
       <div className="guru-container">
         <div className="guru-section-heading">
           <div>
-            {p.eyebrow ? <div className="guru-eyebrow">{p.eyebrow}</div> : null}
-            {p.title ? <h2>{p.title}</h2> : null}
+            <EditableField edit={p.edit} field="eyebrow" value={p.eyebrow ?? ""} as="div" className="guru-eyebrow" placeholder="Eyebrow…" hideWhenEmpty />
+            <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="h2" placeholder="Judul section…" hideWhenEmpty />
           </div>
-          {p.subtitle ? <p>{p.subtitle}</p> : null}
+          <EditableField edit={p.edit} field="subtitle" value={p.subtitle ?? ""} as="p" placeholder="Subjudul…" multiline hideWhenEmpty />
         </div>
         <div className="guru-latest-grid">
           <a className="guru-featured-post" href="#">
@@ -808,6 +932,7 @@ export function GuruLatestGridEditorPreview(p: {
 export function GuruArticleGridEditorPreview(p: {
   rubric?: string; sidebarTitle?: string; sidebarBody?: string;
   sidebarTags?: string[]; sidebarLinks?: Array<{ label: string; href: string }>;
+  edit?: GuruEditCtx;
 }) {
   const items = [
     { title: "Contoh tulisan featured", excerpt: "Excerpt tulisan pertama dari rubrik ini.", meta: `${p.rubric ?? "ceritaku"} · Contoh`, coverVariant: "red", featured: true },
@@ -836,10 +961,10 @@ export function GuruArticleGridEditorPreview(p: {
           })}
         </div>
         <aside className="guru-sidebar">
-          {p.sidebarTitle ? (
+          {(p.edit?.editable || p.sidebarTitle) ? (
             <div className="guru-sidebar-card">
-              <h3>{p.sidebarTitle}</h3>
-              {p.sidebarBody ? <p>{p.sidebarBody}</p> : null}
+              <EditableField edit={p.edit} field="sidebarTitle" value={p.sidebarTitle ?? ""} as="h3" placeholder="Judul sidebar…" />
+              <EditableField edit={p.edit} field="sidebarBody" value={p.sidebarBody ?? ""} as="p" placeholder="Isi sidebar…" multiline hideWhenEmpty />
             </div>
           ) : null}
           {p.sidebarTags && p.sidebarTags.length > 0 ? (
@@ -854,7 +979,11 @@ export function GuruArticleGridEditorPreview(p: {
             <div className="guru-sidebar-card">
               <h3>Jelajahi ruang lain</h3>
               <div className="guru-topic-list">
-                {p.sidebarLinks.map((l, i) => <a key={i} href="#" className="guru-topic-link">{l.label}</a>)}
+                {p.sidebarLinks.map((l, i) => (
+                  <a key={i} href="#" className="guru-topic-link">
+                    <EditableItemField edit={p.edit} arrName="sidebarLinks" idx={i} field="label" value={l.label} placeholder="Menu" />
+                  </a>
+                ))}
               </div>
             </div>
           ) : null}
@@ -942,16 +1071,23 @@ export function GuruProfileCardEditor(p: {
   role?: string;
   contacts?: Array<{ icon?: string; label: string }>;
   panels?: Array<{ eyebrow?: string; title?: string; body?: string }>;
+  edit?: GuruEditCtx;
 }) {
-  // Kalau semua kosong (block baru drag ke canvas), tampilkan sample
-  // supaya user lihat contoh layout — bukan card kosong.
+  const isEditable = p.edit?.editable;
+  // Sample state — cuma untuk visual preview kalau tidak editable + kosong.
+  // Kalau editable, render props apa adanya supaya EditableText target
+  // field yang benar.
   const isEmpty = !p.image && !p.name && !p.role
     && (!p.contacts || p.contacts.length === 0)
     && (!p.panels || p.panels.length === 0);
-  const contacts = p.contacts && p.contacts.length > 0 ? p.contacts : (isEmpty ? SAMPLE_PROFILE_CONTACTS : []);
-  const panels = p.panels && p.panels.length > 0 ? p.panels : (isEmpty ? SAMPLE_PROFILE_PANELS : []);
-  const name = p.name ?? (isEmpty ? "Nama Guru" : "");
-  const role = p.role ?? (isEmpty ? "Guru Bahasa Indonesia · SMP Nusantara Raya" : "");
+  const contacts = isEditable
+    ? p.contacts ?? []
+    : (p.contacts && p.contacts.length > 0 ? p.contacts : (isEmpty ? SAMPLE_PROFILE_CONTACTS : []));
+  const panels = isEditable
+    ? p.panels ?? []
+    : (p.panels && p.panels.length > 0 ? p.panels : (isEmpty ? SAMPLE_PROFILE_PANELS : []));
+  const name = p.name ?? (isEditable ? "" : (isEmpty ? "Nama Guru" : ""));
+  const role = p.role ?? (isEditable ? "" : (isEmpty ? "Guru Bahasa Indonesia · SMP Nusantara Raya" : ""));
 
   return (
     <section className="guru-section">
@@ -974,14 +1110,14 @@ export function GuruProfileCardEditor(p: {
             )}
           </div>
           <div className="guru-profile-card__body">
-            {name ? <h2>{name}</h2> : null}
-            {role ? <p>{role}</p> : null}
-            {contacts.length > 0 ? (
+            <EditableField edit={p.edit} field="name" value={name} as="h2" placeholder="Nama Guru" hideWhenEmpty />
+            <EditableField edit={p.edit} field="role" value={role} as="p" placeholder="Jabatan/peran" hideWhenEmpty />
+            {(isEditable || contacts.length > 0) ? (
               <div className="guru-profile-contact">
                 {contacts.map((c, i) => (
                   <span key={i}>
                     {c.icon ? <em aria-hidden>{c.icon} </em> : null}
-                    {c.label}
+                    <EditableItemField edit={p.edit} arrName="contacts" idx={i} field="label" value={c.label} placeholder="Kontak…" />
                   </span>
                 ))}
               </div>
@@ -991,9 +1127,9 @@ export function GuruProfileCardEditor(p: {
         <div className="guru-profile-content">
           {panels.map((panel, i) => (
             <div key={i} className="guru-content-panel">
-              {panel.eyebrow ? <div className="guru-eyebrow">{panel.eyebrow}</div> : null}
-              {panel.title ? <h2>{panel.title}</h2> : null}
-              {panel.body ? <p>{panel.body}</p> : null}
+              <EditableItemField edit={p.edit} arrName="panels" idx={i} field="eyebrow" value={panel.eyebrow ?? ""} as="div" className="guru-eyebrow" placeholder="Eyebrow" />
+              <EditableItemField edit={p.edit} arrName="panels" idx={i} field="title" value={panel.title ?? ""} as="h2" placeholder="Judul panel" />
+              <EditableItemField edit={p.edit} arrName="panels" idx={i} field="body" value={panel.body ?? ""} as="p" placeholder="Isi panel" multiline />
             </div>
           ))}
         </div>
@@ -1005,25 +1141,23 @@ export function GuruProfileCardEditor(p: {
 export function GuruTimelineEditor(p: {
   title?: string;
   items?: Array<{ date: string; title: string; desc?: string }>;
+  edit?: GuruEditCtx;
 }) {
-  const items = p.items && p.items.length > 0 ? p.items : SAMPLE_TIMELINE_ITEMS;
+  const isEditable = p.edit?.editable;
+  const items = isEditable ? p.items ?? [] : (p.items && p.items.length > 0 ? p.items : SAMPLE_TIMELINE_ITEMS);
   return (
     <section className="guru-section">
       <div className="guru-container">
         <div className="guru-content-panel">
-          <h2>{p.title ?? "Jejak mengajar"}</h2>
+          <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="h2" placeholder="Jejak mengajar" />
           <div className="guru-timeline">
             {items.map((it, i) => (
               <div key={i} className="guru-timeline-item">
-                <time>{it.date}</time>
+                <EditableItemField edit={p.edit} arrName="items" idx={i} field="date" value={it.date} as="span" placeholder="2020—2024" />
                 <div>
-                  <strong>{it.title}</strong>
-                  {it.desc ? (
-                    <>
-                      <br />
-                      <span>{it.desc}</span>
-                    </>
-                  ) : null}
+                  <EditableItemField edit={p.edit} arrName="items" idx={i} field="title" value={it.title} as="strong" placeholder="Judul milestone" />
+                  <br />
+                  <EditableItemField edit={p.edit} arrName="items" idx={i} field="desc" value={it.desc ?? ""} as="span" placeholder="Deskripsi milestone" multiline />
                 </div>
               </div>
             ))}
@@ -1040,17 +1174,36 @@ export function GuruTagListEditor(p: {
   //   - Legacy string[] (dari template lama / seed data)
   //   - Array<{label}> (dari editor UI items field)
   tags?: Array<string | { label?: string }>;
+  edit?: GuruEditCtx;
 }) {
+  const isEditable = p.edit?.editable;
   const list = normalizeTags(p.tags);
-  const tags = list.length > 0 ? list : SAMPLE_TAGS;
+  // Kalau editable, gunakan p.tags asli (object-shaped) supaya edit item
+  // commit ke field yang benar. Tags kosong + editable → render array kosong
+  // (guru tambah via side panel). Tidak editable + kosong → sample.
+  const editableTagList: Array<{ label: string; idx: number }> = isEditable
+    ? (Array.isArray(p.tags) ? p.tags : []).map((t, i) => ({
+        label: typeof t === "string" ? t : (t?.label ?? ""),
+        idx: i,
+      }))
+    : (list.length > 0 ? list : SAMPLE_TAGS).map((t, i) => ({ label: t, idx: i }));
+  // Sub-item field key untuk EditableItemField — kalau format string[],
+  // update via setItemProp("tags", i, "", newValue) tidak masuk akal.
+  // Convention: pass field="label" — kalau item plain string, editor akan
+  // convert lewat callback wrapper di BlockView.
+  const itemFieldKey = isEditable && Array.isArray(p.tags) && p.tags.length > 0 && typeof p.tags[0] === "string"
+    ? "__string__"
+    : "label";
   return (
     <section className="guru-section">
       <div className="guru-container">
         <div className="guru-content-panel">
-          <h2>{p.title ?? "Fokus & minat"}</h2>
+          <EditableField edit={p.edit} field="title" value={p.title ?? ""} as="h2" placeholder="Fokus & minat" />
           <div className="guru-tag-list">
-            {tags.map((t, i) => (
-              <span key={i} className="guru-tag">{t}</span>
+            {editableTagList.map((t, i) => (
+              <span key={i} className="guru-tag">
+                <EditableItemField edit={p.edit} arrName="tags" idx={i} field={itemFieldKey} value={t.label} placeholder="Tag" />
+              </span>
             ))}
           </div>
         </div>
@@ -1071,6 +1224,7 @@ function normalizeTags(tags?: Array<string | { label?: string }>): string[] {
 
 export function GuruLearningGridEditorPreview(p: {
   sidebarTitle?: string; sidebarBody?: string;
+  edit?: GuruEditCtx;
 }) {
   const items = [
     { title: "Contoh materi 1", excerpt: "Deskripsi materi pertama.", meta: "Pembelajaran · Contoh", coverVariant: "", featured: true },
@@ -1095,10 +1249,10 @@ export function GuruLearningGridEditorPreview(p: {
           ))}
         </div>
         <aside className="guru-sidebar">
-          {p.sidebarTitle ? (
+          {(p.edit?.editable || p.sidebarTitle) ? (
             <div className="guru-sidebar-card">
-              <h3>{p.sidebarTitle}</h3>
-              {p.sidebarBody ? <p>{p.sidebarBody}</p> : null}
+              <EditableField edit={p.edit} field="sidebarTitle" value={p.sidebarTitle ?? ""} as="h3" placeholder="Judul sidebar…" />
+              <EditableField edit={p.edit} field="sidebarBody" value={p.sidebarBody ?? ""} as="p" placeholder="Isi sidebar…" multiline hideWhenEmpty />
             </div>
           ) : null}
         </aside>

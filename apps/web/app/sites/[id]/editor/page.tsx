@@ -3065,6 +3065,24 @@ function BlockView({
       />
     );
   }
+  // guruEdit — konteks yang dilempar ke setiap Guru editor supaya inline
+  // edit di micro-komponen (link, tag, panel, dst) commit balik ke block
+  // state. Sentinel `field === "__string__"` handle legacy string[] tags —
+  // replace item as raw string alih-alih spread ke object.
+  const guruEdit = {
+    editable,
+    onFieldChange: setProp,
+    onItemChange: (arrName: string, idx: number, field: string, value: unknown) => {
+      if (field === "__string__") {
+        const cur = Array.isArray(p[arrName]) ? (p[arrName] as unknown[]) : [];
+        const next = [...cur];
+        next[idx] = value;
+        onUpdate?.({ ...block, props: { ...p, [arrName]: next } });
+        return;
+      }
+      setItemProp(arrName, idx, field, value);
+    },
+  };
   // ItemField — sama seperti Field tapi untuk items[] arrays. Update lewat
   // setItemProp supaya array integrity terjaga.
   function ItemField({
@@ -4425,6 +4443,7 @@ function BlockView({
           brandRole={p.brandRole as string | undefined}
           brandMark={p.brandMark as string | undefined}
           links={p.links as Array<{ label: string; href: string; active?: boolean }> | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruHero":
@@ -4464,6 +4483,7 @@ function BlockView({
               });
             }
           }}
+          edit={guruEdit}
         />
       );
     case "GuruPromoCarousel":
@@ -4482,6 +4502,7 @@ function BlockView({
           title={p.title as string | undefined}
           subtitle={p.subtitle as string | undefined}
           sample={block.type === "GuruStatsBar"}
+          edit={guruEdit}
         />
       );
     case "GuruLatestGrid":
@@ -4491,6 +4512,7 @@ function BlockView({
           eyebrow={p.eyebrow as string | undefined}
           title={p.title as string | undefined}
           subtitle={p.subtitle as string | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruRubricGrid":
@@ -4500,6 +4522,7 @@ function BlockView({
           title={p.title as string | undefined}
           subtitle={p.subtitle as string | undefined}
           items={p.items as Array<{ title: string; desc?: string; href?: string; icon?: string }> | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruArticleGrid":
@@ -4511,6 +4534,7 @@ function BlockView({
           sidebarBody={p.sidebarBody as string | undefined}
           sidebarTags={p.sidebarTags as string[] | undefined}
           sidebarLinks={p.sidebarLinks as Array<{ label: string; href: string }> | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruForumThreadList":
@@ -4521,6 +4545,7 @@ function BlockView({
         <GuruLearningGridEditorPreview
           sidebarTitle={p.sidebarTitle as string | undefined}
           sidebarBody={p.sidebarBody as string | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruRubricHero":
@@ -4530,6 +4555,7 @@ function BlockView({
           title={p.title as string | undefined}
           subtitle={p.subtitle as string | undefined}
           iconKey={p.iconKey as string | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruQuote":
@@ -4537,6 +4563,7 @@ function BlockView({
         <GuruQuoteEditor
           text={p.text as string | undefined}
           author={p.author as string | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruProfileCard":
@@ -4547,6 +4574,7 @@ function BlockView({
           role={p.role as string | undefined}
           contacts={p.contacts as Array<{ icon?: string; label: string }> | undefined}
           panels={p.panels as Array<{ eyebrow?: string; title?: string; body?: string }> | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruTimeline":
@@ -4554,6 +4582,7 @@ function BlockView({
         <GuruTimelineEditor
           title={p.title as string | undefined}
           items={p.items as Array<{ date: string; title: string; desc?: string }> | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruTagList":
@@ -4561,6 +4590,7 @@ function BlockView({
         <GuruTagListEditor
           title={p.title as string | undefined}
           tags={p.tags as string[] | undefined}
+          edit={guruEdit}
         />
       );
     case "GuruFooter":
@@ -4576,6 +4606,7 @@ function BlockView({
           links={p.links as Array<{ label: string; href: string }> | undefined}
           bottomLeft={p.bottomLeft as string | undefined}
           bottomRight={p.bottomRight as string | undefined}
+          edit={guruEdit}
         />
       );
 
