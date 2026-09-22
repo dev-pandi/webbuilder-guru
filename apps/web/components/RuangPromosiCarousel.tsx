@@ -11,10 +11,18 @@ import { api, type PortalBanner } from "@/lib/api";
 // Auto-play 5s, pause on hover/focus, wrap around, reset timer per user
 // interaction — sesuai mockup script.
 //
-// Data: fetch dari `/public/portal/promotion-banners` (spec §6) — agregat
-// banner efektif seluruh guru (teacher_active + admin_enabled + period valid).
-// Fallback ke 3 asset lokal saat API kosong / gagal supaya section tidak
-// terlihat "kosong" sebelum ada guru pertama yang aktif.
+// Data: fetch dari `/public/portal/promotion-banners` (spec §6). Backend
+// filter (banners/repo.go ListEligibleForPortal):
+//   - portal_active = true  ← guru pilih 1 banner untuk landing portal
+//   - teacher_active = true ← banner aktif di website guru
+//   - admin_enabled = true  ← admin approve
+//   - periode valid (start_at ≤ now ≤ end_at)
+//   - site.status = 'published'
+// Max 1 banner per guru (partial unique index) → carousel fair display.
+//
+// Fallback slides = 3 asset lokal demo, dipakai HANYA kalau API error atau
+// belum ada guru yang set portal_active (empty response). Empty state
+// dedicated ditampilkan kalau `emptyFromServer` (bukan fallback demo).
 
 type PromoSlide = {
   image: string;
@@ -44,19 +52,26 @@ const AUTOPLAY_MS = 5000;
 
 export function RuangPromosiCarousel() {
   const [slides, setSlides] = useState<PromoSlide[]>(FALLBACK_SLIDES);
+  const [emptyFromServer, setEmptyFromServer] = useState(false);
   const [index, setIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const total = slides.length;
 
-  // Fetch banner cross-site dari portal endpoint. Kalau ada minimal 1 banner
-  // hasil moderasi, replace fallback. Kalau kosong/gagal, keep fallback.
+  // Fetch portal banner. State branch:
+  //   - success + non-empty → set slides dari API (guru banners)
+  //   - success + empty     → tampilkan empty state (belum ada guru pasang)
+  //   - error               → keep fallback demo (defense: section tidak blank)
   useEffect(() => {
     let cancelled = false;
     api<PortalBanner[]>(`/public/portal/promotion-banners?limit=8`, {
       auth: false,
     })
       .then((banners) => {
-        if (cancelled || !banners || banners.length === 0) return;
+        if (cancelled) return;
+        if (!banners || banners.length === 0) {
+          setEmptyFromServer(true);
+          return;
+        }
         setSlides(
           banners.map((b) => ({
             image: b.image_url,
@@ -67,7 +82,7 @@ export function RuangPromosiCarousel() {
         setIndex(0);
       })
       .catch(() => {
-        // silent — keep fallback
+        // silent — keep fallback (network error, don't show empty state)
       });
     return () => {
       cancelled = true;
@@ -101,6 +116,31 @@ export function RuangPromosiCarousel() {
     },
     [startTimer, total],
   );
+
+  // Empty state — API balik 0 banner (belum ada guru pasang portal_active).
+  // Tampilkan card ajakan bukan fallback demo yang misleading.
+  if (emptyFromServer) {
+    return (
+      <div
+        className="relative flex aspect-[2/1] w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-[26px] border border-[#e6e9ef] px-6 py-8 text-center shadow-[0_24px_60px_rgba(24,34,53,.10)]"
+        style={{ background: "#101d33" }}
+        role="img"
+        aria-label="Belum ada banner promosi dari guru"
+      >
+        <div className="text-white/40 text-xs font-extrabold uppercase tracking-[.12em]">
+          Ruang Promosi Portal
+        </div>
+        <h3 className="max-w-md text-[1.15rem] font-extrabold leading-snug text-white sm:text-[1.4rem]">
+          Belum ada banner promosi dari guru
+        </h3>
+        <p className="max-w-md text-[.85rem] leading-relaxed text-white/70">
+          Guru dapat memilih 1 banner untuk tampil di sini lewat menu{" "}
+          <strong className="text-white">Ruang Promosi</strong> di dashboard
+          masing-masing.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -25,6 +25,11 @@ type Banner struct {
 	EndAt               *time.Time `json:"end_at,omitempty"`
 	TeacherActive       bool       `json:"teacher_active"`
 	AdminEnabled        bool       `json:"admin_enabled"`
+	// PortalActive — banner ini di-select oleh guru untuk tampil di landing
+	// Portal (Ruang Promosi aggregate). Beda dari TeacherActive yg untuk
+	// website pribadi guru. Max 1 portal_active per site (enforced by
+	// partial unique index + handler auto-clear).
+	PortalActive        bool       `json:"portal_active"`
 	AdminDisabledReason string     `json:"admin_disabled_reason"`
 	AdminDisabledBy     *uuid.UUID `json:"admin_disabled_by,omitempty"`
 	AdminDisabledAt     *time.Time `json:"admin_disabled_at,omitempty"`
@@ -83,13 +88,13 @@ func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
 var ErrNotFound = errors.New("banner not found")
 
 const cols = `id, site_id, owner_user_id, internal_title, image_url, target_url, alt_text,
-    sort_order, start_at, end_at, teacher_active, admin_enabled,
+    sort_order, start_at, end_at, teacher_active, admin_enabled, portal_active,
     admin_disabled_reason, admin_disabled_by, admin_disabled_at, created_at, updated_at`
 
 func scan(b *Banner) []any {
 	return []any{
 		&b.ID, &b.SiteID, &b.OwnerUserID, &b.InternalTitle, &b.ImageURL, &b.TargetURL, &b.AltText,
-		&b.SortOrder, &b.StartAt, &b.EndAt, &b.TeacherActive, &b.AdminEnabled,
+		&b.SortOrder, &b.StartAt, &b.EndAt, &b.TeacherActive, &b.AdminEnabled, &b.PortalActive,
 		&b.AdminDisabledReason, &b.AdminDisabledBy, &b.AdminDisabledAt, &b.CreatedAt, &b.UpdatedAt,
 	}
 }
@@ -194,6 +199,60 @@ func joinComma(parts []string) string {
 	return out
 }
 
+// SetPortalActive — toggle portal_active untuk 1 banner. Rules:
+//   - Kalau enable=true: clear semua banner lain di site yang portal_active=true
+//     dulu (atomic transaction) supaya partial unique index tidak conflict.
+//   - Kalau enable=false: cukup unset.
+// Return banner setelah update.
+func (r *Repo) SetPortalActive(ctx context.Context, id uuid.UUID, enable bool) (*Banner, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if enable {
+		// Ambil site_id target dulu.
+		var siteID uuid.UUID
+		if err := tx.QueryRow(ctx,
+			`SELECT site_id FROM promotion_banners WHERE id = $1`, id,
+		).Scan(&siteID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		// Clear semua banner lain di site ini yang portal_active=true.
+		// Kalau tidak ada, no-op — cukup lanjut ke SET target.
+		if _, err := tx.Exec(ctx, `
+			UPDATE promotion_banners
+			   SET portal_active = false, updated_at = now()
+			 WHERE site_id = $1 AND id <> $2 AND portal_active = true
+		`, siteID, id); err != nil {
+			return nil, err
+		}
+	}
+
+	var b Banner
+	err = tx.QueryRow(ctx, `
+		UPDATE promotion_banners
+		   SET portal_active = $2, updated_at = now()
+		 WHERE id = $1
+		RETURNING `+cols,
+		id, enable,
+	).Scan(scan(&b)...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
 // SetAdminEnabled — admin override. Optional reason.
 func (r *Repo) SetAdminEnabled(ctx context.Context, id uuid.UUID, enabled bool, adminID uuid.UUID, reason string) (*Banner, error) {
 	var b Banner
@@ -285,7 +344,9 @@ func (r *Repo) ListEligibleBySite(ctx context.Context, siteID uuid.UUID) ([]Publ
 }
 
 // ListEligibleForPortal — cross-site aggregate untuk Ruang Promosi Portal (§6).
-// Limit N default 30 supaya carousel portal tidak overload.
+// Hanya banner yang di-select guru sebagai "portal_active" — max 1 per guru
+// (enforced by partial unique index). Ini menjamin fair display quota per
+// guru, tidak ada 1 guru yang dominan seluruh carousel.
 func (r *Repo) ListEligibleForPortal(ctx context.Context, limit int) ([]PortalView, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 30
@@ -294,7 +355,8 @@ func (r *Repo) ListEligibleForPortal(ctx context.Context, limit int) ([]PortalVi
 		SELECT b.id, b.site_id, b.image_url, b.target_url, b.alt_text
 		FROM promotion_banners b
 		JOIN sites s ON s.id = b.site_id
-		WHERE b.teacher_active = true
+		WHERE b.portal_active  = true
+		  AND b.teacher_active = true
 		  AND b.admin_enabled  = true
 		  AND (b.start_at IS NULL OR b.start_at <= now())
 		  AND (b.end_at   IS NULL OR b.end_at   >= now())
@@ -362,7 +424,7 @@ func prefixCols(prefix string) string {
 	// Rebuild `cols` with alias prefix. Keeping in one place to stay in sync.
 	fields := []string{
 		"id", "site_id", "owner_user_id", "internal_title", "image_url", "target_url", "alt_text",
-		"sort_order", "start_at", "end_at", "teacher_active", "admin_enabled",
+		"sort_order", "start_at", "end_at", "teacher_active", "admin_enabled", "portal_active",
 		"admin_disabled_reason", "admin_disabled_by", "admin_disabled_at", "created_at", "updated_at",
 	}
 	out := ""

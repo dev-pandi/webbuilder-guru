@@ -141,6 +141,28 @@ export default function PromosiPage() {
     }
   }
 
+  async function togglePortal(b: Banner, next: boolean) {
+    // Enable: backend auto-clear banner lain di site (max 1 portal_active
+    // per site). Frontend sync semua UI dengan refresh setelah PATCH.
+    setBusyId(b.id);
+    try {
+      await api(`/api/v1/banners/${b.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ portal_active: next }),
+      });
+      toast.success(
+        next
+          ? "Dipasang di landing Ruang Promosi Portal"
+          : "Dilepas dari landing Ruang Promosi Portal",
+      );
+      refresh();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function remove(b: Banner) {
     if (!confirm(`Hapus banner "${b.internal_title}"?`)) return;
     setBusyId(b.id);
@@ -204,6 +226,7 @@ export default function PromosiPage() {
               onChange={(next) => setBanners((prev) => prev.map((x) => (x.id === b.id ? next : x)))}
               onSave={() => save(b)}
               onToggle={(v) => toggleActive(b, v)}
+              onTogglePortal={(v) => togglePortal(b, v)}
               onDelete={() => remove(b)}
             />
           );
@@ -233,6 +256,7 @@ function BannerCard({
   onChange,
   onSave,
   onToggle,
+  onTogglePortal,
   onDelete,
 }: {
   banner: Banner;
@@ -242,6 +266,7 @@ function BannerCard({
   onChange: (next: Banner) => void;
   onSave: () => void;
   onToggle: (v: boolean) => void;
+  onTogglePortal: (v: boolean) => void;
   onDelete: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -354,6 +379,33 @@ function BannerCard({
             </span>
             <span className="text-[12px] font-bold text-slate-700">
               {b.teacher_active ? "Aktif" : "Nonaktif"}
+            </span>
+          </label>
+        </div>
+
+        {/* Portal toggle — max 1 banner per site aktif di landing utama.
+            Toggle ON pada banner ini otomatis clear banner lain di site
+            yang sedang portal_active (server-side transaction). */}
+        <div className="flex items-start justify-between gap-3 rounded-xl bg-amber-50/60 px-3 py-2.5 text-[13px]">
+          <div className="flex-1">
+            <strong className="text-amber-900">Tampil di Landing Portal</strong>
+            <p className="mt-0.5 text-[11px] text-amber-800/80">
+              Pilih 1 banner untuk tampil di Ruang Promosi Portal (bikinweb.pandi.id).
+            </p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={b.portal_active}
+              onChange={(e) => onTogglePortal(e.target.checked)}
+              disabled={busy}
+              className="peer sr-only"
+            />
+            <span className="relative h-6 w-11 rounded-full bg-slate-300 transition-colors peer-checked:bg-amber-500">
+              <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
+            </span>
+            <span className="text-[12px] font-bold text-slate-700">
+              {b.portal_active ? "Terpasang" : "Nonaktif"}
             </span>
           </label>
         </div>
@@ -514,14 +566,14 @@ function NewBannerDialog({
           </Field>
           <Field label="Gambar (2:1)">
             {imageURL ? (
-              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
+              <div className="flex w-full items-center gap-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={imageURL}
                   alt="Preview"
-                  className="h-16 w-32 rounded-lg object-cover"
+                  className="h-16 w-32 shrink-0 rounded-lg object-cover"
                 />
-                <div className="flex flex-1 flex-col gap-1.5">
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5 overflow-hidden">
                   <button
                     onClick={() => setPickerOpen(true)}
                     className="inline-flex items-center gap-1.5 self-start rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
@@ -529,7 +581,12 @@ function NewBannerDialog({
                     <ImageIcon className="size-3.5" />
                     Ganti Gambar
                   </button>
-                  <p className="truncate text-[11px] text-slate-500">{imageURL}</p>
+                  <p
+                    className="truncate text-[11px] text-slate-500"
+                    title={imageURL}
+                  >
+                    {imageURL}
+                  </p>
                 </div>
               </div>
             ) : (

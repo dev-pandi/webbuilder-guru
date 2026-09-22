@@ -55,6 +55,9 @@ type updateReq struct {
 	ClearStart    bool    `json:"clear_start"`
 	ClearEnd      bool    `json:"clear_end"`
 	TeacherActive *bool   `json:"teacher_active"`
+	// PortalActive — kalau nil, tidak diubah. Kalau true, backend auto-clear
+	// banner lain di site yang aktif (partial unique constraint enforcement).
+	PortalActive *bool `json:"portal_active"`
 }
 
 func parseTime(s string) (*time.Time, error) {
@@ -240,6 +243,19 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return httpx.Internal(c, "update failed")
+	}
+	// Kalau user set portal_active, panggil SetPortalActive terpisah karena
+	// butuh transaction untuk auto-clear banner lain di site (partial unique
+	// index enforcement). Update baru dijalankan setelah field lain ter-set.
+	if req.PortalActive != nil {
+		b2, err := h.repo.SetPortalActive(c.Context(), id, *req.PortalActive)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return httpx.NotFound(c, "banner not found")
+			}
+			return httpx.Internal(c, "portal_active update failed")
+		}
+		b = b2
 	}
 	return httpx.OK(c, b)
 }

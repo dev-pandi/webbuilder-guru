@@ -213,6 +213,10 @@ export type Banner = {
   end_at: string | null;
   teacher_active: boolean;
   admin_enabled: boolean;
+  // portal_active — guru pilih 1 banner untuk tampil di landing Ruang Promosi
+  // portal (bikinweb.pandi.id). Max 1 per site — kalau enable pada banner
+  // baru, backend auto-clear banner lain di site yang portal_active=true.
+  portal_active: boolean;
   admin_disabled_reason: string;
   admin_disabled_by: string | null;
   admin_disabled_at: string | null;
