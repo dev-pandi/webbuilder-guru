@@ -16,6 +16,28 @@
 // + 2 floating notes absolute. Faithful mockup hero-grid section.
 // ---------------------------------------------------------------------------
 
+// noteStyle — build inline style dari X/Y user, hanya include property yang
+// ada nilainya (jangan override CSS default kalau user tidak set).
+function noteStyle(opts: {
+  left?: number | string;
+  top?: number | string;
+  right?: number | string;
+  bottom?: number | string;
+}): React.CSSProperties {
+  const s: React.CSSProperties = {};
+  const norm = (v: number | string | undefined) =>
+    v === undefined || v === "" ? undefined : typeof v === "number" ? `${v}px` : String(v);
+  const l = norm(opts.left);
+  const t = norm(opts.top);
+  const r = norm(opts.right);
+  const b = norm(opts.bottom);
+  if (l !== undefined) s.left = l;
+  if (t !== undefined) s.top = t;
+  if (r !== undefined) s.right = r;
+  if (b !== undefined) s.bottom = b;
+  return s;
+}
+
 export function GuruHero(p: {
   eyebrow?: string;
   title?: string;
@@ -28,10 +50,19 @@ export function GuruHero(p: {
   image?: string;
   imageAlt?: string;
   stats?: Array<{ value: string; label: string }>;
-  noteAText?: string; // e.g. "Bahasa Indonesia"
-  noteASub?: string; // e.g. "SMP · Literasi · Sastra"
-  noteBText?: string; // e.g. "Catatan hari ini"
-  noteBSub?: string; // e.g. "Siswa berani bertanya."
+  // Floating notes — 2 kartu absolute yang menempel di visual figure.
+  // *Show="hide"* sembunyikan note (default show). *X/Y* override posisi
+  // default (px) supaya user bisa geser note biar tidak nutupi wajah.
+  noteAText?: string;
+  noteASub?: string;
+  noteAShow?: "show" | "hide";
+  noteAX?: number | string;
+  noteAY?: number | string;
+  noteBText?: string;
+  noteBSub?: string;
+  noteBShow?: "show" | "hide";
+  noteBX?: number | string;
+  noteBY?: number | string;
 }) {
   return (
     <section className="guru-hero">
@@ -89,14 +120,20 @@ export function GuruHero(p: {
               decoding="async"
             />
           ) : null}
-          {p.noteAText ? (
-            <div className="guru-hero__note guru-hero__note--a">
+          {p.noteAText && p.noteAShow !== "hide" ? (
+            <div
+              className="guru-hero__note guru-hero__note--a"
+              style={noteStyle({ left: p.noteAX, top: p.noteAY })}
+            >
               <strong>{p.noteAText}</strong>
               {p.noteASub ? <span>{p.noteASub}</span> : null}
             </div>
           ) : null}
-          {p.noteBText ? (
-            <div className="guru-hero__note guru-hero__note--b">
+          {p.noteBText && p.noteBShow !== "hide" ? (
+            <div
+              className="guru-hero__note guru-hero__note--b"
+              style={noteStyle({ right: p.noteBX, bottom: p.noteBY })}
+            >
               <strong>{p.noteBText}</strong>
               {p.noteBSub ? <span>{p.noteBSub}</span> : null}
             </div>
@@ -442,8 +479,12 @@ export function GuruTimeline(p: {
 // Faithful mockup .tag-list.
 // ---------------------------------------------------------------------------
 
-export function GuruTagList(p: { title?: string; tags?: string[] }) {
-  const tags = p.tags ?? [];
+export function GuruTagList(p: {
+  title?: string;
+  // Accept string[] (template seed) atau Array<{label}> (editor UI).
+  tags?: Array<string | { label?: string }>;
+}) {
+  const tags = normalizeTags(p.tags);
   if (tags.length === 0) return null;
   return (
     <section className="guru-section">
@@ -461,6 +502,16 @@ export function GuruTagList(p: { title?: string; tags?: string[] }) {
       </div>
     </section>
   );
+}
+
+// normalizeTags — flatten string[] ATAU Array<{label}> ke plain string[].
+// Filter empty entries + trim. Kompatibel dengan template seed lama.
+function normalizeTags(tags?: Array<string | { label?: string }>): string[] {
+  if (!tags) return [];
+  return tags
+    .map((t) => (typeof t === "string" ? t : (t?.label ?? "")))
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,15 +1,23 @@
 "use client";
 
 // Ruang Promosi — mirror mockup dashboard-guru/promosi.html.
-// Wired ke /api/v1/sites/:id/banners (GET, POST) + /api/v1/banners/:id (PATCH, DELETE).
-// Local state kartu = source of truth sampai user klik Simpan; diff dikirim
-// sebagai body PATCH.
+// Wired ke /api/v1/sites/:id/banners (GET, POST) + /api/v1/banners/:id
+// (PATCH, DELETE). Local state kartu = source of truth sampai user klik
+// Simpan; diff dikirim sebagai body PATCH.
+//
+// UX notes:
+//   - Image field pakai AssetPickerDialog (library + upload + URL) — sama
+//     seperti editor konten. Tidak lagi manual paste URL.
+//   - sort_order enforced UNIQUE per-site di UI (warning inline). Untuk
+//     banner baru, auto-suggest max+1 supaya default aman.
+//   - Renderer public list cache 10 detik (lihat renderer/lib/api.ts).
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Image as ImageIcon, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api, BANNER_STATUS_LABEL, type Banner } from "@/lib/api";
+import { AssetPickerDialog } from "@/components/AssetPickerDialog";
 
 // Gradient palette untuk fallback ketika banner tidak punya image_url.
 const GRADIENTS = [
@@ -29,6 +37,27 @@ function isoToDate(iso: string | null): string {
 function dateToISO(v: string): string | null {
   if (!v) return null;
   return new Date(v + "T00:00:00").toISOString();
+}
+
+// nextAvailableOrder — cari nomor urut terkecil >0 yang belum dipakai.
+// Kalau semua 1..N terpakai, return N+1. Skip banner tertentu (exclude id)
+// supaya saat edit tidak konflik dengan diri sendiri.
+function nextAvailableOrder(banners: Banner[], excludeId?: string): number {
+  const used = new Set(
+    banners.filter((b) => b.id !== excludeId).map((b) => b.sort_order),
+  );
+  let n = 1;
+  while (used.has(n)) n++;
+  return n;
+}
+
+// isDuplicateOrder — cek apakah sort_order bentrok dengan banner lain.
+function isDuplicateOrder(
+  banners: Banner[],
+  order: number,
+  excludeId?: string,
+): boolean {
+  return banners.some((b) => b.id !== excludeId && b.sort_order === order);
 }
 
 export default function PromosiPage() {
@@ -61,10 +90,19 @@ export default function PromosiPage() {
   }
 
   async function save(b: Banner) {
+    // Frontend guard: cegah duplicate sort_order untuk banner lain di site.
+    if (isDuplicateOrder(banners, b.sort_order, b.id)) {
+      toast.error("Urutan bentrok", {
+        description: `Angka ${b.sort_order} sudah dipakai banner lain. Pilih angka lain.`,
+      });
+      return;
+    }
     setBusyId(b.id);
     try {
       const body: Record<string, unknown> = {
+        image_url: b.image_url,
         target_url: b.target_url,
+        alt_text: b.alt_text,
         sort_order: b.sort_order,
         teacher_active: b.teacher_active,
       };
@@ -138,7 +176,7 @@ export default function PromosiPage() {
       </div>
 
       <div className="rounded-xl bg-blue-50 px-4 py-3 text-[13px] text-blue-800">
-        <strong>Rasio 2:1</strong> — gunakan banner full-image. Banner tampil hanya jika Status Guru aktif dan Status Admin diizinkan.
+        <strong>Rasio 2:1</strong> — gunakan banner full-image. Banner tampil hanya jika Status Guru aktif dan Status Admin diizinkan. Urutan harus unik per situs.
       </div>
 
       {loading && (
@@ -160,6 +198,7 @@ export default function PromosiPage() {
             <BannerCard
               key={b.id}
               banner={b}
+              allBanners={banners}
               gradient={gradient}
               busy={busyId === b.id}
               onChange={(next) => setBanners((prev) => prev.map((x) => (x.id === b.id ? next : x)))}
@@ -174,6 +213,7 @@ export default function PromosiPage() {
       {showNew && (
         <NewBannerDialog
           siteId={sid}
+          existingBanners={banners}
           onClose={() => setShowNew(false)}
           onCreated={() => {
             setShowNew(false);
@@ -187,6 +227,7 @@ export default function PromosiPage() {
 
 function BannerCard({
   banner: b,
+  allBanners,
   gradient,
   busy,
   onChange,
@@ -195,6 +236,7 @@ function BannerCard({
   onDelete,
 }: {
   banner: Banner;
+  allBanners: Banner[];
   gradient: string;
   busy: boolean;
   onChange: (next: Banner) => void;
@@ -202,6 +244,8 @@ function BannerCard({
   onToggle: (v: boolean) => void;
   onDelete: () => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const bgStyle = useMemo(() => {
     if (b.image_url) {
       return {
@@ -213,13 +257,24 @@ function BannerCard({
     return { background: gradient };
   }, [b.image_url, gradient]);
 
+  const orderConflict = isDuplicateOrder(allBanners, b.sort_order, b.id);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div
-        className="flex aspect-[2/1] items-end rounded-xl p-4 text-lg font-bold text-white"
+        className="group relative flex aspect-[2/1] items-end rounded-xl p-4 text-lg font-bold text-white"
         style={bgStyle}
       >
         <span className="rounded-md bg-black/30 px-2 py-1 text-sm">{b.internal_title}</span>
+        {/* Overlay "Ganti Gambar" — muncul saat hover. */}
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50 text-sm font-bold text-white opacity-0 transition-opacity hover:opacity-100"
+        >
+          <ImageIcon className="mr-1.5 size-4" />
+          Ganti Gambar
+        </button>
       </div>
 
       <div className="mt-3 grid gap-3">
@@ -227,6 +282,15 @@ function BannerCard({
           <input
             value={b.target_url}
             onChange={(e) => onChange({ ...b, target_url: e.target.value })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+          />
+        </Field>
+
+        <Field label="Alt Text">
+          <input
+            value={b.alt_text}
+            onChange={(e) => onChange({ ...b, alt_text: e.target.value })}
+            placeholder="Deskripsi singkat gambar untuk aksesibilitas"
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
           />
         </Field>
@@ -250,15 +314,30 @@ function BannerCard({
           </Field>
         </div>
 
-        <div className="flex items-center justify-between text-[13px]">
+        <div className="flex items-center justify-between gap-3 text-[13px]">
           <strong className="text-slate-700">Urutan</strong>
-          <input
-            type="number"
-            min={0}
-            value={b.sort_order}
-            onChange={(e) => onChange({ ...b, sort_order: Number(e.target.value) })}
-            className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
-          />
+          <div className="flex items-center gap-2">
+            {orderConflict && (
+              <span
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600"
+                title="Angka urutan ini sudah dipakai banner lain"
+              >
+                <AlertTriangle className="size-3.5" />
+                Bentrok
+              </span>
+            )}
+            <input
+              type="number"
+              min={1}
+              value={b.sort_order}
+              onChange={(e) => onChange({ ...b, sort_order: Number(e.target.value) })}
+              className={`w-24 rounded-xl border bg-white px-3 py-2 text-sm outline-none ${
+                orderConflict
+                  ? "border-rose-400 focus:border-rose-500"
+                  : "border-slate-200 focus:border-blue-400"
+              }`}
+            />
+          </div>
         </div>
 
         <div className="flex items-center justify-between text-[13px]">
@@ -308,8 +387,9 @@ function BannerCard({
         <div className="flex gap-2 pt-1">
           <button
             onClick={onSave}
-            disabled={busy}
+            disabled={busy || orderConflict}
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title={orderConflict ? "Perbaiki urutan bentrok dulu" : undefined}
           >
             {busy ? "Menyimpan…" : "Simpan"}
           </button>
@@ -322,6 +402,17 @@ function BannerCard({
           </button>
         </div>
       </div>
+
+      <AssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        kind="image"
+        current={b.image_url}
+        onPick={(url) => {
+          onChange({ ...b, image_url: url });
+          setPickerOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -337,10 +428,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function NewBannerDialog({
   siteId,
+  existingBanners,
   onClose,
   onCreated,
 }: {
   siteId: string;
+  existingBanners: Banner[];
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -350,14 +443,24 @@ function NewBannerDialog({
   const [altText, setAltText] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
-  const [sortOrder, setSortOrder] = useState(0);
+  // Auto-suggest urutan berikut yang tersedia — cegah default 0/1 yang
+  // seringkali bentrok dengan banner pertama.
+  const [sortOrder, setSortOrder] = useState(() => nextAvailableOrder(existingBanners));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const orderConflict = isDuplicateOrder(existingBanners, sortOrder);
 
   async function save() {
     if (!internalTitle.trim()) return toast.error("Judul wajib diisi");
-    if (!imageURL.trim()) return toast.error("URL gambar wajib diisi");
+    if (!imageURL.trim()) return toast.error("Gambar wajib dipilih");
     if (!altText.trim()) return toast.error("Alt text wajib diisi");
     if (!targetURL.startsWith("http")) return toast.error("URL tujuan harus http/https");
+    if (orderConflict) {
+      return toast.error("Urutan bentrok", {
+        description: `Angka ${sortOrder} sudah dipakai banner lain.`,
+      });
+    }
     setSaving(true);
     try {
       await api(`/api/v1/sites/${siteId}/banners`, {
@@ -389,7 +492,7 @@ function NewBannerDialog({
           <div>
             <h2 className="text-lg font-bold text-slate-900">Banner Baru</h2>
             <p className="mt-1 text-[13px] text-slate-500">
-              Upload gambar dulu ke menu Aset lalu paste URL-nya di sini. Gunakan rasio 2:1.
+              Gunakan gambar rasio 2:1 (mis. 1200×600).
             </p>
           </div>
           <button
@@ -409,13 +512,38 @@ function NewBannerDialog({
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
             />
           </Field>
-          <Field label="URL Gambar (2:1)">
-            <input
-              value={imageURL}
-              onChange={(e) => setImageURL(e.target.value)}
-              placeholder="https://…"
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
-            />
+          <Field label="Gambar (2:1)">
+            {imageURL ? (
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imageURL}
+                  alt="Preview"
+                  className="h-16 w-32 rounded-lg object-cover"
+                />
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <button
+                    onClick={() => setPickerOpen(true)}
+                    className="inline-flex items-center gap-1.5 self-start rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-bold text-blue-700 hover:bg-blue-100"
+                  >
+                    <ImageIcon className="size-3.5" />
+                    Ganti Gambar
+                  </button>
+                  <p className="truncate text-[11px] text-slate-500">{imageURL}</p>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="grid w-full place-items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-slate-500 hover:border-blue-400 hover:bg-blue-50"
+              >
+                <ImageIcon className="size-6" />
+                <span className="text-sm font-bold text-slate-700">Pilih Gambar</span>
+                <span className="text-[11px] text-slate-500">
+                  Dari library, upload baru, atau URL eksternal
+                </span>
+              </button>
+            )}
           </Field>
           <Field label="Alt Text">
             <input
@@ -451,14 +579,38 @@ function NewBannerDialog({
               />
             </Field>
           </div>
-          <Field label="Urutan Tampil">
-            <input
-              type="number"
-              min={0}
-              value={sortOrder}
-              onChange={(e) => setSortOrder(Number(e.target.value))}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
-            />
+          <Field label="Urutan Tampil (harus unik)">
+            <div className="grid gap-1.5">
+              <input
+                type="number"
+                min={1}
+                value={sortOrder}
+                onChange={(e) => setSortOrder(Number(e.target.value))}
+                className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${
+                  orderConflict
+                    ? "border-rose-400 focus:border-rose-500"
+                    : "border-slate-200 focus:border-blue-400"
+                }`}
+              />
+              {orderConflict ? (
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-600">
+                  <AlertTriangle className="size-3.5" />
+                  Angka {sortOrder} sudah dipakai. Coba{" "}
+                  <button
+                    type="button"
+                    onClick={() => setSortOrder(nextAvailableOrder(existingBanners))}
+                    className="underline hover:text-rose-800"
+                  >
+                    {nextAvailableOrder(existingBanners)}
+                  </button>
+                  .
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  Nomor kecil = tampil lebih awal.
+                </p>
+              )}
+            </div>
           </Field>
         </div>
 
@@ -471,13 +623,24 @@ function NewBannerDialog({
           </button>
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || orderConflict}
             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"
           >
             {saving ? "Menyimpan…" : "Buat Banner"}
           </button>
         </div>
       </div>
+
+      <AssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        kind="image"
+        current={imageURL}
+        onPick={(url) => {
+          setImageURL(url);
+          setPickerOpen(false);
+        }}
+      />
     </div>
   );
 }

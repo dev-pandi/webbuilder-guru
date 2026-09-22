@@ -3870,8 +3870,27 @@ function BlockView({
           stats={p.stats as Array<{ value: string; label: string }> | undefined}
           noteAText={p.noteAText as string | undefined}
           noteASub={p.noteASub as string | undefined}
+          noteAShow={p.noteAShow as "show" | "hide" | undefined}
+          noteAX={p.noteAX as number | string | undefined}
+          noteAY={p.noteAY as number | string | undefined}
           noteBText={p.noteBText as string | undefined}
           noteBSub={p.noteBSub as string | undefined}
+          noteBShow={p.noteBShow as "show" | "hide" | undefined}
+          noteBX={p.noteBX as number | string | undefined}
+          noteBY={p.noteBY as number | string | undefined}
+          onNoteMove={(which, x, y) => {
+            if (which === "A") {
+              onUpdate?.({
+                ...block,
+                props: { ...p, noteAX: x, noteAY: y },
+              });
+            } else {
+              onUpdate?.({
+                ...block,
+                props: { ...p, noteBX: x, noteBY: y },
+              });
+            }
+          }}
         />
       );
     case "GuruPromoCarousel":

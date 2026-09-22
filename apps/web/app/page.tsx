@@ -15,6 +15,7 @@ import {
 import { HomeNavAuth } from "@/components/HomeNavAuth";
 import { HomeMobileNav } from "@/components/HomeMobileNav";
 import { HomeArticlesSection } from "@/components/HomeArticlesSection";
+import { HomeGuruDirectory } from "@/components/HomeGuruDirectory";
 import { IsiWebsitePreview } from "@/components/IsiWebsitePreview";
 import { RuangPromosiCarousel } from "@/components/RuangPromosiCarousel";
 import { Button } from "@/components/ui/button";
@@ -88,15 +89,6 @@ const ownership = [
     title: "Tidak terkunci pada satu layanan",
     desc: "Export ke file statis — konten guru dapat dipindah ke hosting apapun tanpa kehilangan.",
   },
-];
-
-const teachers = [
-  { name: "Ratna Prameswari", subject: "Guru Bahasa Indonesia", isNew: false, avatar: "/assets/rdg/mini-avatar.webp", domain: "ratnaprameswari.id", views: "18.420" },
-  { name: "Bima Saputra", subject: "Guru Informatika", isNew: true, avatar: "/assets/rdg/mini-avatar.webp", domain: "bimasaputra.id", views: "15.870" },
-  { name: "Siti Rahmawati", subject: "Guru Matematika", isNew: false, avatar: "/assets/rdg/mini-avatar.webp", domain: "sitirahmawati.id", views: "12.640" },
-  { name: "Dedi Kurniawan", subject: "Guru Sejarah", isNew: true, avatar: "/assets/rdg/mini-avatar.webp", domain: "dedikurniawan.id", views: "9.310" },
-  { name: "Lestari Wulandari", subject: "Guru Seni Budaya", isNew: false, avatar: "/assets/rdg/mini-avatar.webp", domain: "lestariwulandari.id", views: "7.985" },
-  { name: "Ahmad Fauzan", subject: "Guru IPA", isNew: true, avatar: "/assets/rdg/mini-avatar.webp", domain: "ahmadfauzan.id", views: "6.420" },
 ];
 
 const steps = [
@@ -664,140 +656,17 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Komunitas Guru — teacher directory dengan directory-head (h2+tools)
-          dan teacher-card grid 94px+1fr (avatar besar + info 4 rows). */}
+      {/* Komunitas Guru — teacher directory. Client component fetch real data
+          dari /api/v1/public/guru dengan sort tabs (popular/newest). Fallback
+          empty state kalau belum ada guru yang bergabung. */}
       <section
         id="guru-bergabung"
         className="bg-gradient-to-b from-[#eaf2fb]/40 to-transparent"
       >
         <div className="mx-auto max-w-6xl px-6 py-24">
-          {/* Directory head — heading kiri + tools kanan (count + sort control) */}
-          <div className="mb-9 flex flex-col justify-between gap-6 md:flex-row md:items-end">
-            <div className="max-w-2xl">
-              <div className="mb-4 inline-flex items-center gap-2.5 text-xs font-extrabold uppercase tracking-[.13em] text-[#285f9e]">
-                <span className="h-0.5 w-6 rounded-full bg-current" />
-                Komunitas Guru
-              </div>
-              <h2 className="text-[clamp(2rem,4vw,3.35rem)] font-extrabold leading-tight tracking-tight text-[#172033]">
-                Guru yang Sudah Bergabung
-              </h2>
-              <p className="mt-4 text-base text-[#637083]">
-                Temukan website pribadi guru dan lihat bagaimana pengalaman,
-                karya, serta pengetahuan mereka dibagikan melalui rumah digital
-                masing-masing.
-              </p>
-            </div>
-            {/* Directory tools — sort links → halaman direktori penuh /guru */}
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Link
-                href="/guru"
-                className="whitespace-nowrap text-[.82rem] font-extrabold text-[#285f9e] underline underline-offset-4 hover:text-[#172033]"
-              >
-                Lihat semua guru →
-              </Link>
-              <div className="inline-flex gap-1 rounded-[13px] border border-[#e6e9ef] bg-white p-1 shadow-[0_10px_30px_rgba(24,34,53,.06)]">
-                <Link
-                  href="/guru?sort=popular"
-                  className="min-h-[38px] rounded-[10px] bg-[#285f9e] px-3.5 text-[.8rem] font-extrabold text-white shadow-[0_8px_18px_rgba(40,95,158,.18)] flex items-center"
-                >
-                  Terpopuler
-                </Link>
-                <Link
-                  href="/guru?sort=newest"
-                  className="min-h-[38px] rounded-[10px] bg-transparent px-3.5 text-[.8rem] font-extrabold text-[#647286] hover:bg-[#f4f7fb] flex items-center"
-                >
-                  Terbaru
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Teacher grid — 3-col, card grid 94px+1fr */}
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {teachers.map((t) => (
-              <article
-                key={t.name}
-                className="group grid grid-cols-[94px_1fr] items-center gap-[18px] rounded-[22px] border border-[#e6e9ef] bg-white p-5 shadow-[0_10px_30px_rgba(24,34,53,.06)] transition-all duration-[.22s] hover:-translate-y-1 hover:border-[#d4dce8] hover:shadow-[0_24px_60px_rgba(24,34,53,.10)]"
-              >
-                {/* Avatar 94×94 gradient bg + border */}
-                <div className="aspect-square size-[94px] overflow-hidden rounded-[18px] border border-[#1f3656]/8 bg-gradient-to-br from-[#edf4fb] to-[#f9ecee]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={t.avatar}
-                    alt={`Foto profil ${t.name}`}
-                    loading="lazy"
-                    decoding="async"
-                    className="block size-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
-                  />
-                </div>
-                {/* Info: name+badge, subject, domain, meta */}
-                <div className="min-w-0">
-                  <div className="mb-1 flex items-center gap-2">
-                    <h3 className="m-0 text-[1.03rem] font-extrabold leading-tight tracking-[-.025em] text-[#172033]">
-                      {t.name}
-                    </h3>
-                    {t.isNew && (
-                      <span className="inline-flex rounded-full bg-[#fff1f2] px-[7px] py-[3px] text-[.58rem] font-black uppercase tracking-[.07em] text-[#d73f45]">
-                        Baru
-                      </span>
-                    )}
-                  </div>
-                  <div className="mb-2.5 text-[.75rem] font-bold text-[#748094]">
-                    {t.subject}
-                  </div>
-                  {/* Domain row: globe icon + text */}
-                  <div className="mb-3 flex min-w-0 items-center gap-[7px] text-[.8rem] font-extrabold text-[#285f9e]">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className="size-[15px] shrink-0"
-                    >
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
-                    </svg>
-                    <span className="truncate">{t.domain}</span>
-                  </div>
-                  {/* Meta row: views + kunjungi link */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[.72rem] font-bold text-[#748094]">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        className="size-[13px]"
-                      >
-                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
-                        <circle cx="12" cy="12" r="2.5" />
-                      </svg>
-                      {t.views} views
-                    </span>
-                    <a
-                      href="#mulai"
-                      aria-label={`Kunjungi contoh website ${t.name}`}
-                      className="inline-flex items-center gap-1 text-[.75rem] font-extrabold text-[#d73f45] transition-transform hover:translate-x-0.5"
-                    >
-                      Kunjungi
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        className="size-[13px]"
-                      >
-                        <path d="M7 17 17 7M8 7h9v9" />
-                      </svg>
-                    </a>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
+          <HomeGuruDirectory />
         </div>
       </section>
-
       {/* Ruang Promosi Guru — wrapper .promotion-shell white card (padding 34px,
           radius 30px, shadow-sm) + .promo-section-layout 2-col 1fr:1fr equal.
           Dalam wrapper: carousel dark navy + section-copy text right. */}

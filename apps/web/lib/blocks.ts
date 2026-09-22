@@ -1758,7 +1758,7 @@ export const blockSchemas: BlockSchema[] = [
     label: "Guru Hero",
     category: "guru",
     emoji: "🌟",
-    description: "Hero beranda guru — foto + statement + CTA",
+    description: "Hero beranda guru — foto + statement + CTA + 2 floating notes",
     defaults: {
       eyebrow: "Program guru Indonesia",
       title: "Nama Guru",
@@ -1766,6 +1766,17 @@ export const blockSchemas: BlockSchema[] = [
       image: "",
       ctaLabel: "Baca Tulisan",
       ctaHref: "/ceritaku",
+      // Floating notes — default visible + posisi mockup PANDI × UPI.
+      noteAShow: "show",
+      noteAText: "Bahasa Indonesia",
+      noteASub: "SMP · Literasi · Sastra",
+      noteAX: 10,
+      noteAY: 80,
+      noteBShow: "show",
+      noteBText: "Catatan hari ini",
+      noteBSub: "Siswa berani bertanya.",
+      noteBX: 0,
+      noteBY: 44,
     },
     fields: [
       { name: "eyebrow", label: "Eyebrow", type: "string" },
@@ -1774,6 +1785,85 @@ export const blockSchemas: BlockSchema[] = [
       { name: "image", label: "Foto/Ilustrasi (URL)", type: "image" },
       { name: "ctaLabel", label: "CTA Label", type: "string" },
       { name: "ctaHref", label: "CTA Link", type: "string" },
+      // ---------- Note A (top-left) ----------
+      {
+        name: "noteAShow",
+        label: "Tampilkan Note A",
+        type: "select",
+        group: "Note A (Kiri Atas)",
+        options: [
+          { value: "show", label: "Tampilkan" },
+          { value: "hide", label: "Sembunyikan" },
+        ],
+      },
+      {
+        name: "noteAText",
+        label: "Judul Note A",
+        type: "string",
+        group: "Note A (Kiri Atas)",
+        showIf: (p) => (p.noteAShow ?? "show") !== "hide",
+      },
+      {
+        name: "noteASub",
+        label: "Sub Note A",
+        type: "string",
+        group: "Note A (Kiri Atas)",
+        showIf: (p) => (p.noteAShow ?? "show") !== "hide",
+      },
+      {
+        name: "noteAX",
+        label: "Posisi X dari kiri (px)",
+        type: "number",
+        group: "Note A (Kiri Atas)",
+        showIf: (p) => (p.noteAShow ?? "show") !== "hide",
+        help: "Jarak dari kiri figure profil, dalam pixel. Angka negatif = keluar figure.",
+      },
+      {
+        name: "noteAY",
+        label: "Posisi Y dari atas (px)",
+        type: "number",
+        group: "Note A (Kiri Atas)",
+        showIf: (p) => (p.noteAShow ?? "show") !== "hide",
+      },
+      // ---------- Note B (bottom-right) ----------
+      {
+        name: "noteBShow",
+        label: "Tampilkan Note B",
+        type: "select",
+        group: "Note B (Kanan Bawah)",
+        options: [
+          { value: "show", label: "Tampilkan" },
+          { value: "hide", label: "Sembunyikan" },
+        ],
+      },
+      {
+        name: "noteBText",
+        label: "Judul Note B",
+        type: "string",
+        group: "Note B (Kanan Bawah)",
+        showIf: (p) => (p.noteBShow ?? "show") !== "hide",
+      },
+      {
+        name: "noteBSub",
+        label: "Sub Note B",
+        type: "string",
+        group: "Note B (Kanan Bawah)",
+        showIf: (p) => (p.noteBShow ?? "show") !== "hide",
+      },
+      {
+        name: "noteBX",
+        label: "Posisi X dari kanan (px)",
+        type: "number",
+        group: "Note B (Kanan Bawah)",
+        showIf: (p) => (p.noteBShow ?? "show") !== "hide",
+      },
+      {
+        name: "noteBY",
+        label: "Posisi Y dari bawah (px)",
+        type: "number",
+        group: "Note B (Kanan Bawah)",
+        showIf: (p) => (p.noteBShow ?? "show") !== "hide",
+      },
     ],
   },
   {
@@ -2062,12 +2152,26 @@ export const blockSchemas: BlockSchema[] = [
     description: "Chip tag (fokus, minat, topik) untuk halaman profil",
     defaults: {
       title: "Fokus & minat",
-      tags: ["Literasi", "Bahasa Indonesia", "Sastra", "Refleksi Mengajar"],
+      tags: [
+        { label: "Literasi" },
+        { label: "Bahasa Indonesia" },
+        { label: "Sastra" },
+        { label: "Refleksi Mengajar" },
+      ],
     },
     fields: [
       { name: "title", label: "Judul", type: "string" },
-      // tags = string[] — edit inline via template config saat ini (spec
-      // ItemField belum support primitive array; refactor kemudian).
+      // items dengan 1 field `label` = user friendly UI (tambah/hapus/edit
+      // per tag). Component render terima both format (string[] legacy dan
+      // Array<{label}> baru) supaya template lama tetap kompatibel.
+      {
+        name: "tags",
+        label: "Daftar Tag",
+        type: "items",
+        itemFields: [
+          { name: "label", label: "Tag", type: "string" },
+        ],
+      },
     ],
   },
   {

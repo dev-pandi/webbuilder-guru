@@ -409,12 +409,18 @@ export async function getLearningMaterial(
   return r.ok ? r.data : null;
 }
 
+// Cache banner promosi lebih pendek dari list konten lainnya. Guru sering
+// ubah banner (aktifkan/nonaktifkan, tambah baru dengan periode terbatas)
+// dan expect update reflect segera di renderer. 5 detik jaga balance antara
+// freshness dan spare load ke API.
+const BANNER_TTL = 5;
+
 export async function listPromotionBanners(
   siteId: string,
 ): Promise<PublicBanner[]> {
   const r = await fetchJson<PublicBanner[]>(
     `/public/sites/${siteId}/promotion-banners`,
-    GURU_LIST_TTL,
+    BANNER_TTL,
   );
   return r.ok ? r.data : [];
 }

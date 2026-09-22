@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
 // GuruEditorBlocks.tsx — Client-side copies of renderer's GuruBlocks
 // dengan CSS scoped `.guru-*`. Dipakai HANYA di editor canvas untuk
 // preview visual yang identik dengan template preview.
@@ -276,13 +280,138 @@ export function GuruNavbarEditor(p: {
   );
 }
 
+// noteStyle — sama dengan renderer, inline style dari X/Y user.
+function noteStyle(opts: {
+  left?: number | string;
+  top?: number | string;
+  right?: number | string;
+  bottom?: number | string;
+}): React.CSSProperties {
+  const s: React.CSSProperties = {};
+  const norm = (v: number | string | undefined) =>
+    v === undefined || v === "" ? undefined : typeof v === "number" ? `${v}px` : String(v);
+  const l = norm(opts.left);
+  const t = norm(opts.top);
+  const r = norm(opts.right);
+  const b = norm(opts.bottom);
+  if (l !== undefined) s.left = l;
+  if (t !== undefined) s.top = t;
+  if (r !== undefined) s.right = r;
+  if (b !== undefined) s.bottom = b;
+  return s;
+}
+
+// DraggableNote — wrap note dengan mouse drag handler. Update posisi live
+// saat mouse move, commit ke onMoved saat mouse up. Anchor "top-left" pakai
+// left/top; "bottom-right" pakai right/bottom (invert delta X/Y karena
+// bergerak kanan = right value berkurang).
+function DraggableNote({
+  children,
+  className,
+  anchor,
+  x,
+  y,
+  onMoved,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  anchor: "top-left" | "bottom-right";
+  x?: number | string;
+  y?: number | string;
+  onMoved?: (x: number, y: number) => void;
+}) {
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const startRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
+  // Sinkron drag state kalau props diubah dari luar (mis. PropEditor).
+  useEffect(() => {
+    setDragPos(null);
+  }, [x, y]);
+
+  const numX = typeof x === "number" ? x : parseFloat(String(x ?? 0)) || 0;
+  const numY = typeof y === "number" ? y : parseFloat(String(y ?? 0)) || 0;
+
+  function onMouseDown(e: React.MouseEvent) {
+    // Skip kalau ini bukan tombol kiri.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    startRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startX: numX,
+      startY: numY,
+    };
+
+    function onMove(ev: MouseEvent) {
+      const s = startRef.current;
+      if (!s) return;
+      const dx = ev.clientX - s.mouseX;
+      const dy = ev.clientY - s.mouseY;
+      // top-left: bergerak kanan/bawah = tambah nilai
+      // bottom-right: bergerak kanan/bawah = kurangi nilai (offset dari sisi)
+      const newX = anchor === "top-left" ? s.startX + dx : s.startX - dx;
+      const newY = anchor === "top-left" ? s.startY + dy : s.startY - dy;
+      setDragPos({ x: newX, y: newY });
+    }
+
+    function onUp() {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      // Commit ke callback pakai posisi terakhir dari state (via functional update)
+      setDragPos((p) => {
+        if (p && onMoved) onMoved(Math.round(p.x), Math.round(p.y));
+        startRef.current = null;
+        return p; // biar tidak reset — useEffect di atas reset otomatis saat props update
+      });
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  const activeX = dragPos?.x ?? numX;
+  const activeY = dragPos?.y ?? numY;
+  const styleAnchor =
+    anchor === "top-left"
+      ? { left: activeX, top: activeY }
+      : { right: activeX, bottom: activeY };
+
+  return (
+    <div
+      className={className}
+      style={{
+        ...noteStyle(styleAnchor),
+        cursor: dragPos ? "grabbing" : "grab",
+        userSelect: "none",
+        touchAction: "none",
+      }}
+      onMouseDown={onMouseDown}
+      title="Klik dan geser untuk pindahkan"
+    >
+      {children}
+    </div>
+  );
+}
+
 export function GuruHeroEditor(p: {
   eyebrow?: string; title?: string; titleEm?: string; subtitle?: string;
   ctaLabel?: string; ctaHref?: string;
   ctaSecondaryLabel?: string; ctaSecondaryHref?: string;
   image?: string; imageAlt?: string;
   stats?: Array<{ value: string; label: string }>;
-  noteAText?: string; noteASub?: string; noteBText?: string; noteBSub?: string;
+  noteAText?: string; noteASub?: string;
+  noteAShow?: "show" | "hide"; noteAX?: number | string; noteAY?: number | string;
+  noteBText?: string; noteBSub?: string;
+  noteBShow?: "show" | "hide"; noteBX?: number | string; noteBY?: number | string;
+  // Callback dipanggil saat user selesai drag salah satu note. Callback
+  // update block props di editor state → posisi persist saat save.
+  onNoteMove?: (which: "A" | "B", x: number, y: number) => void;
 }) {
   return (
     <section className="guru-hero">
@@ -322,17 +451,29 @@ export function GuruHeroEditor(p: {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={p.image} alt={p.imageAlt ?? ""} className="guru-hero__img" />
           ) : null}
-          {p.noteAText ? (
-            <div className="guru-hero__note guru-hero__note--a">
+          {p.noteAText && p.noteAShow !== "hide" ? (
+            <DraggableNote
+              className="guru-hero__note guru-hero__note--a"
+              anchor="top-left"
+              x={p.noteAX}
+              y={p.noteAY}
+              onMoved={(x, y) => p.onNoteMove?.("A", x, y)}
+            >
               <strong>{p.noteAText}</strong>
               {p.noteASub ? <span>{p.noteASub}</span> : null}
-            </div>
+            </DraggableNote>
           ) : null}
-          {p.noteBText ? (
-            <div className="guru-hero__note guru-hero__note--b">
+          {p.noteBText && p.noteBShow !== "hide" ? (
+            <DraggableNote
+              className="guru-hero__note guru-hero__note--b"
+              anchor="bottom-right"
+              x={p.noteBX}
+              y={p.noteBY}
+              onMoved={(x, y) => p.onNoteMove?.("B", x, y)}
+            >
               <strong>{p.noteBText}</strong>
               {p.noteBSub ? <span>{p.noteBSub}</span> : null}
-            </div>
+            </DraggableNote>
           ) : null}
         </div>
       </div>
@@ -893,8 +1034,15 @@ export function GuruTimelineEditor(p: {
   );
 }
 
-export function GuruTagListEditor(p: { title?: string; tags?: string[] }) {
-  const tags = p.tags && p.tags.length > 0 ? p.tags : SAMPLE_TAGS;
+export function GuruTagListEditor(p: {
+  title?: string;
+  // Accept dua format:
+  //   - Legacy string[] (dari template lama / seed data)
+  //   - Array<{label}> (dari editor UI items field)
+  tags?: Array<string | { label?: string }>;
+}) {
+  const list = normalizeTags(p.tags);
+  const tags = list.length > 0 ? list : SAMPLE_TAGS;
   return (
     <section className="guru-section">
       <div className="guru-container">
@@ -909,6 +1057,16 @@ export function GuruTagListEditor(p: { title?: string; tags?: string[] }) {
       </div>
     </section>
   );
+}
+
+// normalizeTags — flatten string[] ATAU Array<{label}> ke plain string[].
+// Filter empty entries + trim.
+function normalizeTags(tags?: Array<string | { label?: string }>): string[] {
+  if (!tags) return [];
+  return tags
+    .map((t) => (typeof t === "string" ? t : (t?.label ?? "")))
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function GuruLearningGridEditorPreview(p: {
