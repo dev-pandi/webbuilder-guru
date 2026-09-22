@@ -296,6 +296,7 @@ FILES=(
   "30-panduan-reseller.md"
   "40-panduan-admin.md"
   "50-panduan-guru.md"
+  "60-panduan-client-guru.md"
 )
 
 for f in "${FILES[@]}"; do

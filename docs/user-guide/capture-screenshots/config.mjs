@@ -81,6 +81,18 @@ export const captures = {
   // ==================== CLIENT ====================
   client: [
     {
+      // Register page — public, tanpa auth. Capture via role client tapi
+      // navigate ke /register (auth session tetap loaded, tidak masalah).
+      name: "client-daftar",
+      path: "/register",
+      waitFor: 'input[type="email"], form',
+    },
+    {
+      name: "client-login",
+      path: "/login",
+      waitFor: 'input[type="email"], form',
+    },
+    {
       name: "client-dashboard",
       path: "/dashboard",
       waitFor: 'h1, [data-testid="dashboard"], main',
@@ -104,6 +116,19 @@ export const captures = {
       },
     },
     {
+      name: "client-pending-status",
+      // Butuh sampleIds.jobId — kalau kosong, script akan skip.
+      path: (ids) => ids.jobId ? `/sites/pending/${ids.jobId}` : "/sites/pending/demo",
+      waitFor: 'main, h1',
+    },
+    {
+      name: "client-template-picker",
+      // Halaman template picker muncul di flow pending → active → picker.
+      // Untuk demo, buka dashboard templates (kalau ada) atau fallback.
+      path: "/templates",
+      waitFor: 'main',
+    },
+    {
       name: "client-theme-page",
       path: (ids) => `/sites/${ids.siteId}/theme`,
       requiresSiteId: true,
@@ -116,6 +141,142 @@ export const captures = {
       waitFor: 'main',
       // Editor punya banyak animation — extra wait
       preScreenshotDelay: 3000,
+    },
+    {
+      // Editor dalam mode Layout Bersama (Header) — klik entri "Header" di
+      // sidebar kiri supaya canvas load header + strip amber muncul.
+      name: "client-editor-layout-mode",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2500,
+      action: async (page) => {
+        // Cari tombol Header di seksi "Layout Bersama"
+        const headerBtn = page.getByRole("button", { name: /^Header$/i }).first();
+        if (await headerBtn.count() > 0) {
+          await headerBtn.click();
+          await page.waitForTimeout(800);
+        }
+      },
+    },
+    {
+      // Zoom close-up ke toggle "Header aktif" di strip amber. Sama route
+      // + action seperti layout-mode, tapi crop tighter (fullPage=false).
+      name: "client-editor-layout-toggle",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2500,
+      fullPage: false,
+      action: async (page) => {
+        const headerBtn = page.getByRole("button", { name: /^Header$/i }).first();
+        if (await headerBtn.count() > 0) {
+          await headerBtn.click();
+          await page.waitForTimeout(800);
+        }
+      },
+    },
+    {
+      // Micro-editing inline — klik salah satu text di canvas supaya cursor
+      // masuk mode edit (EditableText active). Placeholder = capture default
+      // editor state; interaction actual susah di-automate.
+      name: "client-editor-micro-edit",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 3000,
+    },
+    {
+      // Page mode dengan preview readonly strip header/footer di canvas.
+      // Default state saat load editor di page mode (kalau layout aktif).
+      name: "client-editor-readonly-strip",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 3000,
+    },
+    {
+      // Drag ghost badge — placeholder. Actual drag capture susah
+      // di-automate; screenshot di state normal editor.
+      name: "client-editor-drag-ghost",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 3000,
+    },
+    {
+      // Palette blok — klik tombol "+ Tambah" di sidebar supaya dialog
+      // palette terbuka.
+      name: "client-editor-block-add",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2500,
+      action: async (page) => {
+        const addBtn = page.getByRole("button", { name: /Tambah|Add Block/i }).first();
+        if (await addBtn.count() > 0) {
+          await addBtn.click();
+          await page.waitForTimeout(700);
+        }
+      },
+    },
+    {
+      // Panel Layout & Style — klik blok pertama di canvas + open panel.
+      // Placeholder: default editor state (panel kanan sudah visible).
+      name: "client-editor-layout-panel",
+      path: (ids) => `/sites/${ids.siteId}/editor`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 3000,
+    },
+    {
+      // Rich editor toolbar full — capture form tulisan/new supaya toolbar
+      // muncul di context editor.
+      name: "client-richeditor-toolbar",
+      path: (ids) => `/sites/${ids.siteId}/tulisan/new?rubric=ceritaku`,
+      requiresSiteId: true,
+      waitFor: 'main, button',
+      preScreenshotDelay: 2000,
+    },
+    {
+      // Drop image demo — placeholder capture editor form. Actual drop
+      // interaction cross-window susah di-automate.
+      name: "client-richeditor-drop-image",
+      path: (ids) => `/sites/${ids.siteId}/tulisan/new?rubric=ceritaku`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2000,
+    },
+    {
+      // YouTube selected state — capture placeholder default. Perlu manual
+      // capture setelah insert + select YouTube node.
+      name: "client-richeditor-youtube-selected",
+      path: (ids) => `/sites/${ids.siteId}/tulisan/new?rubric=ceritaku`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2000,
+    },
+    {
+      // Badge "Tersimpan · baru saja" — muncul setelah autosave sukses di
+      // edit mode. Placeholder capture default form state.
+      name: "client-richeditor-autosave-badge",
+      path: (ids) => ids.articleId
+        ? `/sites/${ids.siteId}/tulisan/${ids.articleId}/edit`
+        : `/sites/${ids.siteId}/tulisan`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2000,
+    },
+    {
+      // Badge amber "Belum disimpan" — muncul saat user ketik + belum autosave.
+      // Sama route seperti autosave-badge; capture default state placeholder.
+      name: "client-tulisan-unsaved-badge",
+      path: (ids) => ids.articleId
+        ? `/sites/${ids.siteId}/tulisan/${ids.articleId}/edit`
+        : `/sites/${ids.siteId}/tulisan`,
+      requiresSiteId: true,
+      waitFor: 'main',
+      preScreenshotDelay: 2000,
     },
     {
       name: "client-domain-detail",

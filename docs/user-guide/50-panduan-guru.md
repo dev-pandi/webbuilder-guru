@@ -5,6 +5,13 @@ Digital Guru** (Guru PANDI × UPI). Fitur ini opsional — semua situs client
 bisa pakai fitur di sini, tapi tampilannya paling sesuai kalau situs
 dibangun dari template guru.
 
+> **Baru!** Ada bab konsolidasi end-to-end (daftar → login → beli domain
+> → editor + Rich Editor fitur Q1 2026) yang lebih cocok untuk dibagikan
+> ke guru sebagai onboarding: **[60-panduan-client-guru.md](60-panduan-client-guru.md)**.
+> Bundle PDF khusus: [panduan-rumah-digital-guru.pdf](panduan-rumah-digital-guru.pdf).
+> Bab 50 ini tetap dipakai untuk detail fitur guru (tulisan, forum,
+> pembelajaran, moderasi tanggapan) yang belum masuk ke bab 60.
+
 ## Apa itu Rumah Digital Guru?
 
 Program kolaborasi PANDI × UPI untuk memberi guru Indonesia **website
