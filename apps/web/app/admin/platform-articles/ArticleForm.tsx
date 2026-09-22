@@ -39,6 +39,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ImagePicker } from "@/components/ImagePicker";
 import { RichEditor } from "@/components/RichEditor";
+import { useAutoSavedAgo } from "@/lib/useAutoSavedAgo";
 
 function slugify(s: string): string {
   return s
@@ -81,13 +82,65 @@ export function ArticleForm({ article }: { article: PlatformArticle | null }) {
     [tagsText],
   );
 
-  async function save(targetStatus: "draft" | "published") {
+  // Dirty tracking + autosave — pattern sama dengan TulisanForm.
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
+    JSON.stringify({
+      title: article?.title ?? "",
+      slug: article?.slug ?? "",
+      excerpt: article?.excerpt ?? "",
+      bodyMD: article?.body_md ?? "",
+      cover: article?.cover_image_url ?? "",
+      category: article?.category ?? "umum",
+      author: article?.author_name ?? "Tim Web Builder",
+      tagsText: (article?.tags ?? []).join(", "),
+      featured: article?.featured ?? false,
+      readingTime: article?.reading_time_min ?? 0,
+      seoTitle: article?.seo_title ?? "",
+      seoDesc: article?.seo_description ?? "",
+    }),
+  );
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        title,
+        slug,
+        excerpt,
+        bodyMD,
+        cover,
+        category,
+        author,
+        tagsText,
+        featured,
+        readingTime,
+        seoTitle,
+        seoDesc,
+      }),
+    [title, slug, excerpt, bodyMD, cover, category, author, tagsText, featured, readingTime, seoTitle, seoDesc],
+  );
+  const dirty = currentSnapshot !== savedSnapshot;
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
+  const autoSavedAgo = useAutoSavedAgo(lastAutoSavedAt, dirty);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function handler(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  async function save(
+    targetStatus: "draft" | "published",
+    opts?: { silent?: boolean },
+  ) {
     if (!title.trim()) {
-      toast.error("Judul artikel wajib diisi");
+      if (!opts?.silent) toast.error("Judul artikel wajib diisi");
       return;
     }
     if (!slug.trim()) {
-      toast.error("Slug wajib diisi");
+      if (!opts?.silent) toast.error("Slug wajib diisi");
       return;
     }
     setSaving(targetStatus);
@@ -112,28 +165,49 @@ export function ArticleForm({ article }: { article: PlatformArticle | null }) {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published" ? "Artikel dipublikasikan" : "Perubahan disimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published" ? "Artikel dipublikasikan" : "Perubahan disimpan",
+          );
+        }
       } else {
         await api(`/api/v1/admin/platform-articles`, {
           method: "POST",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published"
-            ? "Artikel dibuat & dipublikasikan"
-            : "Draft tersimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published"
+              ? "Artikel dibuat & dipublikasikan"
+              : "Draft tersimpan",
+          );
+        }
       }
       setStatus(targetStatus);
-      router.push("/admin/platform-articles");
+      setSavedSnapshot(currentSnapshot);
+      setLastAutoSavedAt(Date.now());
+      if (!opts?.silent) {
+        router.push("/admin/platform-articles");
+      }
     } catch (e) {
-      toast.error((e as Error).message);
+      if (!opts?.silent) toast.error((e as Error).message);
+      else console.warn("autosave failed:", (e as Error).message);
     } finally {
       setSaving(null);
     }
   }
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (!dirty) return;
+    if (saving) return;
+    if (!title.trim() || !slug.trim()) return;
+    const handle = window.setTimeout(() => {
+      void save(status, { silent: true });
+    }, 3000);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSnapshot, dirty, saving, isEdit, status]);
 
   return (
     <div className="space-y-6">
@@ -142,7 +216,14 @@ export function ArticleForm({ article }: { article: PlatformArticle | null }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/admin/platform-articles">
+              <Link
+                href="/admin/platform-articles"
+                onClick={(e) => {
+                  if (dirty && !window.confirm("Ada perubahan belum disimpan. Yakin ingin keluar?")) {
+                    e.preventDefault();
+                  }
+                }}
+              >
                 <ArrowLeft />
                 Kembali
               </Link>
@@ -164,6 +245,23 @@ export function ArticleForm({ article }: { article: PlatformArticle | null }) {
           </div>
 
           <div className="flex items-center gap-2">
+            {dirty ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200"
+                title={isEdit ? "Autosave 3 detik setelah berhenti mengetik" : "Klik Simpan Draft untuk menyimpan"}
+              >
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                Belum disimpan
+              </span>
+            ) : autoSavedAgo ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                title="Tersimpan otomatis"
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                Tersimpan · {autoSavedAgo}
+              </span>
+            ) : null}
             <Badge variant={status === "published" ? "success" : "secondary"} className="gap-1">
               {status === "published" ? (
                 <CheckCircle2 className="size-3" />
@@ -181,8 +279,9 @@ export function ArticleForm({ article }: { article: PlatformArticle | null }) {
             <Button
               variant="outline"
               onClick={() => save("draft")}
-              disabled={saving !== null}
+              disabled={saving !== null || !dirty}
               className="gap-2"
+              title={!dirty ? "Tidak ada perubahan untuk disimpan" : undefined}
             >
               {saving === "draft" ? (
                 <Loader2 className="size-4 animate-spin" />

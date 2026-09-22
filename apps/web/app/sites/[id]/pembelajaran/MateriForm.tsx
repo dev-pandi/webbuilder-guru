@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { api, type LearningMaterial } from "@/lib/api";
 import { ImagePicker } from "@/components/ImagePicker";
 import { RichEditor } from "@/components/RichEditor";
+import { useAutoSavedAgo } from "@/lib/useAutoSavedAgo";
 
 function slugify(s: string): string {
   return s
@@ -73,9 +74,57 @@ export function MateriForm({
     [tagsText],
   );
 
-  async function save(targetStatus: "draft" | "published") {
-    if (!title.trim()) return toast.error("Judul materi wajib diisi");
-    if (!slug.trim()) return toast.error("Slug wajib diisi");
+  // Dirty tracking + autosave — pattern sama dengan TulisanForm/BlogForm.
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
+    JSON.stringify({
+      title: material?.title ?? "",
+      slug: material?.slug ?? "",
+      excerpt: material?.excerpt ?? "",
+      bodyMD: material?.body_md ?? "",
+      coverImageURL: material?.cover_image_url ?? "",
+      tagsText: (material?.tags ?? []).join(", "),
+      summary: material?.summary ?? "",
+    }),
+  );
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        title,
+        slug,
+        excerpt,
+        bodyMD,
+        coverImageURL,
+        tagsText,
+        summary,
+      }),
+    [title, slug, excerpt, bodyMD, coverImageURL, tagsText, summary],
+  );
+  const dirty = currentSnapshot !== savedSnapshot;
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
+  const autoSavedAgo = useAutoSavedAgo(lastAutoSavedAt, dirty);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function handler(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  async function save(
+    targetStatus: "draft" | "published",
+    opts?: { silent?: boolean },
+  ) {
+    if (!title.trim()) {
+      if (!opts?.silent) toast.error("Judul materi wajib diisi");
+      return;
+    }
+    if (!slug.trim()) {
+      if (!opts?.silent) toast.error("Slug wajib diisi");
+      return;
+    }
     setSaving(targetStatus);
     try {
       const body = {
@@ -93,28 +142,49 @@ export function MateriForm({
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published" ? "Materi dipublikasikan" : "Perubahan disimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published" ? "Materi dipublikasikan" : "Perubahan disimpan",
+          );
+        }
       } else {
         await api(`/api/v1/sites/${siteId}/learning-materials`, {
           method: "POST",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published"
-            ? "Materi dibuat & dipublikasikan"
-            : "Draft tersimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published"
+              ? "Materi dibuat & dipublikasikan"
+              : "Draft tersimpan",
+          );
+        }
       }
       setStatus(targetStatus);
-      router.push(`/sites/${siteId}/pembelajaran`);
+      setSavedSnapshot(currentSnapshot);
+      setLastAutoSavedAt(Date.now());
+      if (!opts?.silent) {
+        router.push(`/sites/${siteId}/pembelajaran`);
+      }
     } catch (e) {
-      toast.error((e as Error).message);
+      if (!opts?.silent) toast.error((e as Error).message);
+      else console.warn("autosave failed:", (e as Error).message);
     } finally {
       setSaving(null);
     }
   }
+
+  useEffect(() => {
+    if (!isEdit) return;
+    if (!dirty) return;
+    if (saving) return;
+    if (!title.trim() || !slug.trim()) return;
+    const handle = window.setTimeout(() => {
+      void save(status, { silent: true });
+    }, 3000);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSnapshot, dirty, saving, isEdit, status]);
 
   return (
     <div className="space-y-5">
@@ -127,9 +197,31 @@ export function MateriForm({
             Buat bahan pembelajaran untuk dibagikan melalui website.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {dirty ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200"
+              title={isEdit ? "Autosave 3 detik setelah berhenti mengetik" : "Klik Simpan Draft untuk menyimpan"}
+            >
+              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              Belum disimpan
+            </span>
+          ) : autoSavedAgo ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+              title="Tersimpan otomatis"
+            >
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              Tersimpan · {autoSavedAgo}
+            </span>
+          ) : null}
           <Link
             href={`/sites/${siteId}/pembelajaran`}
+            onClick={(e) => {
+              if (dirty && !window.confirm("Ada perubahan belum disimpan. Yakin ingin keluar?")) {
+                e.preventDefault();
+              }
+            }}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
           >
             <ArrowLeft className="size-4" />
@@ -137,8 +229,9 @@ export function MateriForm({
           </Link>
           <button
             onClick={() => save("draft")}
-            disabled={saving !== null}
+            disabled={saving !== null || !dirty}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+            title={!dirty ? "Tidak ada perubahan untuk disimpan" : undefined}
           >
             {saving === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Simpan Draft

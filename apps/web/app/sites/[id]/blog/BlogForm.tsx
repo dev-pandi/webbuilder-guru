@@ -29,6 +29,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ImagePicker } from "@/components/ImagePicker";
 import { RichEditor } from "@/components/RichEditor";
+import { useAutoSavedAgo } from "@/lib/useAutoSavedAgo";
 
 export type BlogPost = {
   id: string;
@@ -91,13 +92,55 @@ export function BlogForm({
     [tagsText],
   );
 
-  async function save(targetStatus: "draft" | "published") {
+  // Dirty tracking + autosave — pattern sama seperti TulisanForm.
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
+    JSON.stringify({
+      title: post?.title ?? "",
+      slug: post?.slug ?? "",
+      excerpt: post?.excerpt ?? "",
+      contentMD: post?.content_md ?? "",
+      coverImageURL: post?.cover_image_url ?? "",
+      authorName: post?.author_name ?? "",
+      tagsText: (post?.tags ?? []).join(", "),
+    }),
+  );
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        title,
+        slug,
+        excerpt,
+        contentMD,
+        coverImageURL,
+        authorName,
+        tagsText,
+      }),
+    [title, slug, excerpt, contentMD, coverImageURL, authorName, tagsText],
+  );
+  const dirty = currentSnapshot !== savedSnapshot;
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
+  const autoSavedAgo = useAutoSavedAgo(lastAutoSavedAt, dirty);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function handler(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  async function save(
+    targetStatus: "draft" | "published",
+    opts?: { silent?: boolean },
+  ) {
     if (!title.trim()) {
-      toast.error("Judul artikel wajib diisi");
+      if (!opts?.silent) toast.error("Judul artikel wajib diisi");
       return;
     }
     if (!slug.trim()) {
-      toast.error("Slug wajib diisi");
+      if (!opts?.silent) toast.error("Slug wajib diisi");
       return;
     }
     setSaving(targetStatus);
@@ -117,30 +160,54 @@ export function BlogForm({
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published"
-            ? "Artikel dipublikasikan"
-            : "Perubahan disimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published"
+              ? "Artikel dipublikasikan"
+              : "Perubahan disimpan",
+          );
+        }
       } else {
         await api(`/api/v1/sites/${siteId}/blog-posts`, {
           method: "POST",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published"
-            ? "Artikel dibuat & dipublikasikan"
-            : "Draft tersimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published"
+              ? "Artikel dibuat & dipublikasikan"
+              : "Draft tersimpan",
+          );
+        }
       }
       setStatus(targetStatus);
-      router.push(`/sites/${siteId}/blog`);
+      setSavedSnapshot(currentSnapshot);
+      setLastAutoSavedAt(Date.now());
+      if (!opts?.silent) {
+        router.push(`/sites/${siteId}/blog`);
+      }
     } catch (e) {
-      toast.error((e as Error).message);
+      if (!opts?.silent) toast.error((e as Error).message);
+      else console.warn("autosave failed:", (e as Error).message);
     } finally {
       setSaving(null);
     }
   }
+
+  // Autosave — hanya di edit mode, kalau dirty, required fields filled, dan
+  // tidak sedang saving. Preserve current status (draft/published) supaya
+  // autosave tidak auto-publish. Debounce 3 detik align dengan editor.
+  useEffect(() => {
+    if (!isEdit) return;
+    if (!dirty) return;
+    if (saving) return;
+    if (!title.trim() || !slug.trim()) return;
+    const handle = window.setTimeout(() => {
+      void save(status, { silent: true });
+    }, 3000);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSnapshot, dirty, saving, isEdit, status]);
 
   return (
     <div className="space-y-6">
@@ -149,7 +216,14 @@ export function BlogForm({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" asChild>
-              <Link href={`/sites/${siteId}/blog`}>
+              <Link
+                href={`/sites/${siteId}/blog`}
+                onClick={(e) => {
+                  if (dirty && !window.confirm("Ada perubahan belum disimpan. Yakin ingin keluar?")) {
+                    e.preventDefault();
+                  }
+                }}
+              >
                 <ArrowLeft />
                 Kembali
               </Link>
@@ -171,6 +245,23 @@ export function BlogForm({
           </div>
 
           <div className="flex items-center gap-2">
+            {dirty ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200"
+                title={isEdit ? "Autosave 3 detik setelah berhenti mengetik" : "Klik Simpan Draft untuk menyimpan"}
+              >
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                Belum disimpan
+              </span>
+            ) : autoSavedAgo ? (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                title="Tersimpan otomatis"
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                Tersimpan · {autoSavedAgo}
+              </span>
+            ) : null}
             <Badge variant={status === "published" ? "success" : "secondary"} className="gap-1">
               {status === "published" ? (
                 <CheckCircle2 className="size-3" />
@@ -182,8 +273,9 @@ export function BlogForm({
             <Button
               variant="outline"
               onClick={() => save("draft")}
-              disabled={saving !== null}
+              disabled={saving !== null || !dirty}
               className="gap-2"
+              title={!dirty ? "Tidak ada perubahan untuk disimpan" : undefined}
             >
               {saving === "draft" ? (
                 <Loader2 className="size-4 animate-spin" />

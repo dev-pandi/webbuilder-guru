@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { ImagePicker } from "@/components/ImagePicker";
 import { RichEditor } from "@/components/RichEditor";
+import { useAutoSavedAgo } from "@/lib/useAutoSavedAgo";
 
 function slugify(s: string): string {
   return s
@@ -95,9 +96,66 @@ export function TulisanForm({
     [tagsText],
   );
 
-  async function save(targetStatus: "draft" | "published") {
-    if (!title.trim()) return toast.error("Judul tulisan wajib diisi");
-    if (!slug.trim()) return toast.error("Slug wajib diisi");
+  // Dirty tracking — snapshot state saat load / save-success, bandingkan
+  // dengan current state. Dipakai untuk:
+  //   - Warning saat close tab (beforeunload)
+  //   - Visual indicator di header (dot amber)
+  // Snapshot pakai JSON.stringify — cukup untuk shallow-shape state kita.
+  const [savedSnapshot, setSavedSnapshot] = useState<string>(() =>
+    JSON.stringify({
+      rubric: initialRubric,
+      title: article?.title ?? "",
+      slug: article?.slug ?? "",
+      excerpt: article?.excerpt ?? "",
+      bodyMD: article?.body_md ?? "",
+      coverImageURL: article?.cover_image_url ?? "",
+      tagsText: (article?.tags ?? []).join(", "),
+      commentsEnabled: article?.comments_enabled ?? true,
+      readingTime: article?.reading_time_min ?? 0,
+    }),
+  );
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        rubric,
+        title,
+        slug,
+        excerpt,
+        bodyMD,
+        coverImageURL,
+        tagsText,
+        commentsEnabled,
+        readingTime,
+      }),
+    [rubric, title, slug, excerpt, bodyMD, coverImageURL, tagsText, commentsEnabled, readingTime],
+  );
+  const dirty = currentSnapshot !== savedSnapshot;
+
+  // Warn saat user tutup tab / navigate away dengan unsaved changes.
+  // Modern browser cuma tampilkan pesan default (bukan custom string) tapi
+  // event handler tetap harus set returnValue supaya dialog muncul.
+  useEffect(() => {
+    if (!dirty) return;
+    function handler(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+
+  async function save(
+    targetStatus: "draft" | "published",
+    opts?: { silent?: boolean },
+  ) {
+    if (!title.trim()) {
+      if (!opts?.silent) toast.error("Judul tulisan wajib diisi");
+      return;
+    }
+    if (!slug.trim()) {
+      if (!opts?.silent) toast.error("Slug wajib diisi");
+      return;
+    }
     setSaving(targetStatus);
     try {
       const body = {
@@ -119,30 +177,67 @@ export function TulisanForm({
           method: "PATCH",
           body: JSON.stringify(patchBody),
         });
-        toast.success(
-          targetStatus === "published" ? "Tulisan dipublikasikan" : "Perubahan disimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published" ? "Tulisan dipublikasikan" : "Perubahan disimpan",
+          );
+        }
       } else {
         await api(`/api/v1/sites/${siteId}/articles`, {
           method: "POST",
           body: JSON.stringify(body),
         });
-        toast.success(
-          targetStatus === "published"
-            ? "Tulisan dibuat & dipublikasikan"
-            : "Draft tersimpan",
-        );
+        if (!opts?.silent) {
+          toast.success(
+            targetStatus === "published"
+              ? "Tulisan dibuat & dipublikasikan"
+              : "Draft tersimpan",
+          );
+        }
       }
       setStatus(targetStatus);
-      // Redirect: kalau rubric forum-diskusi kembalikan ke Forum, selainnya ke Tulisan.
-      const backTo = rubric === "forum-diskusi" ? "forum" : "tulisan";
-      router.push(`/sites/${siteId}/${backTo}`);
+      // Reset snapshot supaya dirty=false setelah save sukses — hindari
+      // beforeunload prompt saat router.push memicu navigasi.
+      setSavedSnapshot(currentSnapshot);
+      setLastAutoSavedAt(Date.now());
+      // Redirect hanya di manual save (silent=false). Autosave silent → stay
+      // di form supaya guru bisa lanjut edit.
+      if (!opts?.silent) {
+        const backTo = rubric === "forum-diskusi" ? "forum" : "tulisan";
+        router.push(`/sites/${siteId}/${backTo}`);
+      }
     } catch (e) {
-      toast.error((e as Error).message);
+      if (!opts?.silent) toast.error((e as Error).message);
+      else console.warn("autosave failed:", (e as Error).message);
     } finally {
       setSaving(null);
     }
   }
+
+  // Timestamp save terakhir yang sukses (manual atau auto). Dipakai untuk
+  // hint "Tersimpan otomatis 10 detik lalu" di sebelah tombol simpan.
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
+  const autoSavedAgo = useAutoSavedAgo(lastAutoSavedAt, dirty);
+
+  // Autosave — kick in HANYA saat:
+  //   - Edit mode (create butuh explicit save, tidak mau auto-POST duplikat)
+  //   - Dirty (ada perubahan)
+  //   - Required fields terisi (title, slug non-empty)
+  //   - Tidak sedang saving (manual atau auto)
+  // Debounce 3 detik (align dengan editor autosave). Silent — no toast.
+  // Preserve status current (draft/published) — autosave tidak boleh
+  // "auto-publish" atau "auto-unpublish".
+  useEffect(() => {
+    if (!isEdit) return;
+    if (!dirty) return;
+    if (saving) return;
+    if (!title.trim() || !slug.trim()) return;
+    const handle = window.setTimeout(() => {
+      void save(status, { silent: true });
+    }, 3000);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSnapshot, dirty, saving, isEdit, status]);
 
   const backHref = rubric === "forum-diskusi"
     ? `/sites/${siteId}/forum`
@@ -162,9 +257,35 @@ export function TulisanForm({
               : "Buat tulisan untuk salah satu rubrik utama."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {dirty ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-200"
+              title={
+                isEdit
+                  ? "Perubahan akan otomatis tersimpan 3 detik setelah berhenti mengetik"
+                  : "Klik Simpan Draft untuk menyimpan"
+              }
+            >
+              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              Belum disimpan
+            </span>
+          ) : autoSavedAgo ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+              title="Tersimpan otomatis"
+            >
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              Tersimpan · {autoSavedAgo}
+            </span>
+          ) : null}
           <Link
             href={backHref}
+            onClick={(e) => {
+              if (dirty && !window.confirm("Ada perubahan belum disimpan. Yakin ingin keluar?")) {
+                e.preventDefault();
+              }
+            }}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50"
           >
             <ArrowLeft className="size-4" />
@@ -172,8 +293,9 @@ export function TulisanForm({
           </Link>
           <button
             onClick={() => save("draft")}
-            disabled={saving !== null}
+            disabled={saving !== null || !dirty}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+            title={!dirty ? "Tidak ada perubahan untuk disimpan" : undefined}
           >
             {saving === "draft" ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Simpan Draft

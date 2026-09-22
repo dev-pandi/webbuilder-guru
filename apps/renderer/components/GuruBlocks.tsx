@@ -1156,6 +1156,17 @@ export function GuruStyles() {
 .guru-article-detail__body li{margin:.25em 0}
 .guru-article-detail__body blockquote{border-left:3px solid #d73f45;margin:1.4em 0;padding:.1em 0 .1em 1.2em;color:#4c5b70;font-style:italic}
 .guru-article-detail__body img{display:block;max-width:100%;height:auto;border-radius:12px;margin:1.4em auto}
+.guru-article-detail__body table{width:100%;border-collapse:collapse;margin:1.4em 0;font-size:.95em}
+.guru-article-detail__body th,.guru-article-detail__body td{padding:.65em .9em;border:1px solid #e6e9ef;text-align:left;vertical-align:top}
+.guru-article-detail__body th{background:#fbfaf7;font-weight:700;color:#172033}
+.guru-article-detail__body code{background:rgba(23,32,51,.06);padding:.15em .4em;border-radius:4px;font-size:.9em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.guru-article-detail__body pre{background:#172033;color:#f4f7fb;padding:1em 1.2em;border-radius:12px;overflow-x:auto;margin:1.4em 0;font-size:.9em}
+.guru-article-detail__body pre code{background:none;padding:0;color:inherit}
+.guru-article-detail__body iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;margin:1.4em 0}
+.guru-article-detail__body audio{display:block;width:100%;max-width:520px;margin:1.4em auto}
+.guru-article-detail__body ul[data-type="taskList"]{list-style:none;padding-left:0}
+.guru-article-detail__body ul[data-type="taskList"] li{display:flex;gap:.5em;align-items:flex-start}
+.guru-article-detail__body ul[data-type="taskList"] li input[type="checkbox"]{margin-top:.3em}
 .guru-article-detail__tags{display:flex;flex-wrap:wrap;gap:8px;margin:32px 0}
 .guru-article-detail__tags a{background:#f4f7fb;color:#4c5b70;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700;text-decoration:none}
 

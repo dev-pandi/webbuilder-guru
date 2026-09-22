@@ -10,7 +10,14 @@
 // tag saat load ke editor. Turndown custom rule convert balik saat save.
 // Renderer aplikasi juga harus punya rule yang sama (lihat renderer app).
 
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import {
+  useEditor,
+  EditorContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  type Editor,
+  type NodeViewProps,
+} from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import LinkExt from "@tiptap/extension-link";
 import ImageExt from "@tiptap/extension-image";
@@ -49,7 +56,9 @@ import {
   Strikethrough,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
+import { getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -128,10 +137,10 @@ marked.use({
         const wStyle = size && size !== 100 ? ` style="max-width:${size}%"` : "";
         const dataSize = size ? ` data-size="${size}"` : "";
         const dataURL = ` data-src="${escapeHTML(cleanURL)}"`;
-        return `<div data-youtube-video${wStyle}${dataSize}${dataURL}><iframe src="${escapeHTML(embed)}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
+        return `<div class="wb-yt-wrap" data-youtube-video${wStyle}${dataSize}${dataURL}><iframe src="${escapeHTML(embed)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
       }
       if (lang === "audio") {
-        return `<audio data-audio controls preload="none" src="${escapeHTML(raw)}"></audio>`;
+        return `<audio class="wb-audio" data-audio controls preload="none" src="${escapeHTML(raw)}"></audio>`;
       }
       // Default fenced code renderer.
       const escaped = escapeHTML(token.text ?? "");
@@ -296,15 +305,13 @@ const YoutubeWithSize = Youtube.extend({
       },
     };
   },
+  // Static renderHTML — dipakai turndown (serializer) untuk read HTML,
+  // dan renderer aplikasi. NodeView di bawah handle rendering di editor.
   renderHTML({ HTMLAttributes, node }) {
-    // Rebuild struktur default TipTap Youtube (parent implementation) +
-    // tambah wrapper attribute untuk size. Yang KRITIS: normalize URL ke
-    // embed form supaya (a) iframe benar-benar play di browser (YouTube
-    // reject non-embed URL di iframe), (b) turndown rule bisa detect
-    // via `src.includes("youtube.com/embed")` → serialize ke markdown fence.
     const size = (node.attrs.size ?? null) as SizePreset;
     const wrapAttrs: Record<string, string> = {
       "data-youtube-video": "",
+      class: "wb-yt-wrap",
     };
     if (size && size !== 100) {
       wrapAttrs.style = `max-width:${size}%`;
@@ -327,7 +334,115 @@ const YoutubeWithSize = Youtube.extend({
       ],
     ];
   },
+  // NodeView untuk editor — wrap iframe dengan overlay yang capture click
+  // supaya node bisa di-select (iframe biasanya menelan click). Selected
+  // state → show delete button di corner. Fix issue "YouTube tidak bisa
+  // di-delete" karena click ke iframe = focus embed, bukan node.
+  addNodeView() {
+    return ReactNodeViewRenderer(YoutubeNodeView);
+  },
 });
+
+// YoutubeNodeView — React component untuk NodeView. Iframe di-render
+// normal, tapi overlay div absolute di atasnya capture pointer events →
+// klik = select node (deleteable via Backspace/Delete). Tombol × di
+// pojok kanan atas visible saat selected.
+function YoutubeNodeView({ node, selected, deleteNode, editor }: NodeViewProps) {
+  const size = (node.attrs.size ?? null) as SizePreset;
+  const src = (node.attrs.src as string) ?? "";
+  const embedSrc = youtubeEmbedURL(src) ?? src;
+  const wrapStyle: React.CSSProperties = {
+    position: "relative",
+    display: "block",
+    margin: "1em 0",
+    ...(size && size !== 100 ? { maxWidth: `${size}%` } : {}),
+  };
+  return (
+    <NodeViewWrapper
+      as="div"
+      className={cn("wb-yt-wrap", selected && "wb-yt-selected")}
+      data-youtube-video=""
+      data-size={size ?? undefined}
+      style={wrapStyle}
+    >
+      <div style={{ position: "relative", aspectRatio: "16/9" }}>
+        <iframe
+          src={embedSrc}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0, borderRadius: 8 }}
+        />
+        {/* Overlay untuk capture click — hanya aktif saat NOT selected
+            supaya first-click = select node. Setelah selected, overlay
+            hilang → user bisa play video normal. Solve issue "YouTube
+            iframe menelan click, node tidak bisa dipilih/di-delete". */}
+        {!selected && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              cursor: "pointer",
+              background: "transparent",
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // Cari posisi node ini di doc → setNodeSelection ke sana.
+              // Descendants walk sekali; return false untuk short-circuit.
+              let found = -1;
+              editor.state.doc.descendants((n, pos) => {
+                if (n === node) {
+                  found = pos;
+                  return false;
+                }
+                return true;
+              });
+              if (found >= 0) {
+                editor.chain().focus().setNodeSelection(found).run();
+              }
+            }}
+          />
+        )}
+      </div>
+      {selected && (
+        <button
+          type="button"
+          contentEditable={false}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            deleteNode();
+          }}
+          title="Hapus video"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            zIndex: 10,
+            width: 28,
+            height: 28,
+            borderRadius: 999,
+            border: "none",
+            background: "rgba(15, 23, 42, 0.85)",
+            color: "#fff",
+            cursor: "pointer",
+            display: "grid",
+            placeItems: "center",
+            fontSize: 16,
+            lineHeight: 1,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          }}
+        >
+          ×
+        </button>
+      )}
+    </NodeViewWrapper>
+  );
+}
 
 // --- Custom Audio node ---
 //
@@ -347,19 +462,171 @@ const AudioNode = Node.create({
   parseHTML() {
     return [{ tag: "audio[data-audio]" }, { tag: "audio" }];
   },
+  // Static renderHTML — dipakai turndown (serializer) + fallback SSR.
+  // NodeView di bawah override untuk render editor dengan overlay + delete.
   renderHTML({ HTMLAttributes }) {
     return [
       "audio",
       mergeAttributes(HTMLAttributes, {
         controls: "true",
         preload: "none",
+        class: "wb-audio",
         "data-audio": "",
       }),
     ];
   },
+  addNodeView() {
+    return ReactNodeViewRenderer(AudioNodeView);
+  },
 });
 
+// AudioNodeView — mirror pattern dari YoutubeNodeView. Wrap <audio>
+// dengan container + overlay click-capture (saat not selected) + tombol
+// delete (saat selected). Fix issue "audio susah di-delete karena click
+// masuk ke controls native player".
+function AudioNodeView({ node, selected, deleteNode, editor }: NodeViewProps) {
+  const src = (node.attrs.src as string) ?? "";
+  return (
+    <NodeViewWrapper
+      as="div"
+      className={cn("wb-audio-wrap", selected && "wb-audio-selected")}
+      data-audio=""
+      style={{
+        position: "relative",
+        display: "block",
+        margin: "1em 0",
+        maxWidth: 520,
+        marginLeft: "auto",
+        marginRight: "auto",
+      }}
+    >
+      <audio
+        src={src}
+        controls
+        preload="none"
+        className="wb-audio"
+        style={{ width: "100%", display: "block" }}
+      />
+      {!selected && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            cursor: "pointer",
+            background: "transparent",
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            let found = -1;
+            editor.state.doc.descendants((n, pos) => {
+              if (n === node) {
+                found = pos;
+                return false;
+              }
+              return true;
+            });
+            if (found >= 0) {
+              editor.chain().focus().setNodeSelection(found).run();
+            }
+          }}
+        />
+      )}
+      {selected && (
+        <button
+          type="button"
+          contentEditable={false}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            deleteNode();
+          }}
+          title="Hapus audio"
+          style={{
+            position: "absolute",
+            top: -10,
+            right: -10,
+            zIndex: 10,
+            width: 24,
+            height: 24,
+            borderRadius: 999,
+            border: "none",
+            background: "rgba(15, 23, 42, 0.9)",
+            color: "#fff",
+            cursor: "pointer",
+            display: "grid",
+            placeItems: "center",
+            fontSize: 14,
+            lineHeight: 1,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+          }}
+        >
+          ×
+        </button>
+      )}
+    </NodeViewWrapper>
+  );
+}
+
 // --- Component ---
+
+// sanitizePastedHTML — strip inline styles, Word artifacts, dan attribute
+// non-standard yang biasa muncul saat paste dari Word/Google Docs/Notion.
+// Tag structure (headings, lists, tables, links, images) preserved supaya
+// user tetap dapat konten dengan formatting basic, tapi tanpa `mso-*`,
+// `<span style="font-family:Calibri">`, dsb.
+function sanitizePastedHTML(html: string): string {
+  if (typeof window === "undefined" || !html) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  // Walk semua element, buang atribut yang bahaya / bloat.
+  const bad = /^(style|class|lang|xml:.*|mso-.*|face|color|bgcolor|align|valign|width|height|border|cellpadding|cellspacing)$/i;
+  const nodes = doc.body.querySelectorAll("*");
+  nodes.forEach((el) => {
+    // Buang tag Word artifact.
+    if (el.tagName === "O:P" || el.tagName === "SPAN" && !el.textContent?.trim()) {
+      el.remove();
+      return;
+    }
+    for (const attr of Array.from(el.attributes)) {
+      if (bad.test(attr.name)) el.removeAttribute(attr.name);
+    }
+    // Un-wrap <span> tanpa attribute setelah cleanup — biar tidak bloat.
+    if (el.tagName === "SPAN" && el.attributes.length === 0) {
+      const parent = el.parentNode;
+      if (parent) {
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      }
+    }
+  });
+  return doc.body.innerHTML;
+}
+
+// uploadImageFile — POST file ke assets endpoint site aktif, return URL.
+// Dipakai drag-drop image di editor body. Params.id required — kalau
+// editor mounted di route non-site (mis. /admin/*), fungsi return null
+// dan drop di-toast fallback ke "gunakan tombol asset".
+async function uploadImageFile(siteId: string, file: File, apiBase: string, token: string | null): Promise<string | null> {
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`${apiBase}/api/v1/sites/${siteId}/assets`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body?.error) throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+    return (body?.data?.url as string) ?? null;
+  } catch (e) {
+    toast.error("Upload gagal: " + (e as Error).message);
+    return null;
+  }
+}
 
 export function RichEditor({
   value,
@@ -371,6 +638,8 @@ export function RichEditor({
   placeholder?: string;
 }) {
   const lastEmitted = useRef<string>(value);
+  const params = useParams<{ id?: string }>();
+  const siteId = params?.id;
 
   const editor = useEditor({
     extensions: [
@@ -405,6 +674,42 @@ export function RichEditor({
       attributes: {
         class:
           "wb-prose prose-tight min-h-[400px] max-w-none p-4 focus:outline-none",
+      },
+      // Sanitize HTML dari clipboard sebelum di-parse TipTap. Cegah bloat
+      // `style="font-family:Calibri;mso-*"` dari Word/Google Docs paste.
+      transformPastedHTML(html) {
+        return sanitizePastedHTML(html);
+      },
+      // Drop file image di editor body → upload ke asset library →
+      // insert sebagai image node. Kalau bukan file image (mis. text drop),
+      // biar TipTap handle default. Kalau siteId tidak available (admin
+      // routes), toast fallback ke asset picker.
+      handleDrop(view, event, _slice, moved) {
+        if (moved) return false;
+        const dragEvent = event as DragEvent;
+        const files = dragEvent.dataTransfer?.files;
+        if (!files || files.length === 0) return false;
+        const image = Array.from(files).find((f) => f.type.startsWith("image/"));
+        if (!image) return false;
+        event.preventDefault();
+        if (!siteId) {
+          toast.info("Drag-drop image tidak tersedia di halaman ini. Pakai tombol Sisipkan gambar.");
+          return true;
+        }
+        const coords = { left: dragEvent.clientX, top: dragEvent.clientY };
+        const pos = view.posAtCoords(coords)?.pos ?? view.state.doc.content.size;
+        const token = getAccessToken();
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost";
+        void (async () => {
+          const url = await uploadImageFile(siteId, image, apiBase, token);
+          if (!url) return;
+          const node = view.state.schema.nodes.image?.create({ src: url });
+          if (!node) return;
+          const tr = view.state.tr.insert(pos, node);
+          view.dispatch(tr);
+          toast.success("Gambar berhasil di-upload");
+        })();
+        return true;
       },
     },
     onUpdate: ({ editor }) => {
@@ -570,6 +875,10 @@ function Toolbar({ editor }: { editor: Editor }) {
         onPick={(url) => {
           editor.chain().focus().setImage({ src: url }).run();
           setImageOpen(false);
+          // Defer refocus setelah Radix Dialog close animation + focus
+          // restoration ke trigger. Tanpa ini, dialog "restore focus to
+          // trigger" override editor.focus() → cursor keluar dari editor.
+          setTimeout(() => editor.commands.focus(), 50);
         }}
       />
       <AssetPickerDialog
@@ -583,6 +892,7 @@ function Toolbar({ editor }: { editor: Editor }) {
             .insertContent({ type: "audioBlock", attrs: { src: url } })
             .run();
           setAudioOpen(false);
+          setTimeout(() => editor.commands.focus(), 50);
         }}
       />
       <YoutubeDialog
@@ -601,6 +911,7 @@ function Toolbar({ editor }: { editor: Editor }) {
             });
           }
           setYoutubeOpen(false);
+          setTimeout(() => editor.commands.focus(), 50);
         }}
       />
     </>
