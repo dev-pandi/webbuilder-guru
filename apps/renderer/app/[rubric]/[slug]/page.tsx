@@ -4,7 +4,7 @@
 
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { marked } from "marked";
+import { marked } from "@/lib/markdown";
 import {
   getArticle,
   getSiteByHost,
@@ -23,8 +23,8 @@ import { GuruResponseForm } from "@/components/GuruResponseForm";
 
 export const dynamic = "force-dynamic";
 
-marked.setOptions({ gfm: true, breaks: false });
-marked.use({ renderer: { html: () => "" } });
+// marked config di @/lib/markdown (shared) — sudah setOptions + custom code
+// renderer untuk fence `youtube`/`audio`. Import di sini side-effect free.
 
 function host() {
   return (headers().get("host") ?? "").toLowerCase().split(":")[0];

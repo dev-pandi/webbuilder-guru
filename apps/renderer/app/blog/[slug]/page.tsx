@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { marked } from "marked";
+import { marked } from "@/lib/markdown";
 import { getBlogPost, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { buildArticle, wrap } from "@/lib/schema";
@@ -15,17 +15,12 @@ function host() {
 
 // XSS hardening:
 // - GFM enabled for markdown features (tables, strikethrough, autolinks).
-// - Raw HTML in source is DROPPED via renderer override (return ""). This is
-//   the cheapest sanitisation that works for our threat model — user markdown
-//   never gets to inject <script>, <iframe>, or event handlers. If we later
-//   want to allow a safe subset (e.g. <img> with width/height), pipe through
-//   sanitize-html or DOMPurify instead.
-marked.setOptions({ gfm: true, breaks: false });
-marked.use({
-  renderer: {
-    html: () => "",
-  },
-});
+// - Raw HTML in source is DROPPED (renderer override return "").
+// - Fenced code block bahasa `youtube` / `audio` → di-render sebagai iframe
+//   / <audio> via custom code renderer di @/lib/markdown. Fence itu
+//   di-produksi editor (bukan raw HTML user) jadi tetap aman.
+// - Kalau butuh allow subset HTML lain (mis. <img width/height>), pipe
+//   marked output ke DOMPurify / sanitize-html sebagai layer tambahan.
 
 export default async function BlogPostDetail({ params }: { params: { slug: string } }) {
   const site = await getSiteByHost(host());

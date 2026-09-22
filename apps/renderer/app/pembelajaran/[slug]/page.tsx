@@ -4,7 +4,7 @@
 
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { marked } from "marked";
+import { marked } from "@/lib/markdown";
 import { getLearningMaterial, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
@@ -12,9 +12,6 @@ import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { GuruStyles } from "@/components/GuruBlocks";
 
 export const dynamic = "force-dynamic";
-
-marked.setOptions({ gfm: true, breaks: false });
-marked.use({ renderer: { html: () => "" } });
 
 function host() {
   return (headers().get("host") ?? "").toLowerCase().split(":")[0];

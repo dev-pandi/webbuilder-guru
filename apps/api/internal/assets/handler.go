@@ -28,6 +28,22 @@ var allowedMime = map[string]string{
 	"image/jpeg": ".jpg",
 	"image/webp": ".webp",
 	"image/gif":  ".gif",
+	// Audio — inline embed di rich editor (article/materi body).
+	// Format ini native supported semua browser modern via <audio>. Skip
+	// compression + dimension probe (audio bukan image).
+	"audio/mpeg": ".mp3",  // .mp3
+	"audio/mp3":  ".mp3",  // alt content-type
+	"audio/mp4":  ".m4a",  // AAC container
+	"audio/aac":  ".aac",
+	"audio/ogg":  ".ogg",
+	"audio/wav":  ".wav",
+	"audio/webm": ".weba",
+}
+
+// isImageMime — return true kalau mime image raster (dipakai untuk gate
+// compress + dimension probe). Audio + format lain skip pipeline itu.
+func isImageMime(m string) bool {
+	return strings.HasPrefix(strings.ToLower(m), "image/")
 }
 
 type Handler struct {
@@ -110,8 +126,20 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 			ext, mime = ".webp", "image/webp"
 		case ".gif":
 			ext, mime = ".gif", "image/gif"
+		case ".mp3":
+			ext, mime = ".mp3", "audio/mpeg"
+		case ".m4a":
+			ext, mime = ".m4a", "audio/mp4"
+		case ".aac":
+			ext, mime = ".aac", "audio/aac"
+		case ".ogg", ".oga":
+			ext, mime = ".ogg", "audio/ogg"
+		case ".wav":
+			ext, mime = ".wav", "audio/wav"
+		case ".weba":
+			ext, mime = ".weba", "audio/webm"
 		default:
-			return httpx.BadRequest(c, "unsupported file type (PNG, JPG, WebP, GIF only)")
+			return httpx.BadRequest(c, "unsupported file type (image: PNG/JPG/WebP/GIF, audio: MP3/M4A/AAC/OGG/WAV/WebA)")
 		}
 	}
 
@@ -123,11 +151,13 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 
 	// Compress raster images. Compress() falls back to original bytes on any
 	// failure, so this never breaks an upload — at worst it's a no-op.
+	// Audio + non-image: skip compress + dimension probe (tidak applicable).
 	var bodyBytes []byte
 	finalMIME := mime
 	finalSize := fh.Size
 	resized := false
-	if h.compress {
+	isImage := isImageMime(mime)
+	if h.compress && isImage {
 		res, cerr := Compress(f, mime, h.compressOpt)
 		if cerr != nil {
 			return httpx.Internal(c, "read failed")
@@ -158,9 +188,12 @@ func (h *Handler) Upload(c *fiber.Ctx) error {
 		bodyBytes = raw
 	}
 	// Dimension probe — cepat (header only via DecodeConfig). Nil kalau gagal
-	// decode (mis. GIF terlalu weird, format tak dikenal). Renderer akan
-	// fallback ke default layout tanpa width/height attr.
-	widthPtr, heightPtr := probeImageDimensions(bodyBytes, finalMIME)
+	// decode atau bukan image (audio skip). Renderer akan fallback ke default
+	// layout tanpa width/height attr.
+	var widthPtr, heightPtr *int
+	if isImage {
+		widthPtr, heightPtr = probeImageDimensions(bodyBytes, finalMIME)
+	}
 
 	key := fmt.Sprintf("%s/%d-%s%s", siteID.String(), time.Now().UnixNano(), uuid.NewString(), ext)
 

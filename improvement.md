@@ -1,0 +1,4 @@
+- editor hero section perlu buat lebih per section micro
+- carousel update belum jalan dengan yang baru
+- render perlu load data baru agar tidak salah template dan data, get data baru render
+- invalid token langsung ke login
