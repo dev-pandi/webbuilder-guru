@@ -246,6 +246,21 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 	}
 
 	// 1. Provision template pages.
+	// Sebelum insert, extract shared header/footer dari home page → set ke
+	// sites.layout_json + strip dari SEMUA page trees. Konsisten dengan
+	// migration 0057 supaya site baru dari template langsung punya shared
+	// layout tanpa perlu guru edit manual. Failure di-log tapi tidak fatal —
+	// site tetap ke-provision, guru bisa setup header/footer manual.
+	layoutJSON, pagesRaw, extractErr := sites.ExtractLayoutFromPagesJSON(tpl.Pages)
+	if extractErr != nil {
+		slog.Warn("template: extract layout failed", "site_id", site.ID, "error", extractErr)
+		pagesRaw = tpl.Pages
+	}
+	if len(layoutJSON) > 0 {
+		if err := h.sites.SetLayoutRaw(c.Context(), site.ID, layoutJSON); err != nil {
+			slog.Warn("template: set layout failed", "site_id", site.ID, "error", err)
+		}
+	}
 	var tplPages []struct {
 		Slug   string          `json:"slug"`
 		Title  string          `json:"title"`
@@ -253,8 +268,8 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		SEO    json.RawMessage `json:"seo"`
 		IsHome bool            `json:"is_home"`
 	}
-	if len(tpl.Pages) > 0 {
-		_ = json.Unmarshal(tpl.Pages, &tplPages)
+	if len(pagesRaw) > 0 {
+		_ = json.Unmarshal(pagesRaw, &tplPages)
 	}
 	for _, p := range tplPages {
 		if p.Slug == "" {

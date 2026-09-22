@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/webbuilder/api/internal/sites"
 )
 
 type Template struct {
@@ -183,6 +184,26 @@ func (r *Repo) ApplyToSite(ctx context.Context, siteID uuid.UUID, slug string, m
 
 	res := &ApplyResult{Mode: mode, Template: tpl.Slug}
 
+	// Untuk mode Replace, extract shared header/footer dari template pages
+	// dulu → set ke sites.layout_json. Mode Append TIDAK extract (kalau site
+	// existing sudah punya layout sendiri, tidak boleh di-timpa; extraction
+	// hanya aman saat replace/create).
+	pagesRaw := tpl.Pages
+	if mode == ApplyModeReplace {
+		layoutJSON, stripped, extractErr := sites.ExtractLayoutFromPagesJSON(tpl.Pages)
+		if extractErr == nil {
+			if len(layoutJSON) > 0 {
+				if _, err := tx.Exec(ctx,
+					`UPDATE sites SET layout_json = $2, updated_at = now() WHERE id = $1`,
+					siteID, layoutJSON,
+				); err != nil {
+					return nil, err
+				}
+			}
+			pagesRaw = stripped
+		}
+	}
+
 	switch mode {
 	case ApplyModeTheme:
 		// nothing else
@@ -195,8 +216,8 @@ func (r *Repo) ApplyToSite(ctx context.Context, siteID uuid.UUID, slug string, m
 			Tree   json.RawMessage `json:"tree"`
 			SEO    json.RawMessage `json:"seo"`
 		}
-		if len(tpl.Pages) > 0 {
-			_ = json.Unmarshal(tpl.Pages, &tplPages)
+		if len(pagesRaw) > 0 {
+			_ = json.Unmarshal(pagesRaw, &tplPages)
 		}
 
 		if mode == ApplyModeReplace {

@@ -97,19 +97,32 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 }
 
 // parseLayout decodes sites.layout_json into header + footer block slices.
-// Empty/invalid JSON returns empty slices (renderer falls back to page-only).
+// Empty/invalid JSON returns empty slices. Enabled flags default true kalau
+// tidak di-set (backward compat) — set false eksplisit → section di-skip.
 func parseLayout(raw json.RawMessage) ([]Block, []Block) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
+	// Pakai pointer bool supaya bisa bedakan "tidak di-set" (default true)
+	// vs "eksplisit false" (skip section).
 	var l struct {
-		Header []Block `json:"header"`
-		Footer []Block `json:"footer"`
+		Header        []Block `json:"header"`
+		Footer        []Block `json:"footer"`
+		HeaderEnabled *bool   `json:"header_enabled,omitempty"`
+		FooterEnabled *bool   `json:"footer_enabled,omitempty"`
 	}
 	if err := json.Unmarshal(raw, &l); err != nil {
 		return nil, nil
 	}
-	return l.Header, l.Footer
+	header := l.Header
+	footer := l.Footer
+	if l.HeaderEnabled != nil && !*l.HeaderEnabled {
+		header = nil
+	}
+	if l.FooterEnabled != nil && !*l.FooterEnabled {
+		footer = nil
+	}
+	return header, footer
 }
 
 func writeFile(z *zip.Writer, name, content string) error {

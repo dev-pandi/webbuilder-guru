@@ -43,6 +43,7 @@ export function SortableBlockList({
   onMove,
   onDuplicate,
   onDelete,
+  hiddenIndices,
 }: {
   blocks: BlockData[];
   keys: string[];
@@ -56,6 +57,10 @@ export function SortableBlockList({
   onMove: (i: number, dir: -1 | 1) => void;
   onDuplicate: (i: number) => void;
   onDelete: (i: number) => void;
+  // Top-level indices yang di-hide dari sidebar (mirror Preview canvas).
+  // Blok tetap di array — hanya tidak di-render/di-DND. Path indices tetap
+  // konsisten dengan blocks array.
+  hiddenIndices?: Set<number>;
 }) {
   // Pointer sensor with small activation distance so a click still selects
   // (not every mousedown turns into a drag). Touch sensor pakai delay 250ms
@@ -77,25 +82,30 @@ export function SortableBlockList({
     onReorder(from, to);
   }
 
+  const hidden = hiddenIndices ?? new Set<number>();
+  const visibleKeys = keys.filter((_, i) => !hidden.has(i));
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <SortableContext items={keys} strategy={verticalListSortingStrategy}>
+      <SortableContext items={visibleKeys} strategy={verticalListSortingStrategy}>
         <ul className="space-y-1">
-          {blocks.map((b, i) => (
-            <SortableRow
-              key={keys[i]}
-              id={keys[i]}
-              block={b}
-              index={i}
-              total={blocks.length}
-              active={selectedIndices ? selectedIndices.has(i) : selectedIdx === i}
-              isAnchor={selectedIdx === i}
-              onSelect={(mods) => onSelect(i, mods)}
-              onMove={(dir) => onMove(i, dir)}
-              onDuplicate={() => onDuplicate(i)}
-              onDelete={() => onDelete(i)}
-            />
-          ))}
+          {blocks.map((b, i) => {
+            if (hidden.has(i)) return null;
+            return (
+              <SortableRow
+                key={keys[i]}
+                id={keys[i]}
+                block={b}
+                index={i}
+                total={blocks.length}
+                active={selectedIndices ? selectedIndices.has(i) : selectedIdx === i}
+                isAnchor={selectedIdx === i}
+                onSelect={(mods) => onSelect(i, mods)}
+                onMove={(dir) => onMove(i, dir)}
+                onDuplicate={() => onDuplicate(i)}
+                onDelete={() => onDelete(i)}
+              />
+            );
+          })}
         </ul>
       </SortableContext>
     </DndContext>

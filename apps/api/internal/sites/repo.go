@@ -244,6 +244,21 @@ func (r *Repo) updateInternal(ctx context.Context, id, userID uuid.UUID, f Updat
 	return &s, err
 }
 
+// SetLayoutRaw sets sites.layout_json directly, tanpa ownership check.
+// Dipakai server-side flow (template apply, CreateSiteFromTemplate) yang
+// sudah verify caller. Untuk user-facing PATCH pakai UpdateOrAdmin dengan
+// UpdateFields.Layout.
+func (r *Repo) SetLayoutRaw(ctx context.Context, id uuid.UUID, layout json.RawMessage) error {
+	if len(layout) == 0 {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sites SET layout_json = $2, updated_at = now() WHERE id = $1`,
+		id, layout,
+	)
+	return err
+}
+
 func (r *Repo) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	ct, err := r.pool.Exec(ctx, `DELETE FROM sites WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {

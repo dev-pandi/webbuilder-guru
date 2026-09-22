@@ -151,7 +151,35 @@ type Site = {
   id: string;
   name: string;
   theme: ThemeJson | null;
+  // layout — shared header/footer across all pages. Kalau `{}` (default seed
+  // migration), guru belum pernah edit — canvas mulai kosong dan save akan
+  // populate untuk pertama kalinya.
+  //
+  // Flag header_enabled/footer_enabled: kalau false → renderer skip section
+  // itu di semua halaman. Default true (undefined = enabled).
+  layout?: {
+    header?: BlockData[];
+    footer?: BlockData[];
+    header_enabled?: boolean;
+    footer_enabled?: boolean;
+  } | null;
 };
+
+// EditorTarget — apa yang lagi di-edit di canvas. Bisa page biasa, atau
+// section shared layout (header/footer per site). Semua state blocks +
+// dirty tracking pakai target ini sebagai konteks.
+type EditorTarget =
+  | { kind: "page"; pageId: string }
+  | { kind: "layout"; section: "header" | "footer" };
+
+function targetKey(t: EditorTarget | null): string {
+  if (!t) return "";
+  return t.kind === "page" ? `page:${t.pageId}` : `layout:${t.section}`;
+}
+
+function targetsEqual(a: EditorTarget | null, b: EditorTarget | null): boolean {
+  return targetKey(a) === targetKey(b);
+}
 
 const DEFAULT_THEME: ThemeJson = {
   colors: { primary: "#2563eb", secondary: "#0ea5e9", bg: "#ffffff", fg: "#0f172a" },
@@ -175,7 +203,22 @@ function ensureFontCatalogLoaded() {
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
   const [pages, setPages] = useState<Page[]>([]);
-  const [currentId, setCurrentId] = useState<string | null>(null);
+  // Target = apa yang sedang di-edit. Default: home page (di-set setelah
+  // pages fetched). Header/Footer layout jadi target alternatif.
+  const [target, setTarget] = useState<EditorTarget | null>(null);
+  // Layout state — sinkron dengan sites.layout_json. Save akan PATCH balik
+  // ke `/sites/:id`. Undo/redo dan autosave tetap jalan lewat `blocks` state
+  // yang di-populate saat target = layout.
+  const [layoutHeader, setLayoutHeader] = useState<BlockData[]>([]);
+  const [layoutFooter, setLayoutFooter] = useState<BlockData[]>([]);
+  // Enabled flags — default true (undefined = enabled). Guru bisa toggle
+  // off supaya renderer skip section walaupun blocks-nya ada.
+  const [headerEnabled, setHeaderEnabled] = useState(true);
+  const [footerEnabled, setFooterEnabled] = useState(true);
+  // Guard supaya guru tidak masuk mode layout sebelum site fetch selesai —
+  // kalau masuk terlalu awal, kita bisa save empty untuk section yang belum
+  // di-load (menghapus data existing).
+  const [siteLoaded, setSiteLoaded] = useState(false);
 
   // Block tree lives in a reducer with undo/redo history. selectedIdx +
   // clipboard are local UI state.
@@ -274,7 +317,7 @@ export default function EditorPage() {
         setPages(list);
         const home = list.find((p) => p.is_home) ?? list[0] ?? null;
         if (home) {
-          setCurrentId(home.id);
+          setTarget({ kind: "page", pageId: home.id });
           const bs = home.tree?.blocks ?? [];
           replaceAll(bs);
           setBlockKeys(makeKeys(bs.length));
@@ -286,35 +329,118 @@ export default function EditorPage() {
       })
       .catch((e) => toast.error((e as Error).message));
 
-    // Site fetch parallel — feeds theme into the canvas.
+    // Site fetch parallel — feeds theme into the canvas + layout state untuk
+    // shared header/footer editing mode.
     api<Site>(`/api/v1/sites/${params.id}`)
       .then((s) => {
         if (s.theme && Object.keys(s.theme).length > 0) {
           setTheme(s.theme);
           setOriginalTheme(s.theme);
         }
+        setLayoutHeader(s.layout?.header ?? []);
+        setLayoutFooter(s.layout?.footer ?? []);
+        // Default true kalau flag tidak ada (backward compat: sites lama +
+        // migrasi 0057 tidak menulis flag ini).
+        setHeaderEnabled(s.layout?.header_enabled !== false);
+        setFooterEnabled(s.layout?.footer_enabled !== false);
+        setSiteLoaded(true);
       })
       .catch(() => {
         /* non-fatal — canvas falls back to defaults */
       });
   }, [params.id]);
 
-  const current = useMemo(
-    () => pages.find((p) => p.id === currentId) ?? null,
-    [pages, currentId],
-  );
+  // Derived current page — null saat target = layout. Digunakan untuk semua
+  // aksi yang page-scoped (save page, publish, page settings, preview, dsb).
+  const current = useMemo(() => {
+    if (!target || target.kind !== "page") return null;
+    return pages.find((p) => p.id === target.pageId) ?? null;
+  }, [pages, target]);
 
-  function selectPage(p: Page) {
-    // Warn before discarding unsaved changes on the current page.
-    if (blocksDirty && !confirm("Ada perubahan belum disimpan. Pindah halaman?")) return;
-    setCurrentId(p.id);
-    const bs = p.tree?.blocks ?? [];
+  // Convenience — apakah lagi di mode layout (header/footer bersama)?
+  const isLayoutMode = target?.kind === "layout";
+
+  // Hidden indices — blok Navbar/GuruNavbar / Footer/GuruFooter di page tree
+  // yang duplikat dengan shared layout aktif. Kita hide dari canvas + sidebar
+  // supaya guru tidak lihat 2 header/footer. Blok tetap di state (blocks
+  // array) — guru bisa munculkan lagi dengan toggle off shared layout.
+  // Hanya berlaku di mode page — mode layout render blocks apa adanya.
+  const hiddenIndices = useMemo(() => {
+    if (isLayoutMode) return new Set<number>();
+    return hiddenLayoutIndices(blocks, {
+      headerActive: headerEnabled && layoutHeader.length > 0,
+      footerActive: footerEnabled && layoutFooter.length > 0,
+    });
+  }, [
+    blocks,
+    isLayoutMode,
+    headerEnabled,
+    footerEnabled,
+    layoutHeader.length,
+    layoutFooter.length,
+  ]);
+
+  // selectTarget switch canvas ke target lain (page atau layout section).
+  // Warn kalau ada dirty changes supaya tidak hilang tanpa sengaja.
+  function selectTarget(next: EditorTarget) {
+    if (targetsEqual(target, next)) return;
+    if (blocksDirty && !confirm("Ada perubahan belum disimpan. Pindah target edit?")) return;
+    let bs: BlockData[] = [];
+    if (next.kind === "page") {
+      const p = pages.find((x) => x.id === next.pageId);
+      bs = p?.tree?.blocks ?? [];
+    } else {
+      bs = next.section === "header" ? layoutHeader : layoutFooter;
+    }
+    setTarget(next);
     replaceAll(bs);
     setBlockKeys(makeKeys(bs.length));
     setOriginalBlocks(bs);
     const initial: Path | null = bs.length ? [0] : null;
     setSelectedPath(initial);
     setSelectedPaths(initial ? new Set([pathKey(initial)]) : new Set());
+  }
+
+  // Backward-compat wrapper — banyak call site lama pakai selectPage(p).
+  function selectPage(p: Page) {
+    selectTarget({ kind: "page", pageId: p.id });
+  }
+
+  // toggleSectionEnabled langsung PATCH site — flag terpisah dari edit
+  // blocks, jadi tidak perlu tunggu tombol Simpan. Kalau save utama sedang
+  // jalan, kita skip supaya tidak race.
+  async function toggleSectionEnabled(section: "header" | "footer", next: boolean) {
+    if (saving) return;
+    const prevHeader = headerEnabled;
+    const prevFooter = footerEnabled;
+    const newHeader = section === "header" ? next : headerEnabled;
+    const newFooter = section === "footer" ? next : footerEnabled;
+    // Optimistic update.
+    if (section === "header") setHeaderEnabled(next);
+    else setFooterEnabled(next);
+    try {
+      await api(`/api/v1/sites/${params.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          layout: {
+            header: layoutHeader,
+            footer: layoutFooter,
+            header_enabled: newHeader,
+            footer_enabled: newFooter,
+          },
+        }),
+      });
+      toast.success(
+        next
+          ? `${section === "header" ? "Header" : "Footer"} aktif di semua halaman`
+          : `${section === "header" ? "Header" : "Footer"} disembunyikan dari semua halaman`,
+      );
+    } catch (e) {
+      // Rollback.
+      setHeaderEnabled(prevHeader);
+      setFooterEnabled(prevFooter);
+      toast.error((e as Error).message);
+    }
   }
 
   /**
@@ -693,17 +819,47 @@ export default function EditorPage() {
   const autosaveRef = useRef(false);
 
   async function save(opts?: { silent?: boolean }) {
-    if (!current) return;
+    if (!target) return;
     setSaving(true);
     try {
-      const updated = await api<Page>(`/api/v1/pages/${current.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ tree: { blocks } }),
-      });
-      setPages((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
-      setOriginalBlocks(blocks);
-      setSavedAt(Date.now());
-      if (!opts?.silent) toast.success("Halaman tersimpan");
+      if (target.kind === "page") {
+        const updated = await api<Page>(`/api/v1/pages/${target.pageId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ tree: { blocks } }),
+        });
+        setPages((ps) => ps.map((p) => (p.id === updated.id ? updated : p)));
+        setOriginalBlocks(blocks);
+        setSavedAt(Date.now());
+        if (!opts?.silent) toast.success("Halaman tersimpan");
+      } else {
+        // Layout mode — PATCH site dengan payload penuh header+footer supaya
+        // section yang tidak lagi di-edit tidak ke-reset. Enabled flags ikut
+        // dikirim eksplisit supaya guru bisa toggle off tanpa hapus blocks.
+        const nextHeader = target.section === "header" ? blocks : layoutHeader;
+        const nextFooter = target.section === "footer" ? blocks : layoutFooter;
+        await api(`/api/v1/sites/${params.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            layout: {
+              header: nextHeader,
+              footer: nextFooter,
+              header_enabled: headerEnabled,
+              footer_enabled: footerEnabled,
+            },
+          }),
+        });
+        if (target.section === "header") setLayoutHeader(blocks);
+        else setLayoutFooter(blocks);
+        setOriginalBlocks(blocks);
+        setSavedAt(Date.now());
+        if (!opts?.silent) {
+          toast.success(
+            target.section === "header"
+              ? "Header tersimpan — berlaku di semua halaman"
+              : "Footer tersimpan — berlaku di semua halaman",
+          );
+        }
+      }
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -715,6 +871,8 @@ export default function EditorPage() {
   const [publishing, setPublishing] = useState(false);
 
   async function publish() {
+    // Publish hanya untuk page — layout auto-live saat save (tidak ada
+    // konsep draft vs published untuk layout bersama).
     if (!current) return;
     // Always save draft first so the live copy reflects the latest edits.
     if (blocksDirty) {
@@ -739,6 +897,8 @@ export default function EditorPage() {
   }
 
   // True when the draft has unpublished edits (or page has never been published).
+  // Untuk layout mode selalu false — layout tidak punya draft/published split,
+  // save langsung live.
   const hasUnpublishedChanges = useMemo(() => {
     if (!current) return false;
     if (!current.published_at) return blocks.length > 0; // never published
@@ -785,9 +945,9 @@ export default function EditorPage() {
   // -------- Autosave --------
   // Debounce 3s. Fires when blocks change AND there are dirty changes AND we
   // aren't already saving. Manual save (⌘S / Simpan button) clears the
-  // pending timer so we don't double-fire. Page switch also clears it.
+  // pending timer so we don't double-fire. Target switch also clears it.
   useEffect(() => {
-    if (!current || !blocksDirty || saving) return;
+    if (!target || !blocksDirty || saving) return;
     const handle = window.setTimeout(() => {
       autosaveRef.current = true;
       save({ silent: true }).finally(() => {
@@ -796,7 +956,7 @@ export default function EditorPage() {
     }, 3000);
     return () => window.clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blocks, current, blocksDirty, saving]);
+  }, [blocks, target, blocksDirty, saving]);
 
   // Keyboard shortcuts — global. We ignore shortcuts while the user is typing
   // in an input/textarea/contentEditable so inline edit isn't hijacked.
@@ -1237,12 +1397,16 @@ export default function EditorPage() {
           <Button
             variant="outline"
             onClick={() => save()}
-            disabled={saving || !current || !blocksDirty}
+            disabled={saving || !target || !blocksDirty}
             size="sm"
             className="relative gap-1.5"
           >
             <Save className="size-3.5" />
-            {saving ? "Menyimpan…" : "Simpan Draft"}
+            {saving
+              ? "Menyimpan…"
+              : isLayoutMode
+                ? "Simpan Layout"
+                : "Simpan Draft"}
             {blocksDirty && !saving && (
               <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-card" />
             )}
@@ -1304,6 +1468,51 @@ export default function EditorPage() {
           isMobile && "hidden",
         )}
       >
+        {/* Layout bersama — header/footer per situs, berlaku di semua halaman */}
+        <div className="border-b p-3">
+          <div className="mb-2 flex items-center gap-1.5">
+            <Layers className="size-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Layout Bersama
+            </span>
+          </div>
+          <ul className="space-y-0.5">
+            {(["header", "footer"] as const).map((section) => {
+              const active =
+                target?.kind === "layout" && target.section === section;
+              const label = section === "header" ? "Header" : "Footer";
+              return (
+                <li key={section}>
+                  <button
+                    onClick={() => selectTarget({ kind: "layout", section })}
+                    disabled={!siteLoaded}
+                    className={cn(
+                      "group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-all",
+                      active
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      !siteLoaded && "cursor-not-allowed opacity-50",
+                    )}
+                  >
+                    <span className="truncate">{label}</span>
+                    <span
+                      className={cn(
+                        "ml-2 rounded-full px-1.5 py-0 text-[9px] font-medium uppercase",
+                        active
+                          ? "bg-primary/20 text-primary"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                      title="Berlaku untuk seluruh halaman"
+                    >
+                      semua
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
         {/* Pages list */}
         <div className="border-b p-3">
           <div className="mb-2 flex items-center gap-1.5">
@@ -1319,7 +1528,7 @@ export default function EditorPage() {
                   onClick={() => selectPage(p)}
                   className={cn(
                     "group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-all",
-                    currentId === p.id
+                    target?.kind === "page" && target.pageId === p.id
                       ? "bg-primary/10 font-medium text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
@@ -1329,7 +1538,7 @@ export default function EditorPage() {
                     <span
                       className={cn(
                         "ml-2 rounded-full px-1.5 py-0 text-[9px] font-medium uppercase",
-                        currentId === p.id
+                        target?.kind === "page" && target.pageId === p.id
                           ? "bg-primary/20 text-primary"
                           : "bg-muted text-muted-foreground",
                       )}
@@ -1394,6 +1603,7 @@ export default function EditorPage() {
               onMove={(i, dir) => moveBlock([i], dir)}
               onDuplicate={(i) => duplicateBlock([i])}
               onDelete={(i) => removeBlock([i])}
+              hiddenIndices={hiddenIndices}
             />
           )}
         </div>
@@ -1437,9 +1647,40 @@ export default function EditorPage() {
               <span className="size-2.5 rounded-full bg-amber-400" />
               <span className="size-2.5 rounded-full bg-emerald-400" />
               <div className="mx-3 flex-1 truncate rounded-md bg-background px-2.5 py-0.5 text-[10px] text-muted-foreground">
-                {current ? `${current.slug === "home" ? "" : "/" + current.slug}` : "/"}
+                {isLayoutMode
+                  ? target?.kind === "layout" && target.section === "header"
+                    ? "layout: header · semua halaman"
+                    : "layout: footer · semua halaman"
+                  : current
+                    ? `${current.slug === "home" ? "" : "/" + current.slug}`
+                    : "/"}
               </div>
             </div>
+            {/* Layout mode notice + toggle aktif — muncul tepat di atas canvas
+                supaya jelas bahwa edit di sini berlaku untuk semua halaman.
+                Toggle langsung PATCH site (fire-and-forget) — flag tidak masuk
+                dirty-tracking blocks. */}
+            {isLayoutMode && target?.kind === "layout" && (
+              <LayoutModeNotice
+                section={target.section}
+                enabled={
+                  target.section === "header" ? headerEnabled : footerEnabled
+                }
+                onToggle={(next) => toggleSectionEnabled(target.section, next)}
+              />
+            )}
+            {/* Shared header preview (page mode) — render read-only supaya guru
+                lihat tampilan halaman lengkap dengan shared layout. Klik → jump
+                ke mode Header. Kalau flag nonaktif / blocks kosong, di-skip. */}
+            {!isLayoutMode && layoutHeader.length > 0 && headerEnabled && (
+              <LayoutReadonlyStrip
+                section="header"
+                blocks={layoutHeader}
+                device={device}
+                canvasStyle={canvasStyle}
+                onEdit={() => selectTarget({ kind: "layout", section: "header" })}
+              />
+            )}
             <div
               className="wb-canvas"
               style={canvasStyle}
@@ -1468,8 +1709,19 @@ export default function EditorPage() {
                 onDelete={removeBlock}
                 onMoveTo={moveTo}
                 device={device}
+                hiddenIndices={hiddenIndices}
               />
             </div>
+            {/* Shared footer preview — mirror header di atas. */}
+            {!isLayoutMode && layoutFooter.length > 0 && footerEnabled && (
+              <LayoutReadonlyStrip
+                section="footer"
+                blocks={layoutFooter}
+                device={device}
+                canvasStyle={canvasStyle}
+                onEdit={() => selectTarget({ kind: "layout", section: "footer" })}
+              />
+            )}
           </div>
         </div>
 
@@ -1669,6 +1921,120 @@ export default function EditorPage() {
         onClose={() => setPreviewOpen(false)}
         onBeforeGenerate={savePreviewIfDirty}
       />
+    </div>
+  );
+}
+
+// Block types yang di-manage oleh shared layout — kalau muncul di page tree
+// saat shared section aktif, harus di-hide supaya tidak double render.
+// Konsisten dengan `headerBlockTypes` di layout_extract.go (Go side).
+const LAYOUT_HEADER_TYPES = new Set(["Navbar", "GuruNavbar"]);
+const LAYOUT_FOOTER_TYPES = new Set(["Footer", "GuruFooter"]);
+
+// hiddenLayoutIndices — kumpulkan indeks blok top-level yang harus di-hide
+// dari canvas + sidebar karena duplikat dengan shared layout aktif. Return
+// Set kosong kalau tidak ada shared layout / semua flag off.
+function hiddenLayoutIndices(
+  blocks: BlockData[],
+  opts: { headerActive: boolean; footerActive: boolean },
+): Set<number> {
+  const hidden = new Set<number>();
+  if (!opts.headerActive && !opts.footerActive) return hidden;
+  blocks.forEach((b, i) => {
+    if (opts.headerActive && LAYOUT_HEADER_TYPES.has(b.type)) hidden.add(i);
+    else if (opts.footerActive && LAYOUT_FOOTER_TYPES.has(b.type)) hidden.add(i);
+  });
+  return hidden;
+}
+
+// ---------- Layout mode notice (header/footer toggle) ----------
+
+// LayoutModeNotice = strip di atas canvas saat mode = layout. Tampilkan
+// info konteks + toggle aktif/nonaktif shared layout per section.
+function LayoutModeNotice({
+  section,
+  enabled,
+  onToggle,
+}: {
+  section: "header" | "footer";
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  const label = section === "header" ? "Header" : "Footer";
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b bg-amber-50/60 px-3 py-2 text-[11px] dark:bg-amber-950/20">
+      <span className="inline-flex items-center gap-1.5 font-semibold text-amber-900 dark:text-amber-200">
+        <Layers className="size-3" />
+        Layout Bersama · {label}
+      </span>
+      <span className="text-amber-800/80 dark:text-amber-200/70">
+        Perubahan di sini berlaku ke <b>semua halaman</b>.
+      </span>
+      <label className="ml-auto inline-flex cursor-pointer items-center gap-2 rounded-md border border-amber-300 bg-white px-2 py-1 shadow-sm hover:bg-amber-50 dark:border-amber-800 dark:bg-slate-900 dark:hover:bg-slate-800">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => onToggle(e.target.checked)}
+          className="size-3.5 accent-primary"
+        />
+        <span className="font-medium text-slate-700 dark:text-slate-200">
+          {enabled ? `${label} aktif` : `${label} nonaktif`}
+        </span>
+      </label>
+    </div>
+  );
+}
+
+// LayoutReadonlyStrip = render actual shared header/footer blocks read-only
+// di canvas mode page, supaya guru lihat tampilan halaman lengkap. Konten
+// pakai pointer-events:none supaya klik pass-through ke overlay wrapper yang
+// jump ke layout mode. Badge "Layout Bersama · Edit →" muncul di corner
+// on-hover sebagai affordance.
+function LayoutReadonlyStrip({
+  section,
+  blocks,
+  device,
+  canvasStyle,
+  onEdit,
+}: {
+  section: "header" | "footer";
+  blocks: BlockData[];
+  device: "desktop" | "tablet" | "mobile";
+  canvasStyle: React.CSSProperties;
+  onEdit: () => void;
+}) {
+  const label = section === "header" ? "Header" : "Footer";
+  const isHeader = section === "header";
+  return (
+    <div
+      className={cn(
+        "relative wb-canvas group cursor-pointer",
+        // Border tipis di batas dengan page canvas biar seksi terlihat.
+        isHeader ? "border-b border-dashed border-primary/30" : "border-t border-dashed border-primary/30",
+      )}
+      style={canvasStyle}
+      onClick={onEdit}
+      title={`${label} bersama — berlaku di semua halaman. Klik untuk edit.`}
+    >
+      {/* Konten render dengan pointer-events off supaya klik anywhere pindah
+          ke edit layout mode. Opacity slight supaya visually berbeda dari
+          page content yang editable. */}
+      <div className="pointer-events-none opacity-90">
+        {blocks.map((b, i) => (
+          <BlockView
+            key={`layout-${section}-${i}`}
+            block={b}
+            editable={false}
+            device={device}
+          />
+        ))}
+      </div>
+      {/* Badge sudut kanan — visible on hover supaya tidak menutupi konten
+          saat idle. Positioning absolute supaya tidak geser layout blocks. */}
+      <div className="pointer-events-none absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-md bg-primary/90 px-2 py-1 text-[10px] font-semibold text-primary-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
+        <Layers className="size-3" />
+        {label} Bersama · Edit →
+      </div>
     </div>
   );
 }
@@ -2242,6 +2608,7 @@ function Preview({
   onDelete,
   onMoveTo,
   device,
+  hiddenIndices,
 }: {
   blocks: BlockData[];
   keys: string[];
@@ -2256,6 +2623,10 @@ function Preview({
   // Path-based cross-parent move — called on drag-end.
   onMoveTo: (fromPath: Path, toParent: Path, at: number) => void;
   device: "desktop" | "tablet" | "mobile";
+  // Top-level indices yang di-hide dari canvas + DND context. Blok tetap di
+  // state (path indices tetap konsisten dengan array) — hanya tidak di-render.
+  // Dipakai untuk hide Navbar/Footer di page tree saat shared layout aktif.
+  hiddenIndices?: Set<number>;
 }) {
   // Pointer sensor with an activation distance so clicks (select) don't get
   // hijacked by drag intent. 4px is enough to distinguish deliberate drag.
@@ -2289,15 +2660,29 @@ function Preview({
     onMoveTo(fromPath, toParent, toIdx);
   }
 
-  if (blocks.length === 0) {
+  // Compute visible blocks (setelah filter hiddenIndices). Kalau setelah
+  // filter kosong tapi raw blocks non-empty → tampilkan pesan "hanya berisi
+  // header/footer bersama" instead of empty-state biar guru tahu ada shared
+  // layout yang menghandle konten.
+  const hidden = hiddenIndices ?? new Set<number>();
+  const visibleBlocks = blocks
+    .map((b, i) => ({ block: b, index: i }))
+    .filter((v) => !hidden.has(v.index));
+
+  if (blocks.length === 0 || visibleBlocks.length === 0) {
+    const allHidden = blocks.length > 0 && visibleBlocks.length === 0;
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-12 text-center">
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-12 text-center">
         <div className="grid size-14 place-items-center rounded-2xl bg-muted">
           <Sparkles className="size-6 text-muted-foreground" />
         </div>
-        <h3 className="text-base font-semibold">Halaman masih kosong</h3>
+        <h3 className="text-base font-semibold">
+          {allHidden ? "Halaman ini belum punya konten sendiri" : "Halaman masih kosong"}
+        </h3>
         <p className="max-w-xs text-sm text-muted-foreground">
-          Mulai membangun dengan menambah block pertama dari palette.
+          {allHidden
+            ? "Header & Footer sudah di-handle oleh Layout Bersama. Tambah block untuk isi konten halaman."
+            : "Mulai membangun dengan menambah block pertama dari palette."}
         </p>
         <Button onClick={onAdd} className="mt-2 gap-2 shadow-sm">
           <Plus className="size-4" />
@@ -2313,11 +2698,11 @@ function Preview({
           non-guru: CSS scoped ke class .guru-* + :root var yang read theme. */}
       <GuruStylesEditor />
       <SortableContext
-        items={blocks.map((_, i) => pathKey([i]))}
+        items={visibleBlocks.map((v) => pathKey([v.index]))}
         strategy={verticalListSortingStrategy}
       >
         <div className="animate-in fade-in duration-200">
-          {blocks.map((b, i) => (
+          {visibleBlocks.map(({ block: b, index: i }) => (
             <RenderBlockWithChrome
               key={keys[i] ?? i}
               block={b}

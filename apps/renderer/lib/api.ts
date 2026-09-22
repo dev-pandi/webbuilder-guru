@@ -19,6 +19,11 @@ export type Site = {
 export type SiteLayout = {
   header?: Block[];
   footer?: Block[];
+  // Enabled flags — kalau false, renderer skip prepend header / append footer
+  // walaupun blocks-nya ada. Default true untuk backward compat (site lama
+  // yang tidak punya field ini tetap render shared layout).
+  header_enabled?: boolean;
+  footer_enabled?: boolean;
 };
 
 export type ThemeJson = {
