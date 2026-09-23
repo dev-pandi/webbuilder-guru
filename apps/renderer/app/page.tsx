@@ -2,6 +2,8 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
+import { GuruStyles } from "@/components/GuruBlocks";
+import { composePageWithLayout } from "@/components/SiteLayout";
 import { getPage, lookupSiteByHost, type SiteLookup } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
@@ -14,12 +16,17 @@ export default async function HomeRender() {
   const site = lookup.site;
   const page = await getPage(site.id, "_home");
   if (!page) notFound();
-  const blocks = page.tree?.blocks ?? [];
+  // Compose shared layout — sebelumnya homepage cuma render page.tree.blocks
+  // tanpa header/footer, jadi footer hilang di halaman utama padahal ada di
+  // halaman lain. `composePageWithLayout` handle: enabled flag check, hide
+  // Navbar/Footer duplikat dari page tree, prepend header + append footer.
+  const blocks = composePageWithLayout(site, page.tree?.blocks ?? []);
   const fontHref = googleFontsUrl(site.theme);
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: themeToCss(site.theme) }} />
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
+      <GuruStyles />
       <SiteHeadCode site={site} />
       <RenderBlocks blocks={blocks} siteId={site.id} />
       <SiteBodyEndCode site={site} />

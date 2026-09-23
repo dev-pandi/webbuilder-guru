@@ -869,17 +869,35 @@ export default function EditorPage() {
         // dikirim eksplisit supaya guru bisa toggle off tanpa hapus blocks.
         const nextHeader = target.section === "header" ? blocks : layoutHeader;
         const nextFooter = target.section === "footer" ? blocks : layoutFooter;
+        // Auto-sync flag: kalau section yang di-save sekarang berubah dari
+        // kosong → punya blok (guru baru pertama kali isi header/footer),
+        // paksa enabled=true supaya konten yang baru di-add otomatis
+        // ter-render. Extraction migrasi sebelumnya bisa set enabled=false
+        // karena section kosong; tanpa auto-sync ini, guru harus manual klik
+        // toggle → membingungkan.
+        let nextHeaderEnabled = headerEnabled;
+        let nextFooterEnabled = footerEnabled;
+        if (target.section === "header" && layoutHeader.length === 0 && blocks.length > 0) {
+          nextHeaderEnabled = true;
+        }
+        if (target.section === "footer" && layoutFooter.length === 0 && blocks.length > 0) {
+          nextFooterEnabled = true;
+        }
         await api(`/api/v1/sites/${params.id}`, {
           method: "PATCH",
           body: JSON.stringify({
             layout: {
               header: nextHeader,
               footer: nextFooter,
-              header_enabled: headerEnabled,
-              footer_enabled: footerEnabled,
+              header_enabled: nextHeaderEnabled,
+              footer_enabled: nextFooterEnabled,
             },
           }),
         });
+        // Sync local state dengan hasil auto-sync supaya UI toggle langsung
+        // reflect state baru.
+        if (nextHeaderEnabled !== headerEnabled) setHeaderEnabled(nextHeaderEnabled);
+        if (nextFooterEnabled !== footerEnabled) setFooterEnabled(nextFooterEnabled);
         if (target.section === "header") setLayoutHeader(blocks);
         else setLayoutFooter(blocks);
         setOriginalBlocks(blocks);

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
 import { GuruStyles } from "@/components/GuruBlocks";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
+import { composePageWithLayout } from "@/components/SiteLayout";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { getPage, getSiteByHost } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
@@ -17,15 +18,11 @@ export default async function CatchAll({ params }: { params: { slug: string[] } 
   const slug = params.slug.join("/");
   const page = await getPage(site.id, slug);
   if (!page) notFound();
-  // Compose blocks: site.layout.header (kalau ada + enabled) + page.tree.blocks +
-  // site.layout.footer (kalau ada + enabled). Layout kosong `{}` atau flag
-  // enabled=false → skip section itu (render page apa adanya).
-  const headerEnabled = site.layout?.header_enabled !== false;
-  const footerEnabled = site.layout?.footer_enabled !== false;
-  const headerBlocks = headerEnabled ? site.layout?.header ?? [] : [];
-  const footerBlocks = footerEnabled ? site.layout?.footer ?? [] : [];
-  const pageBlocks = page.tree?.blocks ?? [];
-  const blocks = [...headerBlocks, ...pageBlocks, ...footerBlocks];
+  // Compose blocks — helper handle: cek flag enabled, defensive strip
+  // Navbar/Footer duplikat di page.tree (kalau layout section active),
+  // prepend header + append footer. Cegah "2 header" walaupun page.tree
+  // masih punya residual dari edit lama / migration miss / template bocor.
+  const blocks = composePageWithLayout(site, page.tree?.blocks ?? []);
   const fontHref = googleFontsUrl(site.theme);
   // Schema.org JSON-LD — inject WebSite + Organization di homepage, Organization
   // saja di sub-pages (WebSite cukup 1x per site sesuai Google guideline).

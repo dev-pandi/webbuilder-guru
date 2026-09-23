@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { RenderBlocks } from "@/components/Blocks";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { GuruStyles } from "@/components/GuruBlocks";
+import { composePageWithLayout } from "@/components/SiteLayout";
 import { getPagePreview } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
@@ -24,14 +25,9 @@ export default async function PreviewPage({
   if (!data) notFound();
   const { page, site } = data;
   // Shared layout wrap — mirrors public renderer supaya draft preview
-  // konsisten dengan yang dilihat pembaca setelah publish. Honor flag
-  // enabled: header_enabled=false / footer_enabled=false → skip section.
-  const headerEnabled = site.layout?.header_enabled !== false;
-  const footerEnabled = site.layout?.footer_enabled !== false;
-  const headerBlocks = headerEnabled ? site.layout?.header ?? [] : [];
-  const footerBlocks = footerEnabled ? site.layout?.footer ?? [] : [];
-  const pageBlocks = page.tree?.blocks ?? [];
-  const blocks = [...headerBlocks, ...pageBlocks, ...footerBlocks];
+  // konsisten dengan yang dilihat pembaca setelah publish. Helper handle
+  // enabled flag + defensive strip Navbar/Footer duplikat dari page tree.
+  const blocks = composePageWithLayout(site, page.tree?.blocks ?? []);
   const fontHref = googleFontsUrl(site.theme);
   return (
     <>
