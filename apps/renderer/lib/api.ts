@@ -374,9 +374,13 @@ export type SiteStats = {
 };
 
 // ArticleDetail — response envelope untuk /public/sites/:id/articles/:rubric/:slug
+// Sekarang include `responses` inline (bukan hanya count) — supaya renderer
+// tidak perlu 2 fetch terpisah yang bisa mismatch stale. Kalau backend lama
+// belum deploy field ini (rolling deploy), fallback ke listArticleResponses.
 export type ArticleDetail = {
   article: Article;
   response_count: number;
+  responses?: PublicResponse[];
 };
 
 // Detail endpoint bumps view counter — jangan cache. Listing OK cache pendek.

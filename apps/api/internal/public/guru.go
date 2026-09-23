@@ -89,14 +89,26 @@ func (h *GuruHandler) ArticleByRubricSlug(c *fiber.Ctx) error {
 	// Bump view count with fingerprint dedupe.
 	fp := fingerprint(c)
 	_, _ = h.articles.IncrementView(c.Context(), a.ID, id, fp, 60)
-	// Attach approved response count (kalau comments enabled).
+	// Attach approved responses INLINE (bukan hanya count). Sebelumnya
+	// renderer fetch 2 endpoint terpisah:
+	//   1. article detail → response_count (fresh)
+	//   2. list responses  → items (dulu ke-cache)
+	// Kalau salah satu stale/reject/error → inconsistency: "Tanggapan (2)"
+	// tapi list kosong. Sekarang single-query: count + list dari row set yang
+	// sama, atomic, tidak mungkin mismatch.
 	var respCount int64
+	var respList = []responses.PublicView{}
 	if a.CommentsEnabled {
-		respCount, _ = h.resp.CountApprovedByArticle(c.Context(), a.ID)
+		list, listErr := h.resp.ListApprovedByArticle(c.Context(), a.ID, 200)
+		if listErr == nil {
+			respList = list
+			respCount = int64(len(list))
+		}
 	}
 	return httpx.OK(c, fiber.Map{
 		"article":        a,
 		"response_count": respCount,
+		"responses":      respList,
 	})
 }
 

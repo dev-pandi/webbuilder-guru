@@ -92,15 +92,24 @@ export default async function ArticleDetail({
 
   const detail = await getArticle(site.id, rubric, params.slug);
   if (!detail) notFound();
-  const { article, response_count: responseCount } = detail;
+  const { article, response_count: responseCountFromApi } = detail;
 
   const fontHref = googleFontsUrl(site.theme);
   const html = await marked.parse(article.body_md ?? "");
   const tags = Array.isArray(article.tags) ? article.tags : [];
 
+  // Prefer responses INLINE dari article detail response (atomic dengan count
+  // — cegah mismatch "Tanggapan (2)" tapi list kosong). Fallback ke fetch
+  // terpisah kalau backend lama belum expose field `responses` (rolling
+  // deploy compat). Setelah semua backend up-to-date, fallback ini bisa
+  // dihapus.
   const responses = article.comments_enabled
-    ? await listArticleResponses(site.id, article.id, 200)
+    ? detail.responses ?? (await listArticleResponses(site.id, article.id, 200))
     : [];
+  // Count = length list yang benar-benar di-render (bukan dari field count
+  // yang bisa desync). Kalau field responses ada, count = len(responses);
+  // kalau fallback dipakai, count = responseCountFromApi (backup).
+  const responseCount = detail.responses ? responses.length : responseCountFromApi;
 
   return (
     <>
