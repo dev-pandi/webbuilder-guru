@@ -1,4 +1,28 @@
+import { headers } from "next/headers";
+
 const API = process.env.API_INTERNAL_URL ?? "http://localhost:8080";
+
+// currentHost — baca Host header dari request context (Next.js server
+// component). Dipakai fetchJson untuk forward ke API sebagai
+// `X-Renderer-Host` — API middleware `HostSiteGuard` verify site.id di
+// URL match dengan host ini (defense in depth cross-tenant leak).
+//
+// Kenapa via headers() (bukan pass eksplisit): supaya semua caller api.ts
+// otomatis dapat guard tanpa refactor tiap fungsi. `headers()` per-request
+// scoped di App Router — aman multi-tenant.
+//
+// Return "" kalau tidak dipanggil dari server component (mis. static
+// generation di build time) — API skip guard kalau header kosong.
+function currentHost(): string {
+  try {
+    const h = headers().get("host") ?? "";
+    // Strip port + lowercase.
+    return h.toLowerCase().split(":")[0];
+  } catch {
+    // headers() throws di context yang bukan request (build-time RSC).
+    return "";
+  }
+}
 
 export type Site = {
   id: string;
@@ -85,7 +109,17 @@ type ResponsivePatch = {
 // Untuk endpoint yang jarang berubah (products/blog) bisa override via
 // fetchJsonCached dengan TTL lebih panjang.
 async function fetchJson<T>(path: string, revalidateSec = 5): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
-  const res = await fetch(`${API}${path}`, { next: { revalidate: revalidateSec } });
+  // Forward Host header ke API supaya HostSiteGuard middleware bisa verify
+  // site.id URL match dengan host request. Cegah cross-tenant leak walaupun
+  // renderer bug pass site.id yang salah (dari cache atau data anomaly).
+  const host = currentHost();
+  const init: RequestInit & { next?: { revalidate?: number } } = {
+    next: { revalidate: revalidateSec },
+  };
+  if (host) {
+    init.headers = { "X-Renderer-Host": host };
+  }
+  const res = await fetch(`${API}${path}`, init);
   if (!res.ok) {
     // Parse error envelope kalau ada supaya caller bisa branch berdasarkan
     // business code (mis. site_not_published vs no_site_for_host).

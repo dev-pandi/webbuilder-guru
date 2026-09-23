@@ -10,6 +10,7 @@ import (
 
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/metrics"
+	"github.com/webbuilder/api/internal/public"
 )
 
 // MountGlobal registers public + infra routes (no auth required):
@@ -124,34 +125,44 @@ func MountGlobal(app *fiber.App, deps Deps) {
 
 	pubBase := app.Group("/public", pubCORS)
 
+	// hostGuard — defensive middleware yang cegah cross-tenant leak dengan
+	// verify X-Renderer-Host header match site.id di URL param. Kalau renderer
+	// (atau caller lain) pass site.id yang tidak sesuai host → 404 + log.
+	// Backward compat: kalau header tidak ada, guard skip (test manual via
+	// curl tetap jalan). Wire di ATAS cache middleware supaya rejected request
+	// tidak ke-cache sebagai success.
+	hostGuard := public.HostSiteGuard(deps.SitesRepo)
+
 	// Fresh-critical: theme + page tree yang user edit langsung.
 	pubBase.Get("/site-by-host", shortCache, deps.Public.SiteByHost)
-	pubBase.Get("/sites/:id/pages", shortCache, deps.Public.ListPages)
-	pubBase.Get("/sites/:id/pages/:slug", shortCache, deps.Public.PageBySlug)
+	pubBase.Get("/sites/:id/pages", hostGuard, shortCache, deps.Public.ListPages)
+	pubBase.Get("/sites/:id/pages/:slug", hostGuard, shortCache, deps.Public.PageBySlug)
 
 	// Cacheable lebih lama.
-	pubBase.Get("/sites/:id/products", longCache, deps.Public.ListProducts)
-	pubBase.Get("/sites/:id/products/:slug", longCache, deps.Public.ProductBySlug)
-	pubBase.Get("/sites/:id/blog-posts", longCache, deps.Public.ListBlogPosts)
-	pubBase.Get("/sites/:id/blog-posts/:slug", longCache, deps.Public.BlogPostBySlug)
+	pubBase.Get("/sites/:id/products", hostGuard, longCache, deps.Public.ListProducts)
+	pubBase.Get("/sites/:id/products/:slug", hostGuard, longCache, deps.Public.ProductBySlug)
+	pubBase.Get("/sites/:id/blog-posts", hostGuard, longCache, deps.Public.ListBlogPosts)
+	pubBase.Get("/sites/:id/blog-posts/:slug", hostGuard, longCache, deps.Public.BlogPostBySlug)
 
 	// Guru — public reads untuk website guru (articles/materials/banners/stats).
 	// Cache pendek: article detail bump view_count, jadi cache-nya di sisi
 	// renderer ISR (revalidate 30) — di sini short cache 5s untuk peak burst.
 	if deps.PublicGuru != nil {
-		pubBase.Get("/sites/:id/articles", shortCache, deps.PublicGuru.ListArticles)
-		pubBase.Get("/sites/:id/articles/:rubric/:slug", deps.PublicGuru.ArticleByRubricSlug)
-		pubBase.Get("/sites/:id/articles/:article_id/responses", shortCache, deps.PublicGuru.ListArticleResponses)
-		pubBase.Get("/sites/:id/latest-articles", shortCache, deps.PublicGuru.LatestArticles)
-		pubBase.Get("/sites/:id/site-stats", shortCache, deps.PublicGuru.SiteStats)
-		pubBase.Get("/sites/:id/learning-materials", longCache, deps.PublicGuru.ListLearningMaterials)
-		pubBase.Get("/sites/:id/learning-materials/:slug", longCache, deps.PublicGuru.LearningMaterialBySlug)
-		// Portal directory (§5) — daftar guru + search + sort.
+		pubBase.Get("/sites/:id/articles", hostGuard, shortCache, deps.PublicGuru.ListArticles)
+		pubBase.Get("/sites/:id/articles/:rubric/:slug", hostGuard, deps.PublicGuru.ArticleByRubricSlug)
+		pubBase.Get("/sites/:id/articles/:article_id/responses", hostGuard, shortCache, deps.PublicGuru.ListArticleResponses)
+		pubBase.Get("/sites/:id/latest-articles", hostGuard, shortCache, deps.PublicGuru.LatestArticles)
+		pubBase.Get("/sites/:id/site-stats", hostGuard, shortCache, deps.PublicGuru.SiteStats)
+		pubBase.Get("/sites/:id/learning-materials", hostGuard, longCache, deps.PublicGuru.ListLearningMaterials)
+		pubBase.Get("/sites/:id/learning-materials/:slug", hostGuard, longCache, deps.PublicGuru.LearningMaterialBySlug)
+		// Portal directory (§5) — daftar guru + search + sort. Tidak pakai
+		// hostGuard (no :id param, portal aggregate cross-site by design).
 		pubBase.Get("/guru", shortCache, deps.PublicGuru.TeacherDirectory)
 	}
 
 	// Platform Articles — public read (list + detail by slug) untuk homepage
 	// blog / knowledge base. Cache pendek supaya admin publish langsung visible.
+	// Bukan per-site — jadi tidak butuh hostGuard.
 	if deps.PlatformArticles != nil {
 		pubBase.Get("/platform-articles", shortCache, deps.PlatformArticles.PublicList)
 		pubBase.Get("/platform-articles/:slug", shortCache, deps.PlatformArticles.PublicGetBySlug)
@@ -159,7 +170,8 @@ func MountGlobal(app *fiber.App, deps Deps) {
 
 	// Guru — public promotion banners (site + portal aggregate).
 	if deps.Banners != nil {
-		pubBase.Get("/sites/:id/promotion-banners", shortCache, deps.Banners.PublicListBySite)
+		pubBase.Get("/sites/:id/promotion-banners", hostGuard, shortCache, deps.Banners.PublicListBySite)
+		// Portal aggregate — cross-site by design, no host guard.
 		pubBase.Get("/portal/promotion-banners", shortCache, deps.Banners.PublicListForPortal)
 	}
 

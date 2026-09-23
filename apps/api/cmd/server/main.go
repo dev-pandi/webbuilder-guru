@@ -496,6 +496,7 @@ func main() {
 		Registrar:      registrarClient,
 		DomainPurchase: purchaseHandler,
 		Sites:        sitesHandler,
+		SitesRepo:    siteRepo,
 		Pages:        pagesHandler,
 		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
 		Templates:    templatesHandler,

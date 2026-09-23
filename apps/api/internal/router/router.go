@@ -64,6 +64,11 @@ type Deps struct {
 	Auth       *auth.Handler
 	AuthGoogle *auth.GoogleHandler
 	Sites     *sites.Handler
+	// SitesRepo — dipakai HostSiteGuard middleware di /public/sites/:id/*
+	// untuk verify Host header match site.id URL param (defense in depth
+	// cross-tenant leak). Dipisah dari Sites handler supaya middleware
+	// tidak butuh handler chain.
+	SitesRepo *sites.Repo
 	Pages     *pages.Handler
 	Domains   *domains.Handler
 	Templates *templates.Handler
