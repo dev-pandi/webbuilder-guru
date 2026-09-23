@@ -490,11 +490,16 @@ func (r *Repo) Unpublish(ctx context.Context, id uuid.UUID) error {
 // ListBySitePublic returns the LIVE tree (published_tree_json) for renderer
 // consumption. Pages without a published snapshot are skipped entirely —
 // they exist only in the editor's draft view.
+//
+// EXISTS check pada sites + filter status='published' — defense in depth:
+// kalau admin unpublish site setelah renderer resolve site.id, endpoint ini
+// tetap return kosong (bukan expose page dari site draft).
 func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages
 		WHERE site_id = $1 AND published_tree_json IS NOT NULL
+		  AND EXISTS (SELECT 1 FROM sites WHERE id = $1 AND status = 'published')
 		ORDER BY is_home DESC, slug ASC
 	`, siteID)
 	if err != nil {
@@ -515,13 +520,15 @@ func (r *Repo) ListBySitePublic(ctx context.Context, siteID uuid.UUID) ([]Page, 
 
 // GetBySiteAndSlugPublic returns the LIVE page (with published_tree_json
 // presented AS `tree` so the renderer code path stays unchanged). 404 when
-// the page exists but hasn't been published.
+// the page exists but hasn't been published, ATAU kalau site di-unpublish
+// (EXISTS check pada sites dengan status='published').
 func (r *Repo) GetBySiteAndSlugPublic(ctx context.Context, siteID uuid.UUID, slug string) (*Page, error) {
 	var p Page
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, published_tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages
 		WHERE site_id = $1 AND slug = $2 AND published_tree_json IS NOT NULL
+		  AND EXISTS (SELECT 1 FROM sites WHERE id = $1 AND status = 'published')
 	`, siteID, slug).Scan(&p.ID, &p.SiteID, &p.Slug, &p.Title, &p.Tree, &p.SEO,
 		&p.IsHome, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.PublishedTree, &p.PublishedAt, &p.ScheduledPublishAt)
 	if errors.Is(err, pgx.ErrNoRows) {

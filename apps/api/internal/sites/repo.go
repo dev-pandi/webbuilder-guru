@@ -244,6 +244,25 @@ func (r *Repo) updateInternal(ctx context.Context, id, userID uuid.UUID, f Updat
 	return &s, err
 }
 
+// IsPublished — cek cepat apakah site masih status='published'. Return
+// true kalau ada, false kalau draft/archived/deleted. Dipakai public
+// endpoints yang butuh gate "site still live?" secara defensive (kalau
+// admin unpublish site sementara request in-flight, endpoint bisa reject
+// tanpa full re-fetch). Query indexed by PK id — negligible overhead.
+func (r *Repo) IsPublished(ctx context.Context, id uuid.UUID) (bool, error) {
+	var status string
+	err := r.pool.QueryRow(ctx,
+		`SELECT status FROM sites WHERE id = $1`, id,
+	).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return status == "published", nil
+}
+
 // SetLayoutRaw sets sites.layout_json directly, tanpa ownership check.
 // Dipakai server-side flow (template apply, CreateSiteFromTemplate) yang
 // sudah verify caller. Untuk user-facing PATCH pakai UpdateOrAdmin dengan

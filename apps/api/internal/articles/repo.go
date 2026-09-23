@@ -212,10 +212,16 @@ func (r *Repo) Get(ctx context.Context, id uuid.UUID) (*Article, error) {
 	return &a, err
 }
 
+// GetBySiteRubricSlug — dipakai public renderer. JOIN sites filter
+// status='published' supaya kalau site di-unpublish, article tidak lagi
+// accessible (defense in depth on top of handler-level check). Cols di-scope
+// via subquery ke articles supaya SELECT list tetap unqualified (reuse `cols`).
 func (r *Repo) GetBySiteRubricSlug(ctx context.Context, siteID uuid.UUID, rubric, slug string) (*Article, error) {
 	var a Article
 	err := r.pool.QueryRow(ctx,
-		`SELECT `+cols+` FROM articles WHERE site_id = $1 AND rubric = $2 AND slug = $3`,
+		`SELECT `+cols+` FROM articles
+		 WHERE site_id = $1 AND rubric = $2 AND slug = $3
+		   AND EXISTS (SELECT 1 FROM sites WHERE id = $1 AND status = 'published')`,
 		siteID, rubric, slug,
 	).Scan(scan(&a)...)
 	if errors.Is(err, pgx.ErrNoRows) {

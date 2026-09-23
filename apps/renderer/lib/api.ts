@@ -127,13 +127,17 @@ export async function getSiteByHost(host: string): Promise<Site | null> {
   return r.kind === "found" ? r.site : null;
 }
 
+// getPage — revalidate 1 detik (bukan default 5). Guru sering publish +
+// langsung buka domain untuk verify — cache 5 detik terasa lag/"page belum
+// publish". Backend juga punya cache 5s, tapi kalau Next.js layer minimal
+// stale window jadi 6s max instead of 10s.
 export async function getPage(siteId: string, slug: string): Promise<Page | null> {
-  const r = await fetchJson<Page>(`/public/sites/${siteId}/pages/${encodeURIComponent(slug)}`);
+  const r = await fetchJson<Page>(`/public/sites/${siteId}/pages/${encodeURIComponent(slug)}`, 1);
   return r.ok ? r.data : null;
 }
 
 export async function listPages(siteId: string): Promise<Page[]> {
-  const r = await fetchJson<Page[]>(`/public/sites/${siteId}/pages`);
+  const r = await fetchJson<Page[]>(`/public/sites/${siteId}/pages`, 1);
   return r.ok ? r.data : [];
 }
 
@@ -198,7 +202,8 @@ export async function listBlogPosts(siteId: string, limit = 20): Promise<BlogPos
 }
 
 export async function getBlogPost(siteId: string, slug: string): Promise<BlogPost | null> {
-  const r = await fetchJson<BlogPost>(`/public/sites/${siteId}/blog-posts/${encodeURIComponent(slug)}`);
+  // revalidate 1s — guru sering publish + verify langsung, minimalisir "belum publish" lag.
+  const r = await fetchJson<BlogPost>(`/public/sites/${siteId}/blog-posts/${encodeURIComponent(slug)}`, 1);
   return r.ok ? r.data : null;
 }
 
@@ -418,6 +423,7 @@ export async function getLearningMaterial(
 ): Promise<LearningMaterial | null> {
   const r = await fetchJson<LearningMaterial>(
     `/public/sites/${siteId}/learning-materials/${encodeURIComponent(slug)}`,
+    1, // revalidate 1s — minimalisir stale window setelah publish/unpublish.
   );
   return r.ok ? r.data : null;
 }
