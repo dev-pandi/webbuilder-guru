@@ -414,13 +414,15 @@ export async function listArticleResponses(
   articleId: string,
   limit = 200,
 ): Promise<PublicResponse[]> {
-  // Revalidate 1s (bukan GURU_LIST_TTL=15s) — guru moderasi via dashboard
-  // + langsung buka artikel di public site untuk verify. Kalau cache 15s,
-  // approved response invisible sampai ~15-20s (Next.js + backend cache).
-  // 1s window = guru refresh 1x sudah lihat.
+  // Revalidate 0 = SKIP Next.js data cache. Alasan: article detail endpoint
+  // return `response_count` fresh (no cache), tapi list responses fetch
+  // terpisah. Kalau list ke-cache, muncul mismatch "Tanggapan (2)" tapi
+  // list kosong (count baru, list stale dari sebelum approval).
+  // Trade-off: setiap page load hit API — acceptable karena response list
+  // biasanya small + backend punya index (article_id, status).
   const r = await fetchJson<PublicResponse[]>(
     `/public/sites/${siteId}/articles/${articleId}/responses?limit=${limit}`,
-    1,
+    0,
   );
   return r.ok ? r.data : [];
 }

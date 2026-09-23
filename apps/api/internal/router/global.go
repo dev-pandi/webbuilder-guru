@@ -150,7 +150,10 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	if deps.PublicGuru != nil {
 		pubBase.Get("/sites/:id/articles", hostGuard, shortCache, deps.PublicGuru.ListArticles)
 		pubBase.Get("/sites/:id/articles/:rubric/:slug", hostGuard, deps.PublicGuru.ArticleByRubricSlug)
-		pubBase.Get("/sites/:id/articles/:article_id/responses", hostGuard, shortCache, deps.PublicGuru.ListArticleResponses)
+		// TANPA shortCache — moderation-triggered content, harus fresh setiap
+		// request. Kalau cache 5s, guru approve → refresh → masih lihat empty
+		// (mismatch dengan response_count di article detail yang always fresh).
+		pubBase.Get("/sites/:id/articles/:article_id/responses", hostGuard, deps.PublicGuru.ListArticleResponses)
 		pubBase.Get("/sites/:id/latest-articles", hostGuard, shortCache, deps.PublicGuru.LatestArticles)
 		pubBase.Get("/sites/:id/site-stats", hostGuard, shortCache, deps.PublicGuru.SiteStats)
 		pubBase.Get("/sites/:id/learning-materials", hostGuard, longCache, deps.PublicGuru.ListLearningMaterials)
