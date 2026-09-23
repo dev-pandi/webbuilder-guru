@@ -116,7 +116,9 @@ function SkeletonCard() {
 
 export default function GuruDirectoryPage() {
   const [page, setPage] = useState(1);
-  const [sort, setSort] = useState<Sort>("newest");
+  // Default sort = "popular" (Terpopuler) — user request: kartu paling banyak
+  // di-view muncul duluan di direktori supaya guru yang aktif nulis lebih visible.
+  const [sort, setSort] = useState<Sort>("popular");
   const [q, setQ] = useState("");
   const debouncedQ = useDebounced(q, 300);
   const [data, setData] = useState<PaginatedResult<TeacherDirectoryItem> | null>(null);
@@ -175,7 +177,7 @@ export default function GuruDirectoryPage() {
       </header>
 
       {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
+      <section className="mx-auto max-w-7xl px-6 py-10 sm:py-14">
         <div className="mb-2 flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-violet-700">
             <GraduationCap className="size-3" /> Direktori Guru
@@ -195,7 +197,7 @@ export default function GuruDirectoryPage() {
       </section>
 
       {/* Toolbar */}
-      <section className="mx-auto max-w-6xl px-6">
+      <section className="mx-auto max-w-7xl px-6">
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e6e9ef] bg-white px-4 py-3 shadow-sm">
           <div className="relative w-80 max-w-full">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -230,19 +232,16 @@ export default function GuruDirectoryPage() {
       </section>
 
       {/* Grid */}
-      <section className="mx-auto max-w-6xl px-6 py-8">
+      <section className="mx-auto max-w-7xl px-6 py-8">
         {err ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             Gagal memuat direktori: {err}
           </div>
         ) : loading && !data ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
         ) : items.length === 0 ? (
           <Card className="flex flex-col items-center gap-3 py-16 text-center">
@@ -266,7 +265,7 @@ export default function GuruDirectoryPage() {
           </Card>
         ) : (
           <>
-            <div className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${loading ? "opacity-60" : ""}`}>
+            <div className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${loading ? "opacity-60" : ""}`}>
               {items.map((it) => (
                 <TeacherCard key={it.site_id} item={it} />
               ))}

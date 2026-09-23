@@ -414,9 +414,13 @@ export async function listArticleResponses(
   articleId: string,
   limit = 200,
 ): Promise<PublicResponse[]> {
+  // Revalidate 1s (bukan GURU_LIST_TTL=15s) — guru moderasi via dashboard
+  // + langsung buka artikel di public site untuk verify. Kalau cache 15s,
+  // approved response invisible sampai ~15-20s (Next.js + backend cache).
+  // 1s window = guru refresh 1x sudah lihat.
   const r = await fetchJson<PublicResponse[]>(
     `/public/sites/${siteId}/articles/${articleId}/responses?limit=${limit}`,
-    GURU_LIST_TTL,
+    1,
   );
   return r.ok ? r.data : [];
 }
