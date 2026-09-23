@@ -5,8 +5,14 @@
 // convention di-generate compile-time single-tenant; kita perlu request-time
 // karena setiap Host = tenant berbeda.
 //
-// Cached 5 menit di edge (`s-maxage=300`) — crawler yang polite hit sitemap
-// jarang; kalau site update, cache TTL cukup pendek.
+// CRITICAL: Konten route ini HOST-DEPENDENT. Sebelumnya pakai `revalidate=300`
+// yang bikin Next.js ISR cache result keyed by URL saja (tidak include Host).
+// Result: domain A hit /sitemap.xml → cached; domain B hit /sitemap.xml →
+// dapat cached sitemap domain A (URL milik domain lain) → **CROSS-TENANT LEAK**.
+// Fix: force-dynamic (skip ISR cache) + Vary: Host header (untuk downstream
+// cache seperti Caddy/CDN). Backend hit tetap murah karena listPages punya
+// cache 1-5s di sisi API.
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
@@ -19,8 +25,6 @@ import {
   listLearningMaterials,
   GURU_RUBRICS,
 } from "@/lib/api";
-
-export const revalidate = 300; // 5 menit ISR fallback
 
 export async function GET() {
   const host = (await headers()).get("host") ?? "";
@@ -122,7 +126,12 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "application/xml; charset=utf-8",
+      // Cache-Control tetap ada supaya downstream cache (Caddy/CDN) bisa
+      // dedup, TAPI harus disertai Vary: Host — kalau tidak, cache key
+      // collapse ke URL saja dan cross-tenant kalau 2 domain hit sitemap
+      // dalam window cache yang sama.
       "Cache-Control": "public, max-age=60, s-maxage=300",
+      Vary: "Host",
     },
   });
 }

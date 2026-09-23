@@ -5,11 +5,16 @@
 //
 // Kalau nanti butuh per-site kontrol (e.g., user mau block noindex all),
 // bisa tambah `site.robots_txt` custom di DB dan render dari situ.
+//
+// CRITICAL: Konten HOST-DEPENDENT (Sitemap URL). Sebelumnya `revalidate=3600`
+// bikin ISR cache 1 jam keyed by URL saja → cross-tenant leak (domain A
+// visit → cached → domain B visit dalam 1 jam dapat robots.txt domain A
+// dengan Sitemap URL yang salah). Fix: force-dynamic + Vary: Host header.
 
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 
-export const revalidate = 3600; // 1 jam — jarang berubah
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const host = (await headers()).get("host") ?? "";
@@ -29,7 +34,10 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
+      // Downstream cache OK, tapi WAJIB include Vary: Host supaya cache
+      // key tidak collapse ke URL saja (host-dependent content).
       "Cache-Control": "public, max-age=300, s-maxage=3600",
+      Vary: "Host",
     },
   });
 }
