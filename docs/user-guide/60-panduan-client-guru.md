@@ -20,7 +20,7 @@ drag-drop image, dan penanganan media yang lebih ramah pemula.
 ## 1. Daftar Akun
 
 Kalau belum punya akun, buka halaman `/register` di dashboard Web Builder
-(mis. `https://bikinweb.pandi.id/register`).
+(mis. `https://kubaca.id/register`).
 
 ![Halaman Daftar — 4 field: nama, email, password, konfirmasi password](screenshots/client-daftar.png)
 
@@ -566,4 +566,4 @@ Setelah publish, konten Anda accessible via:
 - Materi: `https://[domain-anda]/pembelajaran/[slug]`
 - Blog (kalau ada): `https://[domain-anda]/blog/[slug]`
 
-Direktori portal publik (semua guru): `https://bikinweb.pandi.id/guru`
+Direktori portal publik (semua guru): `https://kubaca.id/guru`

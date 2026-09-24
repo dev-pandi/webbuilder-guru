@@ -104,7 +104,7 @@ antrian registrar).
 Semua role login lewat URL yang sama, di-routing otomatis ke dashboard yang
 tepat berdasarkan role akun.
 
-1. Buka `https://bikinweb.pandi.id/login`
+1. Buka `https://kubaca.id/login`
 2. Masukkan email + password
 3. Kalau lupa password: klik "Lupa Password" → email reset link
 4. Setelah login, dashboard yang muncul tergantung role:

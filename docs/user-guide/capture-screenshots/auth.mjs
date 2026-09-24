@@ -30,7 +30,7 @@ export async function loginViaToken(context, role) {
 
   // Call login API directly via fetch dari Node context.
   // Kita perlu domain-scoped API URL. Kalau baseUrl frontend, biasanya API
-  // di subdomain terpisah (api.bikinweb.pandi.id). Auto-derive.
+  // di subdomain terpisah (api.kubaca.id). Auto-derive.
   const apiBase = deriveApiBase(config.baseUrl);
   const loginUrl = `${apiBase}/api/v1/auth/login`;
 
@@ -110,7 +110,7 @@ export async function loginViaUI(page, role) {
 /**
  * Derive API base URL dari frontend base URL.
  * Heuristic:
- *   https://bikinweb.pandi.id → https://api.bikinweb.pandi.id
+ *   https://kubaca.id → https://api.kubaca.id
  *   http://localhost:3000 → http://localhost:8080 (default HTTP_ADDR API)
  */
 function deriveApiBase(baseUrl) {
@@ -124,7 +124,7 @@ function deriveApiBase(baseUrl) {
       return `${url.protocol}//${url.hostname}:8080`;
     }
     // Production: prepend "api." ke hostname
-    // Handle: bikinweb.pandi.id → api.bikinweb.pandi.id
+    // Handle: kubaca.id → api.kubaca.id
     return `${url.protocol}//api.${url.hostname}`;
   } catch (e) {
     console.warn("Failed to derive API base, using baseUrl", e.message);

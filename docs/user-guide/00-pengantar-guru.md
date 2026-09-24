@@ -68,7 +68,7 @@ mau dipublish, bisa lebih cepat).
 
 ## Cara Login
 
-1. Buka **`https://bikinweb.pandi.id/login`** (atau URL platform Anda)
+1. Buka **`https://kubaca.id/login`** (atau URL platform Anda)
 2. Masukkan email + password yang Anda daftarkan
 3. Kalau lupa password → klik "Lupa Password" → email reset link dikirim
 4. Setelah login, Anda otomatis diarahkan ke **Dashboard**

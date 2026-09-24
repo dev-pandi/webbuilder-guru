@@ -2,7 +2,7 @@
 -- portal_active — flag banner mana yang di-select oleh guru untuk tampil di
 -- Ruang Promosi di landing page portal (§6). Beda dengan `teacher_active`:
 --   teacher_active = ditampilkan di website pribadi guru itu sendiri
---   portal_active  = ditampilkan di aggregate portal landing (bikinweb.pandi.id)
+--   portal_active  = ditampilkan di aggregate portal landing (kubaca.id)
 -- Setiap guru MAKSIMUM 1 banner portal_active — supaya fair display quota per
 -- guru + banner rotasi jelas siapa yang tampil.
 ALTER TABLE promotion_banners

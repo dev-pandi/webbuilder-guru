@@ -390,7 +390,7 @@ function BannerCard({
           <div className="flex-1">
             <strong className="text-amber-900">Tampil di Landing Portal</strong>
             <p className="mt-0.5 text-[11px] text-amber-800/80">
-              Pilih 1 banner untuk tampil di Ruang Promosi Portal (bikinweb.pandi.id).
+              Pilih 1 banner untuk tampil di Ruang Promosi Portal (kubaca.id).
             </p>
           </div>
           <label className="inline-flex cursor-pointer items-center gap-2">

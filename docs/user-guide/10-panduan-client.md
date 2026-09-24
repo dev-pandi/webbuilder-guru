@@ -23,7 +23,7 @@ bisa dilakukan sendiri tanpa bantuan Agent/Reseller.
 
 ### Registrasi
 
-1. Buka `https://bikinweb.pandi.id/register`
+1. Buka `https://kubaca.id/register`
 2. Isi:
    - **Nama lengkap**
    - **Email** — akan jadi username login
@@ -38,7 +38,7 @@ Kalau tidak menerima email dalam 5 menit:
 
 ### Login
 
-1. `https://bikinweb.pandi.id/login`
+1. `https://kubaca.id/login`
 2. Email + password
 3. Kalau lupa password → klik "Lupa Password" → email reset
 

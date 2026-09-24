@@ -12,7 +12,7 @@
 export const config = {
   // Base URL platform Anda. Ganti sesuai deployment:
   //   Dev:  http://localhost:3000
-  //   Prod: https://bikinweb.pandi.id
+  //   Prod: https://kubaca.id
   baseUrl: process.env.BASE_URL || "http://localhost:3000",
 
   // Akun test per role. Wajib pre-existing di DB dengan role yang benar.

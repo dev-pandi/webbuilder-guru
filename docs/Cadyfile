@@ -7,7 +7,7 @@
     # On-demand TLS: Caddy tanya ke API sebelum issue cert untuk domain baru.
     # Cegah cert issuance dari attacker yang point DNS random ke server kita.
     on_demand_tls {
-        ask https://api.bikinweb.pandi.id/internal/caddy/ask?secret={$CADDY_ASK_SECRET}
+        ask https://api.kubaca.id/internal/caddy/ask?secret={$CADDY_ASK_SECRET}
         interval 2m
         burst 5
     }
@@ -22,7 +22,7 @@
 # ---------- Platform dashboards ----------
 
 # Dashboard admin / reseller / agent / client
-bikinweb.pandi.id {
+kubaca.id {
     reverse_proxy 10.1.12.46:4000
 
     header {
@@ -43,7 +43,7 @@ bikinweb.pandi.id {
 
 
 # Public API — CORS di-handle di API side (Fiber middleware).
-api.bikinweb.pandi.id {
+api.kubaca.id {
     reverse_proxy 10.1.12.46:4011 {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
@@ -76,13 +76,13 @@ api.bikinweb.pandi.id {
 
 # Subdomain platform khusus renderer — dipakai:
 #   - Template preview iframe di dashboard admin/wizard client
-#     (set env NEXT_PUBLIC_RENDERER_BASE=https://preview.bikinweb.pandi.id)
+#     (set env NEXT_PUBLIC_RENDERER_BASE=https://preview.kubaca.id)
 #   - Kalau butuh URL "default site" untuk demo, redirect ke sini
 #
 # Bedanya dengan :443 catch-all: subdomain platform TIDAK butuh on-demand TLS
 # (Caddy issue cert normal, tidak call ask endpoint), lebih cepat + zero
 # tergantung state API.
-preview.bikinweb.pandi.id {
+preview.kubaca.id {
     reverse_proxy 10.1.12.46:4001 {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
