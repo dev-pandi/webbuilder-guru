@@ -389,6 +389,8 @@ export async function GuruLearningGridDynamic({
     return (
       <GuruArticleGrid
         items={previewItems}
+        // Pembelajaran = materi, bukan artikel — CTA label harus "Lihat materi".
+        ctaLabel="Lihat materi →"
         sidebarTitle={sidebarTitle}
         sidebarBody={sidebarBody}
         sidebarTags={sidebarTags}
@@ -425,6 +427,8 @@ export async function GuruLearningGridDynamic({
   return (
     <GuruArticleGrid
       items={items}
+      // Pembelajaran = materi, bukan artikel — CTA label harus "Lihat materi".
+      ctaLabel="Lihat materi →"
       sidebarTitle={sidebarTitle}
       sidebarBody={sidebarBody}
       sidebarTags={sidebarTags}

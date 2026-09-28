@@ -555,12 +555,17 @@ export function GuruArticleGrid(p: {
     coverVariant?: "default" | "red" | "sage" | "gold";
     featured?: boolean;
   }>;
+  // Label CTA "read more" per card. Default "Baca selengkapnya →" untuk
+  // artikel; caller `GuruLearningGridDynamic` override jadi "Lihat materi →"
+  // supaya sesuai konteks (materi pembelajaran ≠ artikel).
+  ctaLabel?: string;
   sidebarTitle?: string;
   sidebarBody?: string;
   sidebarTags?: string[];
   sidebarLinks?: Array<{ label: string; href: string }>;
 }) {
   const items = p.items ?? [];
+  const ctaLabel = p.ctaLabel ?? "Baca selengkapnya →";
   return (
     <section className="guru-section">
       <div className="guru-container guru-content-layout">
@@ -587,7 +592,7 @@ export function GuruArticleGrid(p: {
                   ) : null}
                   {it.href ? (
                     <a className="guru-read-more" href={it.href}>
-                      Lihat contoh artikel →
+                      {ctaLabel}
                     </a>
                   ) : null}
                 </div>

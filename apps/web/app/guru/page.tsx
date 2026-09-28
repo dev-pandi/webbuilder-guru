@@ -52,7 +52,7 @@ function TeacherCard({ item }: { item: TeacherDirectoryItem }) {
 
   return (
     <Card className="flex flex-col overflow-hidden p-0">
-      <div className="relative aspect-[2/1] bg-gradient-to-br from-violet-100 via-white to-amber-100">
+      <div className="relative aspect-square w-full bg-gradient-to-br from-violet-100 via-white to-amber-100">
         {item.profile_image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -61,8 +61,8 @@ function TeacherCard({ item }: { item: TeacherDirectoryItem }) {
             className="size-full object-cover"
           />
         ) : (
-          <div className="flex size-full items-center justify-center text-2xl font-bold text-violet-500/60">
-            {initials || <GraduationCap className="size-10" />}
+          <div className="flex size-full items-center justify-center text-4xl font-bold text-violet-500/60">
+            {initials || <GraduationCap className="size-14" />}
           </div>
         )}
         {item.is_new && (
@@ -71,7 +71,7 @@ function TeacherCard({ item }: { item: TeacherDirectoryItem }) {
           </span>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-3 p-4">
+      <div className="flex w-full flex-1 flex-col gap-3 p-4">
         <div>
           <h3 className="line-clamp-1 text-base font-bold text-foreground">
             {item.name}
@@ -104,7 +104,7 @@ function TeacherCard({ item }: { item: TeacherDirectoryItem }) {
 function SkeletonCard() {
   return (
     <Card className="overflow-hidden p-0">
-      <div className="aspect-[2/1] animate-pulse bg-muted" />
+      <div className="aspect-square w-full animate-pulse bg-muted" />
       <div className="space-y-3 p-4">
         <div className="h-4 w-32 animate-pulse rounded bg-muted" />
         <div className="h-3 w-24 animate-pulse rounded bg-muted" />
