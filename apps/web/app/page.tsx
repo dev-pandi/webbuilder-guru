@@ -722,16 +722,28 @@ export default function Home() {
                 bagikan.
               </p>
             </div>
-            <Button
-              size="lg"
-              asChild
-              className="h-12 shrink-0 gap-2 rounded-[14px] bg-[#d73f45] px-6 font-extrabold text-white shadow-[0_12px_30px_rgba(215,63,69,.20)] transition-transform hover:-translate-y-0.5 hover:bg-[#b82e34]"
-            >
-              <Link href="/register">
-                Buat Website Saya
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
+            <div className="flex shrink-0 flex-wrap gap-3">
+              <Button
+                size="lg"
+                asChild
+                className="h-12 gap-2 rounded-[14px] bg-[#d73f45] px-6 font-extrabold text-white shadow-[0_12px_30px_rgba(215,63,69,.20)] transition-transform hover:-translate-y-0.5 hover:bg-[#b82e34]"
+              >
+                <Link href="/register">
+                  Buat Website Saya
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                asChild
+                className="h-12 gap-2 rounded-[14px] border-[#d4dae4] bg-white px-6 font-extrabold text-[#172033] hover:-translate-y-0.5 hover:border-[#285f9e] hover:text-[#285f9e]"
+              >
+                <Link href="/panduan-guru">
+                  Baca Panduan Lengkap
+                </Link>
+              </Button>
+            </div>
           </div>
 
           {/* 3 step cards — semi-transparent white pada wrapper gradient */}

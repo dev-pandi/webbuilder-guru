@@ -163,16 +163,21 @@ export default function GuruDirectoryPage() {
     <div className="min-h-screen bg-[#fbfaf7]">
       {/* Header */}
       <header className="border-b border-[#e6e9ef] bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-6 py-4">
           <Button variant="ghost" size="sm" asChild>
             <Link href="/">
               <ArrowLeft />
               Beranda Portal
             </Link>
           </Button>
-          <Button asChild className="bg-[#d73f45] text-white hover:bg-[#c23238]">
-            <Link href="/register">Buat Website Saya</Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/panduan-guru">Baca Panduan</Link>
+            </Button>
+            <Button asChild className="bg-[#d73f45] text-white hover:bg-[#c23238]">
+              <Link href="/register">Buat Website Saya</Link>
+            </Button>
+          </div>
         </div>
       </header>
 
