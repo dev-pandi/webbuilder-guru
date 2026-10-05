@@ -9,6 +9,12 @@ export const metadata: Metadata = {
     "Buat website sekolah, UMKM, portofolio, atau blog dengan editor visual. Custom domain, SSL otomatis, dan export ke HTML/CSS/JS.",
 };
 
+// Force dynamic rendering app-wide — dashboard is per-user auth, zero SSG
+// benefit. Required so middleware CSP nonce gets injected into Next.js
+// inline bootstrap/RSC/hydration scripts (SSG bakes HTML at build-time
+// without per-request nonce → CSP blocks everything).
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id">
