@@ -53,9 +53,15 @@ export function middleware(req: NextRequest) {
 
   const csp = IS_PROD ? prodCsp : devCsp;
 
-  // Forward nonce ke downstream Server Components via request header.
+  // CRITICAL: CSP header harus di-set di BOTH request + response headers.
+  // - Request header → trigger Next.js server rendering auto-inject nonce
+  //   ke <script> internal (bootstrap, RSC flight, hydration bootstrap).
+  //   Tanpa ini: script internal tidak nonce'd → kena blok "inline script".
+  // - Response header → enforce di browser.
+  // Pattern dari Next.js official docs.
   const reqHeaders = new Headers(req.headers);
   reqHeaders.set("x-nonce", nonce);
+  reqHeaders.set("Content-Security-Policy", csp);
 
   const res = NextResponse.next({ request: { headers: reqHeaders } });
 
