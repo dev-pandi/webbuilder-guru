@@ -22,11 +22,15 @@ export function middleware(req: NextRequest) {
   // guru boleh pakai di tulisan. Tetap drop 'unsafe-inline'/'unsafe-eval' di
   // script-src → W3C CSP3 compliance.
   //
+  // script-src pakai 'self' + nonce (bukan strict-dynamic) — tenant page
+  // sering di-SSG/ISR, chunk script tag tanpa nonce. 'self' allow chunk
+  // same-origin, nonce untuk inline RSC payload.
+  //
   // frame-ancestors * : tenant site boleh di-iframe (editor preview + user
   // share link). Ini security trade-off khas platform multi-tenant site builder.
   const prodCsp = [
     `default-src 'self'`,
-    `script-src 'nonce-${nonce}' 'strict-dynamic' https:`,
+    `script-src 'self' 'nonce-${nonce}' https:`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `img-src 'self' data: blob: https:`,
     `font-src 'self' data: https://fonts.gstatic.com`,

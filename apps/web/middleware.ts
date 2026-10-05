@@ -2,21 +2,13 @@
 // supaya scan security (WEBSEC03) tidak flag 'unsafe-inline'/'unsafe-eval'
 // di script-src.
 //
-// Flow nonce:
-//   1. Middleware generate random nonce (crypto.randomUUID base64) per request
-//   2. Set `x-nonce` request header → downstream Server Components bisa baca
-//      via `headers().get("x-nonce")` dan apply ke custom <Script nonce=...>
-//   3. Next.js 14+ auto-inject nonce di tag `<script>` internal (RSC flight,
-//      hydration bootstrap, dsb) WHEN CSP response header contains nonce
-//   4. Set response Content-Security-Policy dengan 'nonce-XXX' 'strict-dynamic'
-//      → browser cuma trust script yang punya nonce + script yang di-loaded
-//      oleh nonce'd script (strict-dynamic)
-//
-// Mode `script-src 'nonce-XXX' 'strict-dynamic'` adalah W3C CSP3 recommendation
-// untuk SPA/bundled apps. 'unsafe-inline' dan 'unsafe-eval' DROP sepenuhnya.
-//
-// Dev vs Prod: Next.js dev mode butuh 'unsafe-eval' untuk Fast Refresh.
-// Di dev, CSP di-loose (atau skip middleware); prod strict.
+// Strategi script-src: `'self' 'nonce-XXX'` (BUKAN strict-dynamic).
+// Alasan: Next.js SSG pages (login, static landing) di-pre-render di build-time,
+// jadi script chunk tag di HTML tidak punya nonce attribute. Dengan
+// strict-dynamic, browser block semua script tanpa nonce → login mati.
+// Dengan 'self', chunk script di /_next/static/chunks/* load normal karena
+// same-origin, sambil tetap drop 'unsafe-inline' + 'unsafe-eval' → WEBSEC03
+// scan tetap pass.
 
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -31,7 +23,8 @@ export function middleware(req: NextRequest) {
   );
 
   // Build CSP sesuai W3C CSP3 recommendation.
-  // - script-src: nonce + strict-dynamic (SPA-friendly, no unsafe-inline)
+  // - script-src: 'self' + nonce — chunk script same-origin allowed (SSG safe),
+  //   plus nonce untuk inline Next.js RSC/hydration payload. Drop unsafe-*.
   // - style-src: tetap 'unsafe-inline' — Tailwind + Next.js inject inline
   //   <style>, susah di-nonce semuanya. CSP3 anggap style inline lebih
   //   rendah risk daripada script (tidak eksekusi code). securityheaders.com
@@ -41,7 +34,7 @@ export function middleware(req: NextRequest) {
   // - frame-ancestors 'self': dashboard tidak boleh di-embed di site lain
   const prodCsp = [
     `default-src 'self'`,
-    `script-src 'nonce-${nonce}' 'strict-dynamic' https:`,
+    `script-src 'self' 'nonce-${nonce}'`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `img-src 'self' data: blob: https:`,
     `font-src 'self' data: https://fonts.gstatic.com`,
