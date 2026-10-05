@@ -1,3 +1,4 @@
+//@ts-ignore
 import "./globals.css";
 
 // Force dynamic rendering app-wide — supaya middleware CSP nonce ter-inject
