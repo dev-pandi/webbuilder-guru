@@ -18,6 +18,8 @@ import {
   ExternalLink,
   AlertTriangle,
   RefreshCw,
+  UserCheck,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtBytes, pct } from "@/lib/format";
@@ -61,6 +63,44 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
   },
 };
 
+// MeProfile — subset dari /auth/me yang dipakai untuk cek kelengkapan profil.
+// Field ini wajib saat beli domain (WHOIS + EPP contact). Kalau user belum
+// isi dari awal, flow beli domain akan prompt — kita cegah dengan heads-up
+// di dashboard.
+type MeProfile = {
+  name: string;
+  phone_number: string;
+  address: string;
+  city: string;
+  postal_code: string;
+  nik: string;
+};
+
+// Field label untuk pesan "yang belum: nama, HP, …". NIK opsional kalau user
+// tidak akan beli .id — tapi karena kita tidak tau niat user, tetap flagged
+// supaya lengkap dari awal.
+const PROFILE_FIELD_LABEL: Record<keyof MeProfile, string> = {
+  name: "Nama lengkap",
+  phone_number: "Nomor HP",
+  address: "Alamat",
+  city: "Kota",
+  postal_code: "Kode pos",
+  nik: "NIK (untuk .id)",
+};
+
+function missingProfileFields(m: MeProfile | null): Array<keyof MeProfile> {
+  if (!m) return [];
+  const keys: Array<keyof MeProfile> = [
+    "name",
+    "phone_number",
+    "address",
+    "city",
+    "postal_code",
+    "nik",
+  ];
+  return keys.filter((k) => !(m[k] ?? "").trim());
+}
+
 // Purchase = shape yang di-return /api/v1/domains/purchases. Dashboard butuh
 // dua use case: kartu "sedang diproses" + banner "mau expire". Detail flow
 // tetap di /sites/pending/[jobId] & /settings/domains/[name].
@@ -91,6 +131,11 @@ export default function DashboardPage() {
   const [usageMap, setUsageMap] = useState<Record<string, SiteUsage>>({});
   const [err, setErr] = useState<string | null>(null);
   const [loadingSites, setLoadingSites] = useState(true);
+  // Me — fetch /auth/me untuk cek kelengkapan profil (phone/alamat/NIK).
+  // Field ini wajib saat beli domain — kalau user belum isi, show banner
+  // proaktif di dashboard supaya tidak kaget pas wizard beli domain.
+  const [me, setMe] = useState<MeProfile | null>(null);
+  const [profileDismissed, setProfileDismissed] = useState<boolean>(false);
   const [pendingPurchases, setPendingPurchases] = useState<DomainPurchase[]>([]);
   // Domain gagal yang butuh perhatian user — retry payment / lengkapi dokumen.
   // Dedupe agar tidak double-nag: kalau ada juga row pending/active untuk
@@ -132,6 +177,20 @@ export default function DashboardPage() {
 
   useEffect(() => {
     refresh();
+    // Fetch /auth/me untuk cek kelengkapan profil. Fire-and-forget — kalau
+    // gagal, banner profile tidak tampil (silent, non-blocking).
+    api<MeProfile>("/api/v1/auth/me")
+      .then((u) => setMe(u))
+      .catch(() => {});
+    // Restore dismissed state dari sessionStorage (reset tiap close tab —
+    // user tetap lihat lagi di sesi berikutnya kalau belum isi).
+    try {
+      if (sessionStorage.getItem("dashboard_profile_banner_dismissed") === "1") {
+        setProfileDismissed(true);
+      }
+    } catch {
+      /* sessionStorage disabled — biarkan default (banner tampil) */
+    }
     // Domain purchases — best effort. Kalau endpoint 404 (registrar disabled),
     // kartu ini tidak muncul.
     //
@@ -228,6 +287,71 @@ export default function DashboardPage() {
         <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="size-4 shrink-0" />
           <span><span className="font-medium">Gagal memuat:</span> {err}</span>
+        </div>
+      )}
+
+      {/* Profile completeness banner — proaktif ingatkan user isi profil
+          supaya alur beli domain nanti tidak terputus di tengah. Hanya
+          tampil kalau me sudah ter-fetch (hindari flicker saat loading)
+          + ada minimal 1 field kosong + user belum dismiss di sesi ini. */}
+      {me && !profileDismissed && missingProfileFields(me).length > 0 && (
+        <div className="relative rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+          <button
+            type="button"
+            onClick={() => {
+              setProfileDismissed(true);
+              try {
+                sessionStorage.setItem("dashboard_profile_banner_dismissed", "1");
+              } catch {
+                /* ignore write failure */
+              }
+            }}
+            aria-label="Tutup pemberitahuan"
+            title="Tutup pemberitahuan (akan muncul lagi di sesi berikutnya)"
+            className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-amber-900 transition-colors hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40"
+          >
+            <X className="size-4" />
+          </button>
+          <div className="flex flex-wrap items-start gap-3 pr-8">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300">
+              <UserCheck className="size-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                Lengkapi profil sebelum beli domain
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-amber-900/80 dark:text-amber-200/80">
+                Data ini wajib untuk WHOIS & invoice domain. Isi sekali di sini
+                supaya alur <strong>Beli Domain + Buat Situs</strong> nanti tidak
+                terputus di tengah.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {missingProfileFields(me).map((k) => (
+                  <span
+                    key={k}
+                    className="inline-flex items-center rounded-full border border-amber-300 bg-white/60 px-2 py-0.5 text-[11px] font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-200"
+                  >
+                    {PROFILE_FIELD_LABEL[k]}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  asChild
+                  className="h-8 gap-1.5 bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  <Link href="/settings/profile">
+                    Lengkapi Sekarang
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </Button>
+                <span className="text-[11px] text-amber-900/70 dark:text-amber-200/70">
+                  {missingProfileFields(me).length} dari {Object.keys(PROFILE_FIELD_LABEL).length} field belum terisi
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -118,7 +118,7 @@ export function SortableBlockList({
       onDragCancel={onDragCancel}
     >
       <SortableContext items={visibleKeys} strategy={verticalListSortingStrategy}>
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {blocks.map((b, i) => {
             if (hidden.has(i)) return null;
             return (
@@ -179,6 +179,7 @@ function SortableRow({
     zIndex: isDragging ? 10 : "auto",
   };
 
+  const label = schema?.label ?? block.type;
   return (
     <li ref={setNodeRef} style={style}>
       <div
@@ -189,7 +190,7 @@ function SortableRow({
           })
         }
         className={cn(
-          "group flex cursor-pointer items-center gap-1.5 rounded-md border px-1.5 py-2 text-sm transition-all",
+          "group flex cursor-pointer flex-col rounded-lg border transition-all",
           active
             ? isAnchor
               ? "border-primary/60 bg-primary/10 shadow-sm"
@@ -198,83 +199,91 @@ function SortableRow({
           isDragging && "border-primary shadow-lg",
         )}
       >
-        {/* Drag handle — separate hit area so clicks elsewhere still select */}
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="cursor-grab text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing"
-          title="Geser untuk pindah"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <GripVertical className="size-3.5" />
-        </button>
-
-        <span className="text-xs">{schema?.emoji ?? "🧩"}</span>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-medium">
-            {schema?.label ?? block.type}
+        {/* Baris 1: drag handle + emoji + nama — nama full-width, tidak ke-squeeze.
+            Row height dibikin lebih tinggi (py-3 + min-h-12) supaya hit area
+            lebih besar + visual breathing room — mudah di-tap di touch device. */}
+        <div className="flex min-h-12 items-center gap-2.5 px-2.5 py-3">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="cursor-grab text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing"
+            title="Geser untuk pindah"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="size-4" />
+          </button>
+          <span className="shrink-0 text-base leading-none">{schema?.emoji ?? "🧩"}</span>
+          <div className="min-w-0 flex-1" title={label}>
+            <div className="truncate text-sm font-medium leading-tight">
+              {label}
+            </div>
           </div>
         </div>
 
-        {/* Quick actions — visible on hover/active */}
-        <span
-          className={cn(
-            "flex shrink-0 gap-0.5 transition-opacity",
-            active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          )}
-        >
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMove(-1);
-            }}
-            disabled={index === 0}
-            title="Naik"
+        {/* Baris 2: action toolbar — hanya tampil saat active atau hover supaya
+            idle sidebar bersih. Stack di bawah nama (bukan di samping) supaya
+            nama block full-width + hit area tombol besar (size-7 vs 6) =
+            tidak lagi salah klik hapus. */}
+        {(active || true) && (
+          <div
+            className={cn(
+              "flex items-center justify-end gap-0.5 border-t border-current/5 px-1 py-1 transition-opacity",
+              active ? "opacity-100" : "pointer-events-none h-0 overflow-hidden border-t-0 py-0 opacity-0 group-hover:pointer-events-auto group-hover:h-auto group-hover:border-t group-hover:py-1 group-hover:opacity-100",
+            )}
           >
-            <ChevronUp className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            onClick={(e) => {
-              e.stopPropagation();
-              onMove(1);
-            }}
-            disabled={index === total - 1}
-            title="Turun"
-          >
-            <ChevronDown className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDuplicate();
-            }}
-            title="Duplikat (⌘D)"
-          >
-            <Copy className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm(`Hapus block "${schema?.label ?? block.type}"?`)) onDelete();
-            }}
-            title="Hapus (Del)"
-          >
-            <Trash2 className="size-3" />
-          </Button>
-        </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(-1);
+              }}
+              disabled={index === 0}
+              title="Naik"
+            >
+              <ChevronUp className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(1);
+              }}
+              disabled={index === total - 1}
+              title="Turun"
+            >
+              <ChevronDown className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate();
+              }}
+              title="Duplikat (⌘D)"
+            >
+              <Copy className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Hapus block "${label}"?`)) onDelete();
+              }}
+              title="Hapus (Del)"
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
     </li>
   );

@@ -298,7 +298,9 @@ export default function EditorPage() {
   const gridCols = useMemo(() => {
     // Mobile: single column (canvas only). Palette + prop editor via dialog.
     if (isMobile) return "1fr";
-    const L = leftCollapsed ? "0" : "240px";
+    // 280px (vs 240 sebelumnya) — tambah ruang untuk nama block + action
+    // buttons supaya tidak truncate "Guru St..." / salah klik hapus block.
+    const L = leftCollapsed ? "0" : "280px";
     const R = rightCollapsed ? "0" : "320px";
     return `${L} 1fr ${R}`;
   }, [isMobile, leftCollapsed, rightCollapsed]);
@@ -1563,21 +1565,31 @@ export default function EditorPage() {
           </ul>
         </div>
 
-        {/* Pages list */}
+        {/* Pages list — cap tinggi + scroll kalau banyak halaman (10+).
+            Alasan: dulu list unbounded → page kedua ke bawah dorong seksi
+            Block tree keluar viewport, user harus scroll banyak buat pindah
+            halaman. Cap 220px (~6 halaman visible) + scroll internal. */}
         <div className="border-b p-3">
-          <div className="mb-2 flex items-center gap-1.5">
-            <Layers className="size-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Halaman
-            </span>
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Layers className="size-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Halaman
+              </span>
+            </div>
+            {pages.length > 0 && (
+              <span className="text-[10px] font-semibold text-muted-foreground">
+                {pages.length}
+              </span>
+            )}
           </div>
-          <ul className="space-y-0.5">
+          <ul className="max-h-[220px] space-y-0.5 overflow-y-auto pr-0.5">
             {pages.map((p) => (
               <li key={p.id}>
                 <button
                   onClick={() => selectPage(p)}
                   className={cn(
-                    "group flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-all",
+                    "group flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-all",
                     target?.kind === "page" && target.pageId === p.id
                       ? "bg-primary/10 font-medium text-primary"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground",
