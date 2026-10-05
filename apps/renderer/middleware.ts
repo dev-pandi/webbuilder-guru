@@ -1,27 +1,66 @@
 // Global middleware — jalankan per-request untuk SEMUA route renderer.
-// Tugas tunggal: tambah header `Vary: Host` di response supaya downstream
-// cache (Caddy, Cloudflare, browser) tidak collapse cache key ke URL saja.
+// Dua tugas:
+//   1. Set `Vary: Host` → cegah downstream cache cross-tenant leak
+//   2. Generate nonce + CSP header → fix WEBSEC03 (W3C CSP3) — tidak lagi
+//      pakai 'unsafe-inline' / 'unsafe-eval' di script-src
 //
-// Konteks: renderer multi-tenant serve banyak domain dari single Next.js
-// process. Kalau downstream cache tidak lihat Host header, response untuk
-// domain A bisa diserve ke domain B (cross-tenant leak).
-//
-// Kenapa middleware (bukan tiap route handler tambah manual):
-//   - Defensive layer — tiap route.ts / page.tsx tidak perlu ingat.
-//   - Coverage: sitemap, robots, page.tsx, RSC output, semua ke-cover.
-//   - Zero-cost — middleware Edge runtime cepat + Next.js short-circuit
-//     untuk static assets (matcher exclude `/_next/*`).
-//
-// Note: Middleware TIDAK mengubah cache behavior Next.js internal (ISR
-// cache tetap keyed by URL). Route yang butuh per-host cache harus tetap
-// `dynamic = "force-dynamic"` (sitemap + robots sudah).
+// Multi-tenant note: CSP sama untuk semua tenant karena renderer serve
+// konten pattern yang sama (user markdown + guru blocks). Kalau tenant
+// butuh embed custom (mis. widget pihak ke-3), tambah ke script-src/frame-src.
 
 import { NextResponse, type NextRequest } from "next/server";
 
-export function middleware(_req: NextRequest) {
-  const res = NextResponse.next();
-  // Append (bukan replace) supaya kalau route sudah set Vary lain (mis.
-  // "Accept-Encoding"), keep + append Host. Header dedup di Next.js.
+const IS_PROD = process.env.NODE_ENV === "production";
+
+export function middleware(req: NextRequest) {
+  // Nonce — 16 bytes base64 ≈ 22 char, 128-bit entropy. Fresh per request.
+  const nonce = btoa(
+    String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))),
+  );
+
+  // CSP tenant renderer — permisif untuk embed (YouTube, Spotify, Maps) karena
+  // guru boleh pakai di tulisan. Tetap drop 'unsafe-inline'/'unsafe-eval' di
+  // script-src → W3C CSP3 compliance.
+  //
+  // frame-ancestors * : tenant site boleh di-iframe (editor preview + user
+  // share link). Ini security trade-off khas platform multi-tenant site builder.
+  const prodCsp = [
+    `default-src 'self'`,
+    `script-src 'nonce-${nonce}' 'strict-dynamic' https:`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `img-src 'self' data: blob: https:`,
+    `font-src 'self' data: https://fonts.gstatic.com`,
+    `connect-src 'self' https://api.kubaca.id https:`,
+    `frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.google.com`,
+    `media-src 'self' blob: https:`,
+    `frame-ancestors *`,
+    `base-uri 'self'`,
+    `form-action 'self' https://api.kubaca.id`,
+    `object-src 'none'`,
+    `upgrade-insecure-requests`,
+  ].join("; ");
+
+  const devCsp = [
+    `default-src 'self'`,
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `img-src 'self' data: blob: https:`,
+    `font-src 'self' data: https://fonts.gstatic.com`,
+    `connect-src 'self' http://localhost:* ws://localhost:* https:`,
+    `frame-src *`,
+    `frame-ancestors *`,
+  ].join("; ");
+
+  const csp = IS_PROD ? prodCsp : devCsp;
+
+  // Forward nonce ke downstream Server Components via request header.
+  const reqHeaders = new Headers(req.headers);
+  reqHeaders.set("x-nonce", nonce);
+
+  const res = NextResponse.next({ request: { headers: reqHeaders } });
+
+  // Vary: Host — defensive cache isolation (multi-tenant). Append (bukan
+  // replace) supaya kalau route sudah set Vary lain, keep + append Host.
   const existing = res.headers.get("Vary");
   if (existing) {
     if (!existing.toLowerCase().split(",").map((s) => s.trim()).includes("host")) {
@@ -30,17 +69,13 @@ export function middleware(_req: NextRequest) {
   } else {
     res.headers.set("Vary", "Host");
   }
+
+  res.headers.set("Content-Security-Policy", csp);
   return res;
 }
 
-// Skip static assets + Next.js internals — no cache concern there, dan
-// hemat overhead (middleware jalan per request).
 export const config = {
   matcher: [
-    // Match semua kecuali:
-    //   - _next/* (Next.js chunks + static)
-    //   - favicon, images assets
-    //   - api routes (renderer tidak punya, tapi safe skip)
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff|woff2|ttf)$).*)",
   ],
 };
