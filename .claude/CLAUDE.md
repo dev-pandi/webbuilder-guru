@@ -270,6 +270,69 @@ Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2
 - **Dedupe expires_at per domain di frontend**: setelah renew, register-row punya expires_at lama, renew-row punya yang baru. Pakai `latestActivePerDomain(items)` helper (di dashboard + settings/domains).
 - `lib/api.ts` throw `ApiError` (subclass Error dengan `.status` + `.code`) — pattern-match status 404/403 untuk friendly screen.
 
+## Rumah Digital Guru (template `guru-pandi-upi`)
+
+Modul khusus guru: 1 situs guru = 1 domain + konten profil, artikel per rubrik,
+materi ajar (silabus/RPP), respon dari murid/ortu, dan banner carousel.
+
+**Backend tables** (migrations 0049–0052):
+- `guru_profiles` (1:1 per site) — nama, mata pelajaran, sekolah, bio, foto, social links
+- `guru_articles` — rubrik enum (`umum|cerita|opini|tips|lainnya`), publish status, cover
+- `guru_learning_materials` — jenis + file attachment
+- `guru_responses` — form kiriman murid/ortu (nama, pesan, sumber), moderation
+- `guru_banners` — carousel homepage (image + href + sort_order)
+
+**Seed otomatis**: pilih template `guru-pandi-upi` di wizard → sites handler panggil
+`guruseed.SeedDefaultData(ctx, siteID, userName)` → profil default + 3 artikel +
+2 materi + 2 banner — supaya editor preview tidak kosong.
+
+**Template preview sentinel**: renderer dynamic blocks (`GuruBlocksDynamic.tsx`)
+cek `siteId === "_template"` → render dari konstanta `SAMPLE_BANNERS`, `SAMPLE_STATS`,
+`SAMPLE_LATEST`, `SAMPLE_ARTICLES_BY_RUBRIC`, `SAMPLE_MATERIALS`. Dipakai editor
+preview card + template picker preview.
+
+**Portal publik `/guru`** — direktori guru paginated, sort `popular|newest`, search,
+konsumsi `GET /public/guru`. Public route (no auth). Admin moderation di
+`/admin/guru/*` untuk approve profil + respon + banner.
+
+**Profil Guru**: UI pindah dari `/settings` ke `/sites/[id]/profil` (per-site, bukan
+per-user). Alasan: 1 user bisa punya multiple situs guru.
+
+## Platform Articles (migration 0053)
+
+Blog platform-level (bukan per-site) untuk SEO + onboarding guru. Terpisah dari
+`guru_articles` yang per-situs.
+
+- Table `platform_articles` — slug unik, status (`draft|published`), category enum
+  (`panduan|tips|cerita|pengumuman|lainnya`), `featured` boolean, cover, body Markdown,
+  SEO meta (title/description/keywords).
+- Admin CRUD: `/admin/platform-articles` (list + filter) → `/new` + `/[id]/edit`
+  pakai `<RichEditor>` TipTap full-page (bukan dialog) dengan autosave + dirty tracking.
+- Public: `/artikel` (list + featured highlight 2-col + grid 3-col + category chips)
+  + `/artikel/[slug]` (detail, auto `IncrementView`). Homepage card section via
+  `<HomeArticlesSection />` di `apps/web/app/page.tsx`.
+- **Markdown rendering CSS**: pakai class custom `.article-prose` (public, palette
+  landing #172033/#d73f45) atau `.wb-prose` (editor, dark). JANGAN pakai `prose`
+  Tailwind — `@tailwindcss/typography` tidak terinstall.
+- Seed idempotent `platform_articles.SeedIfEmpty` — 6 artikel contoh (Kenapa Guru
+  Perlu Website, Cara Memulai 15 Menit, Tips Menulis, Memilih Domain .id, Peluncuran
+  PANDI × UPI, Cerita Guru Desa). Dipanggil goroutine di `main.go` dengan 30s timeout.
+
+## Admin Impersonation Pattern (`GetOwnedOrAdmin`)
+
+Admin role boleh masuk editor + manage konten situs user manapun untuk support/debug.
+Jangan pakai `GetOwned(id, userID)` di handler yang perlu admin bypass — pakai
+`GetOwnedOrAdmin(id, userID, isAdmin)` + `UpdateOrAdmin` (ada di `sites/repo.go`).
+
+Helper: `auth.IsAdminFrom(c)` baca `role` claim JWT. Dipakai di 11+ handler:
+`sites`, `pages`, `articles`, `learning`, `responses`, `banners`, `blog`, `products`,
+`forms`, `analytics`, `usage`, `assets`.
+
+**Bug yang pernah terjadi**: admin klik "Buka Editor" → redirect ke login. Root
+cause: `sites.Get` masih pakai `GetOwned`. Ownership check di dashboard sudah ada,
+tapi fetch pertama di editor fail. Fix: ganti ke `GetOwnedOrAdmin` di semua endpoint
+yang editor panggil (Get/Update/Publish/ListMembers).
+
 ## Don'ts
 
 - ❌ Jangan tambah dependency tanpa cek dulu yang sudah ada di `go.mod` / `package.json`.

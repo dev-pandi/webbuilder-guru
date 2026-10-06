@@ -159,17 +159,32 @@ export function DomainsList({
     return { active, pendingNew, pendingRenew, renewingDomains, terminal };
   }, [domains, purchases]);
 
+  const totalCount =
+    (purchases?.length ?? 0) + (domains?.length ?? 0);
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Domain Saya</h1>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight">Domain Saya</h1>
+            {totalCount > 0 && (
+              <Badge variant="secondary" className="h-5 px-2 text-[11px]">
+                {totalCount}
+              </Badge>
+            )}
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Semua domain yang Anda beli, lengkap dengan status registrasi dan tanggal expire.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={refresh} disabled={loading} className="gap-2">
+          <Button asChild size="sm" className="gap-2">
+            <Link href="/sites/new-with-domain">
+              <Globe2 className="size-3.5" />
+              Beli Domain Baru
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading} className="gap-2">
             <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
             Refresh
           </Button>
@@ -183,18 +198,23 @@ export function DomainsList({
         </div>
       )}
 
-      {loading && purchases.length === 0 ? (
-        <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Memuat…
-        </div>
-      ) : purchases.length === 0 ? (
+      {loading && totalCount === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center">
-            <Globe2 className="mx-auto size-8 text-muted-foreground" />
-            <p className="mt-3 text-sm text-muted-foreground">
-              Belum ada domain. Beli domain pertama Anda untuk mulai.
+          <CardContent className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Memuat domain…
+          </CardContent>
+        </Card>
+      ) : totalCount === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="py-14 text-center">
+            <span className="mx-auto inline-flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600 ring-1 ring-emerald-100">
+              <Globe2 className="size-6" />
+            </span>
+            <h3 className="mt-4 text-base font-semibold">Belum ada domain</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Beli domain pertama Anda untuk mulai membangun situs.
             </p>
-            <Button asChild className="mt-4 gap-2">
+            <Button asChild className="mt-5 gap-2">
               <Link href="/sites/new-with-domain">
                 <Globe2 className="size-4" />
                 Beli Domain
@@ -205,7 +225,13 @@ export function DomainsList({
       ) : (
         <>
           {grouped.active.length > 0 && (
-            <Section title="Aktif" count={grouped.active.length} icon={CheckCircle2} iconClass="text-emerald-500">
+            <Section
+              title="Aktif"
+              count={grouped.active.length}
+              icon={CheckCircle2}
+              iconClass="text-emerald-600"
+              iconWrapClass="bg-emerald-50 ring-1 ring-emerald-100"
+            >
               {grouped.active.map((p) => (
                 <ActiveRow
                   key={p.job_id}
@@ -218,7 +244,13 @@ export function DomainsList({
             </Section>
           )}
           {grouped.pendingNew.length > 0 && (
-            <Section title="Domain baru sedang diproses" count={grouped.pendingNew.length} icon={Clock} iconClass="text-amber-500">
+            <Section
+              title="Domain baru sedang diproses"
+              count={grouped.pendingNew.length}
+              icon={Clock}
+              iconClass="text-amber-600"
+              iconWrapClass="bg-amber-50 ring-1 ring-amber-100"
+            >
               {grouped.pendingNew.map((p) => (
                 <PendingRow key={p.job_id} p={p} />
               ))}
@@ -229,7 +261,8 @@ export function DomainsList({
               title="Perpanjangan berjalan"
               count={grouped.pendingRenew.length}
               icon={RefreshCw}
-              iconClass="text-blue-500"
+              iconClass="text-blue-600"
+              iconWrapClass="bg-blue-50 ring-1 ring-blue-100"
               subtitle="Domain-domain di bawah tetap AKTIF selama proses perpanjangan"
             >
               {grouped.pendingRenew.map((p) => (
@@ -238,7 +271,13 @@ export function DomainsList({
             </Section>
           )}
           {grouped.terminal.length > 0 && (
-            <Section title="Gagal / kadaluwarsa" count={grouped.terminal.length} icon={XCircle} iconClass="text-destructive">
+            <Section
+              title="Gagal / kadaluwarsa"
+              count={grouped.terminal.length}
+              icon={XCircle}
+              iconClass="text-destructive"
+              iconWrapClass="bg-destructive/10 ring-1 ring-destructive/20"
+            >
               {grouped.terminal.map((p) => (
                 <TerminalRow key={p.job_id} p={p} />
               ))}
@@ -267,6 +306,7 @@ function Section({
   count,
   icon: Icon,
   iconClass,
+  iconWrapClass,
   subtitle,
   children,
 }: {
@@ -274,25 +314,28 @@ function Section({
   count: number;
   icon: React.ComponentType<{ className?: string }>;
   iconClass?: string;
+  iconWrapClass?: string;
   subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Icon className={"size-4 " + (iconClass ?? "")} />
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-muted/30 pb-3 pt-4">
+        <CardTitle className="flex items-center gap-3 text-base">
+          <span className={"inline-flex size-7 items-center justify-center rounded-full " + (iconWrapClass ?? "bg-muted")}>
+            <Icon className={"size-3.5 " + (iconClass ?? "")} />
+          </span>
           {title}
           <Badge variant="secondary" className="ml-auto text-xs">
             {count}
           </Badge>
         </CardTitle>
         {subtitle && (
-          <p className="pt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+          <p className="pt-1 text-xs text-muted-foreground">{subtitle}</p>
         )}
       </CardHeader>
-      <CardContent className="pt-0">
-        <ul className="divide-y">{children}</ul>
+      <CardContent className="p-2 sm:p-3">
+        <ul className="space-y-1.5">{children}</ul>
       </CardContent>
     </Card>
   );
@@ -315,18 +358,24 @@ function ActiveRow({
   // CTA supaya mereka lanjut ke template picker di /sites/pending/[job_id]
   // (yang sudah handle "active + no site" branch dengan TemplatePicker).
   const needsTemplate = p.kind === "register" && !p.site_id;
+  const owner = ownerLabel(p);
   return (
-    <li className="flex flex-wrap items-center gap-3 py-3">
-      <Globe2 className="size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1 space-y-1">
+    <li className="group flex flex-wrap items-center gap-3 rounded-xl border border-transparent bg-background px-3 py-3 transition hover:border-border hover:bg-muted/40 sm:px-4">
+      {/* Avatar-style icon — gradient background mengikuti status (hijau emerald untuk aktif) */}
+      <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600 ring-1 ring-emerald-100">
+        <Globe2 className="size-5" />
+      </span>
+
+      <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href={detailHref}
-            className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+            className="font-mono text-sm font-semibold text-foreground underline-offset-4 hover:underline sm:text-[15px]"
           >
-            <code>{p.domain}</code>
+            {p.domain}
           </Link>
-          <Badge variant="success" className="text-xs">
+          <Badge variant="success" className="gap-1 text-[10px]">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
             Aktif
           </Badge>
           {needsTemplate && (
@@ -342,36 +391,39 @@ function ActiveRow({
             </Badge>
           )}
         </div>
-        <RowMeta owner={ownerLabel(p)} expiry={expiryInfo} />
+        <RowMeta owner={owner} expiry={expiryInfo} />
       </div>
-      {needsTemplate && (
-        <Button asChild size="sm" className="gap-1.5">
-          <Link href={`/sites/pending/${p.job_id}`}>
-            <Sparkles className="size-3.5" />
-            Pilih template
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {needsTemplate && (
+          <Button asChild size="sm" className="gap-1.5 shadow-sm">
+            <Link href={`/sites/pending/${p.job_id}`}>
+              <Sparkles className="size-3.5" />
+              Pilih template
+            </Link>
+          </Button>
+        )}
+        <Button asChild variant="ghost" size="sm" className="gap-1.5">
+          <Link href={detailHref}>
+            Kelola
+            <ArrowRight className="size-3.5" />
           </Link>
         </Button>
-      )}
-      <Button asChild variant="ghost" size="sm" className="gap-1.5">
-        <Link href={detailHref}>
-          Kelola
-          <ArrowRight className="size-3.5" />
-        </Link>
-      </Button>
-      {/* Tombol Perpanjang di-disable kalau ada renew job pending — cegah
-          user click 2x bikin invoice ganda. Kalau perpanjangan gagal, tombol
-          otomatis aktif lagi (baris hilang dari pendingRenew). */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onRenew}
-        disabled={isRenewing}
-        className="gap-1.5"
-        title={isRenewing ? "Perpanjangan sedang berjalan" : "Perpanjang domain"}
-      >
-        <RefreshCw className="size-3.5" />
-        Perpanjang
-      </Button>
+        {/* Tombol Perpanjang di-disable kalau ada renew job pending — cegah
+            user click 2x bikin invoice ganda. Kalau perpanjangan gagal, tombol
+            otomatis aktif lagi (baris hilang dari pendingRenew). */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRenew}
+          disabled={isRenewing}
+          className="gap-1.5"
+          title={isRenewing ? "Perpanjangan sedang berjalan" : "Perpanjang domain"}
+        >
+          <RefreshCw className="size-3.5" />
+          Perpanjang
+        </Button>
+      </div>
     </li>
   );
 }
@@ -419,24 +471,27 @@ function RowMeta({
 function PendingRow({ p }: { p: Purchase }) {
   const info = STATUS_LABEL[p.status] ?? { label: p.status, variant: "secondary" as const };
   const owner = ownerLabel(p);
+  const isRenew = p.kind === "renew";
   return (
-    <li className="flex flex-wrap items-center gap-3 py-3">
-      <Loader2 className="size-4 shrink-0 animate-spin text-amber-500" />
-      <div className="min-w-0 flex-1 space-y-1">
+    <li className="group flex flex-wrap items-center gap-3 rounded-xl border border-transparent bg-background px-3 py-3 transition hover:border-border hover:bg-muted/40 sm:px-4">
+      <span className={"inline-flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 " + (isRenew ? "bg-blue-50 text-blue-600 ring-blue-100" : "bg-amber-50 text-amber-600 ring-amber-100")}>
+        <Loader2 className="size-5 animate-spin" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <code className="text-sm font-medium">{p.domain}</code>
-          <Badge variant={info.variant} className="text-xs">
+          <span className="font-mono text-sm font-semibold text-foreground sm:text-[15px]">{p.domain}</span>
+          <Badge variant={info.variant} className="gap-1 text-[10px]">
             {info.label}
           </Badge>
-          {p.kind === "renew" && (
-            <Badge variant="secondary" className="text-xs">
-              Renew
+          {isRenew && (
+            <Badge variant="secondary" className="text-[10px]">
+              Perpanjang
             </Badge>
           )}
         </div>
         <RowMeta owner={owner} expiry={null} />
       </div>
-      <Button asChild variant="ghost" size="sm" className="gap-1.5">
+      <Button asChild variant="outline" size="sm" className="gap-1.5">
         <Link href={`/sites/pending/${p.job_id}`}>
           Lanjut
           <ArrowRight className="size-3.5" />
@@ -450,26 +505,28 @@ function TerminalRow({ p }: { p: Purchase }) {
   const info = STATUS_LABEL[p.status] ?? { label: p.status, variant: "destructive" as const };
   const owner = ownerLabel(p);
   return (
-    <li className="flex flex-wrap items-center gap-3 py-3">
-      <XCircle className="size-4 shrink-0 text-destructive" />
-      <div className="min-w-0 flex-1 space-y-1">
+    <li className="group flex flex-wrap items-center gap-3 rounded-xl border border-transparent bg-background px-3 py-3 transition hover:border-border hover:bg-destructive/5 sm:px-4">
+      <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive/10 text-destructive ring-1 ring-destructive/20">
+        <XCircle className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <code className="text-sm font-medium">{p.domain}</code>
-          <Badge variant={info.variant} className="text-xs">
+          <span className="font-mono text-sm font-semibold text-foreground sm:text-[15px]">{p.domain}</span>
+          <Badge variant={info.variant} className="text-[10px]">
             {info.label}
           </Badge>
         </div>
         <RowMeta owner={owner} expiry={null} />
         {p.reason && (
-          <div className="truncate text-xs text-muted-foreground">
+          <p className="line-clamp-2 text-xs text-muted-foreground">
             {p.reason}
-          </div>
+          </p>
         )}
       </div>
       {p.status === "failed" && (
         <Button asChild variant="outline" size="sm" className="gap-1.5">
           <Link href={`/sites/pending/${p.job_id}`}>
-            Lihat & retry
+            Lihat & coba lagi
             <ArrowRight className="size-3.5" />
           </Link>
         </Button>

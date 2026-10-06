@@ -245,6 +245,14 @@ func (h *Handler) CreateSiteFromTemplate(c *fiber.Ctx) error {
 		return httpx.Internal(c, "attach failed")
 	}
 
+	// Sync juga ke tabel registered_domains supaya /api/v1/domains list view
+	// tidak misleading "Belum ada situs". Best-effort — kalau gagal, UI tetap
+	// benar lewat COALESCE subselect fallback di ListDomainsByUser.
+	if err := h.purchases.AttachDomainSite(c.Context(), purchase.Domain, ownerID, site.ID); err != nil {
+		slog.Warn("registered_domains: attach site failed",
+			"domain", purchase.Domain, "site_id", site.ID, "error", err)
+	}
+
 	// 1. Provision template pages.
 	// Sebelum insert, extract shared header/footer dari home page → set ke
 	// sites.layout_json + strip dari SEMUA page trees. Konsisten dengan

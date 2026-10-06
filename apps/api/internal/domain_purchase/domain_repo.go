@@ -48,6 +48,24 @@ const domainCols = `id, user_id, purchased_by, name, contact_id, expires_at,
 	created_at, updated_at,
 	cf_attach_status, cf_attach_error, cf_attach_at, cf_zone_id`
 
+// domainColsWithSiteFallback — SELECT list dengan COALESCE site_id dari
+// domain_purchases. `registered_domains.site_id` historis tidak selalu
+// di-populate (templates handler cuma update domain_purchases.site_id),
+// jadi list view fallback ke sumber authoritative supaya UI tidak salah
+// tampil "Belum ada situs" padahal site sudah ada.
+const domainColsWithSiteFallback = `rd.id, rd.user_id, rd.purchased_by, rd.name,
+	rd.contact_id, rd.expires_at, rd.registered_at, rd.last_renewed_at, rd.status,
+	COALESCE(rd.site_id, (
+		SELECT dp.site_id FROM domain_purchases dp
+		WHERE dp.domain = rd.name
+		  AND dp.kind = 'register'
+		  AND dp.site_id IS NOT NULL
+		ORDER BY dp.created_at DESC
+		LIMIT 1
+	)) AS site_id,
+	rd.registrar_job_id, rd.created_at, rd.updated_at,
+	rd.cf_attach_status, rd.cf_attach_error, rd.cf_attach_at, rd.cf_zone_id`
+
 func scanDomain(row pgx.Row, d *Domain) error {
 	return row.Scan(
 		&d.ID, &d.UserID, &d.PurchasedBy, &d.Name, &d.ContactID, &d.ExpiresAt,
@@ -199,10 +217,10 @@ func (r *Repo) GetDomainByNameAdmin(ctx context.Context, name string) (*Domain, 
 // register on-behalf-of). Agent yang beli untuk klien tetap kelihatan di
 // list-nya sendiri walau klien yang jadi owner formal.
 func (r *Repo) ListDomainsByUser(ctx context.Context, userID uuid.UUID) ([]Domain, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+domainCols+`
-		FROM registered_domains
-		WHERE user_id = $1 OR purchased_by = $1
-		ORDER BY expires_at ASC NULLS LAST, name ASC`, userID)
+	rows, err := r.pool.Query(ctx, `SELECT `+domainColsWithSiteFallback+`
+		FROM registered_domains rd
+		WHERE rd.user_id = $1 OR rd.purchased_by = $1
+		ORDER BY rd.expires_at ASC NULLS LAST, rd.name ASC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -225,10 +243,10 @@ func (r *Repo) ListDomainsByUsers(ctx context.Context, userIDs []uuid.UUID) ([]D
 	if len(userIDs) == 0 {
 		return []Domain{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+domainCols+`
-		FROM registered_domains
-		WHERE user_id = ANY($1) OR purchased_by = ANY($1)
-		ORDER BY expires_at ASC NULLS LAST, name ASC`, userIDs)
+	rows, err := r.pool.Query(ctx, `SELECT `+domainColsWithSiteFallback+`
+		FROM registered_domains rd
+		WHERE rd.user_id = ANY($1) OR rd.purchased_by = ANY($1)
+		ORDER BY rd.expires_at ASC NULLS LAST, rd.name ASC`, userIDs)
 	if err != nil {
 		return nil, err
 	}
