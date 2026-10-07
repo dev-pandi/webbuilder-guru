@@ -260,8 +260,27 @@ func (p *Provider) CreateZone(ctx context.Context, domain string) (*dnsprovider.
 	}
 	return &dnsprovider.Zone{
 		ID:          resp.Zone.ID,
-		Nameservers: resp.Delegation.Nameservers,
+		Nameservers: normalizeNS(resp.Delegation.Nameservers),
 	}, nil
+}
+
+// normalizeNS strips trailing dots + lowercases nameserver names. DNSCloud
+// returns names dalam DNS wire format (`candra.ns.dnscloud.id.`) tapi EPP
+// registry (PANDI) compare host object pakai form tanpa dot. Jarang-handle
+// bedanya bikin domain:update kena 2303 "object does not exist" padahal
+// host-nya ada. Normalize di sumber supaya consumer (web-builder,
+// api-registry) terima form yang bisa langsung dipakai.
+func normalizeNS(ns []string) []string {
+	out := make([]string, 0, len(ns))
+	for _, n := range ns {
+		n = strings.ToLower(strings.TrimSpace(n))
+		n = strings.TrimSuffix(n, ".")
+		if n == "" {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 // listZonesResp mirrors GET /zones envelope — subset yang kita butuh.
@@ -297,7 +316,7 @@ func (p *Provider) FindZoneByDomain(ctx context.Context, domain string) (*dnspro
 			}
 			return &dnsprovider.Zone{
 				ID:          detail.Zone.ID,
-				Nameservers: detail.Nameservers,
+				Nameservers: normalizeNS(detail.Nameservers),
 			}, nil
 		}
 	}

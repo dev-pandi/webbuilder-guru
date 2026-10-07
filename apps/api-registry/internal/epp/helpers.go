@@ -15,10 +15,22 @@ func tldOf(domain string) string {
 }
 
 // setOf — build set for O(1) membership check saat diff-ing NS list.
+// Normalize: lowercase + trim whitespace + strip trailing dot.
+//
+// Trailing dot critical: EPP registry (PANDI) stores host object sebagai
+// `candra.ns.example.id` (tanpa dot). Kalau caller kirim DNS wire-format
+// form (`candra.ns.example.id.`), string comparison miss → registry balik
+// 2303 "object does not exist" padahal host-nya ada. Strip dulu sebelum
+// hit domain:update frame.
 func setOf(items []string) map[string]bool {
 	m := make(map[string]bool, len(items))
 	for _, s := range items {
-		m[strings.ToLower(strings.TrimSpace(s))] = true
+		s = strings.ToLower(strings.TrimSpace(s))
+		s = strings.TrimSuffix(s, ".")
+		if s == "" {
+			continue
+		}
+		m[s] = true
 	}
 	return m
 }

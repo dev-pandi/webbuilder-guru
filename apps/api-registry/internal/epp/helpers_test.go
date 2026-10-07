@@ -29,6 +29,33 @@ func TestSetOf_NormalizesToLower(t *testing.T) {
 	}
 }
 
+// Trailing-dot form (DNS wire format) harus di-normalize ke tanpa-dot supaya
+// cocok dengan EPP registry representation. Jarang-handle bug ini bikin
+// domain:update hostObj kena 2303 "object does not exist" padahal host ada.
+func TestSetOf_StripsTrailingDot(t *testing.T) {
+	s := setOf([]string{"candra.ns.dnscloud.id.", "DEWI.ns.dnscloud.id.", "ns3.example.com"})
+	if len(s) != 3 {
+		t.Errorf("expected 3 unique, got %d: %v", len(s), s)
+	}
+	for _, want := range []string{"candra.ns.dnscloud.id", "dewi.ns.dnscloud.id", "ns3.example.com"} {
+		if !s[want] {
+			t.Errorf("missing normalized key %q in %v", want, s)
+		}
+	}
+	// Pastikan form dengan dot TIDAK ada.
+	if s["candra.ns.dnscloud.id."] {
+		t.Error("set should not contain trailing-dot form")
+	}
+}
+
+// Empty string + whitespace-only harus di-skip, bukan masuk sebagai "" key.
+func TestSetOf_SkipsEmpty(t *testing.T) {
+	s := setOf([]string{"ns1.example.com", "", "  ", "."})
+	if len(s) != 1 {
+		t.Errorf("expected 1 unique (empty skipped), got %d: %v", len(s), s)
+	}
+}
+
 func TestJoinStatuses(t *testing.T) {
 	if joinStatuses(nil) != "unknown" {
 		t.Errorf("empty should be 'unknown'")
