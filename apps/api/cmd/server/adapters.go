@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/dns_providers"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/paymentgw"
@@ -24,6 +25,28 @@ import (
 	"github.com/webbuilder/api/internal/promos"
 	"github.com/webbuilder/api/internal/wallet_local"
 )
+
+// --- dnsProvidersAdapter: dns_providers.Repo → domain_purchase.DNSProvidersReader ---
+//
+// Bridges the raw config repo (full Config shape) into the small subset the
+// admin diagnostic handler needs. Keeps domain_purchase package decoupled
+// from dns_providers' internals.
+
+type dnsProvidersAdapter struct{ repo *dns_providers.Repo }
+
+func (a dnsProvidersAdapter) GetByID(ctx context.Context, id uuid.UUID) (*domain_purchase.DNSProvidersConfig, error) {
+	cfg, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &domain_purchase.DNSProvidersConfig{
+		ID:        cfg.ID,
+		Kind:      cfg.Kind,
+		Name:      cfg.Name,
+		APIToken:  cfg.APIToken,
+		AccountID: cfg.AccountID,
+	}, nil
+}
 
 // --- pricingAdapter: pricing.Repo → domain_purchase.PricingLookup ---
 

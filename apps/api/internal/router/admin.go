@@ -48,6 +48,7 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/domains/:name/nameservers", deps.DomainPurchase.AdminGetNameservers)
 		g.Get("/domains/:name/dns", deps.DomainPurchase.AdminListDNSRecords)
 		g.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.AdminCloudflareInfo)
+		g.Get("/domains/:name/dnscloud-info", deps.DomainPurchase.AdminDNSCloudInfo)
 		// Re-run Cloudflare auto-attach untuk domain yang failed/skipped saat
 		// register. Idempotent — kalau zone sudah ada, tetap mark success.
 		g.Post("/domains/:name/cloudflare-retry", deps.DomainPurchase.AdminCloudflareRetry)

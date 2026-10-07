@@ -19,6 +19,7 @@ import (
 	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/cloudflare"
+	"github.com/webbuilder/api/internal/dnscloud"
 	"github.com/webbuilder/api/internal/dnsprovider"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/invoices"
@@ -66,6 +67,10 @@ type Handler struct {
 	// user choice (purchase.dns_provider_choice). Nil = attach pakai legacy
 	// CF default path.
 	providerFactory dnsprovider.Factory
+	// dnsProvidersRepo = raw config repo untuk admin diagnostic endpoint
+	// (DNSCloudInfo) yang butuh api_token mentah, bukan via Provider
+	// interface. Nil = DNSCloud health panel disabled.
+	dnsProvidersRepo DNSProvidersReader
 	assignments     AssignmentChecker // nil = on-behalf-of disabled (Phase 3)
 	audit           *audit.Repo       // nil = audit disabled
 	zonesRepo       *zones.Repo       // nil = trust upstream AllowedZones (legacy)
@@ -179,6 +184,28 @@ type PromoValidator interface {
 // jatuh ke legacy path (CF default via h.cloudflare). Kalau set, routing
 // honor admin priority + user choice (purchase.dns_provider_choice).
 func (h *Handler) SetProviderFactory(f dnsprovider.Factory) { h.providerFactory = f }
+
+// SetDNSProvidersRepo inject raw config repo. Diperlukan oleh admin
+// diagnostic endpoint (DNSCloudInfo) yang butuh baca api_token mentah untuk
+// buat raw backend client — bukan via Provider interface yang disamakan.
+func (h *Handler) SetDNSProvidersRepo(r DNSProvidersReader) { h.dnsProvidersRepo = r }
+
+// DNSProvidersReader is the subset of dns_providers.Repo needed by this
+// handler. Interface pattern keeps domain_purchase from importing
+// dns_providers directly (avoid import cycle at the config-loading layer).
+type DNSProvidersReader interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*DNSProvidersConfig, error)
+}
+
+// DNSProvidersConfig mirrors the subset of dns_providers.Config this handler
+// cares about. Keeps domain_purchase decoupled from the full Repo type.
+type DNSProvidersConfig struct {
+	ID        uuid.UUID
+	Kind      string
+	Name      string
+	APIToken  string
+	AccountID string
+}
 
 // SetZones inject local zones source. Kalau di-set, handler filter
 // hasil check untuk hanya expose TLD yang active di local table (per
@@ -1773,6 +1800,109 @@ func (h *Handler) AdminCloudflareInfo(c *fiber.Ctx) error {
 			"www_present":              www != nil,
 		},
 	})
+}
+
+// dnscloudInfoFor builds the DNSCloud health response for a given domain row.
+// Called by both admin (no ownership check) and user (ownership-checked)
+// handlers so the diagnostic shape stays identical.
+func (h *Handler) dnscloudInfoFor(c *fiber.Ctx, d *Domain) error {
+	if h.dnsProvidersRepo == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "dns_providers_disabled",
+			"DNS providers repo belum di-wire di main.go")
+	}
+	if d.DNSProvider != "dnscloud" {
+		return httpx.Err(c, fiber.StatusBadRequest, "wrong_provider",
+			"Domain ini pakai provider '"+d.DNSProvider+"', bukan dnscloud. Gunakan /cloudflare-info.")
+	}
+	if d.DNSProviderConfigID == nil {
+		return httpx.Err(c, fiber.StatusConflict, "missing_config_id",
+			"Domain tidak punya dns_provider_config_id — kemungkinan attach belum pernah sukses.")
+	}
+	cfg, err := h.dnsProvidersRepo.GetByID(c.Context(), *d.DNSProviderConfigID)
+	if err != nil {
+		return httpx.NotFound(c, "DNS provider config tidak ditemukan: "+err.Error())
+	}
+	if cfg.Kind != "dnscloud" {
+		return httpx.Err(c, fiber.StatusInternalServerError, "config_kind_mismatch",
+			"Row domain claim 'dnscloud' tapi config_id milik '"+cfg.Kind+"' — data inconsistent.")
+	}
+	if d.DNSZoneID == "" {
+		return httpx.Err(c, fiber.StatusConflict, "missing_zone_id",
+			"Domain tidak punya dns_zone_id — attach belum pernah selesai sampai zone creation.")
+	}
+
+	dcClient := dnscloud.NewClient(dnscloud.Config{APIToken: cfg.APIToken})
+	zone, err := dcClient.GetZoneDetail(c.Context(), d.DNSZoneID)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "dnscloud_error",
+			"Gagal fetch zone: "+err.Error())
+	}
+	// DNSSEC optional — swallow nil (zone belum pernah aktif DNSSEC).
+	dnssec, _ := dcClient.GetDNSSECStatus(c.Context(), d.DNSZoneID)
+
+	nsAtRegistrar := []string{}
+	if h.registrar != nil {
+		if info, rErr := h.registrar.GetNameservers(c.Context(), d.Name); rErr == nil && info != nil {
+			nsAtRegistrar = info.Nameservers
+		}
+	}
+	nsSynced := nsListsEqual(zone.Nameservers, nsAtRegistrar)
+
+	return httpx.OK(c, fiber.Map{
+		"zone": fiber.Map{
+			"id":             zone.Zone.ID,
+			"name":           zone.Zone.Name,
+			"status":         zone.Zone.Status,
+			"version":        zone.Zone.Version,
+			"soa_serial":     zone.Zone.SOASerial,
+			"dnssec_enabled": zone.Zone.DNSSECEnabled,
+			"nameservers":    zone.Nameservers,
+			"plan_name":      zone.Zone.PlanName,
+		},
+		"propagation":              zone.Propagation,
+		"dnssec":                   dnssec,
+		"nameservers_at_registrar": nsAtRegistrar,
+		"checks": fiber.Map{
+			"zone_active": zone.Zone.Status == "active",
+			"ns_synced":   nsSynced,
+		},
+	})
+}
+
+// AdminDNSCloudInfo — GET /api/v1/admin/domains/:name/dnscloud-info
+// Admin diagnostic view (no ownership check).
+func (h *Handler) AdminDNSCloudInfo(c *fiber.Ctx) error {
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	d, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan")
+		}
+		return httpx.Internal(c, "lookup failed: "+err.Error())
+	}
+	return h.dnscloudInfoFor(c, d)
+}
+
+// DNSCloudInfo — GET /api/v1/domains/:name/dnscloud-info
+// User-facing health view with ownership check. Inclusive ke on-behalf-of
+// (purchased_by) sejajar dengan GetNameservers/Whois pattern.
+func (h *Handler) DNSCloudInfo(c *fiber.Ctx) error {
+	cl := auth.ClaimsFrom(c)
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	d, err := h.repo.GetDomainByName(c.Context(), name, cl.UserID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "lookup failed: "+err.Error())
+	}
+	return h.dnscloudInfoFor(c, d)
 }
 
 // formatOptTime — helper untuk nullable *time.Time → RFC3339 atau kosong.

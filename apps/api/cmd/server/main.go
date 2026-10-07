@@ -499,8 +499,11 @@ func main() {
 
 	// Wire factory into purchase handler too — tryAttachToDNS reads it to
 	// pick the right backend (CF or DNSCloud) when a new domain is bought.
+	// Also wire raw config reader so AdminDNSCloudInfo can fetch zone health
+	// via DNSCloud API with the sticky token.
 	if purchaseHandler != nil {
 		purchaseHandler.SetProviderFactory(dnsProviderFactory)
+		purchaseHandler.SetDNSProvidersRepo(dnsProvidersAdapter{repo: dnsProvidersRepo})
 	}
 
 	var byoHandler *site_byo_domains.Handler

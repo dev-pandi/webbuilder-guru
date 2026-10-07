@@ -52,11 +52,15 @@ type DomainRow = {
   last_renewed_at?: string;
   site_id?: string;
   registrar_job_id?: string;
-  // CF attach status — admin only field. Pending | success | failed | skipped.
-  cf_attach_status?: string;
-  cf_attach_error?: string;
-  cf_attach_at?: string;
-  cf_zone_id?: string;
+  // DNS attach status — admin only field. Pending | success | failed | skipped.
+  // Field names generic sejak multi-provider rollout; dns_provider identifies
+  // the backend ("cloudflare" | "dnscloud").
+  dns_attach_status?: string;
+  dns_attach_error?: string;
+  dns_attach_at?: string;
+  dns_zone_id?: string;
+  dns_provider?: string;
+  dns_provider_config_id?: string;
 };
 
 type Whois = {
@@ -254,18 +258,26 @@ export function DomainDetail({
               </CardContent>
             </Card>
 
-            {/* CF attach status — hanya admin mode. Nampilin status auto-attach
-                dari saat register + tombol retry manual kalau failed. */}
+            {/* DNS attach status — hanya admin mode. Nampilin status auto-attach
+                dari saat register + tombol retry manual kalau failed. Generic
+                antar CF/DNSCloud; badge provider ditampilkan di card. */}
             {adminMode && row && (
-              <CFAttachStatusCard
+              <DNSAttachStatusCard
                 domain={domain}
                 initial={row}
                 onRefreshed={(fresh) => setRow(fresh)}
               />
             )}
 
-            {/* Cloudflare health — cek apakah domain akan bisa di-akses */}
-            <CloudflareHealthPanel domain={domain} endpointPrefix={endpointPrefix} />
+            {/* Cloudflare health panel hanya relevan kalau zone-nya di CF.
+                DNSCloud punya status endpoint sendiri (zone verification +
+                propagation) — ditampilkan di tempat terpisah kalau diperlukan. */}
+            {(row?.dns_provider === "cloudflare" || !row?.dns_provider) && (
+              <CloudflareHealthPanel domain={domain} endpointPrefix={endpointPrefix} />
+            )}
+            {row?.dns_provider === "dnscloud" && (
+              <DNSCloudInfoCard domain={domain} endpointPrefix={endpointPrefix} />
+            )}
 
             {/* WHOIS */}
             <WhoisPanel whois={whois} />
@@ -890,13 +902,14 @@ function CheckRow({ ok, label, hint }: { ok: boolean; label: string; hint: strin
   );
 }
 
-// -------------- CF Attach Status (admin only) --------------
-// Nampilin status auto-attach ke Cloudflare yang di-record saat register.
-// Kalau failed / skipped, admin bisa klik "Retry" untuk re-trigger tanpa
-// perlu re-register domain. Idempotent di backend — kalau zone sudah ada
-// di CF, tetap mark success.
+// -------------- DNS Attach Status (admin only) --------------
+// Nampilin status auto-attach ke DNS provider yang di-record saat register.
+// Backend provider agnostic (Cloudflare atau DNSCloud); badge provider di
+// render di dalam card. Admin bisa klik "Retry" kalau failed / skipped.
+// Endpoint retain legacy name /cloudflare-retry untuk URL back-compat;
+// internally tryAttachToDNS routes ke provider yang sticky di row.
 
-function CFAttachStatusCard({
+function DNSAttachStatusCard({
   domain,
   initial,
   onRefreshed,
@@ -911,11 +924,13 @@ function CFAttachStatusCard({
     error: string;
     at?: string;
     zoneId?: string;
+    provider?: string;
   }>({
-    status: initial.cf_attach_status ?? "pending",
-    error: initial.cf_attach_error ?? "",
-    at: initial.cf_attach_at,
-    zoneId: initial.cf_zone_id,
+    status: initial.dns_attach_status ?? "pending",
+    error: initial.dns_attach_error ?? "",
+    at: initial.dns_attach_at,
+    zoneId: initial.dns_zone_id,
+    provider: initial.dns_provider,
   });
 
   async function onRetry() {
@@ -923,33 +938,38 @@ function CFAttachStatusCard({
     setRetrying(true);
     try {
       const res = await api<{
-        cf_attach_status: string;
-        cf_attach_error: string;
-        cf_attach_at?: string;
-        cf_zone_id?: string;
+        dns_attach_status: string;
+        dns_attach_error: string;
+        dns_attach_at?: string;
+        dns_zone_id?: string;
+        dns_provider?: string;
+        dns_provider_config_id?: string;
       }>(`/api/v1/admin/domains/${encodeURIComponent(domain)}/cloudflare-retry`, {
         method: "POST",
       });
       setSnapshot({
-        status: res.cf_attach_status,
-        error: res.cf_attach_error,
-        at: res.cf_attach_at,
-        zoneId: res.cf_zone_id,
+        status: res.dns_attach_status,
+        error: res.dns_attach_error,
+        at: res.dns_attach_at,
+        zoneId: res.dns_zone_id,
+        provider: res.dns_provider,
       });
       // Sync ke parent DomainRow state juga.
       onRefreshed({
         ...initial,
-        cf_attach_status: res.cf_attach_status,
-        cf_attach_error: res.cf_attach_error,
-        cf_attach_at: res.cf_attach_at,
-        cf_zone_id: res.cf_zone_id,
+        dns_attach_status: res.dns_attach_status,
+        dns_attach_error: res.dns_attach_error,
+        dns_attach_at: res.dns_attach_at,
+        dns_zone_id: res.dns_zone_id,
+        dns_provider: res.dns_provider,
+        dns_provider_config_id: res.dns_provider_config_id,
       });
-      if (res.cf_attach_status === "success") {
-        toast.success("Cloudflare attach berhasil");
-      } else if (res.cf_attach_status === "failed") {
-        toast.error(`Retry gagal: ${res.cf_attach_error || "unknown error"}`);
+      if (res.dns_attach_status === "success") {
+        toast.success("DNS attach berhasil");
+      } else if (res.dns_attach_status === "failed") {
+        toast.error(`Retry gagal: ${res.dns_attach_error || "unknown error"}`);
       } else {
-        toast.info(`Status: ${res.cf_attach_status}`);
+        toast.info(`Status: ${res.dns_attach_status}`);
       }
     } catch (e) {
       toast.error(`Retry error: ${(e as Error).message}`);
@@ -958,7 +978,8 @@ function CFAttachStatusCard({
     }
   }
 
-  const { status, error, at, zoneId } = snapshot;
+  const { status, error, at, zoneId, provider } = snapshot;
+  const providerLabel = provider === "dnscloud" ? "DNSCloud.ID" : provider === "cloudflare" ? "Cloudflare" : "—";
 
   // Visual per status.
   const style: Record<
@@ -994,7 +1015,10 @@ function CFAttachStatusCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Cloud className="size-4 text-primary" />
-          Status Cloudflare Attach
+          Status DNS Provider Attach
+          <Badge variant="secondary" className="ml-1 text-[10px]">
+            {providerLabel}
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1056,9 +1080,9 @@ function CFAttachStatusCard({
 
         {status === "skipped" && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
-            Setup Cloudflare config di{" "}
-            <Link href="/admin/cloudflare" className="font-medium underline">
-              /admin/cloudflare
+            Setup DNS provider config di{" "}
+            <Link href="/admin/dns-providers" className="font-medium underline">
+              /admin/dns-providers
             </Link>{" "}
             dulu, lalu klik Retry.
           </div>
@@ -1069,6 +1093,225 @@ function CFAttachStatusCard({
             Attach berhasil tapi ada warning: <span className="font-mono">{error}</span>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// -------------- DNSCloud Info (admin health panel) --------------
+// Mirror CloudflareHealthPanel untuk zone yang di DNSCloud. Fetch
+// /admin/domains/:name/dnscloud-info yang hit GET /zones/{id} +
+// /zones/{id}/dnssec di DNSCloud API via sticky config token.
+
+type DNSCloudInfo = {
+  zone: {
+    id: string;
+    name: string;
+    status: string;
+    version: number;
+    soa_serial: number;
+    dnssec_enabled: boolean;
+    nameservers: string[];
+    plan_name?: string;
+  };
+  propagation: Array<{
+    hostname: string;
+    serial: number;
+    healthy: boolean;
+    error?: string;
+    observed_at?: string;
+  }>;
+  dnssec: {
+    enabled: boolean;
+    chain_state: string;
+    chain_label?: string;
+    detail?: string;
+    ds?: string[];
+    dnskey?: string;
+    key_tag?: number;
+    algorithm?: number;
+    checked_at?: string;
+    rrsig_expires_at?: string;
+  } | null;
+  nameservers_at_registrar: string[];
+  checks: {
+    zone_active: boolean;
+    ns_synced: boolean;
+  };
+};
+
+function DNSCloudInfoCard({ domain, endpointPrefix }: { domain: string; endpointPrefix: string }) {
+  const [info, setInfo] = useState<DNSCloudInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function fetchInfo() {
+    setLoading(true);
+    setErr(null);
+    try {
+      const d = await api<DNSCloudInfo>(
+        `${endpointPrefix}/${encodeURIComponent(domain)}/dnscloud-info`,
+      );
+      setInfo(d);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain, endpointPrefix]);
+
+  const dnssecBadge = (state: string) => {
+    switch (state) {
+      case "aman": return { label: "Aman", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" };
+      case "menunggu_ds": return { label: "Menunggu DS di registrar", cls: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300" };
+      case "mismatch": return { label: "DS mismatch", cls: "border-destructive/40 bg-destructive/10 text-destructive" };
+      case "error": return { label: "Error", cls: "border-destructive/40 bg-destructive/10 text-destructive" };
+      default: return { label: "Nonaktif", cls: "border-border bg-muted/40 text-muted-foreground" };
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Cloud className="size-4 text-primary" />
+          DNS Provider: DNSCloud.ID
+          <Badge variant="secondary" className="ml-1 text-[10px]">Indonesia</Badge>
+        </CardTitle>
+        <Button variant="outline" size="sm" onClick={fetchInfo} disabled={loading} className="gap-1.5">
+          <RefreshCw className={"size-3.5 " + (loading ? "animate-spin" : "")} />
+          Refresh
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        {loading ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Mengambil data DNSCloud…
+          </div>
+        ) : err ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
+            <p className="font-medium">DNSCloud data tidak tersedia</p>
+            <p className="mt-1 font-mono text-[11px] opacity-80">{err}</p>
+          </div>
+        ) : info ? (
+          <>
+            {/* Zone status + checks */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <CheckRow
+                ok={info.checks.zone_active}
+                label="Zone aktif di DNSCloud"
+                hint={
+                  info.checks.zone_active
+                    ? "Zone berstatus 'active' — DNSCloud sudah verify NS switch."
+                    : `Zone berstatus '${info.zone.status}'. Pastikan nameserver sudah di-update di registrar.`
+                }
+              />
+              <CheckRow
+                ok={info.checks.ns_synced}
+                label="NS di registrar match DNSCloud"
+                hint={
+                  info.checks.ns_synced
+                    ? "Nameserver di PANDI cocok dengan NS DNSCloud."
+                    : "Registrar NS tidak match. Update di panel Nameserver di bawah."
+                }
+              />
+            </div>
+
+            {/* Nameserver assignment */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Nameservers (DNSCloud assigned)
+              </p>
+              <div className="space-y-1 rounded-md border bg-muted/30 p-2">
+                {info.zone.nameservers.map((ns) => (
+                  <code key={ns} className="block font-mono text-[11px]">{ns}</code>
+                ))}
+              </div>
+            </div>
+
+            {/* Propagation per-NS */}
+            {info.propagation && info.propagation.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Propagasi per Nameserver
+                </p>
+                <div className="space-y-1">
+                  {info.propagation.map((p) => (
+                    <div key={p.hostname} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        {p.healthy ? (
+                          <CheckCircle2 className="size-3.5 text-emerald-600" />
+                        ) : (
+                          <XCircle className="size-3.5 text-destructive" />
+                        )}
+                        <code className="font-mono">{p.hostname}</code>
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span>serial: {p.serial}</span>
+                        {p.error && (
+                          <span className="text-destructive">({p.error})</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* DNSSEC */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                DNSSEC
+              </p>
+              {info.dnssec && info.dnssec.enabled ? (
+                <div className="rounded-md border p-3 text-xs">
+                  <div className="mb-2 flex items-center gap-2">
+                    {(() => {
+                      const b = dnssecBadge(info.dnssec.chain_state);
+                      return (
+                        <span className={"rounded-md border px-2 py-0.5 text-xs font-medium " + b.cls}>
+                          {b.label}
+                        </span>
+                      );
+                    })()}
+                    {info.dnssec.chain_label && (
+                      <span className="text-muted-foreground">{info.dnssec.chain_label}</span>
+                    )}
+                  </div>
+                  {info.dnssec.detail && (
+                    <p className="mb-2 text-muted-foreground">{info.dnssec.detail}</p>
+                  )}
+                  {info.dnssec.ds && info.dnssec.ds.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="font-medium">DS records (salin ke panel registrar):</p>
+                      {info.dnssec.ds.map((ds, i) => (
+                        <code key={i} className="block break-all rounded bg-muted px-1.5 py-1 font-mono text-[10px]">
+                          {ds}
+                        </code>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-md border bg-muted/30 p-2.5 text-xs text-muted-foreground">
+                  DNSSEC belum aktif untuk zona ini.
+                </div>
+              )}
+            </div>
+
+            {info.zone.plan_name && (
+              <div className="text-[11px] text-muted-foreground">
+                Paket DNSCloud: <span className="font-medium">{info.zone.plan_name}</span> ·
+                Version zone: {info.zone.version} · SOA serial: {info.zone.soa_serial}
+              </div>
+            )}
+          </>
+        ) : null}
       </CardContent>
     </Card>
   );

@@ -153,6 +153,78 @@ type createZoneResp struct {
 	} `json:"delegation"`
 }
 
+// --- Admin diagnostic queries (read-only) -----------------------------------
+
+// ZoneDetail is the shape returned by GET /zones/{zone}. Includes propagation
+// per-NS so the admin panel can show which nameserver has caught up.
+type ZoneDetail struct {
+	Zone struct {
+		ID             string `json:"id"`
+		Name           string `json:"name"`
+		NameUnicode    string `json:"name_unicode,omitempty"`
+		Status         string `json:"status"`
+		Version        int    `json:"version"`
+		SOASerial      int    `json:"soa_serial"`
+		DNSSECEnabled  bool   `json:"dnssec_enabled"`
+		RRsetCount     int    `json:"rrset_count"`
+		ActivatedAt    string `json:"activated_at,omitempty"`
+		PlanName       string `json:"plan_name,omitempty"`
+		PlanDefault    bool   `json:"plan_default,omitempty"`
+	} `json:"zone"`
+	Nameservers []string   `json:"nameservers"`
+	Propagation []NSStatus `json:"propagation"`
+}
+
+// NSStatus — per-nameserver propagation report. `Healthy=false` means that
+// specific NS is lagging the zone serial.
+type NSStatus struct {
+	Hostname   string `json:"hostname"`
+	Serial     int    `json:"serial"`
+	Healthy    bool   `json:"healthy"`
+	Error      string `json:"error,omitempty"`
+	ObservedAt string `json:"observed_at,omitempty"`
+}
+
+// DNSSECStatus — chain of trust state. `ChainState` enum per spec:
+// nonaktif | menunggu_ds | aman | mismatch | error.
+type DNSSECStatus struct {
+	Enabled         bool     `json:"enabled"`
+	ChainState      string   `json:"chain_state"`
+	ChainLabel      string   `json:"chain_label,omitempty"`
+	Detail          string   `json:"detail,omitempty"`
+	DS              []string `json:"ds,omitempty"`
+	DNSKey          string   `json:"dnskey,omitempty"`
+	KeyTag          int      `json:"key_tag,omitempty"`
+	Algorithm       int      `json:"algorithm,omitempty"`
+	CheckedAt       string   `json:"checked_at,omitempty"`
+	RRSigExpiresAt  string   `json:"rrsig_expires_at,omitempty"`
+}
+
+// GetZoneDetail — single call returns zone + NS propagation. Used by admin
+// panel for health view.
+func (c *Client) GetZoneDetail(ctx context.Context, zoneID string) (*ZoneDetail, error) {
+	var out ZoneDetail
+	if err := c.do(ctx, http.MethodGet, "/zones/"+pathEscape(zoneID), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetDNSSECStatus returns the current DNSSEC chain state. Returns nil, nil if
+// DNSSEC was never enabled on the zone (404 swallowed as "no state").
+func (c *Client) GetDNSSECStatus(ctx context.Context, zoneID string) (*DNSSECStatus, error) {
+	var out DNSSECStatus
+	err := c.do(ctx, http.MethodGet, "/zones/"+pathEscape(zoneID)+"/dnssec", nil, &out)
+	if err != nil {
+		var pr *Problem
+		if errors.As(err, &pr) && pr.Status == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &out, nil
+}
+
 // Ping is a lightweight auth-only probe for the admin "test connection"
 // button. Hits GET /zones?limit=1 — a token-friendly endpoint that returns
 // 200 (even with zero zones) for a valid API token.

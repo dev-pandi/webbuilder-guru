@@ -171,6 +171,7 @@ func MountUser(app *fiber.App, deps Deps) {
 		// Cloudflare health check — troubleshoot "domain tidak bisa diakses".
 		// Return zone status + NS sync + apex/www record + platform IP match.
 		authed.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.CloudflareInfo)
+		authed.Get("/domains/:name/dnscloud-info", deps.DomainPurchase.DNSCloudInfo)
 		// Aggregate current-state per FQDN (tabel `domains`) — replacement
 		// untuk /purchases list yang campur register + renew per domain.
 		// Cocok untuk "domain saya" view. Detail transaksi tetap di /purchases.
