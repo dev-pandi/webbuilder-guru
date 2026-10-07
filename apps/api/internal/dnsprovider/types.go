@@ -78,6 +78,12 @@ type Provider interface {
 	// UpsertRecord creates or replaces an RRset.
 	UpsertRecord(ctx context.Context, zoneID string, rec Record) error
 
+	// DeleteRecord removes an RRset by type+name. Idempotent: a name+type
+	// that doesn't exist returns nil, not an error. Used to clean up stale
+	// records (e.g., CNAME at a name before switching to A at same name,
+	// avoiding DNS RFC 1912 CNAME-coexistence conflicts).
+	DeleteRecord(ctx context.Context, zoneID, recordType, name string) error
+
 	// EnableProxy flips edge proxy on for a hostname. Backends that express
 	// proxied state via UpsertRecord may return nil as a no-op.
 	EnableProxy(ctx context.Context, zoneID, hostname string) error

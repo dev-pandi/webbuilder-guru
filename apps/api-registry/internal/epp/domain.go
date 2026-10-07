@@ -31,7 +31,9 @@ func (p *EPPDirectProvider) CheckDomain(ctx context.Context, req provider.CheckR
 	frame := &frames.DomainCheckType{}
 	frame.SetMultiDomain([]string{domain})
 
+	p.c.DumpRequest("domain:check", frame, "domain", domain)
 	raw, err := p.c.client.CheckDomain(ctx, frame)
+	p.c.DumpResponse("domain:check", raw, err, "domain", domain)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -88,7 +90,9 @@ func (p *EPPDirectProvider) BulkCheckDomains(ctx context.Context, req provider.B
 	frame := &frames.DomainCheckType{}
 	frame.SetMultiDomain(normalized)
 
+	p.c.DumpRequest("domain:check", frame, "domains", normalized)
 	raw, err := p.c.client.CheckDomain(ctx, frame)
+	p.c.DumpResponse("domain:check", raw, err, "domains", normalized)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -121,7 +125,9 @@ func (p *EPPDirectProvider) InfoDomain(ctx context.Context, name string) (*provi
 
 	frame := &frames.DomainInfoType{}
 	frame.SetDomain(strings.ToLower(name))
+	p.c.DumpRequest("domain:info", frame, "domain", name)
 	raw, err := p.c.client.InfoDomain(ctx, frame)
+	p.c.DumpResponse("domain:info", raw, err, "domain", name)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}

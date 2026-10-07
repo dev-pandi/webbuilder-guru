@@ -50,6 +50,13 @@ type Config struct {
 	// set, log ditulis dengan format console (human-readable) di level Debug.
 	EPPLogFile string
 
+	// EPPDebugXML — kalau true, api-registry dump request frame (marshaled)
+	// + response raw ke slog default handler per EPP command. WARNING: XML
+	// bisa mengandung credential (login) + PII (contact create/update) +
+	// authInfo. HANYA aktifkan sementara untuk debug di dev/staging. Default
+	// false untuk prod.
+	EPPDebugXML bool
+
 	// Security — auth header dari web builder API.
 	// HMAC shared secret — request body di-sign, verify di-server. Simple + no
 	// PKI overhead untuk phase awal. Kalau butuh stronger, migrate ke mTLS.
@@ -110,6 +117,7 @@ func Load() *Config {
 		EPPKeepAliveInterval:  getDuration("EPP_KEEPALIVE_INTERVAL", 5*time.Minute),
 		EPPPerCommandSession:  getBool("EPP_PER_COMMAND_SESSION", false),
 		EPPLogFile:            getEnv("EPP_LOG_FILE", ""),
+		EPPDebugXML:           getBool("EPP_DEBUG_XML", false),
 
 		InternalHMACSecret: getEnv("INTERNAL_HMAC_SECRET", ""),
 

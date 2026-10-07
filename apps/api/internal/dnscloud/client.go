@@ -323,6 +323,23 @@ func (p *Provider) UpsertRecord(ctx context.Context, zoneID string, rec dnsprovi
 	return p.client.do(ctx, http.MethodPut, path, body, nil)
 }
 
+// DeleteRecord — DELETE /zones/{zone}/rrsets/{name}/{type}. Idempotent:
+// RRSET_NOT_FOUND (404) di-swallow sebagai success supaya cleanup "stale
+// CNAME before PUT A" aman dipanggil berkali-kali.
+func (p *Provider) DeleteRecord(ctx context.Context, zoneID, recordType, name string) error {
+	path := fmt.Sprintf("/zones/%s/rrsets/%s/%s",
+		pathEscape(zoneID), pathEscape(name), pathEscape(recordType))
+	err := p.client.do(ctx, http.MethodDelete, path, nil, nil)
+	if err != nil {
+		var pr *Problem
+		if errors.As(err, &pr) && pr.Status == http.StatusNotFound {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 // EnableProxy flips edge proxy (orange cloud) for a hostname. Uses sensible
 // defaults: TLS mode "ketat" (= CF Full Strict), WAF "blokir" default.
 func (p *Provider) EnableProxy(ctx context.Context, zoneID, hostname string) error {

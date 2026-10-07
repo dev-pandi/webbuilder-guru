@@ -66,6 +66,46 @@ func (p *Provider) UpsertRecord(ctx context.Context, zoneID string, rec dnsprovi
 	return nil
 }
 
+// DeleteRecord — list records di zone, filter by type+name, delete semua
+// yang match. Idempotent (list kosong = no-op). CF API tidak expose
+// delete-by-name-type langsung, jadi pattern list+filter+delete yang paling
+// safe.
+func (p *Provider) DeleteRecord(ctx context.Context, zoneID, recordType, name string) error {
+	records, err := p.client.ListDNSRecords(ctx, zoneID)
+	if err != nil {
+		return err
+	}
+	// CF stores full FQDN di `Name` (e.g., "www.example.com"), tapi apex
+	// stored as plain zone name. Normalize nama kita untuk match: "@" di
+	// kita = exact zone name di CF. Simpler: match by suffix-match karena
+	// kita selalu passing name relatif ("@" atau "www").
+	for _, r := range records {
+		if !strings.EqualFold(r.Type, recordType) {
+			continue
+		}
+		// Match: "@" → nama = zone name (ends with no subdomain prefix);
+		// otherwise name di awal full FQDN.
+		match := false
+		if name == "@" {
+			// Apex: CF Name = zone name tanpa subdomain prefix.
+			if r.ZoneName != "" && strings.EqualFold(r.Name, r.ZoneName) {
+				match = true
+			}
+		} else {
+			if r.ZoneName != "" && strings.EqualFold(r.Name, name+"."+r.ZoneName) {
+				match = true
+			}
+		}
+		if !match {
+			continue
+		}
+		if dErr := p.client.DeleteDNSRecord(ctx, zoneID, r.ID); dErr != nil {
+			return dErr
+		}
+	}
+	return nil
+}
+
 // EnableProxy is a no-op for Cloudflare — proxied state is set per-record
 // via UpsertRecord. Kept for interface symmetry with DNSCloud.
 func (p *Provider) EnableProxy(ctx context.Context, zoneID, hostname string) error {

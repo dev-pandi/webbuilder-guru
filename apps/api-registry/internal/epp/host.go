@@ -88,7 +88,9 @@ func (p *EPPDirectProvider) UpdateNameservers(ctx context.Context, name string, 
 		})
 	}
 
+	p.c.DumpRequest("domain:update", frame, "domain", name, "add", toAdd, "remove", toRem)
 	raw, err := p.c.client.UpdateDomain(ctx, frame)
+	p.c.DumpResponse("domain:update", raw, err, "domain", name)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}

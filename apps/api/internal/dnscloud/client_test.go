@@ -274,6 +274,49 @@ func TestProvider_CheckVerify_StateMapping(t *testing.T) {
 	}
 }
 
+func TestProvider_DeleteRecord_IdempotentOn404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("want DELETE, got %s", r.Method)
+		}
+		if !strings.Contains(r.URL.Path, "/rrsets/www/CNAME") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(404)
+		_ = json.NewEncoder(w).Encode(Problem{
+			Status: 404, Code: "RRSET_NOT_FOUND", Detail: "sudah tidak ada",
+		})
+	}))
+	defer srv.Close()
+
+	p := NewProvider(NewClient(Config{BaseURL: srv.URL, APIToken: "dcid_test"}))
+	// 404 should be swallowed so cleanup pattern is safe to call repeatedly.
+	if err := p.DeleteRecord(context.Background(), "zone-abc", "CNAME", "www"); err != nil {
+		t.Errorf("DeleteRecord should swallow 404, got: %v", err)
+	}
+}
+
+func TestProvider_DeleteRecord_Success(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.Method != http.MethodDelete || !strings.Contains(r.URL.Path, "/rrsets/www/CNAME") {
+			t.Errorf("req = %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+
+	p := NewProvider(NewClient(Config{BaseURL: srv.URL, APIToken: "dcid_test"}))
+	if err := p.DeleteRecord(context.Background(), "zone-abc", "CNAME", "www"); err != nil {
+		t.Errorf("DeleteRecord err: %v", err)
+	}
+	if !called {
+		t.Error("server never received delete request")
+	}
+}
+
 func TestProvider_DeleteZone_IdempotentOn404(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")

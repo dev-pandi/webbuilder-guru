@@ -16,6 +16,7 @@ import (
 	"crypto/tls"
 	"encoding/xml"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -50,6 +51,10 @@ type Config struct {
 	// LogFile — path ke file dump verbose EPP log (include XML frames).
 	// Kosong = tidak log ke file.
 	LogFile string
+	// DebugXML — kalau true, print request frame (marshaled XML) + response
+	// raw ke slog setiap EPP command. WARNING: XML bisa mengandung
+	// credential + PII; HANYA aktifkan di dev/staging untuk debugging.
+	DebugXML bool
 }
 
 // Client — session-aware EPP wrapper. Thread-safe: single underlying conn
@@ -248,6 +253,50 @@ func (c *Client) Ping(ctx context.Context) error {
 	}
 	_, err := c.client.Hello(ctx)
 	return err
+}
+
+// DebugEnabled reports whether verbose XML dumping is on. Caller methods
+// (host.go, domain.go, contact.go) wrap EPP calls with DumpRequest/
+// DumpResponse when this is true.
+func (c *Client) DebugEnabled() bool { return c.cfg.DebugXML }
+
+// DumpRequest marshals the request frame to XML and emits it via slog.Info.
+// No-op kalau DebugXML off. Op is a short tag (mis. "domain:update") untuk
+// korelasi antar entries.
+//
+// WARNING: output bisa include credentials + PII (contact details, authInfo).
+// JANGAN enable di prod — toggle lewat EPP_DEBUG_XML env sementara.
+func (c *Client) DumpRequest(op string, frame any, extra ...any) {
+	if !c.cfg.DebugXML {
+		return
+	}
+	raw, err := xml.MarshalIndent(frame, "", "  ")
+	attrs := []any{"op", op}
+	attrs = append(attrs, extra...)
+	if err != nil {
+		attrs = append(attrs, "marshal_error", err)
+		slog.Warn("EPP XML request dump (marshal failed)", attrs...)
+		return
+	}
+	attrs = append(attrs, "xml", string(raw))
+	slog.Info("EPP XML request", attrs...)
+}
+
+// DumpResponse logs the raw response bytes + any upstream error. No-op
+// kalau DebugXML off.
+func (c *Client) DumpResponse(op string, raw []byte, err error, extra ...any) {
+	if !c.cfg.DebugXML {
+		return
+	}
+	attrs := []any{"op", op, "bytes", len(raw)}
+	attrs = append(attrs, extra...)
+	if err != nil {
+		attrs = append(attrs, "error", err.Error())
+	}
+	if len(raw) > 0 {
+		attrs = append(attrs, "xml", string(raw))
+	}
+	slog.Info("EPP XML response", attrs...)
 }
 
 // parseResponse — helper: parse raw XML ke Response envelope + return error

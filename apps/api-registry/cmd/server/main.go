@@ -213,6 +213,7 @@ func buildProvider(cfg *config.Config) (provider.Provider, error) {
 			MaxRetries:         2,
 			PerCommandSession:  cfg.EPPPerCommandSession,
 			LogFile:            cfg.EPPLogFile,
+			DebugXML:           cfg.EPPDebugXML,
 		})
 		if err != nil {
 			return nil, err
@@ -227,7 +228,11 @@ func buildProvider(cfg *config.Config) (provider.Provider, error) {
 		}
 		slog.Info("epp: startup handshake OK",
 			"host", cfg.EPPHost, "port", cfg.EPPPort, "user", cfg.EPPUser,
-			"per_command", cfg.EPPPerCommandSession, "log_file", cfg.EPPLogFile)
+			"per_command", cfg.EPPPerCommandSession, "log_file", cfg.EPPLogFile,
+			"debug_xml", cfg.EPPDebugXML)
+		if cfg.EPPDebugXML {
+			slog.Warn("epp: XML debug dump ENABLED — JANGAN pakai di prod. Credential + PII bakal masuk log.")
+		}
 		// Per-command mode: tutup session startup supaya first real command
 		// bikin session fresh (no dangling half-idle session).
 		if cfg.EPPPerCommandSession {

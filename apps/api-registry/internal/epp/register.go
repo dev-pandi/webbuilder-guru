@@ -53,7 +53,9 @@ func (p *EPPDirectProvider) RegisterDomain(ctx context.Context, req provider.Reg
 		frame.AddAddr(ns)
 	}
 
+	p.c.DumpRequest("domain:create", frame, "domain", req.Domain, "years", req.Years)
 	raw, err := p.c.client.CreateDomain(ctx, frame)
+	p.c.DumpResponse("domain:create", raw, err, "domain", req.Domain)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -97,7 +99,9 @@ func (p *EPPDirectProvider) RenewDomain(ctx context.Context, name string, req pr
 	frame.SetExpDate(info.ExpiresAt)
 	frame.SetPeriod(frames.Period{Value: req.Years, Unit: frames.PeriodUnitYear})
 
+	p.c.DumpRequest("domain:renew", frame, "domain", name, "years", req.Years)
 	raw, err := p.c.client.RenewDomain(ctx, frame)
+	p.c.DumpResponse("domain:renew", raw, err, "domain", name)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}

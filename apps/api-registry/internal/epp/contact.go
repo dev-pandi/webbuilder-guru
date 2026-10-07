@@ -77,7 +77,9 @@ func (p *EPPDirectProvider) ensureContact(ctx context.Context, handle string, c 
 	}
 	frame.AddPostalInfo(postal)
 
+	p.c.DumpRequest("contact:create", frame)
 	raw, err := p.c.client.CreateContact(ctx, frame)
+	p.c.DumpResponse("contact:create", raw, err)
 	if err != nil {
 		return mapEPPErr(err)
 	}
@@ -117,7 +119,9 @@ func (p *EPPDirectProvider) getContactByHandle(ctx context.Context, handle strin
 	frame := &frames.ContactInfoType{}
 	frame.SetContact(handle)
 
+	p.c.DumpRequest("contact:info", frame, "handle", handle)
 	raw, err := p.c.client.InfoContact(ctx, frame)
+	p.c.DumpResponse("contact:info", raw, err, "handle", handle)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}
@@ -223,7 +227,9 @@ func (p *EPPDirectProvider) updateContactByHandle(ctx context.Context, handle, d
 		},
 	})
 
+	p.c.DumpRequest("contact:update", frame, "handle", handle, "domain", domain)
 	raw, err := p.c.client.UpdateContact(ctx, frame)
+	p.c.DumpResponse("contact:update", raw, err, "handle", handle, "domain", domain)
 	if err != nil {
 		return nil, mapEPPErr(err)
 	}

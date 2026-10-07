@@ -2040,23 +2040,51 @@ func (h *Handler) tryAttachToDNS(ctx context.Context, domain string) {
 	var dnsWarnings []string
 	if len(h.platformIPs) > 0 {
 		platformIP := h.platformIPs[0]
+		// Cleanup pass: hapus stale CNAME di @ dan www sebelum PUT A.
+		// Diperlukan untuk 2 kasus:
+		//   1. Retry attach dari pattern lama yang pakai CNAME www → domain.
+		//      PUT A www tolak kalau CNAME masih ada (RFC 1912).
+		//   2. Provider yang auto-park zone baru dengan CNAME ke parking page.
+		// Idempotent — DeleteRecord return nil kalau RRset tidak ada.
+		if err := prov.DeleteRecord(ctx, zone.ID, "CNAME", "@"); err != nil {
+			slog.Warn("dns attach: cleanup CNAME @ failed (non-fatal)",
+				append(logAttrs, "error", err)...)
+		}
+		if err := prov.DeleteRecord(ctx, zone.ID, "CNAME", "www"); err != nil {
+			slog.Warn("dns attach: cleanup CNAME www failed (non-fatal)",
+				append(logAttrs, "error", err)...)
+		}
+		// Pattern A @ + A www (bukan CNAME www → domain):
+		//   - CNAME tidak boleh coexist dengan record type lain di nama yang
+		//     sama (RFC 1912). Beberapa provider (DNSCloud) auto-create
+		//     parking A record di www saat zone baru dibuat; CNAME www kita
+		//     langsung konflik → "CNAME_CONFLICT: www sudah memiliki record
+		//     bertipe lain".
+		//   - A www → platformIP: UpsertRecord REPLACE existing RRset tipe A
+		//     (termasuk parking IP), zero-conflict, hasil behavior sama
+		//     (visitor hit www → platform via same IP).
 		if err := prov.UpsertRecord(ctx, zone.ID, dnsprovider.Record{
 			Type: "A", Name: "@", Content: platformIP, Proxied: true,
 		}); err != nil {
-			slog.Warn("dns attach: create A record failed",
+			slog.Warn("dns attach: create A @ failed",
 				append(logAttrs, "content", platformIP, "error", err)...)
 			dnsWarnings = append(dnsWarnings, "A @ failed: "+err.Error())
 		}
 		if err := prov.UpsertRecord(ctx, zone.ID, dnsprovider.Record{
-			Type: "CNAME", Name: "www", Content: domain, Proxied: true,
+			Type: "A", Name: "www", Content: platformIP, Proxied: true,
 		}); err != nil {
-			slog.Warn("dns attach: create CNAME www failed",
-				append(logAttrs, "error", err)...)
-			dnsWarnings = append(dnsWarnings, "CNAME www failed: "+err.Error())
+			slog.Warn("dns attach: create A www failed",
+				append(logAttrs, "content", platformIP, "error", err)...)
+			dnsWarnings = append(dnsWarnings, "A www failed: "+err.Error())
 		}
-		// EnableProxy — no-op di CF, meaningful di DNSCloud.
+		// EnableProxy — no-op di CF (handled per-record via Proxied flag),
+		// meaningful di DNSCloud (separate per-hostname toggle).
 		if err := prov.EnableProxy(ctx, zone.ID, "@"); err != nil {
 			slog.Warn("dns attach: enable proxy @ failed (non-fatal)",
+				append(logAttrs, "error", err)...)
+		}
+		if err := prov.EnableProxy(ctx, zone.ID, "www"); err != nil {
+			slog.Warn("dns attach: enable proxy www failed (non-fatal)",
 				append(logAttrs, "error", err)...)
 		}
 	} else {
