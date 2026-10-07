@@ -125,11 +125,25 @@ func MountUser(app *fiber.App, deps Deps) {
 		authed.Delete("/assets/:id", mutateLimit, deps.Assets.Delete)
 	}
 
-	// Domains
+	// Domains (legacy: custom hostname via A record + Caddy ACME).
 	authed.Get("/sites/:id/domains", deps.Domains.ListBySite)
 	authed.Post("/sites/:id/domains", mutateLimit, deps.Domains.Add)
 	authed.Post("/domains/:id/verify", mutateLimit, deps.Domains.Verify)
 	authed.Delete("/domains/:id", mutateLimit, deps.Domains.Delete)
+
+	// BYO .id domains via Cloudflare NS delegation. 1 per site. Nil-safe
+	// (deps.SiteBYODomains = nil kalau CF belum di-wire → endpoints skipped).
+	//
+	// GET /sites/:id/domains sudah di-mount di atas (legacy). BYO list combined
+	// (anchor + byo) exposed di path baru supaya dashboard bisa fetch 1x.
+	if deps.SiteBYODomains != nil {
+		authed.Get("/sites/:id/domains-combined", deps.SiteBYODomains.List)
+		authed.Post("/sites/:id/byo-domain/check", mutateLimit, deps.SiteBYODomains.Check)
+		authed.Post("/sites/:id/byo-domain/connect", mutateLimit, deps.SiteBYODomains.Connect)
+		authed.Post("/sites/:id/byo-domain/verify", mutateLimit, deps.SiteBYODomains.Verify)
+		authed.Delete("/sites/:id/byo-domain", mutateLimit, deps.SiteBYODomains.Delete)
+		authed.Post("/sites/:id/domains/primary", mutateLimit, deps.SiteBYODomains.SetPrimary)
+	}
 
 	// Domain purchase — Phase 3 self-sufficient (semua flow lewat api-registry
 	// + local invoices/wallet/documents). Nil-safe kalau feature disabled.

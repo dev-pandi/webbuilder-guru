@@ -42,6 +42,7 @@ import (
 	"github.com/webbuilder/api/internal/reseller"
 	"github.com/webbuilder/api/internal/responses"
 	"github.com/webbuilder/api/internal/settings"
+	"github.com/webbuilder/api/internal/site_byo_domains"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
@@ -166,6 +167,10 @@ type Deps struct {
 
 	// Promos — Phase 3 kupon diskon. Admin CRUD + user validate endpoint.
 	Promos *promos.Handler
+
+	// SiteBYODomains — Phase 1 BYO .id domain attachment via Cloudflare NS
+	// delegation. Nil = feature disabled (no CF config or registrar missing).
+	SiteBYODomains *site_byo_domains.Handler
 
 	// AssetStorage is consulted to decide whether to mount /uploads.
 	AssetStorage assets.Storage // may be nil

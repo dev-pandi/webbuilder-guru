@@ -198,6 +198,27 @@ func (r *Repo) GetDomainByName(ctx context.Context, name string, userID uuid.UUI
 	return &d, nil
 }
 
+// GetDomainBySite — purchased anchor for a site, if any. Returns ErrNotFound
+// when the site has no active registered domain attached.
+func (r *Repo) GetDomainBySite(ctx context.Context, siteID uuid.UUID) (*Domain, error) {
+	q := `SELECT ` + domainColsWithSiteFallback + `
+		FROM registered_domains rd
+		WHERE rd.status = 'active'
+		  AND (rd.site_id = $1 OR EXISTS (
+			SELECT 1 FROM domain_purchases dp
+			 WHERE dp.domain = rd.name AND dp.kind = 'register' AND dp.site_id = $1
+		  ))
+		LIMIT 1`
+	var d Domain
+	if err := scanDomain(r.pool.QueryRow(ctx, q, siteID), &d); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &d, nil
+}
+
 // GetDomainByNameAdmin — bypass ownership. Dipakai admin detail page yang
 // perlu troubleshoot domain lintas user (mis. "domain user X tidak accessible").
 func (r *Repo) GetDomainByNameAdmin(ctx context.Context, name string) (*Domain, error) {

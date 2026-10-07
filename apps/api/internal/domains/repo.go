@@ -153,6 +153,11 @@ func (r *Repo) IsAllowed(ctx context.Context, hostname string) (bool, error) {
 			-- (b) Domain EPP-registered yang sudah active di registry.
 			SELECT count(*) FROM registered_domains
 			 WHERE name = $1 AND status = 'active'
+		) + (
+			-- (c) BYO .id via NS delegation. Drifting still issues certs — the
+			-- user may be mid-propagation; suspended/disconnected do not.
+			SELECT count(*) FROM site_byo_domains
+			 WHERE hostname = $1 AND status IN ('verified','drifting')
 		)
 	`, hostname).Scan(&n)
 	return n > 0, err

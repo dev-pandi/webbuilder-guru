@@ -289,6 +289,46 @@ func (r *Repo) Delete(ctx context.Context, id, userID uuid.UUID) error {
 	return nil
 }
 
+// GetPrimaryHostname reads sites.primary_hostname. NULL (no row returned as
+// empty string) means "fallback to the purchased anchor" — caller resolves.
+func (r *Repo) GetPrimaryHostname(ctx context.Context, id uuid.UUID) (string, error) {
+	var h *string
+	err := r.pool.QueryRow(ctx,
+		`SELECT primary_hostname FROM sites WHERE id = $1`, id,
+	).Scan(&h)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if h == nil {
+		return "", nil
+	}
+	return *h, nil
+}
+
+// SetPrimaryHostname assigns the canonical host for a site. Pass hostname=""
+// to clear (reverts to anchor fallback).
+func (r *Repo) SetPrimaryHostname(ctx context.Context, id, userID uuid.UUID, hostname string) error {
+	var v *string
+	if hostname != "" {
+		v = &hostname
+	}
+	ct, err := r.pool.Exec(ctx,
+		`UPDATE sites SET primary_hostname = $3, updated_at = now()
+		  WHERE id = $1 AND user_id = $2`,
+		id, userID, v,
+	)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // GetByHost looks up a published site by associated domain hostname.
 //
 // Dual lookup — dua tabel bisa link domain ke situs:
@@ -332,6 +372,16 @@ func (r *Repo) GetByHost(ctx context.Context, host string) (*Site, error) {
 				 WHERE d.hostname = $1
 				   AND d.status = 'verified'
 				 LIMIT 1
+			),
+			-- Priority 3: BYO .id via Cloudflare NS. UNIQUE hostname. Drifting
+			-- rows still resolve — cert may be valid even during propagation
+			-- hiccup, user sees content until suspension kicks in at 7d.
+			(
+				SELECT b.site_id
+				  FROM site_byo_domains b
+				 WHERE b.hostname = $1
+				   AND b.status IN ('verified','drifting')
+				 LIMIT 1
 			)
 		  )
 		LIMIT 1
@@ -360,6 +410,9 @@ func (r *Repo) HasSiteForHost(ctx context.Context, host string) (bool, error) {
 			 WHERE dp.domain = $1
 			   AND dp.kind = 'register'
 			   AND dp.site_id IS NOT NULL
+		) OR EXISTS (
+			SELECT 1 FROM site_byo_domains b
+			 WHERE b.hostname = $1
 		)
 	`, host).Scan(&exists)
 	return exists, err

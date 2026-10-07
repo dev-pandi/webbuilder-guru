@@ -46,6 +46,7 @@ import (
 	"github.com/webbuilder/api/internal/responses"
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/seed"
+	"github.com/webbuilder/api/internal/site_byo_domains"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
@@ -144,6 +145,7 @@ func main() {
 	adminRepo := admin.NewRepo(pool)
 	purchaseRepo := domain_purchase.NewRepo(pool)
 	cloudflareRepo := cloudflare.NewRepo(pool)
+	byoRepo := site_byo_domains.NewRepo(pool)
 	formsRepo := forms.NewRepo(pool)
 	analyticsRepo := analytics.NewRepo(pool)
 
@@ -487,6 +489,46 @@ func main() {
 	// authHandler + resellerHandler tetap nil-safe: `SetContactSyncer(nil)`
 	// = no propagation, profile update tetap tersimpan di web builder DB.
 
+	// BYO .id domain handler — enabled only when the registrar client (for
+	// WHOIS) and cloudflare config are both available. Factory looks up the
+	// default cloudflare_configs row per-request so operator can rotate token
+	// without restart. Nil = feature disabled, routes auto-skip in router.
+	var byoHandler *site_byo_domains.Handler
+	if registrarClient != nil {
+		cfFactory := site_byo_domains.CFClientFactory(func(ctx context.Context) (site_byo_domains.CFClient, error) {
+			defaultCfg, err := cloudflareRepo.GetDefault(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return cloudflare.NewClient(*defaultCfg), nil
+		})
+		byoHandler = site_byo_domains.NewHandler(site_byo_domains.HandlerDeps{
+			Repo:        byoRepo,
+			Sites:       siteRepo,
+			Purchases:   purchaseRepo,
+			Registrar:   registrarClient,
+			CFFactory:   cfFactory,
+			PlatformIPs: cfg.PlatformIPs,
+		})
+		slog.Info("site_byo_domains: enabled")
+
+		// Reconciler goroutine: health check NS + WHOIS refresh + 90d cleanup.
+		// Tick 24h, zero config = sensible defaults (drift 7d / disconnect 30d
+		// / cleanup 90d). Fires BYO lifecycle emails via `mailer`.
+		byoReconciler := notifier.NewBYOReconciler(notifier.BYOReconcilerDeps{
+			Repo:      byoRepo,
+			Sites:     siteRepo,
+			Auth:      authRepo,
+			Whois:     registrarClient,
+			CFFactory: cfFactory,
+			Mailer:    mailer,
+			Config:    notifier.BYOConfig{AppBaseURL: cfg.AppBaseURL},
+		})
+		go byoReconciler.Run(ctx)
+	} else {
+		slog.Info("site_byo_domains: disabled (registrar client required for WHOIS)")
+	}
+
 	deps := router.Deps{
 		Cfg:          cfg,
 		Pool:         pool,
@@ -528,6 +570,7 @@ func main() {
 		WalletLocal:    walletLocalHandler,
 		Documents:      documentsHandler,
 		Promos:         promosHandler,
+		SiteBYODomains: byoHandler,
 		Articles:       articles.NewHandler(articlesRepo, siteRepo),
 		Learning:       learning.NewHandler(learningRepo, siteRepo),
 		Responses:      responses.NewHandler(responsesRepo, siteRepo, articlesRepo),

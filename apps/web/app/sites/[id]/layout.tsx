@@ -71,6 +71,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: (id) => `/sites/${id}/assets`, label: "Aset", icon: ImageIcon },
   { href: (id) => `/sites/${id}/profil`, label: "Profil", icon: UserCircle },
   { href: (id) => `/sites/${id}/tampilan`, label: "Tampilan Website", icon: LayoutTemplate },
+  { href: (id) => `/sites/${id}/domains`, label: "Domain", icon: Globe2 },
 ];
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -85,6 +86,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   assets: { title: "Aset", subtitle: "Kelola gambar & berkas untuk website" },
   profil: { title: "Profil", subtitle: "Kelola identitas profesional" },
   tampilan: { title: "Tampilan Website", subtitle: "Pilih template dan personalisasi" },
+  domains: { title: "Domain", subtitle: "Kelola alamat situs dan hubungkan domain .id Anda" },
 };
 
 function pageMeta(pathname: string, sid: string) {

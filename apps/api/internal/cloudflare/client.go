@@ -223,6 +223,27 @@ func (c *Client) DeleteDNSRecord(ctx context.Context, zoneID, recordID string) e
 // aktif di Cloudflare, tunggu provisioning selesai").
 var ErrZoneNotFound = errors.New("cloudflare: zone not found")
 
+// DeleteZone removes a zone from the Cloudflare account. Idempotent-ish:
+// returns ErrZoneNotFound for a zone that's already gone so the orphan
+// reconciler can treat "already deleted" as success.
+//
+// Docs: https://developers.cloudflare.com/api/operations/zones-0-delete
+func (c *Client) DeleteZone(ctx context.Context, zoneID string) error {
+	raw, status, err := c.do(ctx, http.MethodDelete, "/zones/"+zoneID, nil)
+	if err != nil {
+		return err
+	}
+	if status == 404 {
+		return ErrZoneNotFound
+	}
+	if status >= 300 {
+		var out CreateZoneResponse
+		_ = json.Unmarshal(raw, &out)
+		return apiErr(status, out.Errors, raw)
+	}
+	return nil
+}
+
 // PurgeCache invalidates CDN edge cache untuk zone. Dua mode:
 //   - urls non-empty: purge by URL (max 30 per request per docs)
 //   - urls kosong: purge_everything (semua asset di zone)
