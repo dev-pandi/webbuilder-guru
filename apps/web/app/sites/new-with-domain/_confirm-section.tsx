@@ -76,6 +76,9 @@ export function ConfirmSection(props: {
   // Phase 3.5 wallet — kalau caller reseller/agent, `walletBalance` di-set
   // (bisa 0). null = mode client (tanpa opsi wallet).
   walletBalance?: number | null;
+  // DNS provider override — ikut admin priority (empty) atau explicit.
+  dnsProviderChoice: "" | "cloudflare" | "dnscloud";
+  setDNSProviderChoice: (v: "" | "cloudflare" | "dnscloud") => void;
 }) {
   const {
     selected, me, profileComplete, missingProfile,
@@ -84,6 +87,7 @@ export function ConfirmSection(props: {
     promoCode, setPromoCode, promoDiscount, promoError,
     onApplyPromo, onClearPromo, validatingPromo,
     purchasing, onPurchase, forClientID, onClientUpdated, walletBalance,
+    dnsProviderChoice, setDNSProviderChoice,
   } = props;
 
   const subtotal = selected.price ? selected.price.register * years : 0;
@@ -273,6 +277,27 @@ export function ConfirmSection(props: {
             di menu <span className="font-medium">Harga Jual</span>.
           </div>
         )}
+
+        {/* DNS provider — opsional override, kosong = ikut admin priority. */}
+        <div className="space-y-1.5">
+          <Label htmlFor="dns-choice" className="text-xs uppercase tracking-wider text-muted-foreground">
+            DNS Provider <span className="normal-case text-muted-foreground/70">(opsional)</span>
+          </Label>
+          <select
+            id="dns-choice"
+            value={dnsProviderChoice}
+            onChange={(e) => setDNSProviderChoice(e.target.value as "" | "cloudflare" | "dnscloud")}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="">Default (ikut rekomendasi platform)</option>
+            <option value="cloudflare">Cloudflare (global, 300+ POP)</option>
+            <option value="dnscloud">DNSCloud.ID (Indonesia, data residency)</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Pilih manual kalau Anda tahu kebutuhan spesifik, mis. audiens luar
+            negeri atau antisipasi provider utama bermasalah.
+          </p>
+        </div>
 
         {/* Promo code — opsional. Validate on-demand via backend. */}
         <div className="space-y-1.5">

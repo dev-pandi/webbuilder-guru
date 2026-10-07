@@ -19,6 +19,7 @@ import (
 	"github.com/webbuilder/api/internal/audit"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/cloudflare"
+	"github.com/webbuilder/api/internal/dnsprovider"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/metrics"
@@ -55,15 +56,19 @@ type AssignmentChecker interface {
 //   POST /api/v1/domains/purchases/:job_id/attach — link ke site_id existing
 //   POST /api/v1/domains/purchases/:job_id/retry  — re-run EPP CREATE untuk failed job
 type Handler struct {
-	repo          *Repo
-	registrar     *registrar.Client
-	users         *auth.Repo
-	sites         *sites.Repo      // dipakai Attach untuk verify site ownership
-	cloudflare    *cloudflare.Repo // nil = auto-attach ke Cloudflare skipped
-	platformIPs   []string         // dipakai jadi content A record CF auto-attach
-	assignments   AssignmentChecker // nil = on-behalf-of disabled (Phase 3)
-	audit         *audit.Repo       // nil = audit disabled
-	zonesRepo     *zones.Repo       // nil = trust upstream AllowedZones (legacy)
+	repo        *Repo
+	registrar   *registrar.Client
+	users       *auth.Repo
+	sites       *sites.Repo      // dipakai Attach untuk verify site ownership
+	cloudflare  *cloudflare.Repo // kept for admin DNS editor + legacy; attach flow pakai providerFactory
+	platformIPs []string         // dipakai jadi content A record DNS auto-attach
+	// providerFactory routes attach ke CF/DNSCloud sesuai admin priority +
+	// user choice (purchase.dns_provider_choice). Nil = attach pakai legacy
+	// CF default path.
+	providerFactory dnsprovider.Factory
+	assignments     AssignmentChecker // nil = on-behalf-of disabled (Phase 3)
+	audit           *audit.Repo       // nil = audit disabled
+	zonesRepo       *zones.Repo       // nil = trust upstream AllowedZones (legacy)
 
 	// --- 2-phase self-sufficient dependencies (Purchase flow) ---
 	// Semua nil-safe: kalau salah satu belum di-wire, Purchase endpoint
@@ -169,6 +174,11 @@ type PromoValidator interface {
 	// unique(invoice_id).
 	Redeem(ctx context.Context, promoID, userID, invoiceID uuid.UUID, discount int64) error
 }
+
+// SetProviderFactory inject DNS provider factory. Kalau nil, tryAttachToDNS
+// jatuh ke legacy path (CF default via h.cloudflare). Kalau set, routing
+// honor admin priority + user choice (purchase.dns_provider_choice).
+func (h *Handler) SetProviderFactory(f dnsprovider.Factory) { h.providerFactory = f }
 
 // SetZones inject local zones source. Kalau di-set, handler filter
 // hasil check untuk hanya expose TLD yang active di local table (per
@@ -1565,20 +1575,23 @@ func (h *Handler) AdminGetDomain(c *fiber.Ctx) error {
 		}
 	}
 	return httpx.OK(c, fiber.Map{
-		"name":              d.Name,
-		"user_id":           d.UserID.String(),
-		"user_email":        ownerEmail,
-		"user_name":         ownerName,
-		"contact_id":        d.ContactID,
-		"expires_at":        formatOptTime(d.ExpiresAt),
-		"registered_at":     d.RegisteredAt.UTC().Format(time.RFC3339),
-		"last_renewed_at":   formatOptTime(d.LastRenewedAt),
-		"status":            d.Status,
-		"registrar_job_id":  d.RegistrarJobID,
-		"cf_attach_status":  d.CFAttachStatus,
-		"cf_attach_error":   d.CFAttachError,
-		"cf_attach_at":      formatOptTime(d.CFAttachAt),
-		"cf_zone_id":        d.CFZoneID,
+		"name":             d.Name,
+		"user_id":          d.UserID.String(),
+		"user_email":       ownerEmail,
+		"user_name":        ownerName,
+		"contact_id":       d.ContactID,
+		"expires_at":       formatOptTime(d.ExpiresAt),
+		"registered_at":    d.RegisteredAt.UTC().Format(time.RFC3339),
+		"last_renewed_at":  formatOptTime(d.LastRenewedAt),
+		"status":           d.Status,
+		"registrar_job_id": d.RegistrarJobID,
+		// DNS attach: generic field names. Admin UI (Step 13) reads these.
+		"dns_attach_status":  d.DNSAttachStatus,
+		"dns_attach_error":   d.DNSAttachError,
+		"dns_attach_at":      formatOptTime(d.DNSAttachAt),
+		"dns_zone_id":        d.DNSZoneID,
+		"dns_provider":       d.DNSProvider,
+		"dns_provider_config_id": uuidPtrString(d.DNSProviderConfigID),
 	})
 }
 
@@ -1586,7 +1599,8 @@ func (h *Handler) AdminGetDomain(c *fiber.Ctx) error {
 //
 // Re-run tryAttachToCloudflare untuk domain yang gagal atau belum di-attempt.
 // Idempotent: kalau zone sudah ada di CF (duplicate error), tetap mark success.
-// Result-nya visible di CF attach status setelah selesai (~5-15 detik call CF).
+// Route name retains "cloudflare" for URL back-compat; Step 9 switches internals
+// to tryAttachToDNS which honors admin priority between CF/DNSCloud.
 func (h *Handler) AdminCloudflareRetry(c *fiber.Ctx) error {
 	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
 	if name == "" {
@@ -1605,27 +1619,30 @@ func (h *Handler) AdminCloudflareRetry(c *fiber.Ctx) error {
 			"Cloudflare handler belum di-wire.")
 	}
 	// Reset status ke pending sebelum retry supaya UI visual jelas "sedang re-attempt".
-	_ = h.repo.SetDomainCFAttach(c.Context(), name, CFAttachPending, "retry triggered manual by admin", d.CFZoneID)
+	_ = h.repo.SetDomainDNSAttach(c.Context(), name, DNSAttachPending,
+		"retry triggered manual by admin", d.DNSZoneID, d.DNSProvider, d.DNSProviderConfigID)
 
-	// Trigger attach — synchronous (call CF API + registrar EPP). Persist status
-	// otomatis via tryAttachToCloudflare.
+	// Trigger attach — synchronous (call provider API + registrar EPP). Persist
+	// status otomatis via tryAttachToCloudflare.
 	h.tryAttachToCloudflare(c.Context(), name)
 
 	// Fetch fresh status untuk response.
 	fresh, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
 	if err != nil {
 		return httpx.OK(c, fiber.Map{
-			"name":             name,
-			"cf_attach_status": CFAttachPending,
-			"cf_attach_error":  "retry triggered, status update pending",
+			"name":              name,
+			"dns_attach_status": DNSAttachPending,
+			"dns_attach_error":  "retry triggered, status update pending",
 		})
 	}
 	return httpx.OK(c, fiber.Map{
-		"name":             fresh.Name,
-		"cf_attach_status": fresh.CFAttachStatus,
-		"cf_attach_error":  fresh.CFAttachError,
-		"cf_attach_at":     formatOptTime(fresh.CFAttachAt),
-		"cf_zone_id":       fresh.CFZoneID,
+		"name":                   fresh.Name,
+		"dns_attach_status":      fresh.DNSAttachStatus,
+		"dns_attach_error":       fresh.DNSAttachError,
+		"dns_attach_at":          formatOptTime(fresh.DNSAttachAt),
+		"dns_zone_id":            fresh.DNSZoneID,
+		"dns_provider":           fresh.DNSProvider,
+		"dns_provider_config_id": uuidPtrString(fresh.DNSProviderConfigID),
 	})
 }
 
@@ -1766,6 +1783,16 @@ func formatOptTime(t *time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
+// uuidPtrString renders a nullable UUID as empty string on nil, canonical
+// string form otherwise. Keeps JSON responses stable instead of emitting
+// `null` for missing provider_config_id on legacy rows.
+func uuidPtrString(id *uuid.UUID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
+}
+
 // tryAttachToCloudflare = best-effort auto-attach domain baru ke Cloudflare:
 //  1. Ambil config CF default (skip kalau belum di-setup admin).
 //  2. Create zone di CF → dapat NS assignment + zone_id.
@@ -1779,100 +1806,132 @@ func formatOptTime(t *time.Time) string {
 //
 // Kalau PLATFORM_IPS kosong, skip create DNS records (zone tetap dibuat +
 // NS di-push, tapi user harus setup DNS record manual di CF dashboard).
+// tryAttachToCloudflare — thin wrapper retained for compatibility with the
+// existing AdminCloudflareRetry route path. Delegates to tryAttachToDNS which
+// honors admin priority + user choice.
 func (h *Handler) tryAttachToCloudflare(ctx context.Context, domain string) {
-	if h.cloudflare == nil || h.registrar == nil || domain == "" {
+	h.tryAttachToDNS(ctx, domain)
+}
+
+// tryAttachToDNS = best-effort auto-attach domain baru ke DNS provider terpilih:
+//  1. Lookup user's provider choice (purchase.dns_provider_choice) + resolve
+//     via factory (fall back to legacy CF repo kalau factory tidak di-set).
+//  2. CreateZone di provider → dapat NS pair + zone_id.
+//  3. UpsertRecord A `@` → PLATFORM_IPS[0], CNAME `www` → domain (proxied).
+//  4. EnableProxy per hostname (no-op di CF, pakai PUT /proxy di DNSCloud).
+//  5. Push NS itu ke registrar via UpdateNameservers.
+//
+// Semua error di-log tapi TIDAK propagate — domain sudah live di registry,
+// attach hanya optimization. Admin bisa retry via UI kalau failed.
+func (h *Handler) tryAttachToDNS(ctx context.Context, domain string) {
+	if h.registrar == nil || domain == "" {
 		return
 	}
-	// persistStatus — helper local supaya semua exit path konsisten update DB.
-	// Best-effort: kalau row belum ada (race dengan UpsertDomain), no-op.
-	persistStatus := func(status, errMsg, zoneID string) {
-		if err := h.repo.SetDomainCFAttach(ctx, domain, status, errMsg, zoneID); err != nil && !errors.Is(err, ErrNotFound) {
-			slog.Warn("cloudflare attach: persist status failed (non-fatal)",
+	// Lookup latest register purchase to read dns_provider_choice.
+	var userChoice string
+	if p, err := h.repo.GetLatestRegisterByDomainAny(ctx, domain); err == nil && p != nil && p.DNSProviderChoice != nil {
+		userChoice = *p.DNSProviderChoice
+	}
+
+	persistStatus := func(status, errMsg, zoneID, providerKind string, configID *uuid.UUID) {
+		pk := providerKind
+		if pk == "" {
+			pk = "cloudflare"
+		}
+		if err := h.repo.SetDomainDNSAttach(ctx, domain, status, errMsg, zoneID, pk, configID); err != nil && !errors.Is(err, ErrNotFound) {
+			slog.Warn("dns attach: persist status failed (non-fatal)",
 				"error", err, "domain", domain, "status", status)
 		}
 	}
 
-	cfg, err := h.cloudflare.GetDefault(ctx)
-	if err != nil {
-		if !errors.Is(err, cloudflare.ErrNotFound) {
-			slog.Warn("cloudflare attach: default lookup failed", "error", err, "domain", domain)
-			persistStatus(CFAttachFailed, "cloudflare config lookup failed: "+err.Error(), "")
-		} else {
-			// Belum ada CF config — beda dari failed. Tandai skipped supaya
-			// admin tahu ini bukan bug, cuma feature belum di-enable.
-			persistStatus(CFAttachSkipped, "cloudflare config belum di-set di /admin/cloudflare", "")
-		}
-		metrics.Default.CounterInc("cloudflare_attach_total",
-			"Auto-attach ke Cloudflare per outcome",
-			map[string]string{"result": "skipped_no_config"},
+	// Resolve provider via factory. Fail-honest: if factory unset OR no active
+	// config, mark skipped so admin sees it's a config issue, not a system bug.
+	if h.providerFactory == nil {
+		persistStatus(DNSAttachSkipped, "dns provider factory belum di-wire di /admin/dns-providers", "", "", nil)
+		metrics.Default.CounterInc("dns_attach_total",
+			"Auto-attach ke DNS provider per outcome",
+			map[string]string{"result": "skipped_no_factory", "provider": "none"},
 		)
 		return
 	}
-
-	client := cloudflare.NewClient(*cfg)
-	zone, err := client.CreateZone(ctx, domain)
+	prov, configIDStr, err := h.providerFactory(ctx, dnsprovider.Choice{Explicit: dnsprovider.Kind(userChoice)})
 	if err != nil {
-		slog.Warn("cloudflare attach: create zone failed",
-			"error", err, "domain", domain, "cf_config", cfg.Name)
-		persistStatus(CFAttachFailed, "create zone: "+err.Error(), "")
-		metrics.Default.CounterInc("cloudflare_attach_total",
-			"Auto-attach ke Cloudflare per outcome",
-			map[string]string{"result": "zone_failed"},
+		slog.Warn("dns attach: factory resolve failed", "error", err, "domain", domain, "choice", userChoice)
+		persistStatus(DNSAttachSkipped, "dns provider config belum di-set: "+err.Error(), "", "", nil)
+		metrics.Default.CounterInc("dns_attach_total",
+			"Auto-attach ke DNS provider per outcome",
+			map[string]string{"result": "skipped_no_config", "provider": "none"},
+		)
+		return
+	}
+	configUUID, _ := uuid.Parse(configIDStr)
+	configIDPtr := &configUUID
+	providerKind := string(prov.Kind())
+	logAttrs := []any{"domain", domain, "provider", providerKind, "config_id", configIDStr}
+
+	zone, err := prov.CreateZone(ctx, domain)
+	if err != nil {
+		slog.Warn("dns attach: create zone failed", append(logAttrs, "error", err)...)
+		persistStatus(DNSAttachFailed, "create zone: "+err.Error(), "", providerKind, configIDPtr)
+		metrics.Default.CounterInc("dns_attach_total",
+			"Auto-attach ke DNS provider per outcome",
+			map[string]string{"result": "zone_failed", "provider": providerKind},
 		)
 		return
 	}
 
 	// -------- DNS records --------
-	// A record `@` → platform IP + CNAME `www` → root. Skip kalau PLATFORM_IPS
-	// belum di-config (admin bisa setup manual di CF dashboard).
 	var dnsWarnings []string
 	if len(h.platformIPs) > 0 {
 		platformIP := h.platformIPs[0]
-		if _, err := client.CreateDNSRecord(ctx, zone.ID, cloudflare.DNSRecordRequest{
+		if err := prov.UpsertRecord(ctx, zone.ID, dnsprovider.Record{
 			Type: "A", Name: "@", Content: platformIP, Proxied: true,
-		}); err != nil && !cloudflare.IsCloudflareDuplicateRecord(err) {
-			slog.Warn("cloudflare attach: create A record failed",
-				"error", err, "domain", domain, "content", platformIP)
+		}); err != nil {
+			slog.Warn("dns attach: create A record failed",
+				append(logAttrs, "content", platformIP, "error", err)...)
 			dnsWarnings = append(dnsWarnings, "A @ failed: "+err.Error())
 		}
-		if _, err := client.CreateDNSRecord(ctx, zone.ID, cloudflare.DNSRecordRequest{
+		if err := prov.UpsertRecord(ctx, zone.ID, dnsprovider.Record{
 			Type: "CNAME", Name: "www", Content: domain, Proxied: true,
-		}); err != nil && !cloudflare.IsCloudflareDuplicateRecord(err) {
-			slog.Warn("cloudflare attach: create CNAME www failed",
-				"error", err, "domain", domain)
+		}); err != nil {
+			slog.Warn("dns attach: create CNAME www failed",
+				append(logAttrs, "error", err)...)
 			dnsWarnings = append(dnsWarnings, "CNAME www failed: "+err.Error())
 		}
+		// EnableProxy — no-op di CF, meaningful di DNSCloud.
+		if err := prov.EnableProxy(ctx, zone.ID, "@"); err != nil {
+			slog.Warn("dns attach: enable proxy @ failed (non-fatal)",
+				append(logAttrs, "error", err)...)
+		}
 	} else {
-		slog.Warn("cloudflare attach: PLATFORM_IPS kosong, skip create DNS records — domain resolve tidak akan point ke platform sampai admin setup manual",
-			"domain", domain, "zone_id", zone.ID)
+		slog.Warn("dns attach: PLATFORM_IPS kosong, skip create DNS records",
+			append(logAttrs, "zone_id", zone.ID)...)
 		dnsWarnings = append(dnsWarnings, "PLATFORM_IPS kosong, DNS records tidak dibuat")
 	}
 
 	// -------- Push NS ke registrar --------
-	if _, err := h.registrar.UpdateNameservers(ctx, domain, zone.NameServers); err != nil {
-		slog.Warn("cloudflare attach: update NS at registrar failed",
-			"error", err, "domain", domain, "ns", zone.NameServers)
-		persistStatus(CFAttachFailed,
-			"zone created tapi push NS ke registrar gagal: "+err.Error(), zone.ID)
-		metrics.Default.CounterInc("cloudflare_attach_total",
-			"Auto-attach ke Cloudflare per outcome",
-			map[string]string{"result": "ns_push_failed"},
+	if _, err := h.registrar.UpdateNameservers(ctx, domain, zone.Nameservers); err != nil {
+		slog.Warn("dns attach: update NS at registrar failed",
+			append(logAttrs, "ns", zone.Nameservers, "error", err)...)
+		persistStatus(DNSAttachFailed,
+			"zone created tapi push NS ke registrar gagal: "+err.Error(), zone.ID, providerKind, configIDPtr)
+		metrics.Default.CounterInc("dns_attach_total",
+			"Auto-attach ke DNS provider per outcome",
+			map[string]string{"result": "ns_push_failed", "provider": providerKind},
 		)
 		return
 	}
 
-	// Success — mark done. DNS warnings di-include supaya admin tahu kalau
-	// ada record yang gagal walau overall attach berhasil.
 	successMsg := ""
 	if len(dnsWarnings) > 0 {
 		successMsg = "warning: " + strings.Join(dnsWarnings, "; ")
 	}
-	persistStatus(CFAttachSuccess, successMsg, zone.ID)
-	slog.Info("cloudflare attach: success",
-		"domain", domain, "zone_id", zone.ID, "ns", zone.NameServers)
-	metrics.Default.CounterInc("cloudflare_attach_total",
-		"Auto-attach ke Cloudflare per outcome",
-		map[string]string{"result": "success"},
+	persistStatus(DNSAttachSuccess, successMsg, zone.ID, providerKind, configIDPtr)
+	slog.Info("dns attach: success",
+		append(logAttrs, "zone_id", zone.ID, "ns", zone.Nameservers)...)
+	metrics.Default.CounterInc("dns_attach_total",
+		"Auto-attach ke DNS provider per outcome",
+		map[string]string{"result": "success", "provider": providerKind},
 	)
 }
 

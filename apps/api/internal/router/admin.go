@@ -177,6 +177,20 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		cf.Post("/:id/verify", deps.Cloudflare.VerifyStored)
 	}
 
+	// DNS providers — unified CRUD (CF + DNSCloud) dengan priority ordering.
+	// Replaces /admin/cloudflare long-term; keeping both mounted during
+	// migration so legacy CF-only panel keeps working until Step 13 UI.
+	if deps.DNSProviders != nil {
+		dp := g.Group("/dns-providers")
+		dp.Get("/", deps.DNSProviders.List)
+		dp.Post("/", deps.DNSProviders.Create)
+		dp.Patch("/:id", deps.DNSProviders.Update)
+		dp.Delete("/:id", deps.DNSProviders.Delete)
+		dp.Post("/:id/default", deps.DNSProviders.SetDefault)
+		dp.Post("/:id/test", deps.DNSProviders.Test)
+		dp.Post("/reorder", deps.DNSProviders.Reorder)
+	}
+
 	// pprof exposes detailed runtime data (heap profile can leak secrets in
 	// strings, CPU profile blocks the process). Always behind admin + opt-in
 	// via env so it's not on in default prod deployments.

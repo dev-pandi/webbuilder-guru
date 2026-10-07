@@ -13,24 +13,26 @@ import (
 // DBRow is the full persisted shape of a BYO domain row. Separate from the
 // state-machine `Row` which only carries the fields the machine needs.
 type DBRow struct {
-	ID                  uuid.UUID
-	SiteID              uuid.UUID
-	UserID              uuid.UUID
-	Hostname            string
-	Status              State
-	CloudflareZoneID    string
-	AssignedNS          []string
-	ExpiresAt           *time.Time
-	LastWhoisAt         *time.Time
-	LastHealthAt        *time.Time
-	VerifiedAt          *time.Time
-	DriftDetectedAt     *time.Time
-	SuspendedAt         *time.Time
-	DisconnectedAt      *time.Time
-	ExpiryNoticeSentAt  *time.Time
-	AssignedBy          *uuid.UUID
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	ID                   uuid.UUID
+	SiteID               uuid.UUID
+	UserID               uuid.UUID
+	Hostname             string
+	Status               State
+	DNSZoneID            string     // generic (CF zone id or DNSCloud zone id)
+	DNSProvider          string     // 'cloudflare' | 'dnscloud'
+	DNSProviderConfigID  *uuid.UUID // sticky — factory MUST use this config for lifecycle ops
+	AssignedNS           []string
+	ExpiresAt            *time.Time
+	LastWhoisAt          *time.Time
+	LastHealthAt         *time.Time
+	VerifiedAt           *time.Time
+	DriftDetectedAt      *time.Time
+	SuspendedAt          *time.Time
+	DisconnectedAt       *time.Time
+	ExpiryNoticeSentAt   *time.Time
+	AssignedBy           *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // ToMachineRow projects the subset the state machine needs. IsPrimary is
@@ -59,7 +61,7 @@ var (
 )
 
 const cols = `id, site_id, user_id, hostname, status,
-    cloudflare_zone_id, assigned_ns,
+    dns_zone_id, dns_provider, dns_provider_config_id, assigned_ns,
     expires_at, last_whois_at, last_health_at, verified_at,
     drift_detected_at, suspended_at, disconnected_at,
     expiry_notice_sent_at, assigned_by, created_at, updated_at`
@@ -67,35 +69,42 @@ const cols = `id, site_id, user_id, hostname, status,
 func scan(row pgx.Row, r *DBRow) error {
 	return row.Scan(
 		&r.ID, &r.SiteID, &r.UserID, &r.Hostname, &r.Status,
-		&r.CloudflareZoneID, &r.AssignedNS,
+		&r.DNSZoneID, &r.DNSProvider, &r.DNSProviderConfigID, &r.AssignedNS,
 		&r.ExpiresAt, &r.LastWhoisAt, &r.LastHealthAt, &r.VerifiedAt,
 		&r.DriftDetectedAt, &r.SuspendedAt, &r.DisconnectedAt,
 		&r.ExpiryNoticeSentAt, &r.AssignedBy, &r.CreatedAt, &r.UpdatedAt,
 	)
 }
 
-// CreateInput is what the /connect handler passes in after calling CF and
-// validating hostname.
+// CreateInput is what the /connect handler passes in after calling the DNS
+// provider and validating hostname. DNSProvider + DNSProviderConfigID are
+// required for new rows — factory resolves them before this call.
 type CreateInput struct {
-	SiteID             uuid.UUID
-	UserID             uuid.UUID
-	Hostname           string
-	CloudflareZoneID   string
-	AssignedNS         []string
-	ExpiresAt          *time.Time
-	AssignedBy         *uuid.UUID
+	SiteID              uuid.UUID
+	UserID              uuid.UUID
+	Hostname            string
+	DNSZoneID           string
+	DNSProvider         string
+	DNSProviderConfigID *uuid.UUID
+	AssignedNS          []string
+	ExpiresAt           *time.Time
+	AssignedBy          *uuid.UUID
 }
 
 func (r *Repo) Create(ctx context.Context, in CreateInput) (*DBRow, error) {
+	provider := in.DNSProvider
+	if provider == "" {
+		provider = "cloudflare" // back-compat for pre-Step 6 callers
+	}
 	var out DBRow
 	err := scan(r.pool.QueryRow(ctx, `
 		INSERT INTO site_byo_domains
-		(site_id, user_id, hostname, status, cloudflare_zone_id, assigned_ns,
-		 expires_at, last_whois_at, assigned_by)
-		VALUES ($1,$2,$3,'pending',$4,$5,$6,now(),$7)
+		(site_id, user_id, hostname, status, dns_zone_id, dns_provider, dns_provider_config_id,
+		 assigned_ns, expires_at, last_whois_at, assigned_by)
+		VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8,now(),$9)
 		RETURNING `+cols,
 		in.SiteID, in.UserID, in.Hostname,
-		in.CloudflareZoneID, in.AssignedNS,
+		in.DNSZoneID, provider, in.DNSProviderConfigID, in.AssignedNS,
 		in.ExpiresAt, in.AssignedBy,
 	), &out)
 	if err != nil {

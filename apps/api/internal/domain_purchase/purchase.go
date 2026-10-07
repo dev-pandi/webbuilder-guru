@@ -53,6 +53,11 @@ type purchaseReq struct {
 	// PromoCode — opsional. Validate via promos service; kalau invalid,
 	// return 400 (bukan silent-fallback — user pasti mau tau code-nya salah).
 	PromoCode string `json:"promo_code,omitempty"`
+	// DNSProviderChoice — opsional override user untuk DNS backend. Kosong =
+	// ikut admin priority. "cloudflare"/"dnscloud" = explicit. Dipersist ke
+	// domain_purchases.dns_provider_choice, dibaca oleh tryAttachToDNS saat
+	// EPP CREATE sukses.
+	DNSProviderChoice string `json:"dns_provider_choice,omitempty"`
 }
 
 // purchaseCreatedResp — response.
@@ -372,6 +377,11 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 		Status:         purchaseStatus,
 		PaymentMethod:  req.PaymentMethod,
 		PaymentURL:     paymentURL,
+	}
+	// Only persist user's provider choice if explicit (empty = ikut admin
+	// default). CHECK constraint enforces valid enum at DB level.
+	if choice := strings.TrimSpace(req.DNSProviderChoice); choice == "cloudflare" || choice == "dnscloud" {
+		local.DNSProviderChoice = &choice
 	}
 	if err := h.repo.Create(c.Context(), local); err != nil {
 		slog.Error("purchase: local save failed", "job_id", jobID, "error", err)

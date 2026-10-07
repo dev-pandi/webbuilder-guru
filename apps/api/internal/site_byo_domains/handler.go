@@ -12,7 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
-	"github.com/webbuilder/api/internal/cloudflare"
+	"github.com/webbuilder/api/internal/dnsprovider"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/registrar"
@@ -25,18 +25,9 @@ type WhoisClient interface {
 	Whois(ctx context.Context, domain string) (*registrar.Whois, error)
 }
 
-// CFClient is the subset of *cloudflare.Client that handlers call. Lets tests
-// stub without a real HTTP CF account.
-type CFClient interface {
-	CreateZone(ctx context.Context, domain string) (*cloudflare.ZoneData, error)
-	CreateDNSRecord(ctx context.Context, zoneID string, req cloudflare.DNSRecordRequest) (*cloudflare.DNSRecordData, error)
-	DeleteZone(ctx context.Context, zoneID string) error
-}
-
-// CFClientFactory builds a Cloudflare client per request. In production, the
-// factory reads cloudflare_configs (default row) and constructs
-// *cloudflare.Client. Keeps config lookup out of the hot handler path.
-type CFClientFactory func(ctx context.Context) (CFClient, error)
+// ProviderFactory is the shared factory signature from dnsprovider — pattern
+// re-exposed here so handler wiring reads naturally.
+type ProviderFactory = dnsprovider.Factory
 
 // NSLookup resolves nameservers for a hostname. Default implementation uses
 // the system resolver (net.LookupNS). Swappable for tests, or to point at
@@ -59,23 +50,23 @@ func DefaultNSLookup(ctx context.Context, hostname string) ([]string, error) {
 }
 
 type HandlerDeps struct {
-	Repo        *Repo
-	Sites       *sites.Repo
-	Purchases   *domain_purchase.Repo
-	Registrar   WhoisClient
-	CFFactory   CFClientFactory
-	NSLookup    NSLookup
-	PlatformIPs []string // used to populate the A record after verify
+	Repo            *Repo
+	Sites           *sites.Repo
+	Purchases       *domain_purchase.Repo
+	Registrar       WhoisClient
+	ProviderFactory ProviderFactory
+	NSLookup        NSLookup
+	PlatformIPs     []string // used to populate the A record after verify
 }
 
 type Handler struct {
-	repo      *Repo
-	sites     *sites.Repo
-	purchases *domain_purchase.Repo
-	whois     WhoisClient
-	cfFactory CFClientFactory
-	nsLookup  NSLookup
-	ips       []string
+	repo         *Repo
+	sites        *sites.Repo
+	purchases    *domain_purchase.Repo
+	whois        WhoisClient
+	providerFact ProviderFactory
+	nsLookup     NSLookup
+	ips          []string
 }
 
 func NewHandler(d HandlerDeps) *Handler {
@@ -84,13 +75,13 @@ func NewHandler(d HandlerDeps) *Handler {
 		nsFn = DefaultNSLookup
 	}
 	return &Handler{
-		repo:      d.Repo,
-		sites:     d.Sites,
-		purchases: d.Purchases,
-		whois:     d.Registrar,
-		cfFactory: d.CFFactory,
-		nsLookup:  nsFn,
-		ips:       d.PlatformIPs,
+		repo:         d.Repo,
+		sites:        d.Sites,
+		purchases:    d.Purchases,
+		whois:        d.Registrar,
+		providerFact: d.ProviderFactory,
+		nsLookup:     nsFn,
+		ips:          d.PlatformIPs,
 	}
 }
 
@@ -115,12 +106,13 @@ type checkWarning struct {
 }
 
 type connectResponse struct {
-	DomainID         uuid.UUID `json:"domain_id"`
-	Hostname         string    `json:"hostname"`
-	Status           State     `json:"status"`
-	AssignedNS       []string  `json:"assigned_ns"`
-	CloudflareZoneID string    `json:"cloudflare_zone_id"`
-	ExpiresAt        time.Time `json:"expires_at"`
+	DomainID    uuid.UUID `json:"domain_id"`
+	Hostname    string    `json:"hostname"`
+	Status      State     `json:"status"`
+	AssignedNS  []string  `json:"assigned_ns"`
+	DNSZoneID   string    `json:"dns_zone_id"`
+	DNSProvider string    `json:"dns_provider"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 type verifyResponse struct {
@@ -148,6 +140,10 @@ type listDomainRow struct {
 
 type hostnameReq struct {
 	Hostname string `json:"hostname"`
+	// DNSProviderChoice optional — "" means "use admin default"; "cloudflare" /
+	// "dnscloud" picks an explicit backend. Only honored at /connect; /verify
+	// and /delete read the sticky config_id from the row.
+	DNSProviderChoice string `json:"dns_provider_choice,omitempty"`
 }
 
 // Check — POST /api/v1/sites/:id/byo-domain/check
@@ -286,35 +282,48 @@ func (h *Handler) Connect(c *fiber.Ctx) error {
 			"Domain Anda sudah expired. Perpanjang di registrar sebelum menghubungkan.")
 	}
 
-	cf, err := h.cfFactory(c.Context())
+	// Factory resolves provider based on user choice (optional) + admin
+	// priority. Fail-honest: provider unavailable surfaces to user so they
+	// can pick an alternative manually; no silent fallback.
+	prov, configID, err := h.providerFact(c.Context(), dnsprovider.Choice{
+		Explicit: dnsprovider.Kind(req.DNSProviderChoice),
+	})
 	if err != nil {
-		slog.Error("byo connect: cf factory failed", "error", err)
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_unavailable",
-			"Konfigurasi Cloudflare belum siap. Hubungi admin.")
+		slog.Error("byo connect: provider factory failed", "error", err, "choice", req.DNSProviderChoice)
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "provider_unavailable",
+			"Konfigurasi DNS provider belum siap. Hubungi admin.")
 	}
-	zone, err := cf.CreateZone(c.Context(), host)
+	zone, err := prov.CreateZone(c.Context(), host)
 	if err != nil {
-		slog.Error("byo connect: cf create zone failed", "host", host, "error", err)
-		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_create_zone_failed",
-			"Gagal membuat zone Cloudflare: "+shorten(err.Error()))
+		slog.Error("byo connect: create zone failed", "host", host, "provider", prov.Kind(), "error", err)
+		return httpx.Err(c, fiber.StatusBadGateway, "provider_create_zone_failed",
+			"Gagal membuat zone di "+string(prov.Kind())+": "+shorten(err.Error()))
 	}
 
 	var expPtr *time.Time
 	if !expiresAt.IsZero() {
 		expPtr = &expiresAt
 	}
+	// Persist config_id so lifecycle ops (verify, delete, reconciler) are
+	// sticky to this exact provider account.
+	configUUID, _ := uuid.Parse(configID)
 	row, err := h.repo.Create(c.Context(), CreateInput{
-		SiteID:           siteID,
-		UserID:           uid,
-		Hostname:         host,
-		CloudflareZoneID: zone.ID,
-		AssignedNS:       zone.NameServers,
-		ExpiresAt:        expPtr,
+		SiteID:              siteID,
+		UserID:              uid,
+		Hostname:            host,
+		DNSZoneID:           zone.ID,
+		DNSProvider:         string(prov.Kind()),
+		DNSProviderConfigID: &configUUID,
+		AssignedNS:          zone.Nameservers,
+		ExpiresAt:           expPtr,
 	})
 	if err != nil {
-		// Rollback: delete the CF zone so we don't leak orphans on race.
-		if dErr := cf.DeleteZone(c.Context(), zone.ID); dErr != nil && !errors.Is(dErr, cloudflare.ErrZoneNotFound) {
-			slog.Warn("byo connect: rollback cf delete failed", "zone_id", zone.ID, "error", dErr)
+		// Rollback: delete the zone so we don't leak orphans on race. The
+		// provider adapter swallows "zone not found" so this is safe to call
+		// unconditionally.
+		if dErr := prov.DeleteZone(c.Context(), zone.ID); dErr != nil {
+			slog.Warn("byo connect: rollback delete zone failed",
+				"provider", prov.Kind(), "zone_id", zone.ID, "error", dErr)
 		}
 		switch {
 		case errors.Is(err, ErrHostnameTaken):
@@ -352,36 +361,55 @@ func (h *Handler) Verify(c *fiber.Ctx) error {
 			"BYO domain sudah dalam status "+string(row.Status)+".")
 	}
 
-	resolved, err := h.nsLookup(c.Context(), row.Hostname)
+	// Sticky: Verify + any lifecycle op MUST use the exact provider that
+	// owns row.dns_zone_id. Resolution via StickyConfigID.
+	prov, _, err := h.providerFact(c.Context(), stickyChoice(row))
 	if err != nil {
-		return httpx.Err(c, fiber.StatusBadRequest, "ns_lookup_failed",
-			"Tidak bisa resolve nameserver domain. Pastikan domain aktif.")
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "provider_unavailable",
+			"Konfigurasi DNS provider belum siap.")
 	}
-	if !NSOverlap(resolved, row.AssignedNS) {
-		return httpx.Err(c, fiber.StatusBadRequest, "ns_mismatch",
-			"Nameserver belum menunjuk ke kami. Resolved: "+strings.Join(resolved, ", ")+
-				". Propagasi DNS bisa butuh sampai 48 jam.")
+	// Trigger async check for providers that have server-side verification
+	// (DNSCloud); no-op for sync providers (Cloudflare).
+	if qErr := prov.QueueVerify(c.Context(), row.DNSZoneID); qErr != nil {
+		slog.Warn("byo verify: queue verify failed (non-fatal)",
+			"host", row.Hostname, "provider", prov.Kind(), "error", qErr)
+	}
+	status, err := prov.CheckVerify(c.Context(), row.DNSZoneID, row.Hostname, row.AssignedNS)
+	if err != nil {
+		return httpx.Err(c, fiber.StatusBadGateway, "provider_check_failed",
+			"Provider gagal memeriksa delegasi: "+shorten(err.Error()))
+	}
+	if status.Pending {
+		// Async provider still checking — tell frontend to poll in ~5s.
+		return httpx.Err(c, fiber.StatusAccepted, "verify_pending",
+			"Pemeriksaan delegasi sedang berjalan. Coba lagi beberapa detik.")
+	}
+	if !status.Verified {
+		detail := status.Detail
+		if detail == "" {
+			detail = "Nameserver belum menunjuk ke kami. Propagasi DNS bisa butuh sampai 48 jam."
+		}
+		return httpx.Err(c, fiber.StatusBadRequest, "ns_mismatch", detail)
 	}
 
-	// Populate A record so the site serves immediately. Proxied so CF edge
-	// handles TLS + CDN; origin only sees CF IPs. SSL mode is set zone-wide
-	// to full_strict by the CF factory (or admin), not per-record.
+	// Populate A record so the site serves immediately. Proxied so edge
+	// handles TLS + CDN; origin only sees provider edge IPs.
 	if len(h.ips) == 0 {
 		slog.Error("byo verify: platform_ips not configured")
 		return httpx.Internal(c, "platform ips not configured")
 	}
-	cf, err := h.cfFactory(c.Context())
-	if err != nil {
-		return httpx.Err(c, fiber.StatusServiceUnavailable, "cloudflare_unavailable",
-			"Konfigurasi Cloudflare belum siap.")
-	}
-	if _, err := cf.CreateDNSRecord(c.Context(), row.CloudflareZoneID, cloudflare.DNSRecordRequest{
-		Type: "A", Name: "@", Content: h.ips[0], TTL: 1, Proxied: true,
-		Comment: "web builder apex",
+	if err := prov.UpsertRecord(c.Context(), row.DNSZoneID, dnsprovider.Record{
+		Type: "A", Name: "@", Content: h.ips[0], TTL: 0, Proxied: true,
 	}); err != nil {
-		slog.Error("byo verify: cf create A failed", "host", row.Hostname, "error", err)
-		return httpx.Err(c, fiber.StatusBadGateway, "cloudflare_dns_failed",
-			"Gagal setup A record di Cloudflare: "+shorten(err.Error()))
+		slog.Error("byo verify: create A failed", "host", row.Hostname, "provider", prov.Kind(), "error", err)
+		return httpx.Err(c, fiber.StatusBadGateway, "provider_dns_failed",
+			"Gagal setup A record: "+shorten(err.Error()))
+	}
+	// EnableProxy is a no-op for Cloudflare (proxied is set per-record) but
+	// matters for DNSCloud which models proxy as a separate hostname toggle.
+	if err := prov.EnableProxy(c.Context(), row.DNSZoneID, row.Hostname); err != nil {
+		slog.Warn("byo verify: enable proxy failed (non-fatal)",
+			"host", row.Hostname, "provider", prov.Kind(), "error", err)
 	}
 
 	if err := h.repo.MarkVerified(c.Context(), row.ID); err != nil {
@@ -430,13 +458,15 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 		}
 	}
 
-	// Best-effort CF delete — row delete still proceeds if CF is down. The
-	// orphan reconciler (step 5) will mop up stray zones later.
-	if row.CloudflareZoneID != "" {
-		cf, cfErr := h.cfFactory(c.Context())
-		if cfErr == nil {
-			if dErr := cf.DeleteZone(c.Context(), row.CloudflareZoneID); dErr != nil && !errors.Is(dErr, cloudflare.ErrZoneNotFound) {
-				slog.Warn("byo delete: cf delete failed", "zone_id", row.CloudflareZoneID, "error", dErr)
+	// Best-effort provider delete — row delete still proceeds if provider is
+	// down. The orphan reconciler (step 5) will mop up stray zones later. The
+	// adapter swallows "zone not found" so no extra errors.Is needed here.
+	if row.DNSZoneID != "" {
+		prov, _, pErr := h.providerFact(c.Context(), stickyChoice(row))
+		if pErr == nil {
+			if dErr := prov.DeleteZone(c.Context(), row.DNSZoneID); dErr != nil {
+				slog.Warn("byo delete: provider delete failed",
+					"provider", prov.Kind(), "zone_id", row.DNSZoneID, "error", dErr)
 			}
 		}
 	}
@@ -568,11 +598,12 @@ func hostnameErrorResp(c *fiber.Ctx, err error) error {
 
 func connectRespFromRow(r *DBRow) connectResponse {
 	resp := connectResponse{
-		DomainID:         r.ID,
-		Hostname:         r.Hostname,
-		Status:           r.Status,
-		AssignedNS:       r.AssignedNS,
-		CloudflareZoneID: r.CloudflareZoneID,
+		DomainID:    r.ID,
+		Hostname:    r.Hostname,
+		Status:      r.Status,
+		AssignedNS:  r.AssignedNS,
+		DNSZoneID:   r.DNSZoneID,
+		DNSProvider: r.DNSProvider,
 	}
 	if r.ExpiresAt != nil {
 		resp.ExpiresAt = *r.ExpiresAt
@@ -586,4 +617,15 @@ func shorten(s string) string {
 		return s[:max] + "…"
 	}
 	return s
+}
+
+// stickyChoice derives a dnsprovider.Choice from a persisted row so lifecycle
+// operations always hit the same provider+config that created the zone.
+// Pre-Step 2 rows have no provider_config_id — in that case fall back to
+// Explicit kind so factory still picks the right adapter family.
+func stickyChoice(r *DBRow) dnsprovider.Choice {
+	if r.DNSProviderConfigID != nil {
+		return dnsprovider.Choice{StickyConfigID: r.DNSProviderConfigID.String()}
+	}
+	return dnsprovider.Choice{Explicit: dnsprovider.Kind(r.DNSProvider)}
 }

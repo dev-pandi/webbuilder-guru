@@ -20,6 +20,7 @@ import (
 	"github.com/webbuilder/api/internal/blog"
 	"github.com/webbuilder/api/internal/caddy"
 	"github.com/webbuilder/api/internal/cloudflare"
+	"github.com/webbuilder/api/internal/dns_providers"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/documents_local"
 	"github.com/webbuilder/api/internal/domain_purchase"
@@ -109,6 +110,10 @@ type Deps struct {
 	// dimatikan, cukup jangan build handler-nya di main). Router mount
 	// nil-safe di admin.go.
 	Cloudflare *cloudflare.Handler
+
+	// DNSProviders — unified admin CRUD + priority + health untuk
+	// multi-provider DNS (CF + DNSCloud). Nil-safe.
+	DNSProviders *dns_providers.Handler
 
 	// Forms — user CRUD form + submissions inbox + public submit endpoint.
 	// Mount di user.go (JWT) + global.go (public POST /public/forms/:id/submit).

@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,12 +9,22 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
-	"github.com/webbuilder/api/internal/cloudflare"
+	"github.com/webbuilder/api/internal/dnsprovider"
 	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/site_byo_domains"
 	"github.com/webbuilder/api/internal/sites"
 )
+
+// stickyChoiceFromRow mirrors site_byo_domains.stickyChoice (unexported) —
+// reconciler lives in a sibling package so duplicates the tiny helper here
+// rather than exposing a Public API just for one caller.
+func stickyChoiceFromRow(r *site_byo_domains.DBRow) dnsprovider.Choice {
+	if r.DNSProviderConfigID != nil {
+		return dnsprovider.Choice{StickyConfigID: r.DNSProviderConfigID.String()}
+	}
+	return dnsprovider.Choice{Explicit: dnsprovider.Kind(r.DNSProvider)}
+}
 
 // BYOConfig tunes the three sub-scans + grace windows. Zero values resolve to
 // sensible production defaults.
@@ -64,26 +73,26 @@ func (c *BYOConfig) applyDefaults() {
 // Everything is best-effort — a single failing row is logged and the batch
 // continues. Context cancellation stops after the current row completes.
 type BYOReconciler struct {
-	repo       *site_byo_domains.Repo
-	sites      *sites.Repo
-	auth       *auth.Repo
-	whois      site_byo_domains.WhoisClient
-	cfFactory  site_byo_domains.CFClientFactory
-	nsLookup   site_byo_domains.NSLookup
-	mailer     mail.Sender
-	appBaseURL string
-	cfg        BYOConfig
+	repo         *site_byo_domains.Repo
+	sites        *sites.Repo
+	auth         *auth.Repo
+	whois        site_byo_domains.WhoisClient
+	providerFact site_byo_domains.ProviderFactory
+	nsLookup     site_byo_domains.NSLookup
+	mailer       mail.Sender
+	appBaseURL   string
+	cfg          BYOConfig
 }
 
 type BYOReconcilerDeps struct {
-	Repo      *site_byo_domains.Repo
-	Sites     *sites.Repo
-	Auth      *auth.Repo
-	Whois     site_byo_domains.WhoisClient
-	CFFactory site_byo_domains.CFClientFactory
-	NSLookup  site_byo_domains.NSLookup // nil = site_byo_domains.DefaultNSLookup
-	Mailer    mail.Sender
-	Config    BYOConfig
+	Repo            *site_byo_domains.Repo
+	Sites           *sites.Repo
+	Auth            *auth.Repo
+	Whois           site_byo_domains.WhoisClient
+	ProviderFactory site_byo_domains.ProviderFactory
+	NSLookup        site_byo_domains.NSLookup // nil = site_byo_domains.DefaultNSLookup
+	Mailer          mail.Sender
+	Config          BYOConfig
 }
 
 func NewBYOReconciler(d BYOReconcilerDeps) *BYOReconciler {
@@ -93,15 +102,15 @@ func NewBYOReconciler(d BYOReconcilerDeps) *BYOReconciler {
 		nsFn = site_byo_domains.DefaultNSLookup
 	}
 	return &BYOReconciler{
-		repo:       d.Repo,
-		sites:      d.Sites,
-		auth:       d.Auth,
-		whois:      d.Whois,
-		cfFactory:  d.CFFactory,
-		nsLookup:   nsFn,
-		mailer:     d.Mailer,
-		appBaseURL: d.Config.AppBaseURL,
-		cfg:        d.Config,
+		repo:         d.Repo,
+		sites:        d.Sites,
+		auth:         d.Auth,
+		whois:        d.Whois,
+		providerFact: d.ProviderFactory,
+		nsLookup:     nsFn,
+		mailer:       d.Mailer,
+		appBaseURL:   d.Config.AppBaseURL,
+		cfg:          d.Config,
 	}
 }
 
@@ -316,11 +325,15 @@ func (r *BYOReconciler) scanCleanup(ctx context.Context) error {
 }
 
 func (r *BYOReconciler) cleanupOneRow(ctx context.Context, row *site_byo_domains.DBRow) {
-	if row.CloudflareZoneID != "" {
-		if cf, err := r.cfFactory(ctx); err == nil {
-			if dErr := cf.DeleteZone(ctx, row.CloudflareZoneID); dErr != nil && !errors.Is(dErr, cloudflare.ErrZoneNotFound) {
-				slog.Warn("byo reconciler: cf delete zone failed",
-					"host", row.Hostname, "zone_id", row.CloudflareZoneID, "error", dErr)
+	if row.DNSZoneID != "" {
+		// Sticky: delete at the exact provider that owns the zone, not the
+		// current admin-priority default (which may be a different account).
+		if prov, _, err := r.providerFact(ctx, stickyChoiceFromRow(row)); err == nil {
+			// Adapter swallows "zone not found" so no errors.Is needed here.
+			if dErr := prov.DeleteZone(ctx, row.DNSZoneID); dErr != nil {
+				slog.Warn("byo reconciler: provider delete zone failed",
+					"host", row.Hostname, "provider", prov.Kind(),
+					"zone_id", row.DNSZoneID, "error", dErr)
 			}
 		}
 	}
@@ -369,12 +382,12 @@ func (r *BYOReconciler) applyDecision(ctx context.Context, row *site_byo_domains
 		case site_byo_domains.EffectSendExpiredEmail:
 			r.sendEmail(ctx, row, "expired")
 		case site_byo_domains.EffectDeleteCFZone:
-			// Only emitted by expired cleanup path; cleanupOneRow handles CF
-			// delete + row delete directly, so this is a noop here. Guard anyway
-			// in case another transition path emits it in the future.
-			if row.CloudflareZoneID != "" {
-				if cf, cfErr := r.cfFactory(ctx); cfErr == nil {
-					_ = cf.DeleteZone(ctx, row.CloudflareZoneID)
+			// Only emitted by expired cleanup path; cleanupOneRow handles the
+			// delete + row removal directly, so this is a noop here. Guard
+			// anyway in case another transition path emits it in the future.
+			if row.DNSZoneID != "" {
+				if prov, _, pErr := r.providerFact(ctx, stickyChoiceFromRow(row)); pErr == nil {
+					_ = prov.DeleteZone(ctx, row.DNSZoneID)
 				}
 			}
 		case site_byo_domains.EffectHardDelete:

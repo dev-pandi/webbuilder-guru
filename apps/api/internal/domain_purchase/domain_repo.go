@@ -19,34 +19,37 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Domain — 1 baris tabel `domains`. Bukan purchase — ini aggregate state.
+// Domain — 1 baris tabel `registered_domains`. Bukan purchase — ini aggregate state.
 type Domain struct {
-	ID              uuid.UUID
-	UserID          uuid.UUID
-	PurchasedBy     *uuid.UUID
-	Name            string
-	ContactID       string
-	ExpiresAt       *time.Time
-	RegisteredAt    time.Time
-	LastRenewedAt   *time.Time
-	Status          string
-	SiteID          *uuid.UUID
-	RegistrarJobID  string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	// CFAttachStatus — status auto-attach ke Cloudflare (pending|success|failed|skipped).
-	// Populated via tryAttachToCloudflare pasca register. Admin bisa retry
-	// kalau failed via /admin/domains/:name/cloudflare-retry.
-	CFAttachStatus  string
-	CFAttachError   string
-	CFAttachAt      *time.Time
-	CFZoneID        string
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	PurchasedBy    *uuid.UUID
+	Name           string
+	ContactID      string
+	ExpiresAt      *time.Time
+	RegisteredAt   time.Time
+	LastRenewedAt  *time.Time
+	Status         string
+	SiteID         *uuid.UUID
+	RegistrarJobID string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	// DNSAttachStatus — status auto-attach ke DNS provider (pending|success|failed|skipped).
+	// Populated via tryAttachToDNS pasca register. Admin bisa retry kalau failed
+	// via /admin/domains/:name/dns-retry.
+	DNSAttachStatus     string
+	DNSAttachError      string
+	DNSAttachAt         *time.Time
+	DNSZoneID           string
+	DNSProvider         string     // 'cloudflare' | 'dnscloud'
+	DNSProviderConfigID *uuid.UUID // sticky — reconciler/retry MUST use this config
 }
 
 const domainCols = `id, user_id, purchased_by, name, contact_id, expires_at,
 	registered_at, last_renewed_at, status, site_id, registrar_job_id,
 	created_at, updated_at,
-	cf_attach_status, cf_attach_error, cf_attach_at, cf_zone_id`
+	dns_attach_status, dns_attach_error, dns_attach_at, dns_zone_id,
+	dns_provider, dns_provider_config_id`
 
 // domainColsWithSiteFallback — SELECT list dengan COALESCE site_id dari
 // domain_purchases. `registered_domains.site_id` historis tidak selalu
@@ -64,14 +67,16 @@ const domainColsWithSiteFallback = `rd.id, rd.user_id, rd.purchased_by, rd.name,
 		LIMIT 1
 	)) AS site_id,
 	rd.registrar_job_id, rd.created_at, rd.updated_at,
-	rd.cf_attach_status, rd.cf_attach_error, rd.cf_attach_at, rd.cf_zone_id`
+	rd.dns_attach_status, rd.dns_attach_error, rd.dns_attach_at, rd.dns_zone_id,
+	rd.dns_provider, rd.dns_provider_config_id`
 
 func scanDomain(row pgx.Row, d *Domain) error {
 	return row.Scan(
 		&d.ID, &d.UserID, &d.PurchasedBy, &d.Name, &d.ContactID, &d.ExpiresAt,
 		&d.RegisteredAt, &d.LastRenewedAt, &d.Status, &d.SiteID, &d.RegistrarJobID,
 		&d.CreatedAt, &d.UpdatedAt,
-		&d.CFAttachStatus, &d.CFAttachError, &d.CFAttachAt, &d.CFZoneID,
+		&d.DNSAttachStatus, &d.DNSAttachError, &d.DNSAttachAt, &d.DNSZoneID,
+		&d.DNSProvider, &d.DNSProviderConfigID,
 	)
 }
 
@@ -132,32 +137,34 @@ func (r *Repo) UpdateDomainExpiry(ctx context.Context, name string, expiresAt ti
 	return nil
 }
 
-// CF attach status constants — mirror kolom cf_attach_status enum.
+// DNS attach status constants — mirror kolom dns_attach_status enum.
 const (
-	CFAttachPending = "pending" // belum di-attempt (default row baru)
-	CFAttachSuccess = "success" // zone created + NS pushed OK
-	CFAttachFailed  = "failed"  // ada error di zone create / NS push / DNS
-	CFAttachSkipped = "skipped" // config CF belum ada, sengaja tidak coba
+	DNSAttachPending = "pending" // belum di-attempt (default row baru)
+	DNSAttachSuccess = "success" // zone created + NS pushed OK
+	DNSAttachFailed  = "failed"  // ada error di zone create / NS push / DNS
+	DNSAttachSkipped = "skipped" // config provider belum ada, sengaja tidak coba
 )
 
-// SetDomainCFAttach — persist hasil tryAttachToCloudflare. Best-effort:
-// dipanggil dari tryAttachToCloudflare per outcome supaya admin bisa lihat
-// status di UI + retry manual kalau failed. Kalau row tidak ada (domain belum
-// masuk registered_domains), no-op — biasanya karena race dengan UpsertDomain
-// yang sync juga jalan; retry berikutnya akan match.
+// SetDomainDNSAttach — persist hasil tryAttachToDNS. Best-effort: dipanggil
+// per outcome supaya admin bisa lihat status di UI + retry manual kalau
+// failed. Kalau row tidak ada (domain belum masuk registered_domains),
+// no-op — biasanya karena race dengan UpsertDomain yang sync juga jalan;
+// retry berikutnya akan match.
 //
-// zoneID di-simpan supaya endpoint diagnostic tidak perlu re-lookup zone by
-// domain name (yang tidak-precise di CF API — bisa match domain di akun lain).
-func (r *Repo) SetDomainCFAttach(ctx context.Context, name, status, errMsg, zoneID string) error {
+// zoneID + provider + providerConfigID disimpan supaya reconciler + retry
+// pakai provider yang SAMA (sticky), bukan priority provider terbaru.
+func (r *Repo) SetDomainDNSAttach(ctx context.Context, name, status, errMsg, zoneID, provider string, providerConfigID *uuid.UUID) error {
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE registered_domains SET
-			cf_attach_status = $2,
-			cf_attach_error  = $3,
-			cf_zone_id       = COALESCE(NULLIF($4, ''), cf_zone_id),
-			cf_attach_at     = now(),
-			updated_at       = now()
+			dns_attach_status      = $2,
+			dns_attach_error       = $3,
+			dns_zone_id            = COALESCE(NULLIF($4, ''), dns_zone_id),
+			dns_provider           = COALESCE(NULLIF($5, ''), dns_provider),
+			dns_provider_config_id = COALESCE($6, dns_provider_config_id),
+			dns_attach_at          = now(),
+			updated_at             = now()
 		 WHERE name = $1
-	`, name, status, errMsg, zoneID)
+	`, name, status, errMsg, zoneID, provider, providerConfigID)
 	if err != nil {
 		return err
 	}

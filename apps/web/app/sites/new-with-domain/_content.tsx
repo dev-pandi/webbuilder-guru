@@ -158,6 +158,10 @@ export function NewWithDomainContent() {
   // Promo state — validate on-demand (bukan on-blur) supaya user paham
   // "kode berhasil" atau "kode invalid" lewat feedback explicit.
   const [promoCode, setPromoCode] = useState("");
+  // DNS provider override (Default = ikut admin priority). Dipass ke
+  // POST /domains/purchase sebagai dns_provider_choice; tryAttachToDNS
+  // route zone ke adapter yang benar setelah pembayaran sukses.
+  const [dnsProviderChoice, setDNSProviderChoice] = useState<"" | "cloudflare" | "dnscloud">("");
   const [promoDiscount, setPromoDiscount] = useState(0);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [validatingPromo, setValidatingPromo] = useState(false);
@@ -272,6 +276,7 @@ export function NewWithDomainContent() {
           on_behalf_of_user_id: forClientID || undefined,
           document_ids: documentIds.length > 0 ? documentIds : undefined,
           promo_code: promoDiscount > 0 && promoCode.trim() ? promoCode.trim() : undefined,
+          dns_provider_choice: dnsProviderChoice || undefined,
         }),
       });
       toast.success("Job pembelian dibuat");
@@ -372,6 +377,8 @@ export function NewWithDomainContent() {
             forClientID={forClientID || undefined}
             onClientUpdated={(updated) => setMe(updated)}
             walletBalance={walletBalance}
+            dnsProviderChoice={dnsProviderChoice}
+            setDNSProviderChoice={setDNSProviderChoice}
           />
         )}
       </main>

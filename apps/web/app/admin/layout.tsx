@@ -27,7 +27,7 @@ const nav = [
   { href: "/admin/wallet/topups", label: "Wallet Top-up", icon: Wallet },
   { href: "/admin/settings", label: "Settings", icon: Settings },
   { href: "/admin/domain", label: "Domain", icon: Globe2 },
-  { href: "/admin/cloudflare", label: "Cloudflare", icon: Cloud },
+  { href: "/admin/dns-providers", label: "DNS Provider", icon: Cloud },
   { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },
   { href: "/admin/email-log", label: "Email Log", icon: Mail },
 ];

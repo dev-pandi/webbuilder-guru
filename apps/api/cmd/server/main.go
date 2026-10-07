@@ -24,18 +24,24 @@ import (
 	"github.com/webbuilder/api/internal/cloudflare"
 	"github.com/webbuilder/api/internal/config"
 	"github.com/webbuilder/api/internal/db"
+	"github.com/webbuilder/api/internal/dns_providers"
+	"github.com/webbuilder/api/internal/documents_local"
 	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/domains"
 	"github.com/webbuilder/api/internal/email_log"
 	"github.com/webbuilder/api/internal/errortrack"
 	"github.com/webbuilder/api/internal/exports"
 	"github.com/webbuilder/api/internal/forms"
+	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/logging"
 	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/notifier"
 	"github.com/webbuilder/api/internal/pages"
+	"github.com/webbuilder/api/internal/paymentgw"
+	"github.com/webbuilder/api/internal/payments"
+	"github.com/webbuilder/api/internal/paymentwh"
 	platform_articles "github.com/webbuilder/api/internal/platform_articles"
 	"github.com/webbuilder/api/internal/pricing"
 	"github.com/webbuilder/api/internal/products"
@@ -46,17 +52,12 @@ import (
 	"github.com/webbuilder/api/internal/responses"
 	"github.com/webbuilder/api/internal/router"
 	"github.com/webbuilder/api/internal/seed"
+	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/site_byo_domains"
 	"github.com/webbuilder/api/internal/sites"
 	"github.com/webbuilder/api/internal/snippets"
 	"github.com/webbuilder/api/internal/templates"
 	"github.com/webbuilder/api/internal/usage"
-	"github.com/webbuilder/api/internal/invoices"
-	"github.com/webbuilder/api/internal/paymentgw"
-	"github.com/webbuilder/api/internal/payments"
-	"github.com/webbuilder/api/internal/paymentwh"
-	"github.com/webbuilder/api/internal/documents_local"
-	"github.com/webbuilder/api/internal/settings"
 	"github.com/webbuilder/api/internal/wallet_local"
 	"github.com/webbuilder/api/internal/zones"
 )
@@ -187,7 +188,6 @@ func main() {
 	if assetStorage != nil {
 		slog.Info("storage ready", "driver", assetStorage.Driver())
 	}
-
 
 	// Mail sender — driver "log" in dev, "smtp" in prod.
 	mailer, err := mail.New(mail.Config{
@@ -490,25 +490,28 @@ func main() {
 	// = no propagation, profile update tetap tersimpan di web builder DB.
 
 	// BYO .id domain handler — enabled only when the registrar client (for
-	// WHOIS) and cloudflare config are both available. Factory looks up the
-	// default cloudflare_configs row per-request so operator can rotate token
-	// without restart. Nil = feature disabled, routes auto-skip in router.
+	// WHOIS) is available. The priority-aware factory routes between
+	// cloudflare/dnscloud based on admin config + user override + sticky
+	// per-row config_id.
+	dnsProvidersRepo := dns_providers.NewRepo(pool)
+	dnsProviderFactory := dns_providers.NewFactory(dnsProvidersRepo).AsFactoryFn()
+	dnsProvidersHandler := dns_providers.NewHandler(dnsProvidersRepo)
+
+	// Wire factory into purchase handler too — tryAttachToDNS reads it to
+	// pick the right backend (CF or DNSCloud) when a new domain is bought.
+	if purchaseHandler != nil {
+		purchaseHandler.SetProviderFactory(dnsProviderFactory)
+	}
+
 	var byoHandler *site_byo_domains.Handler
 	if registrarClient != nil {
-		cfFactory := site_byo_domains.CFClientFactory(func(ctx context.Context) (site_byo_domains.CFClient, error) {
-			defaultCfg, err := cloudflareRepo.GetDefault(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return cloudflare.NewClient(*defaultCfg), nil
-		})
 		byoHandler = site_byo_domains.NewHandler(site_byo_domains.HandlerDeps{
-			Repo:        byoRepo,
-			Sites:       siteRepo,
-			Purchases:   purchaseRepo,
-			Registrar:   registrarClient,
-			CFFactory:   cfFactory,
-			PlatformIPs: cfg.PlatformIPs,
+			Repo:            byoRepo,
+			Sites:           siteRepo,
+			Purchases:       purchaseRepo,
+			Registrar:       registrarClient,
+			ProviderFactory: dnsProviderFactory,
+			PlatformIPs:     cfg.PlatformIPs,
 		})
 		slog.Info("site_byo_domains: enabled")
 
@@ -516,13 +519,13 @@ func main() {
 		// Tick 24h, zero config = sensible defaults (drift 7d / disconnect 30d
 		// / cleanup 90d). Fires BYO lifecycle emails via `mailer`.
 		byoReconciler := notifier.NewBYOReconciler(notifier.BYOReconcilerDeps{
-			Repo:      byoRepo,
-			Sites:     siteRepo,
-			Auth:      authRepo,
-			Whois:     registrarClient,
-			CFFactory: cfFactory,
-			Mailer:    mailer,
-			Config:    notifier.BYOConfig{AppBaseURL: cfg.AppBaseURL},
+			Repo:            byoRepo,
+			Sites:           siteRepo,
+			Auth:            authRepo,
+			Whois:           registrarClient,
+			ProviderFactory: dnsProviderFactory,
+			Mailer:          mailer,
+			Config:          notifier.BYOConfig{AppBaseURL: cfg.AppBaseURL},
 		})
 		go byoReconciler.Run(ctx)
 	} else {
@@ -530,55 +533,56 @@ func main() {
 	}
 
 	deps := router.Deps{
-		Cfg:          cfg,
-		Pool:         pool,
-		Issuer:       issuer,
+		Cfg:            cfg,
+		Pool:           pool,
+		Issuer:         issuer,
 		Auth:           authHandler,
 		AuthGoogle:     googleHandler,
 		Registrar:      registrarClient,
 		DomainPurchase: purchaseHandler,
-		Sites:        sitesHandler,
-		SitesRepo:    siteRepo,
-		Pages:        pagesHandler,
-		Domains:      domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
-		Templates:    templatesHandler,
+		Sites:          sitesHandler,
+		SitesRepo:      siteRepo,
+		Pages:          pagesHandler,
+		Domains:        domains.NewHandler(domainRepo, siteRepo, cfg.PlatformIPs),
+		Templates:      templatesHandler,
 		Export: exports.NewHandler(&exports.Builder{
 			Sites:    siteRepo,
 			Pages:    pageRepo,
 			Products: productRepo,
 			Blog:     blogRepo,
 		}),
-		Usage:        usage.NewHandler(usageRepo, siteRepo),
-		Caddy:        caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
-		Public:       publicHandler,
-		Admin:        adminHandler,
-		Cloudflare:   cloudflare.NewHandler(cloudflareRepo),
-		Forms:        forms.NewHandler(formsRepo, siteRepo, mailer),
-		Analytics:    analytics.NewHandler(analyticsRepo, siteRepo),
-		Products:     products.NewHandler(productRepo, siteRepo),
-		Blog:         blog.NewHandler(blogRepo, siteRepo),
-		Snippets:     snippets.NewHandler(snippetRepo),
-		Reseller:     resellerHandler,
-		Audit:        auditHandler,
-		EmailLog:     emailLogHandler,
-		Pricing:      pricingHandler,
-		Zones:        zonesHandler,
-		Settings:     settingsHandler,
-		Payments:     paymentsHandler,
-		Invoices:       invoicesHandler,
-		PaymentWebhook: paymentWebhookHandler,
-		WalletLocal:    walletLocalHandler,
-		Documents:      documentsHandler,
-		Promos:         promosHandler,
-		SiteBYODomains: byoHandler,
-		Articles:       articles.NewHandler(articlesRepo, siteRepo),
-		Learning:       learning.NewHandler(learningRepo, siteRepo),
-		Responses:      responses.NewHandler(responsesRepo, siteRepo, articlesRepo),
-		Banners:        bannersHandler,
-		PublicGuru:     publicGuruHandler,
+		Usage:            usage.NewHandler(usageRepo, siteRepo),
+		Caddy:            caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
+		Public:           publicHandler,
+		Admin:            adminHandler,
+		Cloudflare:       cloudflare.NewHandler(cloudflareRepo),
+		DNSProviders:     dnsProvidersHandler,
+		Forms:            forms.NewHandler(formsRepo, siteRepo, mailer),
+		Analytics:        analytics.NewHandler(analyticsRepo, siteRepo),
+		Products:         products.NewHandler(productRepo, siteRepo),
+		Blog:             blog.NewHandler(blogRepo, siteRepo),
+		Snippets:         snippets.NewHandler(snippetRepo),
+		Reseller:         resellerHandler,
+		Audit:            auditHandler,
+		EmailLog:         emailLogHandler,
+		Pricing:          pricingHandler,
+		Zones:            zonesHandler,
+		Settings:         settingsHandler,
+		Payments:         paymentsHandler,
+		Invoices:         invoicesHandler,
+		PaymentWebhook:   paymentWebhookHandler,
+		WalletLocal:      walletLocalHandler,
+		Documents:        documentsHandler,
+		Promos:           promosHandler,
+		SiteBYODomains:   byoHandler,
+		Articles:         articles.NewHandler(articlesRepo, siteRepo),
+		Learning:         learning.NewHandler(learningRepo, siteRepo),
+		Responses:        responses.NewHandler(responsesRepo, siteRepo, articlesRepo),
+		Banners:          bannersHandler,
+		PublicGuru:       publicGuruHandler,
 		PlatformArticles: platform_articles.NewHandler(platformArticlesRepo),
-		AssetStorage:   assetStorage,
-		ErrorTracker: tracker,
+		AssetStorage:     assetStorage,
+		ErrorTracker:     tracker,
 	}
 
 	// Seed platform articles kalau kosong (fire-and-forget, safe: idempotent).

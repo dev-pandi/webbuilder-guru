@@ -20,8 +20,8 @@ import (
 // Kind = "register" atau "renew". Renew jobs tidak pernah di-attach ke site
 // (site sudah exist dari register sebelumnya) — SiteID selalu nil.
 type Purchase struct {
-	ID             uuid.UUID
-	UserID         uuid.UUID // owner domain (client kalau on-behalf-of)
+	ID     uuid.UUID
+	UserID uuid.UUID // owner domain (client kalau on-behalf-of)
 	// PurchasedBy = actor yang trigger register/renew (reseller atau agent).
 	// nil = self-purchase (client beli sendiri, back-compat rows lama).
 	PurchasedBy    *uuid.UUID
@@ -35,8 +35,12 @@ type Purchase struct {
 	PaymentMethod  string
 	PaymentURL     string
 	ExpiresAt      *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// DNSProviderChoice — pilihan user di wizard beli. nil = ikut admin
+	// priority default; "cloudflare"/"dnscloud" = explicit override. Dibaca
+	// tryAttachToDNS post-payment untuk routing ke adapter yang benar.
+	DNSProviderChoice *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // Kind constants — mirror registrar_domain_jobs.kind + wallet topup.
@@ -80,13 +84,13 @@ var (
 	ErrJobTaken = errors.New("registrar_job_id already exists")
 )
 
-const cols = `id, user_id, purchased_by, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at, created_at, updated_at`
+const cols = `id, user_id, purchased_by, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at, dns_provider_choice, created_at, updated_at`
 
 func scan(row pgx.Row, p *Purchase) error {
 	return row.Scan(
 		&p.ID, &p.UserID, &p.PurchasedBy, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
 		&p.Status, &p.Reason, &p.PaymentMethod, &p.PaymentURL,
-		&p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt,
+		&p.ExpiresAt, &p.DNSProviderChoice, &p.CreatedAt, &p.UpdatedAt,
 	)
 }
 
@@ -99,15 +103,15 @@ func (r *Repo) Create(ctx context.Context, p *Purchase) error {
 	}
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO domain_purchases
-		(user_id, purchased_by, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		(user_id, purchased_by, site_id, registrar_job_id, domain, years, kind, status, reason, payment_method, payment_url, expires_at, dns_provider_choice)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING `+cols,
 		p.UserID, p.PurchasedBy, p.SiteID, p.RegistrarJobID, p.Domain, p.Years, p.Kind,
-		p.Status, p.Reason, p.PaymentMethod, p.PaymentURL, p.ExpiresAt,
+		p.Status, p.Reason, p.PaymentMethod, p.PaymentURL, p.ExpiresAt, p.DNSProviderChoice,
 	).Scan(
 		&p.ID, &p.UserID, &p.PurchasedBy, &p.SiteID, &p.RegistrarJobID, &p.Domain, &p.Years, &p.Kind,
 		&p.Status, &p.Reason, &p.PaymentMethod, &p.PaymentURL,
-		&p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt,
+		&p.ExpiresAt, &p.DNSProviderChoice, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err != nil {
 		if pgErrCode(err) == "23505" {
@@ -258,6 +262,24 @@ func (r *Repo) GetLatestActiveByDomain(ctx context.Context, domain string, userI
 		    AND domain = $2 AND kind = 'register' AND status = 'active'
 		  ORDER BY created_at DESC LIMIT 1`,
 		userID, domain,
+	), &p)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &p, err
+}
+
+// GetLatestRegisterByDomainAny — admin-level lookup (no ownership filter)
+// untuk background jobs seperti tryAttachToDNS yang perlu baca
+// dns_provider_choice tanpa konteks user. Picks the most recent register row
+// regardless of status so retry setelah failed tetap bisa resolve choice.
+func (r *Repo) GetLatestRegisterByDomainAny(ctx context.Context, domain string) (*Purchase, error) {
+	var p Purchase
+	err := scan(r.pool.QueryRow(ctx,
+		`SELECT `+cols+` FROM domain_purchases
+		  WHERE domain = $1 AND kind = 'register'
+		  ORDER BY created_at DESC LIMIT 1`,
+		domain,
 	), &p)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

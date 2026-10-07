@@ -436,6 +436,7 @@ function ConnectModal({
 }) {
   const [step, setStep] = useState<Step>("input");
   const [hostname, setHostname] = useState("");
+  const [providerChoice, setProviderChoice] = useState<"" | "cloudflare" | "dnscloud">("");
   const [check, setCheck] = useState<CheckResponse | null>(null);
   const [connect, setConnect] = useState<ConnectResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -447,6 +448,7 @@ function ConnectModal({
     if (!open) {
       setStep("input");
       setHostname("");
+      setProviderChoice("");
       setCheck(null);
       setConnect(null);
       setError(null);
@@ -477,7 +479,7 @@ function ConnectModal({
     try {
       const res = await api<ConnectResponse>(`/api/v1/sites/${siteID}/byo-domain/connect`, {
         method: "POST",
-        body: JSON.stringify({ hostname }),
+        body: JSON.stringify({ hostname, dns_provider_choice: providerChoice || undefined }),
       });
       setConnect(res);
       setStep("ns");
@@ -491,20 +493,37 @@ function ConnectModal({
   async function runVerify() {
     setBusy(true);
     setError(null);
-    try {
-      await api(`/api/v1/sites/${siteID}/byo-domain/verify`, {
-        method: "POST",
-        body: JSON.stringify({ hostname }),
-      });
-      setStep("done");
-      toast.success(`${hostname} berhasil diverifikasi`);
-      await onDone();
-    } catch (e) {
-      // ns_mismatch tetap friendly — propagasi DNS bisa lama.
-      const msg = e instanceof ApiError ? e.message : (e as Error).message;
-      setError(msg);
-    } finally {
-      setBusy(false);
+    // Polling untuk async providers (DNSCloud). Max 6 attempts × 5s = 30s.
+    // Setelah itu suggest user coba lagi manual — hindari UI stuck "spinner
+    // selamanya" kalau delegasi memang butuh > 48 jam.
+    const MAX_ATTEMPTS = 6;
+    const DELAY_MS = 5000;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        await api(`/api/v1/sites/${siteID}/byo-domain/verify`, {
+          method: "POST",
+          body: JSON.stringify({ hostname }),
+        });
+        setStep("done");
+        toast.success(`${hostname} berhasil diverifikasi`);
+        await onDone();
+        setBusy(false);
+        return;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "verify_pending") {
+          if (attempt < MAX_ATTEMPTS) {
+            setError(`Memeriksa delegasi (percobaan ${attempt}/${MAX_ATTEMPTS})…`);
+            await new Promise((r) => setTimeout(r, DELAY_MS));
+            continue;
+          }
+          setError("Verifikasi masih berjalan setelah 30 detik. Tutup modal dan coba lagi beberapa menit kemudian — propagasi DNS kadang butuh waktu lebih lama.");
+        } else {
+          const msg = e instanceof ApiError ? e.message : (e as Error).message;
+          setError(msg);
+        }
+        setBusy(false);
+        return;
+      }
     }
   }
 
@@ -530,6 +549,23 @@ function ConnectModal({
                   placeholder="toko.id"
                   autoFocus
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="byo-provider">DNS Provider</Label>
+                <select
+                  id="byo-provider"
+                  value={providerChoice}
+                  onChange={(e) => setProviderChoice(e.target.value as "" | "cloudflare" | "dnscloud")}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">Default (ikut prioritas admin)</option>
+                  <option value="cloudflare">Cloudflare (global, 300+ POP)</option>
+                  <option value="dnscloud">DNSCloud.ID (Indonesia, data residency)</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Pilih manual kalau Anda tahu kebutuhan spesifik — mis. audiens
+                  luar negeri atau antisipasi kalau provider utama bermasalah.
+                </p>
               </div>
               {check && check.whois && (
                 <div className="rounded-md border bg-muted/30 p-3 text-sm">
