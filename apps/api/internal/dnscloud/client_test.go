@@ -288,15 +288,23 @@ func TestProvider_DeleteZone_IdempotentOn404(t *testing.T) {
 	}
 }
 
-func TestClient_Ping_AuthMe(t *testing.T) {
+func TestClient_Ping_HitsZonesList(t *testing.T) {
+	// Ping must probe a token-friendly endpoint. /auth/me rejects tokens with
+	// 403 (bound to session identity); /zones?limit=1 accepts tokens with
+	// zones:read scope and returns 200 even for an empty account.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/auth/me" {
-			t.Errorf("Ping should hit /auth/me, got %s", r.URL.Path)
+		if r.URL.Path != "/zones" {
+			t.Errorf("Ping should hit /zones, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "1" {
+			t.Errorf("Ping should pass limit=1, got %q", r.URL.Query().Get("limit"))
 		}
 		if r.Header.Get("Authorization") != "Bearer dcid_test" {
 			t.Error("missing Authorization header")
 		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"zones":[],"next_cursor":null}`))
 	}))
 	defer srv.Close()
 

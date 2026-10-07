@@ -153,10 +153,17 @@ type createZoneResp struct {
 	} `json:"delegation"`
 }
 
-// Ping is a lightweight auth-only probe. Hits /auth/me which returns 200 for
-// a valid session OR valid token. Used by admin "test connection" button.
+// Ping is a lightweight auth-only probe for the admin "test connection"
+// button. Hits GET /zones?limit=1 — a token-friendly endpoint that returns
+// 200 (even with zero zones) for a valid API token.
+//
+// NOTE: /auth/me is NOT usable here. Per DNSCloud spec, identity + membership
+// endpoints (auth/*, members/*, orgs/*) reject API tokens with 403 because
+// they bind to "who are you" — a question only a panel session answers. Our
+// admin UI only ever carries tokens, so we must probe a resource-oriented
+// endpoint instead.
 func (c *Client) Ping(ctx context.Context) error {
-	return c.do(ctx, http.MethodGet, "/auth/me", nil, nil)
+	return c.do(ctx, http.MethodGet, "/zones?limit=1", nil, nil)
 }
 
 // --- Provider adapter (dnsprovider.Provider) --------------------------------
