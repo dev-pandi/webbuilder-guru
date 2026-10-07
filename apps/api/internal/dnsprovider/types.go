@@ -5,7 +5,19 @@
 // the other.
 package dnsprovider
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrZoneAlreadyExists signals that CreateZone found an existing zone with
+// the same name owned by the same account. Callers (tryAttachToDNS, BYO
+// Connect) should treat this as "retry-safe idempotent" — look up the
+// existing zone via FindZoneByDomain and continue the flow.
+//
+// Adapters wrap backend-specific errors (CF code 1061, DNSCloud ZONE_EXISTS,
+// etc.) into this sentinel so caller logic stays provider-agnostic.
+var ErrZoneAlreadyExists = errors.New("dns provider: zone already exists")
 
 // Kind identifies which DNS backend is behind a provider instance. Column
 // `dns_provider` on site_byo_domains + registered_domains stores this value.
@@ -53,8 +65,15 @@ type Provider interface {
 	Kind() Kind
 
 	// CreateZone registers the domain and returns the NS pair the user must
-	// delegate to at their registrar.
+	// delegate to at their registrar. Returns ErrZoneAlreadyExists if a zone
+	// with that name already exists in the account — caller should fall back
+	// to FindZoneByDomain for idempotent retry.
 	CreateZone(ctx context.Context, domain string) (*Zone, error)
+
+	// FindZoneByDomain looks up an existing zone by its domain name. Used by
+	// idempotent retry paths after CreateZone returned ErrZoneAlreadyExists.
+	// Returns nil, nil if the zone truly doesn't exist (not an error).
+	FindZoneByDomain(ctx context.Context, domain string) (*Zone, error)
 
 	// UpsertRecord creates or replaces an RRset.
 	UpsertRecord(ctx context.Context, zoneID string, rec Record) error

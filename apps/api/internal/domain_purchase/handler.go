@@ -2001,13 +2001,39 @@ func (h *Handler) tryAttachToDNS(ctx context.Context, domain string) {
 
 	zone, err := prov.CreateZone(ctx, domain)
 	if err != nil {
-		slog.Warn("dns attach: create zone failed", append(logAttrs, "error", err)...)
-		persistStatus(DNSAttachFailed, "create zone: "+err.Error(), "", providerKind, configIDPtr)
-		metrics.Default.CounterInc("dns_attach_total",
-			"Auto-attach ke DNS provider per outcome",
-			map[string]string{"result": "zone_failed", "provider": providerKind},
-		)
-		return
+		// Idempotent retry: zone sudah ada (dari attempt sebelumnya yang NS
+		// push-nya gagal) → lookup existing zone + lanjut flow. Common pada
+		// scenario "NS push gagal karena EPP host object" di PANDI.
+		if errors.Is(err, dnsprovider.ErrZoneAlreadyExists) {
+			existing, lErr := prov.FindZoneByDomain(ctx, domain)
+			if lErr != nil || existing == nil {
+				slog.Warn("dns attach: zone exists but lookup failed",
+					append(logAttrs, "lookup_error", lErr, "create_error", err)...)
+				persistStatus(DNSAttachFailed,
+					"zone sudah ada tapi gagal fetch: "+err.Error(),
+					"", providerKind, configIDPtr)
+				metrics.Default.CounterInc("dns_attach_total",
+					"Auto-attach ke DNS provider per outcome",
+					map[string]string{"result": "zone_exists_lookup_failed", "provider": providerKind},
+				)
+				return
+			}
+			zone = existing
+			slog.Info("dns attach: zone exists, reusing", append(logAttrs, "zone_id", zone.ID)...)
+			metrics.Default.CounterInc("dns_attach_total",
+				"Auto-attach ke DNS provider per outcome",
+				map[string]string{"result": "zone_reused", "provider": providerKind},
+			)
+			// fall through ke UpsertRecord + UpdateNameservers
+		} else {
+			slog.Warn("dns attach: create zone failed", append(logAttrs, "error", err)...)
+			persistStatus(DNSAttachFailed, "create zone: "+err.Error(), "", providerKind, configIDPtr)
+			metrics.Default.CounterInc("dns_attach_total",
+				"Auto-attach ke DNS provider per outcome",
+				map[string]string{"result": "zone_failed", "provider": providerKind},
+			)
+			return
+		}
 	}
 
 	// -------- DNS records --------

@@ -251,12 +251,57 @@ func (p *Provider) Kind() dnsprovider.Kind { return dnsprovider.KindDNSCloud }
 func (p *Provider) CreateZone(ctx context.Context, domain string) (*dnsprovider.Zone, error) {
 	var resp createZoneResp
 	if err := p.client.do(ctx, http.MethodPost, "/zones", createZoneReq{Name: domain}, &resp); err != nil {
+		// Normalize ZONE_EXISTS → sentinel supaya caller pakai errors.Is
+		// tanpa knowing DNSCloud problem codes.
+		if IsCode(err, "ZONE_EXISTS") {
+			return nil, dnsprovider.ErrZoneAlreadyExists
+		}
 		return nil, err
 	}
 	return &dnsprovider.Zone{
 		ID:          resp.Zone.ID,
 		Nameservers: resp.Delegation.Nameservers,
 	}, nil
+}
+
+// listZonesResp mirrors GET /zones envelope — subset yang kita butuh.
+type listZonesResp struct {
+	Zones []struct {
+		ID          string   `json:"id"`
+		Name        string   `json:"name"`
+		NameUnicode string   `json:"name_unicode,omitempty"`
+		Status      string   `json:"status"`
+	} `json:"zones"`
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+// FindZoneByDomain uses GET /zones?search=... to locate an existing zone by
+// name. Returns (nil, nil) kalau tidak ada hit — bukan error. Needed by
+// idempotent retry paths setelah CreateZone balikin ErrZoneAlreadyExists.
+func (p *Provider) FindZoneByDomain(ctx context.Context, domain string) (*dnsprovider.Zone, error) {
+	// DNSCloud menyimpan name dalam punycode lowercase + trailing dot (per
+	// spec). Normalize input + handle variant match di loop.
+	needle := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+	var resp listZonesResp
+	path := "/zones?search=" + pathEscape(needle) + "&limit=50"
+	if err := p.client.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	for _, z := range resp.Zones {
+		if strings.TrimSuffix(strings.ToLower(z.Name), ".") == needle ||
+			strings.ToLower(z.NameUnicode) == needle {
+			// Also need the nameservers — fetch zone detail.
+			detail, err := p.client.GetZoneDetail(ctx, z.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &dnsprovider.Zone{
+				ID:          detail.Zone.ID,
+				Nameservers: detail.Nameservers,
+			}, nil
+		}
+	}
+	return nil, nil
 }
 
 // UpsertRecord uses PUT /zones/{zone}/rrsets/{name}/{type} which is

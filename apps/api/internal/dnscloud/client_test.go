@@ -158,8 +158,11 @@ func TestClient_CreateZone_ProblemError(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error for 409, got nil")
 	}
-	if !IsCode(err, "ZONE_EXISTS") {
-		t.Errorf("IsCode(err, ZONE_EXISTS) false; err=%v", err)
+	// Provider adapter MUST normalize ZONE_EXISTS → dnsprovider sentinel
+	// supaya caller (tryAttachToDNS, BYO Connect) bisa pakai errors.Is
+	// tanpa coupling ke DNSCloud problem codes.
+	if !errors.Is(err, dnsprovider.ErrZoneAlreadyExists) {
+		t.Errorf("want ErrZoneAlreadyExists, got %v", err)
 	}
 }
 
@@ -311,6 +314,59 @@ func TestClient_Ping_HitsZonesList(t *testing.T) {
 	c := NewClient(Config{BaseURL: srv.URL, APIToken: "dcid_test"})
 	if err := c.Ping(context.Background()); err != nil {
 		t.Errorf("Ping err: %v", err)
+	}
+}
+
+func TestProvider_FindZoneByDomain_Found(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/zones":
+			// Search list — return matching zone.
+			if r.URL.Query().Get("search") != "found.id" {
+				t.Errorf("unexpected search query: %q", r.URL.Query().Get("search"))
+			}
+			_, _ = w.Write([]byte(`{"zones":[{"id":"zid-123","name":"found.id.","status":"active"}],"next_cursor":null}`))
+		case "/zones/zid-123":
+			// Detail call to fetch nameservers.
+			_, _ = w.Write([]byte(`{"zone":{"id":"zid-123","name":"found.id."},"nameservers":["ns1.dnscloud.id","ns2.dnscloud.id"]}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewProvider(NewClient(Config{BaseURL: srv.URL, APIToken: "dcid_test"}))
+	zone, err := p.FindZoneByDomain(context.Background(), "found.id")
+	if err != nil {
+		t.Fatalf("FindZoneByDomain err: %v", err)
+	}
+	if zone == nil {
+		t.Fatal("want zone, got nil")
+	}
+	if zone.ID != "zid-123" {
+		t.Errorf("ID = %q, want zid-123", zone.ID)
+	}
+	if len(zone.Nameservers) != 2 {
+		t.Errorf("nameservers = %v, want 2 items", zone.Nameservers)
+	}
+}
+
+func TestProvider_FindZoneByDomain_NotFound_ReturnsNilNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"zones":[],"next_cursor":null}`))
+	}))
+	defer srv.Close()
+
+	p := NewProvider(NewClient(Config{BaseURL: srv.URL, APIToken: "dcid_test"}))
+	zone, err := p.FindZoneByDomain(context.Background(), "missing.id")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if zone != nil {
+		t.Errorf("not-found should return nil zone, got %+v", zone)
 	}
 }
 

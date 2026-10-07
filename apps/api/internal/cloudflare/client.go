@@ -324,6 +324,19 @@ func IsCloudflareDuplicateRecord(err error) bool {
 	return contains(err.Error(), "81057")
 }
 
+// IsCloudflareDuplicateZone cek error-code 1061 ("zone already exists").
+// Dipakai idempotent retry flow — kalau CreateZone fail dengan code ini,
+// zone sebelumnya memang sudah ada → caller fall back ke GetZoneByDomain.
+// Beberapa response pakai 1097 juga ("A zone with that name already exists"),
+// cover keduanya.
+func IsCloudflareDuplicateZone(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return contains(s, "1061") || contains(s, "1097") || contains(s, "already exists")
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

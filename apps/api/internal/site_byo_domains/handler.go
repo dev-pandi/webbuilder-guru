@@ -295,9 +295,25 @@ func (h *Handler) Connect(c *fiber.Ctx) error {
 	}
 	zone, err := prov.CreateZone(c.Context(), host)
 	if err != nil {
-		slog.Error("byo connect: create zone failed", "host", host, "provider", prov.Kind(), "error", err)
-		return httpx.Err(c, fiber.StatusBadGateway, "provider_create_zone_failed",
-			"Gagal membuat zone di "+string(prov.Kind())+": "+shorten(err.Error()))
+		// Idempotent retry: user klik Connect lagi untuk domain yang zone-nya
+		// sudah pernah terbuat (misal retry setelah NS push gagal). Lookup
+		// existing zone + lanjut flow → simpan ulang DB row.
+		if errors.Is(err, dnsprovider.ErrZoneAlreadyExists) {
+			existing, lErr := prov.FindZoneByDomain(c.Context(), host)
+			if lErr != nil || existing == nil {
+				slog.Error("byo connect: zone exists but lookup failed",
+					"host", host, "provider", prov.Kind(), "lookup_error", lErr, "create_error", err)
+				return httpx.Err(c, fiber.StatusConflict, "zone_exists_lookup_failed",
+					"Zone sudah ada di provider tapi tidak bisa di-lookup: "+shorten(err.Error()))
+			}
+			zone = existing
+			slog.Info("byo connect: zone exists, reusing",
+				"host", host, "provider", prov.Kind(), "zone_id", zone.ID)
+		} else {
+			slog.Error("byo connect: create zone failed", "host", host, "provider", prov.Kind(), "error", err)
+			return httpx.Err(c, fiber.StatusBadGateway, "provider_create_zone_failed",
+				"Gagal membuat zone di "+string(prov.Kind())+": "+shorten(err.Error()))
+		}
 	}
 
 	var expPtr *time.Time

@@ -23,6 +23,26 @@ func (p *Provider) Kind() dnsprovider.Kind { return dnsprovider.KindCloudflare }
 func (p *Provider) CreateZone(ctx context.Context, domain string) (*dnsprovider.Zone, error) {
 	zone, err := p.client.CreateZone(ctx, domain)
 	if err != nil {
+		// Normalize backend-specific "zone exists" variations → sentinel supaya
+		// caller (tryAttachToDNS, BYO Connect) bisa pakai errors.Is tanpa
+		// nge-couple ke CF error codes.
+		if IsCloudflareDuplicateZone(err) {
+			return nil, dnsprovider.ErrZoneAlreadyExists
+		}
+		return nil, err
+	}
+	return &dnsprovider.Zone{ID: zone.ID, Nameservers: zone.NameServers}, nil
+}
+
+// FindZoneByDomain wraps *Client.GetZoneByDomain. Returns (nil, nil) jika
+// zone tidak ada — distinct dari error, biar caller bisa decide "memang
+// baru" vs "lookup gagal".
+func (p *Provider) FindZoneByDomain(ctx context.Context, domain string) (*dnsprovider.Zone, error) {
+	zone, err := p.client.GetZoneByDomain(ctx, domain)
+	if err != nil {
+		if errors.Is(err, ErrZoneNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &dnsprovider.Zone{ID: zone.ID, Nameservers: zone.NameServers}, nil
