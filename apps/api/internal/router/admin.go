@@ -49,6 +49,9 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Get("/domains/:name/dns", deps.DomainPurchase.AdminListDNSRecords)
 		g.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.AdminCloudflareInfo)
 		g.Get("/domains/:name/dnscloud-info", deps.DomainPurchase.AdminDNSCloudInfo)
+		// Switch provider — admin pindah ownership zone antar backend
+		// (CF ↔ DNSCloud) atau release ke external (user-managed DNS).
+		g.Post("/domains/:name/switch-provider", deps.DomainPurchase.AdminSwitchProvider)
 		// Re-run Cloudflare auto-attach untuk domain yang failed/skipped saat
 		// register. Idempotent — kalau zone sudah ada, tetap mark success.
 		g.Post("/domains/:name/cloudflare-retry", deps.DomainPurchase.AdminCloudflareRetry)

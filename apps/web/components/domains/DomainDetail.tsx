@@ -38,6 +38,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { RenewDialog } from "@/components/domains/RenewDialog";
 
 // DomainRow — aggregate current-state per FQDN dari tabel `domains`.
@@ -269,14 +278,18 @@ export function DomainDetail({
               />
             )}
 
-            {/* Cloudflare health panel hanya relevan kalau zone-nya di CF.
-                DNSCloud punya status endpoint sendiri (zone verification +
-                propagation) — ditampilkan di tempat terpisah kalau diperlukan. */}
+            {/* Health panel per-provider.
+                - cloudflare / undefined (legacy row sebelum field dns_provider) → CF panel
+                - dnscloud → DNSCloud panel
+                - external → no panel (user manage zone di luar) */}
             {(row?.dns_provider === "cloudflare" || !row?.dns_provider) && (
               <CloudflareHealthPanel domain={domain} endpointPrefix={endpointPrefix} />
             )}
             {row?.dns_provider === "dnscloud" && (
               <DNSCloudInfoCard domain={domain} endpointPrefix={endpointPrefix} />
+            )}
+            {row?.dns_provider === "external" && (
+              <ExternalProviderInfoCard domain={domain} />
             )}
 
             {/* WHOIS */}
@@ -919,6 +932,7 @@ function DNSAttachStatusCard({
   onRefreshed: (fresh: DomainRow) => void;
 }) {
   const [retrying, setRetrying] = useState(false);
+  const [switchOpen, setSwitchOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<{
     status: string;
     error: string;
@@ -1043,27 +1057,38 @@ function DNSAttachStatusCard({
               )}
             </div>
           </div>
-          {canRetry && (
+          <div className="flex items-center gap-2">
+            {canRetry && provider !== "external" && (
+              <Button
+                onClick={onRetry}
+                disabled={retrying}
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+              >
+                {retrying ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Retry…
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="size-3.5" />
+                    Retry
+                  </>
+                )}
+              </Button>
+            )}
             <Button
-              onClick={onRetry}
-              disabled={retrying}
+              onClick={() => setSwitchOpen(true)}
               variant="outline"
               size="sm"
               className="gap-1.5"
             >
-              {retrying ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  Retry…
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="size-3.5" />
-                  Retry
-                </>
-              )}
+              <Cloud className="size-3.5" />
+              Switch Provider
             </Button>
-          )}
+          </div>
         </div>
 
         {error && (
@@ -1093,6 +1118,266 @@ function DNSAttachStatusCard({
             Attach berhasil tapi ada warning: <span className="font-mono">{error}</span>
           </div>
         )}
+
+        {provider === "external" && (
+          <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            Domain diset ke <strong>external</strong> — platform tidak lagi
+            kelola zone (A/AAAA/CNAME/MX/TXT). User manage DNS record di
+            provider mereka sendiri. Nameserver tetap bisa diubah di PANDI
+            lewat panel Nameservers di bawah.
+          </div>
+        )}
+      </CardContent>
+
+      <SwitchProviderDialog
+        open={switchOpen}
+        onClose={() => setSwitchOpen(false)}
+        domain={domain}
+        currentProvider={provider ?? ""}
+        onDone={(res) => {
+          setSnapshot({
+            status: res.new_provider === "external" ? "skipped" : "success",
+            error: "",
+            at: new Date().toISOString(),
+            zoneId: res.new_zone_id ?? "",
+            provider: res.new_provider,
+          });
+          onRefreshed({
+            ...initial,
+            dns_provider: res.new_provider,
+            dns_zone_id: res.new_zone_id ?? "",
+            dns_attach_status: res.new_provider === "external" ? "skipped" : "success",
+            dns_attach_error: "",
+            dns_attach_at: new Date().toISOString(),
+          });
+        }}
+      />
+    </Card>
+  );
+}
+
+// -------------- Switch Provider Dialog --------------
+// Admin pindah ownership zone antar CF ↔ DNSCloud, atau release ke external.
+// Call POST /admin/domains/:name/switch-provider.
+
+function SwitchProviderDialog({
+  open,
+  onClose,
+  domain,
+  currentProvider,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  domain: string;
+  currentProvider: string;
+  onDone: (res: SwitchResponse) => void;
+}) {
+  const [target, setTarget] = useState<"cloudflare" | "dnscloud" | "external">("cloudflare");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setBusy(false);
+      setErr(null);
+      // Default pilih provider yang beda dari current — paling umum admin
+      // mau pindah ke yang lain.
+      if (currentProvider === "cloudflare") setTarget("dnscloud");
+      else if (currentProvider === "dnscloud") setTarget("cloudflare");
+      else setTarget("cloudflare");
+    }
+  }, [open, currentProvider]);
+
+  async function submit() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await api<SwitchResponse>(
+        `/api/v1/admin/domains/${encodeURIComponent(domain)}/switch-provider`,
+        { method: "POST", body: JSON.stringify({ target_provider: target }) },
+      );
+      toast.success(
+        target === "external"
+          ? `${domain} di-release ke external`
+          : `${domain} pindah ke ${target}`,
+      );
+      onDone(res);
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const sameAsCurrent = target === currentProvider;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Cloud className="size-5 text-primary" />
+            Switch DNS Provider
+          </DialogTitle>
+          <DialogDescription>
+            Pindah ownership zone untuk {domain} ke provider lain, atau
+            release ke external supaya user kelola sendiri.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-md border bg-muted/30 p-3 text-xs">
+            <p>
+              Provider saat ini:{" "}
+              <strong>{providerDisplayLabel(currentProvider)}</strong>
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Target</Label>
+            <div className="grid gap-2">
+              {([
+                {
+                  v: "cloudflare" as const,
+                  title: "Cloudflare",
+                  hint: "Global 300+ POP. Zone + records otomatis di-provision + NS di-push ke PANDI.",
+                },
+                {
+                  v: "dnscloud" as const,
+                  title: "DNSCloud.ID",
+                  hint: "Indonesia-hosted (data residency). Zone + records di-provision + NS di-push.",
+                },
+                {
+                  v: "external" as const,
+                  title: "External (user kelola sendiri)",
+                  hint: "Platform STOP manage zone. User set NS + record di provider pilihan mereka. NS tetap bisa diubah di tab Nameservers.",
+                },
+              ]).map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setTarget(opt.v)}
+                  className={cn(
+                    "flex flex-col items-start gap-1 rounded-md border p-3 text-left text-sm transition",
+                    target === opt.v
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/50",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{opt.title}</span>
+                    {currentProvider === opt.v && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        Current
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{opt.hint}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {sameAsCurrent && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
+              Target sama dengan provider saat ini. Operasi akan jalan tapi
+              efeknya minimal — mostly re-run attach pattern + sanity check.
+            </div>
+          )}
+
+          {target !== "external" && target !== currentProvider && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
+              ⚠ NS di PANDI akan di-update ke NS {target}. Visitor domain
+              bisa kena brief downtime (~5-10 menit) selama propagasi parent
+              zone. Zone lama di {providerDisplayLabel(currentProvider)}{" "}
+              akan dihapus best-effort setelah switch sukses.
+            </div>
+          )}
+
+          {target === "external" && currentProvider !== "external" && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-200">
+              ⚠ Setelah release ke external, user TANGGUNG JAWAB manage DNS
+              record sendiri di provider pilihan mereka. Website mereka akan
+              DOWN sampai mereka setup NS + A/CNAME ke IP yang benar.
+            </div>
+          )}
+
+          {err && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 text-sm text-destructive">
+              {err}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Batal
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
+            Switch ke {providerDisplayLabel(target)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type SwitchResponse = {
+  ok: boolean;
+  old_provider: string;
+  old_zone_id?: string;
+  new_provider: string;
+  new_zone_id?: string;
+  new_nameservers?: string[];
+  warnings?: string[];
+  note?: string;
+};
+
+function providerDisplayLabel(p: string): string {
+  switch (p) {
+    case "cloudflare":
+      return "Cloudflare";
+    case "dnscloud":
+      return "DNSCloud.ID";
+    case "external":
+      return "External";
+    default:
+      return p || "(belum ada)";
+  }
+}
+
+// -------------- External Provider Info --------------
+// Panel info minimal saat domain di-release ke external — tidak ada zone
+// data untuk ditampilkan karena platform tidak manage.
+function ExternalProviderInfoCard({ domain }: { domain: string }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Cloud className="size-4 text-muted-foreground" />
+          DNS Provider: External
+          <Badge variant="secondary" className="ml-1 text-[10px]">
+            Self-managed
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <p className="text-muted-foreground">
+          Domain <span className="font-mono">{domain}</span> dikelola user di
+          provider eksternal. Platform tidak punya zone atau record data
+          untuk domain ini.
+        </p>
+        <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+          Yang platform masih kelola:
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            <li>Status registrasi domain (expire, renew)</li>
+            <li>WHOIS contact (via PANDI)</li>
+            <li>Nameserver di PANDI registrar (tab Nameservers di bawah)</li>
+          </ul>
+          Yang TIDAK platform kelola: DNS record (A/CNAME/MX/TXT/etc.), zone
+          health, SSL cert, proxy edge. Semua ini user atur di provider mereka.
+        </div>
       </CardContent>
     </Card>
   );

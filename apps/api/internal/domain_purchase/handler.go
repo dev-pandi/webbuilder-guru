@@ -1905,6 +1905,201 @@ func (h *Handler) DNSCloudInfo(c *fiber.Ctx) error {
 	return h.dnscloudInfoFor(c, d)
 }
 
+// AdminSwitchProvider — POST /api/v1/admin/domains/:name/switch-provider
+// Body: { target_provider: "cloudflare" | "dnscloud" | "external" }
+//
+// Admin tool untuk pindah zone ownership ke provider lain. Flow:
+//
+//   1. "cloudflare" / "dnscloud":
+//      - Resolve provider via factory (explicit kind, bukan priority)
+//      - FindZoneByDomain → kalau ada, reuse. Kalau tidak, CreateZone
+//      - Cleanup CNAME @ + CNAME www (hindari conflict RFC 1912)
+//      - Upsert A @ + A www → PLATFORM_IPS[0] (proxied)
+//      - EnableProxy @ + www (meaningful di DNSCloud, no-op di CF)
+//      - Push NS ke registrar via UpdateNameservers
+//      - Persist registered_domains.dns_* ke target baru
+//      - Best-effort delete zone lama di provider sebelumnya
+//
+//   2. "external":
+//      - Clear dns_zone_id + dns_provider_config_id
+//      - Set dns_provider='external', status='skipped' dengan note "Managed externally"
+//      - Best-effort delete zone lama
+//      - Platform STOP manage zone (health panel + reconciler skip)
+//
+// Side effects + risk:
+//   - NS di registrar DI-UPDATE untuk CF/DNSCloud target. Visitor domain
+//     bisa kena brief downtime selama propagasi NS parent zone.
+//   - Zone lama di provider sebelumnya DI-DELETE best-effort. Kalau delete
+//     gagal (CF/DNSCloud API down), zone orphan di provider lama — orphan
+//     reconciler (future work) atau admin manual yang handle.
+func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return httpx.BadRequest(c, "name required")
+	}
+	var req struct {
+		TargetProvider string `json:"target_provider"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+	req.TargetProvider = strings.ToLower(strings.TrimSpace(req.TargetProvider))
+	switch req.TargetProvider {
+	case "cloudflare", "dnscloud", "external":
+	default:
+		return httpx.BadRequest(c, "target_provider must be 'cloudflare', 'dnscloud', or 'external'")
+	}
+
+	d, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan")
+		}
+		return httpx.Internal(c, "lookup failed: "+err.Error())
+	}
+
+	oldProvider := d.DNSProvider
+	oldZoneID := d.DNSZoneID
+	oldConfigID := d.DNSProviderConfigID
+
+	// --- External: platform stop manage zone -------------------------------
+	if req.TargetProvider == "external" {
+		if err := h.repo.SetDomainProviderSwitch(c.Context(), name,
+			"external", "", nil,
+			DNSAttachSkipped, "Managed externally by user — platform tidak kelola zone."); err != nil {
+			return httpx.Internal(c, "persist switch failed: "+err.Error())
+		}
+		h.cleanupOldZoneBestEffort(c.Context(), oldProvider, oldConfigID, oldZoneID, name)
+		return httpx.OK(c, fiber.Map{
+			"ok":           true,
+			"old_provider": oldProvider,
+			"old_zone_id":  oldZoneID,
+			"new_provider": "external",
+			"note":         "Platform tidak lagi kelola zone. User manage NS + DNS di provider eksternal.",
+		})
+	}
+
+	// --- Cloudflare / DNSCloud: full re-attach ke target -------------------
+	if h.providerFactory == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "factory_disabled",
+			"DNS provider factory belum di-wire.")
+	}
+	if h.registrar == nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "registrar_disabled",
+			"Registrar client belum di-wire.")
+	}
+
+	prov, newConfigIDStr, err := h.providerFactory(c.Context(), dnsprovider.Choice{
+		Explicit: dnsprovider.Kind(req.TargetProvider),
+	})
+	if err != nil {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "no_active_config",
+			"Tidak ada config aktif untuk provider '"+req.TargetProvider+"'. Setup di /admin/dns-providers dulu.")
+	}
+	newConfigUUID, _ := uuid.Parse(newConfigIDStr)
+
+	// Find or create zone at target.
+	zone, err := prov.CreateZone(c.Context(), name)
+	if err != nil {
+		if errors.Is(err, dnsprovider.ErrZoneAlreadyExists) {
+			existing, lErr := prov.FindZoneByDomain(c.Context(), name)
+			if lErr != nil || existing == nil {
+				return httpx.Err(c, fiber.StatusBadGateway, "zone_exists_lookup_failed",
+					"Zone ada di provider tapi lookup gagal: "+err.Error())
+			}
+			zone = existing
+		} else {
+			return httpx.Err(c, fiber.StatusBadGateway, "create_zone_failed",
+				"Gagal create zone di "+req.TargetProvider+": "+err.Error())
+		}
+	}
+
+	// Cleanup conflicting CNAMEs before UpsertRecord A (RFC 1912).
+	_ = prov.DeleteRecord(c.Context(), zone.ID, "CNAME", "@")
+	_ = prov.DeleteRecord(c.Context(), zone.ID, "CNAME", "www")
+
+	// Setup A records + enable proxy.
+	var warnings []string
+	if len(h.platformIPs) > 0 {
+		ip := h.platformIPs[0]
+		if err := prov.UpsertRecord(c.Context(), zone.ID, dnsprovider.Record{
+			Type: "A", Name: "@", Content: ip, Proxied: true,
+		}); err != nil {
+			warnings = append(warnings, "A @ failed: "+err.Error())
+		}
+		if err := prov.UpsertRecord(c.Context(), zone.ID, dnsprovider.Record{
+			Type: "A", Name: "www", Content: ip, Proxied: true,
+		}); err != nil {
+			warnings = append(warnings, "A www failed: "+err.Error())
+		}
+		_ = prov.EnableProxy(c.Context(), zone.ID, "@")
+		_ = prov.EnableProxy(c.Context(), zone.ID, "www")
+	} else {
+		warnings = append(warnings, "PLATFORM_IPS kosong, A records tidak di-setup")
+	}
+
+	// Push NS to registrar. Kalau NS di registrar sudah match (user flip
+	// manual sebelumnya), UpdateNameservers no-op. Kalau beda, update.
+	if _, err := h.registrar.UpdateNameservers(c.Context(), name, zone.Nameservers); err != nil {
+		// NS push gagal — tapi zone + records sudah terbuat. Persist state
+		// sebagai failed_ns, admin bisa manual update NS di PANDI atau retry.
+		_ = h.repo.SetDomainProviderSwitch(c.Context(), name,
+			req.TargetProvider, zone.ID, &newConfigUUID,
+			DNSAttachFailed, "Zone pindah OK, tapi push NS ke registrar gagal: "+err.Error())
+		return httpx.Err(c, fiber.StatusBadGateway, "ns_push_failed",
+			"Zone sudah terbuat di "+req.TargetProvider+" tapi push NS ke PANDI gagal: "+err.Error())
+	}
+
+	// Persist new state.
+	successMsg := ""
+	if len(warnings) > 0 {
+		successMsg = "warning: " + strings.Join(warnings, "; ")
+	}
+	if err := h.repo.SetDomainProviderSwitch(c.Context(), name,
+		req.TargetProvider, zone.ID, &newConfigUUID,
+		DNSAttachSuccess, successMsg); err != nil {
+		return httpx.Internal(c, "persist switch failed: "+err.Error())
+	}
+
+	// Cleanup old zone at previous provider (best-effort).
+	h.cleanupOldZoneBestEffort(c.Context(), oldProvider, oldConfigID, oldZoneID, name)
+
+	return httpx.OK(c, fiber.Map{
+		"ok":              true,
+		"old_provider":    oldProvider,
+		"old_zone_id":     oldZoneID,
+		"new_provider":    req.TargetProvider,
+		"new_zone_id":     zone.ID,
+		"new_nameservers": zone.Nameservers,
+		"warnings":        warnings,
+	})
+}
+
+// cleanupOldZoneBestEffort hapus zone di provider lama via sticky config_id.
+// Dipanggil setelah switch sukses supaya tidak leak zone di akun provider
+// yang tidak lagi dipakai domain ini. Semua error di-log, tidak fatal.
+func (h *Handler) cleanupOldZoneBestEffort(ctx context.Context, oldKind string, oldConfigID *uuid.UUID, oldZoneID, name string) {
+	if oldZoneID == "" || oldConfigID == nil || oldKind == "" || oldKind == "external" {
+		return
+	}
+	if h.providerFactory == nil {
+		return
+	}
+	prov, _, err := h.providerFactory(ctx, dnsprovider.Choice{StickyConfigID: oldConfigID.String()})
+	if err != nil {
+		slog.Warn("switch provider: cleanup old provider resolve failed",
+			"domain", name, "old_provider", oldKind, "old_config_id", oldConfigID.String(), "error", err)
+		return
+	}
+	if err := prov.DeleteZone(ctx, oldZoneID); err != nil {
+		slog.Warn("switch provider: cleanup old zone delete failed",
+			"domain", name, "old_provider", oldKind, "old_zone_id", oldZoneID, "error", err)
+		return
+	}
+	slog.Info("switch provider: old zone cleaned up",
+		"domain", name, "old_provider", oldKind, "old_zone_id", oldZoneID)
+}
+
 // formatOptTime — helper untuk nullable *time.Time → RFC3339 atau kosong.
 func formatOptTime(t *time.Time) string {
 	if t == nil {

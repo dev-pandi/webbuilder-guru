@@ -174,6 +174,37 @@ func (r *Repo) SetDomainDNSAttach(ctx context.Context, name, status, errMsg, zon
 	return nil
 }
 
+// SetDomainProviderSwitch — admin-level: ganti provider ownership total.
+// Beda dengan SetDomainDNSAttach yang pakai COALESCE (preserve kalau empty),
+// method ini overwrite semua field langsung — supaya switch ke 'external'
+// bisa clear zone_id + config_id ke NULL/empty tanpa stuck ke nilai lama.
+//
+// Pakai di flow:
+//   - Switch provider CF → DNSCloud: new zone_id, new config_id
+//   - Switch provider CF → external: zone_id='', config_id=nil
+//
+// Caller bertanggung jawab delete zone lama (best-effort, di handler).
+func (r *Repo) SetDomainProviderSwitch(ctx context.Context, name, provider, zoneID string, configID *uuid.UUID, status, errMsg string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE registered_domains SET
+			dns_attach_status      = $2,
+			dns_attach_error       = $3,
+			dns_zone_id            = $4,
+			dns_provider           = $5,
+			dns_provider_config_id = $6,
+			dns_attach_at          = now(),
+			updated_at             = now()
+		 WHERE name = $1
+	`, name, status, errMsg, zoneID, provider, configID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetDomainContact — dipanggil kalau user update WHOIS contact via portal.
 func (r *Repo) SetDomainContact(ctx context.Context, name, contactID string) error {
 	tag, err := r.pool.Exec(ctx, `
