@@ -37,6 +37,24 @@ export function getAccessToken(): string | null {
   return localStorage.getItem(tokenKey());
 }
 
+// errMessage — defensive error → string extractor untuk catch blocks.
+// Hindari pattern `(e as Error).message` yang throw lagi kalau e === null
+// (common saat fetch abort / promise reject tanpa body) → Next.js 14
+// unhandled rejection handler panic dengan "Cannot read properties of null
+// (reading 'digest')".
+//
+// Pakai di semua catch block UI: `catch (e) { setErr(errMessage(e)); }`.
+export function errMessage(e: unknown, fallback = "unknown error"): string {
+  if (e instanceof Error) return e.message || fallback;
+  if (e == null) return fallback;
+  if (typeof e === "string") return e;
+  try {
+    return String(e);
+  } catch {
+    return fallback;
+  }
+}
+
 // Paths yang tidak boleh trigger auto-redirect ke /login (mencegah loop).
 // Semua route auth-related (login/register/verify/reset) di-skip.
 const AUTH_PATH_PREFIXES = [

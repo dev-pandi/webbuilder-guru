@@ -28,7 +28,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, errMessage } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -109,7 +109,7 @@ export default function DomainsPage() {
       const list = await api<DomainRow[]>(`/api/v1/sites/${siteID}/domains-combined`);
       setRows(list ?? []);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setLoading(false);
     }
@@ -133,7 +133,7 @@ export default function DomainsPage() {
       toast.success(`${hostname} sekarang jadi alamat utama`);
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     }
   }
 
@@ -145,7 +145,7 @@ export default function DomainsPage() {
       setDeleteTarget(null);
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     }
   }
 
@@ -467,7 +467,7 @@ function ConnectModal({
       });
       setCheck(res);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errMessage(e));
     } finally {
       setBusy(false);
     }
@@ -484,7 +484,7 @@ function ConnectModal({
       setConnect(res);
       setStep("ns");
     } catch (e) {
-      setError((e as Error).message);
+      setError(errMessage(e));
     } finally {
       setBusy(false);
     }
@@ -518,7 +518,7 @@ function ConnectModal({
           }
           setError("Verifikasi masih berjalan setelah 30 detik. Tutup modal dan coba lagi beberapa menit kemudian — propagasi DNS kadang butuh waktu lebih lama.");
         } else {
-          const msg = e instanceof ApiError ? e.message : (e as Error).message;
+          const msg = e instanceof ApiError ? e.message : errMessage(e);
           setError(msg);
         }
         setBusy(false);

@@ -32,7 +32,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, errMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -155,7 +155,7 @@ export function DomainDetail({
       if (whoisRes.status === "fulfilled") setWhois(whoisRes.value);
       if (nsRes.status === "fulfilled") setNs(nsRes.value.nameservers ?? []);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setLoading(false);
     }
@@ -436,7 +436,7 @@ function NameserverPanel({
       onUpdated(res.nameservers ?? cleaned);
       setItems(res.nameservers ?? cleaned);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setSaving(false);
     }
@@ -703,7 +703,7 @@ function CloudflareHealthPanel({
       );
       setData(res);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setLoading(false);
     }
@@ -986,7 +986,7 @@ function DNSAttachStatusCard({
         toast.info(`Status: ${res.dns_attach_status}`);
       }
     } catch (e) {
-      toast.error(`Retry error: ${(e as Error).message}`);
+      toast.error(`Retry error: ${errMessage(e)}`);
     } finally {
       setRetrying(false);
     }
@@ -1205,7 +1205,7 @@ function SwitchProviderDialog({
       onDone(res);
       onClose();
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setBusy(false);
     }
@@ -1439,7 +1439,7 @@ function DNSCloudInfoCard({ domain, endpointPrefix }: { domain: string; endpoint
       );
       setInfo(d);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setLoading(false);
     }

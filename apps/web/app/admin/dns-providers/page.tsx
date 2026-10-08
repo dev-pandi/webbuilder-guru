@@ -21,7 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, errMessage } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,7 +77,7 @@ export default function DNSProvidersPage() {
       const items = await api<Config[]>("/api/v1/admin/dns-providers/");
       setList(items ?? []);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(errMessage(e));
     } finally {
       setLoading(false);
     }
@@ -98,7 +98,7 @@ export default function DNSProvidersPage() {
       else toast.error(`${c.name}: ${r.message ?? "Gagal"}`);
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     } finally {
       setBusyID(null);
     }
@@ -110,7 +110,7 @@ export default function DNSProvidersPage() {
       toast.success(`${c.name} dijadikan default ${KIND_LABEL[c.kind]}`);
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     }
   }
 
@@ -123,7 +123,7 @@ export default function DNSProvidersPage() {
       toast.success(`${c.name} ${!c.is_active ? "diaktifkan" : "dinonaktifkan"}`);
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     }
   }
 
@@ -135,7 +135,7 @@ export default function DNSProvidersPage() {
       setDeleteTarget(null);
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     }
   }
 
@@ -148,7 +148,7 @@ export default function DNSProvidersPage() {
       });
       await refresh();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     }
   }
 
@@ -442,7 +442,7 @@ function CreateDialog({
       toast.success("Provider dibuat");
       await onDone();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     } finally {
       setBusy(false);
     }
@@ -605,7 +605,7 @@ function EditDialog({
       toast.success("Provider diupdate");
       await onDone();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(errMessage(e));
     } finally {
       setBusy(false);
     }
