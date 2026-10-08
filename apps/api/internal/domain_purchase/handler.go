@@ -1933,23 +1933,10 @@ func (h *Handler) DNSCloudInfo(c *fiber.Ctx) error {
 //     gagal (CF/DNSCloud API down), zone orphan di provider lama — orphan
 //     reconciler (future work) atau admin manual yang handle.
 func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
-	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
-	if name == "" {
-		return httpx.BadRequest(c, "name required")
+	name, target, errResp := h.parseSwitchRequest(c)
+	if errResp != nil {
+		return errResp
 	}
-	var req struct {
-		TargetProvider string `json:"target_provider"`
-	}
-	if err := c.BodyParser(&req); err != nil {
-		return httpx.BadRequest(c, "invalid json")
-	}
-	req.TargetProvider = strings.ToLower(strings.TrimSpace(req.TargetProvider))
-	switch req.TargetProvider {
-	case "cloudflare", "dnscloud", "external":
-	default:
-		return httpx.BadRequest(c, "target_provider must be 'cloudflare', 'dnscloud', or 'external'")
-	}
-
 	d, err := h.repo.GetDomainByNameAdmin(c.Context(), name)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -1957,13 +1944,61 @@ func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
 		}
 		return httpx.Internal(c, "lookup failed: "+err.Error())
 	}
+	return h.switchProviderFor(c, d, target)
+}
 
+// UserSwitchProvider — POST /api/v1/domains/:name/switch-provider
+// User-facing variant dengan ownership check (inclusive on-behalf-of via
+// purchased_by). Sering dipakai user untuk sinkron state DB setelah mereka
+// flip NS manual di PANDI panel.
+func (h *Handler) UserSwitchProvider(c *fiber.Ctx) error {
+	name, target, errResp := h.parseSwitchRequest(c)
+	if errResp != nil {
+		return errResp
+	}
+	cl := auth.ClaimsFrom(c)
+	d, err := h.repo.GetDomainByName(c.Context(), name, cl.UserID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return httpx.NotFound(c, "domain tidak ditemukan atau bukan milik Anda")
+		}
+		return httpx.Internal(c, "lookup failed: "+err.Error())
+	}
+	return h.switchProviderFor(c, d, target)
+}
+
+// parseSwitchRequest — shared parser: ambil domain name + target_provider,
+// validate. Return name + target atau errResp yang sudah ter-write.
+func (h *Handler) parseSwitchRequest(c *fiber.Ctx) (string, string, error) {
+	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
+	if name == "" {
+		return "", "", httpx.BadRequest(c, "name required")
+	}
+	var req struct {
+		TargetProvider string `json:"target_provider"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return "", "", httpx.BadRequest(c, "invalid json")
+	}
+	target := strings.ToLower(strings.TrimSpace(req.TargetProvider))
+	switch target {
+	case "cloudflare", "dnscloud", "external":
+	default:
+		return "", "", httpx.BadRequest(c, "target_provider must be 'cloudflare', 'dnscloud', or 'external'")
+	}
+	return name, target, nil
+}
+
+// switchProviderFor — shared body untuk admin + user switch. Caller sudah
+// resolve Domain row (ownership-checked di user path, bypass di admin path).
+func (h *Handler) switchProviderFor(c *fiber.Ctx, d *Domain, target string) error {
+	name := d.Name
 	oldProvider := d.DNSProvider
 	oldZoneID := d.DNSZoneID
 	oldConfigID := d.DNSProviderConfigID
 
 	// --- External: platform stop manage zone -------------------------------
-	if req.TargetProvider == "external" {
+	if target == "external" {
 		if err := h.repo.SetDomainProviderSwitch(c.Context(), name,
 			"external", "", nil,
 			DNSAttachSkipped, "Managed externally by user — platform tidak kelola zone."); err != nil {
@@ -1990,11 +2025,11 @@ func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
 	}
 
 	prov, newConfigIDStr, err := h.providerFactory(c.Context(), dnsprovider.Choice{
-		Explicit: dnsprovider.Kind(req.TargetProvider),
+		Explicit: dnsprovider.Kind(target),
 	})
 	if err != nil {
 		return httpx.Err(c, fiber.StatusServiceUnavailable, "no_active_config",
-			"Tidak ada config aktif untuk provider '"+req.TargetProvider+"'. Setup di /admin/dns-providers dulu.")
+			"Tidak ada config aktif untuk provider '"+target+"'. Setup di /admin/dns-providers dulu.")
 	}
 	newConfigUUID, _ := uuid.Parse(newConfigIDStr)
 
@@ -2010,7 +2045,7 @@ func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
 			zone = existing
 		} else {
 			return httpx.Err(c, fiber.StatusBadGateway, "create_zone_failed",
-				"Gagal create zone di "+req.TargetProvider+": "+err.Error())
+				"Gagal create zone di "+target+": "+err.Error())
 		}
 	}
 
@@ -2044,10 +2079,10 @@ func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
 		// NS push gagal — tapi zone + records sudah terbuat. Persist state
 		// sebagai failed_ns, admin bisa manual update NS di PANDI atau retry.
 		_ = h.repo.SetDomainProviderSwitch(c.Context(), name,
-			req.TargetProvider, zone.ID, &newConfigUUID,
+			target, zone.ID, &newConfigUUID,
 			DNSAttachFailed, "Zone pindah OK, tapi push NS ke registrar gagal: "+err.Error())
 		return httpx.Err(c, fiber.StatusBadGateway, "ns_push_failed",
-			"Zone sudah terbuat di "+req.TargetProvider+" tapi push NS ke PANDI gagal: "+err.Error())
+			"Zone sudah terbuat di "+target+" tapi push NS ke PANDI gagal: "+err.Error())
 	}
 
 	// Persist new state.
@@ -2056,7 +2091,7 @@ func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
 		successMsg = "warning: " + strings.Join(warnings, "; ")
 	}
 	if err := h.repo.SetDomainProviderSwitch(c.Context(), name,
-		req.TargetProvider, zone.ID, &newConfigUUID,
+		target, zone.ID, &newConfigUUID,
 		DNSAttachSuccess, successMsg); err != nil {
 		return httpx.Internal(c, "persist switch failed: "+err.Error())
 	}
@@ -2068,7 +2103,7 @@ func (h *Handler) AdminSwitchProvider(c *fiber.Ctx) error {
 		"ok":              true,
 		"old_provider":    oldProvider,
 		"old_zone_id":     oldZoneID,
-		"new_provider":    req.TargetProvider,
+		"new_provider":    target,
 		"new_zone_id":     zone.ID,
 		"new_nameservers": zone.Nameservers,
 		"warnings":        warnings,

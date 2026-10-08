@@ -267,13 +267,16 @@ export function DomainDetail({
               </CardContent>
             </Card>
 
-            {/* DNS attach status — hanya admin mode. Nampilin status auto-attach
-                dari saat register + tombol retry manual kalau failed. Generic
-                antar CF/DNSCloud; badge provider ditampilkan di card. */}
-            {adminMode && row && (
+            {/* DNS attach status — admin + user. Admin dapat Retry
+                (/cloudflare-retry) + Switch Provider. User dapat Switch
+                Provider only (sync state kalau mereka flip NS manual).
+                Badge provider ditampilkan di card. */}
+            {row && (
               <DNSAttachStatusCard
                 domain={domain}
                 initial={row}
+                adminMode={adminMode}
+                endpointPrefix={endpointPrefix}
                 onRefreshed={(fresh) => setRow(fresh)}
               />
             )}
@@ -925,10 +928,14 @@ function CheckRow({ ok, label, hint }: { ok: boolean; label: string; hint: strin
 function DNSAttachStatusCard({
   domain,
   initial,
+  adminMode,
+  endpointPrefix,
   onRefreshed,
 }: {
   domain: string;
   initial: DomainRow;
+  adminMode: boolean;
+  endpointPrefix: string;
   onRefreshed: (fresh: DomainRow) => void;
 }) {
   const [retrying, setRetrying] = useState(false);
@@ -1058,7 +1065,7 @@ function DNSAttachStatusCard({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {canRetry && provider !== "external" && (
+            {canRetry && provider !== "external" && adminMode && (
               <Button
                 onClick={onRetry}
                 disabled={retrying}
@@ -1133,6 +1140,7 @@ function DNSAttachStatusCard({
         open={switchOpen}
         onClose={() => setSwitchOpen(false)}
         domain={domain}
+        endpointPrefix={endpointPrefix}
         currentProvider={provider ?? ""}
         onDone={(res) => {
           setSnapshot({
@@ -1164,12 +1172,14 @@ function SwitchProviderDialog({
   open,
   onClose,
   domain,
+  endpointPrefix,
   currentProvider,
   onDone,
 }: {
   open: boolean;
   onClose: () => void;
   domain: string;
+  endpointPrefix: string;
   currentProvider: string;
   onDone: (res: SwitchResponse) => void;
 }) {
@@ -1194,7 +1204,7 @@ function SwitchProviderDialog({
     setErr(null);
     try {
       const res = await api<SwitchResponse>(
-        `/api/v1/admin/domains/${encodeURIComponent(domain)}/switch-provider`,
+        `${endpointPrefix}/${encodeURIComponent(domain)}/switch-provider`,
         { method: "POST", body: JSON.stringify({ target_provider: target }) },
       );
       toast.success(

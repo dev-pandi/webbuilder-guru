@@ -172,6 +172,10 @@ func MountUser(app *fiber.App, deps Deps) {
 		// Return zone status + NS sync + apex/www record + platform IP match.
 		authed.Get("/domains/:name/cloudflare-info", deps.DomainPurchase.CloudflareInfo)
 		authed.Get("/domains/:name/dnscloud-info", deps.DomainPurchase.DNSCloudInfo)
+		// Switch DNS provider (user-scoped, ownership check inklusif
+		// on-behalf-of). Pakai saat user flip NS manual di PANDI dan perlu
+		// sinkron state DB ke provider baru.
+		authed.Post("/domains/:name/switch-provider", mutateLimit, deps.DomainPurchase.UserSwitchProvider)
 		// Aggregate current-state per FQDN (tabel `domains`) — replacement
 		// untuk /purchases list yang campur register + renew per domain.
 		// Cocok untuk "domain saya" view. Detail transaksi tetap di /purchases.
