@@ -49,6 +49,16 @@ function initials(name: string): string {
     .join("");
 }
 
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function timeAgo(iso: string): string {
   const t = new Date(iso).getTime();
   const diff = Date.now() - t;
@@ -59,7 +69,7 @@ function timeAgo(iso: string): string {
   if (hr < 24) return `${hr} jam lalu`;
   const day = Math.round(hr / 24);
   if (day < 30) return `${day} hari lalu`;
-  return fmtDate(iso);
+  return fmtDateTime(iso);
 }
 
 function ResponseItemView({ r }: { r: PublicResponse }) {

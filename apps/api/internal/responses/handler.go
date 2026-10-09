@@ -10,6 +10,7 @@ import (
 	"github.com/webbuilder/api/internal/articles"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/sites"
 )
 
@@ -17,10 +18,11 @@ type Handler struct {
 	repo     *Repo
 	sites    *sites.Repo
 	articles *articles.Repo
+	learning *learning.Repo
 }
 
-func NewHandler(r *Repo, s *sites.Repo, a *articles.Repo) *Handler {
-	return &Handler{repo: r, sites: s, articles: a}
+func NewHandler(r *Repo, s *sites.Repo, a *articles.Repo, l *learning.Repo) *Handler {
+	return &Handler{repo: r, sites: s, articles: a, learning: l}
 }
 
 const (
@@ -182,7 +184,7 @@ func (h *Handler) PublicSubmit(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "body required (max 2000 chars)")
 	}
 	resp, err := h.repo.Submit(c.Context(), SubmitInput{
-		SiteID: siteID, ArticleID: articleID,
+		SiteID: siteID, ArticleID: &articleID,
 		AuthorName: req.AuthorName, AuthorRole: req.AuthorRole,
 		AuthorEmail: req.AuthorEmail, Body: req.Body,
 		SubmitterIP: c.IP(),
@@ -191,6 +193,74 @@ func (h *Handler) PublicSubmit(c *fiber.Ctx) error {
 		return httpx.Internal(c, "submit failed")
 	}
 	// Return sanitized shape (no email/IP).
+	return httpx.Created(c, PublicView{
+		ID: resp.ID, AuthorName: resp.AuthorName, AuthorRole: resp.AuthorRole,
+		Body: resp.Body, CreatedAt: resp.CreatedAt,
+	})
+}
+
+// PublicSubmitMaterial — POST /public/sites/:id/learning-materials/:material_id/responses.
+// Mirror PublicSubmit untuk learning materials. Materi tidak punya
+// comments_enabled flag — asumsi always-on.
+func (h *Handler) PublicSubmitMaterial(c *fiber.Ctx) error {
+	if h.learning == nil {
+		return httpx.NotFound(c, "learning not available")
+	}
+	siteID, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid site id")
+	}
+	materialID, err := uuid.Parse(c.Params("material_id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid material id")
+	}
+	m, err := h.learning.Get(c.Context(), materialID)
+	if errors.Is(err, learning.ErrNotFound) {
+		return httpx.NotFound(c, "material not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if m.SiteID != siteID || m.Status != "published" {
+		return httpx.NotFound(c, "material not found")
+	}
+	var req submitReq
+	if err := c.BodyParser(&req); err != nil {
+		return httpx.BadRequest(c, "invalid json")
+	}
+
+	if strings.TrimSpace(req.Honeypot) != "" {
+		slog.Info("response submit: honeypot triggered",
+			"material_id", materialID, "site_id", siteID, "ip", c.IP())
+		return httpx.Created(c, PublicView{
+			ID:         uuid.Nil,
+			AuthorName: strings.TrimSpace(req.AuthorName),
+			AuthorRole: "pembaca",
+			Body:       "",
+		})
+	}
+
+	req.AuthorName = strings.TrimSpace(req.AuthorName)
+	req.AuthorRole = strings.ToLower(strings.TrimSpace(req.AuthorRole))
+	req.Body = strings.TrimSpace(req.Body)
+	if req.AuthorName == "" || len(req.AuthorName) > maxNameLen {
+		return httpx.BadRequest(c, "author_name required (max 60 chars)")
+	}
+	if !IsValidRole(req.AuthorRole) {
+		return httpx.BadRequest(c, "author_role must be guru|siswa|orang-tua|pembaca")
+	}
+	if req.Body == "" || len(req.Body) > maxBodyLen {
+		return httpx.BadRequest(c, "body required (max 2000 chars)")
+	}
+	resp, err := h.repo.Submit(c.Context(), SubmitInput{
+		SiteID: siteID, LearningMaterialID: &materialID,
+		AuthorName: req.AuthorName, AuthorRole: req.AuthorRole,
+		AuthorEmail: req.AuthorEmail, Body: req.Body,
+		SubmitterIP: c.IP(),
+	})
+	if err != nil {
+		return httpx.Internal(c, "submit failed")
+	}
 	return httpx.Created(c, PublicView{
 		ID: resp.ID, AuthorName: resp.AuthorName, AuthorRole: resp.AuthorRole,
 		Body: resp.Body, CreatedAt: resp.CreatedAt,

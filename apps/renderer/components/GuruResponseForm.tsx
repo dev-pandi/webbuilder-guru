@@ -1,10 +1,12 @@
 "use client";
 
-// GuruResponseForm — form pengunjung untuk kirim tanggapan pada artikel.
-// Spec §18.1: name, role, body. Semua submit masuk sebagai `pending`
-// (backend enforcement). Rate-limit di sisi API per IP (defence anti-spam).
+// GuruResponseForm — form pengunjung untuk kirim tanggapan pada artikel
+// atau learning material. Spec §18.1: name, role, body. Semua submit masuk
+// sebagai `pending` (backend enforcement). Rate-limit per IP di API.
 //
-// API endpoint: POST /public/sites/:site_id/articles/:article_id/responses
+// API endpoint:
+//   POST /public/sites/:site_id/articles/:article_id/responses       (parent=article)
+//   POST /public/sites/:site_id/learning-materials/:id/responses     (parent=material)
 // URL absolut → NEXT_PUBLIC_API_BROWSER_URL (browser-visible). Kalau kosong,
 // coba public API_INTERNAL_URL relative.
 
@@ -23,13 +25,27 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
   "";
 
+export type ResponseParent =
+  | { kind: "article"; articleId: string }
+  | { kind: "material"; materialId: string };
+
 export function GuruResponseForm({
   siteId,
   articleId,
+  parent,
 }: {
   siteId: string;
-  articleId: string;
+  // articleId retained untuk backward compat — kalau diisi, treat as article parent.
+  articleId?: string;
+  parent?: ResponseParent;
 }) {
+  // Resolve parent (prefer eksplisit `parent`, fallback ke `articleId` lama).
+  const resolved: ResponseParent | null = parent
+    ? parent
+    : articleId
+      ? { kind: "article", articleId }
+      : null;
+
   const [name, setName] = useState("");
   const [role, setRole] = useState<ResponseRole>("pembaca");
   const [body, setBody] = useState("");
@@ -41,11 +57,14 @@ export function GuruResponseForm({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !body.trim()) return;
+    if (!name.trim() || !body.trim() || !resolved) return;
     setState("submitting");
     setErr(null);
     try {
-      const url = `${API_BASE}/public/sites/${siteId}/articles/${articleId}/responses`;
+      const url =
+        resolved.kind === "article"
+          ? `${API_BASE}/public/sites/${siteId}/articles/${resolved.articleId}/responses`
+          : `${API_BASE}/public/sites/${siteId}/learning-materials/${resolved.materialId}/responses`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

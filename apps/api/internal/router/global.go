@@ -157,7 +157,10 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		pubBase.Get("/sites/:id/latest-articles", hostGuard, shortCache, deps.PublicGuru.LatestArticles)
 		pubBase.Get("/sites/:id/site-stats", hostGuard, shortCache, deps.PublicGuru.SiteStats)
 		pubBase.Get("/sites/:id/learning-materials", hostGuard, longCache, deps.PublicGuru.ListLearningMaterials)
-		pubBase.Get("/sites/:id/learning-materials/:slug", hostGuard, longCache, deps.PublicGuru.LearningMaterialBySlug)
+		// LearningMaterialBySlug sekarang kembalikan responses inline (mirror article
+		// detail). Jangan longCache: moderation-triggered content perlu fresh.
+		pubBase.Get("/sites/:id/learning-materials/:slug", hostGuard, deps.PublicGuru.LearningMaterialBySlug)
+		pubBase.Get("/sites/:id/learning-materials/:material_id/responses", hostGuard, deps.PublicGuru.ListMaterialResponses)
 		// Portal directory (§5) — daftar guru + search + sort. Tidak pakai
 		// hostGuard (no :id param, portal aggregate cross-site by design).
 		pubBase.Get("/guru", shortCache, deps.PublicGuru.TeacherDirectory)
@@ -184,6 +187,11 @@ func MountGlobal(app *fiber.App, deps Deps) {
 			pubCORS,
 			RateLimitIP(formSubmitPerWindow, formSubmitWindow),
 			deps.Responses.PublicSubmit,
+		)
+		app.Post("/public/sites/:id/learning-materials/:material_id/responses",
+			pubCORS,
+			RateLimitIP(formSubmitPerWindow, formSubmitWindow),
+			deps.Responses.PublicSubmitMaterial,
 		)
 	}
 

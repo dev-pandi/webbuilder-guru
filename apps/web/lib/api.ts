@@ -192,7 +192,9 @@ export const RESPONSE_ROLE_LABEL: Record<ResponseRole, string> = {
 export type ResponseItem = {
   id: string;
   site_id: string;
-  article_id: string;
+  // Parent polymorphic: tepat salah satu non-null (DB CHECK enforced).
+  article_id: string | null;
+  learning_material_id: string | null;
   author_name: string;
   author_role: ResponseRole;
   body: string;

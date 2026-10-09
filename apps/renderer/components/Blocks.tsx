@@ -7,7 +7,6 @@ import {
   GuruForumThreadList,
   GuruHero,
   GuruLatestGrid,
-  GuruNavbar,
   GuruProfileCard,
   GuruPromoCarousel,
   GuruQuote,
@@ -18,6 +17,7 @@ import {
   GuruTagList,
   GuruTimeline,
 } from "@/components/GuruBlocks";
+import { GuruNavbarClient } from "@/components/GuruNavbarClient";
 import {
   GuruArticleGridDynamic,
   GuruForumThreadListDynamic,
@@ -1844,7 +1844,7 @@ function BlockView({ block }: { block: Block }) {
     case "GuruStyles":
       return <GuruStyles />;
     case "GuruNavbar":
-      return <GuruNavbar {...(p as Parameters<typeof GuruNavbar>[0])} />;
+      return <GuruNavbarClient {...(p as Parameters<typeof GuruNavbarClient>[0])} />;
     case "GuruHero":
       return <GuruHero {...(p as Parameters<typeof GuruHero>[0])} />;
     case "GuruPromoCarousel":

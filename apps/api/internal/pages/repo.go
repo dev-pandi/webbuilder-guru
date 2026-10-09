@@ -293,7 +293,7 @@ func (r *Repo) Restore(ctx context.Context, versionID uuid.UUID, createdBy *uuid
 	err = tx.QueryRow(ctx, `
 		SELECT id, site_id, slug, title, tree_json, seo_json, is_home, version, created_at, updated_at, published_tree_json, published_at, scheduled_publish_at
 		FROM pages WHERE id = $1
-	`, v.PageID).Scan(&current.ID, &current.SiteID, &current.Slug, &current.Title, &current.Tree, &current.SEO, &current.IsHome, &current.Version, &current.CreatedAt, &current.UpdatedAt, &current.PublishedTree, &current.PublishedAt)
+	`, v.PageID).Scan(&current.ID, &current.SiteID, &current.Slug, &current.Title, &current.Tree, &current.SEO, &current.IsHome, &current.Version, &current.CreatedAt, &current.UpdatedAt, &current.PublishedTree, &current.PublishedAt, &current.ScheduledPublishAt)
 	if err != nil {
 		return nil, err
 	}

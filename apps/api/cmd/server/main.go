@@ -580,7 +580,7 @@ func main() {
 		SiteBYODomains:   byoHandler,
 		Articles:         articles.NewHandler(articlesRepo, siteRepo),
 		Learning:         learning.NewHandler(learningRepo, siteRepo),
-		Responses:        responses.NewHandler(responsesRepo, siteRepo, articlesRepo),
+		Responses:        responses.NewHandler(responsesRepo, siteRepo, articlesRepo, learningRepo),
 		Banners:          bannersHandler,
 		PublicGuru:       publicGuruHandler,
 		PlatformArticles: platform_articles.NewHandler(platformArticlesRepo),

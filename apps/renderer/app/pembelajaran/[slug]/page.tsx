@@ -5,11 +5,18 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { marked } from "@/lib/markdown";
-import { getLearningMaterial, getSiteByHost } from "@/lib/api";
+import {
+  getLearningMaterial,
+  getSiteByHost,
+  listMaterialResponses,
+  RESPONSE_ROLE_LABEL,
+  type PublicResponse,
+} from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { GuruStyles } from "@/components/GuruBlocks";
+import { GuruResponseForm } from "@/components/GuruResponseForm";
 import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +34,55 @@ function fmtDate(iso: string | null): string {
   });
 }
 
+function fmtDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function initials(name: string): string {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function timeAgo(iso: string): string {
+  const t = new Date(iso).getTime();
+  const diff = Date.now() - t;
+  const min = Math.round(diff / 60000);
+  if (min < 1) return "baru saja";
+  if (min < 60) return `${min} menit lalu`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr} jam lalu`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day} hari lalu`;
+  return fmtDateTime(iso);
+}
+
+function ResponseItemView({ r }: { r: PublicResponse }) {
+  return (
+    <div className="guru-response">
+      <div className="guru-response__head">
+        <div className="guru-response__avatar">{initials(r.author_name)}</div>
+        <div>
+          <div className="guru-response__name">{r.author_name}</div>
+          <div className="guru-response__meta">
+            {RESPONSE_ROLE_LABEL[r.author_role]} · {timeAgo(r.created_at)}
+          </div>
+        </div>
+      </div>
+      <div className="guru-response__body">{r.body}</div>
+    </div>
+  );
+}
+
 export default async function LearningMaterialDetail({
   params,
 }: {
@@ -34,12 +90,19 @@ export default async function LearningMaterialDetail({
 }) {
   const site = await getSiteByHost(host());
   if (!site) notFound();
-  const m = await getLearningMaterial(site.id, params.slug);
-  if (!m) notFound();
+  const detail = await getLearningMaterial(site.id, params.slug);
+  if (!detail) notFound();
+  const { material: m, response_count: responseCountFromApi } = detail;
 
   const fontHref = googleFontsUrl(site.theme);
   const html = await marked.parse(m.body_md ?? "");
   const tags = Array.isArray(m.tags) ? m.tags : [];
+
+  // Mirror pattern dari article detail: pakai responses inline supaya
+  // count + list atomic. Fallback ke fetch terpisah hanya kalau backend lama.
+  const responses =
+    detail.responses ?? (await listMaterialResponses(site.id, m.id, 200));
+  const responseCount = detail.responses ? responses.length : responseCountFromApi;
 
   return (
     <>
@@ -104,6 +167,21 @@ export default async function LearningMaterialDetail({
             ))}
           </div>
         )}
+
+        <section className="guru-responses">
+          <h2>Tanggapan ({responseCount.toLocaleString("id-ID")})</h2>
+          {responses.length === 0 ? (
+            <p style={{ color: "#637083", fontSize: 14 }}>
+              Belum ada tanggapan. Jadilah yang pertama menulis.
+            </p>
+          ) : (
+            responses.map((r) => <ResponseItemView key={r.id} r={r} />)
+          )}
+          <GuruResponseForm
+            siteId={site.id}
+            parent={{ kind: "material", materialId: m.id }}
+          />
+        </section>
       </article>
 
       <SiteFooterBlocks site={site} />
@@ -120,8 +198,9 @@ export async function generateMetadata({
 }) {
   const site = await getSiteByHost(host());
   if (!site) return {};
-  const m = await getLearningMaterial(site.id, params.slug);
-  if (!m) return {};
+  const detail = await getLearningMaterial(site.id, params.slug);
+  if (!detail) return {};
+  const m = detail.material;
   const title = m.seo_title || `${m.title} — ${site.name}`;
   const description = m.seo_description || m.excerpt || "";
   return {

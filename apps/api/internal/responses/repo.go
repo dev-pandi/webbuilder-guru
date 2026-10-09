@@ -13,18 +13,22 @@ import (
 
 // Response = "Tanggapan" (public term). Spec §18.
 // Default status = pending. Only Approved shown/counted publicly.
+//
+// Parent polymorphic: tanggapan selalu nempel ke exactly satu dari
+// (ArticleID, LearningMaterialID). CHECK constraint di DB enforce XOR.
 type Response struct {
-	ID                    uuid.UUID  `json:"id"`
-	SiteID                uuid.UUID  `json:"site_id"`
-	ArticleID             uuid.UUID  `json:"article_id"`
-	AuthorName            string     `json:"author_name"`
-	AuthorRole            string     `json:"author_role"`
-	Body                  string     `json:"body"`
-	Status                string     `json:"status"`
-	ModeratedAt           *time.Time `json:"moderated_at,omitempty"`
-	ModeratedByTeacherID  *uuid.UUID `json:"moderated_by_teacher_id,omitempty"`
-	CreatedAt             time.Time  `json:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
+	ID                   uuid.UUID  `json:"id"`
+	SiteID               uuid.UUID  `json:"site_id"`
+	ArticleID            *uuid.UUID `json:"article_id,omitempty"`
+	LearningMaterialID   *uuid.UUID `json:"learning_material_id,omitempty"`
+	AuthorName           string     `json:"author_name"`
+	AuthorRole           string     `json:"author_role"`
+	Body                 string     `json:"body"`
+	Status               string     `json:"status"`
+	ModeratedAt          *time.Time `json:"moderated_at,omitempty"`
+	ModeratedByTeacherID *uuid.UUID `json:"moderated_by_teacher_id,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // PublicView — excluded email/IP for public rendering.
@@ -58,38 +62,49 @@ var validStatus = map[string]bool{
 
 func IsValidStatus(s string) bool { return validStatus[s] }
 
-const cols = `id, site_id, article_id, author_name, author_role, body, status,
+const cols = `id, site_id, article_id, learning_material_id, author_name, author_role, body, status,
     moderated_at, moderated_by_teacher_id, created_at, updated_at`
 
 func scan(r *Response) []any {
 	return []any{
-		&r.ID, &r.SiteID, &r.ArticleID, &r.AuthorName, &r.AuthorRole, &r.Body, &r.Status,
+		&r.ID, &r.SiteID, &r.ArticleID, &r.LearningMaterialID,
+		&r.AuthorName, &r.AuthorRole, &r.Body, &r.Status,
 		&r.ModeratedAt, &r.ModeratedByTeacherID, &r.CreatedAt, &r.UpdatedAt,
 	}
 }
 
 type SubmitInput struct {
-	SiteID      uuid.UUID
-	ArticleID   uuid.UUID
-	AuthorName  string
-	AuthorRole  string
-	AuthorEmail string
-	Body        string
-	SubmitterIP string
+	SiteID             uuid.UUID
+	ArticleID          *uuid.UUID
+	LearningMaterialID *uuid.UUID
+	AuthorName         string
+	AuthorRole         string
+	AuthorEmail        string
+	Body               string
+	SubmitterIP        string
 }
 
+var ErrInvalidParent = errors.New("response must have exactly one parent (article or learning material)")
+
 // Submit — always creates with status='pending'. Called by public endpoint.
+// Enforces parent XOR in Go sebelum hit DB (short-circuit CHECK violation).
 func (r *Repo) Submit(ctx context.Context, in SubmitInput) (*Response, error) {
 	if !IsValidRole(in.AuthorRole) {
 		return nil, ErrInvalidRole
 	}
+	hasArticle := in.ArticleID != nil
+	hasMaterial := in.LearningMaterialID != nil
+	if hasArticle == hasMaterial {
+		return nil, ErrInvalidParent
+	}
 	var resp Response
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO responses (site_id, article_id, author_name, author_role,
+		INSERT INTO responses (site_id, article_id, learning_material_id, author_name, author_role,
 		    author_email_private, body, status, submitter_ip)
-		VALUES ($1,$2,$3,$4,$5,$6,'pending',$7)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8)
 		RETURNING `+cols+`
-	`, in.SiteID, in.ArticleID, in.AuthorName, in.AuthorRole, in.AuthorEmail, in.Body, in.SubmitterIP,
+	`, in.SiteID, in.ArticleID, in.LearningMaterialID, in.AuthorName, in.AuthorRole,
+		in.AuthorEmail, in.Body, in.SubmitterIP,
 	).Scan(scan(&resp)...)
 	return &resp, err
 }
@@ -183,16 +198,26 @@ func (r *Repo) ListPage(
 
 // ListApprovedByArticle — public renderer. Only returns approved, sorted oldest→newest.
 func (r *Repo) ListApprovedByArticle(ctx context.Context, articleID uuid.UUID, limit int) ([]PublicView, error) {
+	return r.listApprovedByParent(ctx, "article_id", articleID, limit)
+}
+
+// ListApprovedByMaterial — mirror article variant untuk learning material.
+func (r *Repo) ListApprovedByMaterial(ctx context.Context, materialID uuid.UUID, limit int) ([]PublicView, error) {
+	return r.listApprovedByParent(ctx, "learning_material_id", materialID, limit)
+}
+
+func (r *Repo) listApprovedByParent(ctx context.Context, parentCol string, parentID uuid.UUID, limit int) ([]PublicView, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
+	// parentCol fixed whitelist (dua caller internal) — no injection risk.
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, author_name, author_role, body, created_at
 		FROM responses
-		WHERE article_id = $1 AND status = 'approved'
+		WHERE `+parentCol+` = $1 AND status = 'approved'
 		ORDER BY created_at ASC
 		LIMIT $2
-	`, articleID, limit)
+	`, parentID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +239,15 @@ func (r *Repo) CountApprovedByArticle(ctx context.Context, articleID uuid.UUID) 
 	err := r.pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM responses WHERE article_id = $1 AND status = 'approved'`,
 		articleID).Scan(&n)
+	return n, err
+}
+
+// CountApprovedByMaterial — mirror untuk learning material.
+func (r *Repo) CountApprovedByMaterial(ctx context.Context, materialID uuid.UUID) (int64, error) {
+	var n int64
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM responses WHERE learning_material_id = $1 AND status = 'approved'`,
+		materialID).Scan(&n)
 	return n, err
 }
 

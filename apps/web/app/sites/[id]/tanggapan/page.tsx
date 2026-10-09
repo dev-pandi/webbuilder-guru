@@ -39,10 +39,12 @@ function StatusChip({ status }: { status: ResponseStatus }) {
 }
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("id-ID", {
+  return new Date(iso).toLocaleString("id-ID", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -134,7 +136,13 @@ export default function TanggapanPage() {
           {visible.map((c) => (
             <div key={c.id} className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-[12px] font-bold text-blue-700">Artikel #{c.article_id.slice(0, 8)}</div>
+                <div className="text-[12px] font-bold text-blue-700">
+                  {c.article_id
+                    ? `Artikel #${c.article_id.slice(0, 8)}`
+                    : c.learning_material_id
+                      ? `Pembelajaran #${c.learning_material_id.slice(0, 8)}`
+                      : "—"}
+                </div>
                 <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
                   {RESPONSE_ROLE_LABEL[c.author_role]}
                 </span>

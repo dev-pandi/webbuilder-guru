@@ -190,6 +190,7 @@ func (h *GuruHandler) ListLearningMaterials(c *fiber.Ctx) error {
 }
 
 // GET /public/sites/:id/learning-materials/:slug
+// Response envelope mirror article detail: material + response_count + responses.
 func (h *GuruHandler) LearningMaterialBySlug(c *fiber.Ctx) error {
 	id, err := uuid.Parse(c.Params("id"))
 	if err != nil {
@@ -205,7 +206,47 @@ func (h *GuruHandler) LearningMaterialBySlug(c *fiber.Ctx) error {
 	if m.Status != "published" {
 		return httpx.NotFound(c, "material not found")
 	}
-	return httpx.OK(c, m)
+	var respCount int64
+	var respList = []responses.PublicView{}
+	list, listErr := h.resp.ListApprovedByMaterial(c.Context(), m.ID, 200)
+	if listErr == nil {
+		respList = list
+		respCount = int64(len(list))
+	}
+	return httpx.OK(c, fiber.Map{
+		"material":       m,
+		"response_count": respCount,
+		"responses":      respList,
+	})
+}
+
+// GET /public/sites/:id/learning-materials/:material_id/responses
+// Return only approved tanggapan. Called by renderer kalau rolling-deploy fallback.
+func (h *GuruHandler) ListMaterialResponses(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid site id")
+	}
+	materialID, err := uuid.Parse(c.Params("material_id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid material id")
+	}
+	m, err := h.learning.Get(c.Context(), materialID)
+	if errors.Is(err, learning.ErrNotFound) {
+		return httpx.NotFound(c, "material not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	if m.SiteID != id || m.Status != "published" {
+		return httpx.NotFound(c, "material not found")
+	}
+	limit, _ := strconv.Atoi(c.Query("limit", "200"))
+	items, err := h.resp.ListApprovedByMaterial(c.Context(), materialID, limit)
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	return httpx.OK(c, items)
 }
 
 // --- Portal / Direktori Guru ---

@@ -461,15 +461,47 @@ export async function listLearningMaterials(
   return r.ok ? r.data : [];
 }
 
+// LearningMaterialDetail — envelope untuk /public/sites/:id/learning-materials/:slug.
+// Backend sekarang kembalikan material + response_count + responses inline.
+// Fallback ke `material` field — kalau API lama (rolling deploy) langsung
+// serve object material tanpa envelope, kita unwrap di getLearningMaterial.
+export type LearningMaterialDetail = {
+  material: LearningMaterial;
+  response_count: number;
+  responses?: PublicResponse[];
+};
+
 export async function getLearningMaterial(
   siteId: string,
   slug: string,
-): Promise<LearningMaterial | null> {
-  const r = await fetchJson<LearningMaterial>(
+): Promise<LearningMaterialDetail | null> {
+  const r = await fetchJson<LearningMaterialDetail | LearningMaterial>(
     `/public/sites/${siteId}/learning-materials/${encodeURIComponent(slug)}`,
-    1, // revalidate 1s — minimalisir stale window setelah publish/unpublish.
+    0, // no cache — approve tanggapan harus langsung visible.
   );
-  return r.ok ? r.data : null;
+  if (!r.ok) return null;
+  const data = r.data as LearningMaterialDetail & LearningMaterial;
+  if (data.material) {
+    return {
+      material: data.material,
+      response_count: data.response_count ?? 0,
+      responses: data.responses,
+    };
+  }
+  // Backward compat: backend lama kembalikan material langsung.
+  return { material: data as LearningMaterial, response_count: 0, responses: [] };
+}
+
+export async function listMaterialResponses(
+  siteId: string,
+  materialId: string,
+  limit = 200,
+): Promise<PublicResponse[]> {
+  const r = await fetchJson<PublicResponse[]>(
+    `/public/sites/${siteId}/learning-materials/${materialId}/responses?limit=${limit}`,
+    0,
+  );
+  return r.ok ? r.data : [];
 }
 
 // Cache banner promosi lebih pendek dari list konten lainnya. Guru sering
