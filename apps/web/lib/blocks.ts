@@ -2033,6 +2033,12 @@ export const blockSchemas: BlockSchema[] = [
       rubric: "ceritaku",
       sidebarTitle: "Tentang rubrik",
       sidebarBody: "Kumpulan tulisan pada rubrik ini.",
+      sidebarLinks: [
+        { label: "Ceritaku", href: "/ceritaku" },
+        { label: "Bacaanku", href: "/bacaanku" },
+        { label: "Inspirasiku", href: "/inspirasiku" },
+        { label: "Bangsaku", href: "/bangsaku" },
+      ],
     },
     fields: [
       {
@@ -2048,6 +2054,16 @@ export const blockSchemas: BlockSchema[] = [
       },
       { name: "sidebarTitle", label: "Judul Sidebar", type: "string" },
       { name: "sidebarBody", label: "Isi Sidebar", type: "textarea" },
+      {
+        name: "sidebarLinks",
+        label: "Link Sidebar \"Jelajahi ruang lain\"",
+        type: "items",
+        help: "Daftar link ke rubrik/halaman lain. Hapus entry yang halamannya sudah dihapus supaya tidak jadi broken link.",
+        itemFields: [
+          { name: "label", label: "Label", type: "string" },
+          { name: "href", label: "URL", type: "string" },
+        ],
+      },
     ],
   },
   {
@@ -2056,8 +2072,25 @@ export const blockSchemas: BlockSchema[] = [
     category: "guru",
     emoji: "💬",
     description: "List topik forum — data dari rubric=forum-diskusi",
-    defaults: {},
-    fields: [],
+    defaults: {
+      sidebarLinks: [
+        { label: "Ceritaku", href: "/ceritaku" },
+        { label: "Bacaanku", href: "/bacaanku" },
+        { label: "Inspirasiku", href: "/inspirasiku" },
+      ],
+    },
+    fields: [
+      {
+        name: "sidebarLinks",
+        label: "Link Sidebar \"Jelajahi ruang lain\"",
+        type: "items",
+        help: "Daftar link ke rubrik/halaman lain. Hapus entry yang halamannya sudah dihapus.",
+        itemFields: [
+          { name: "label", label: "Label", type: "string" },
+          { name: "href", label: "URL", type: "string" },
+        ],
+      },
+    ],
   },
   {
     type: "GuruLearningGridDynamic",
@@ -2068,10 +2101,26 @@ export const blockSchemas: BlockSchema[] = [
     defaults: {
       sidebarTitle: "Tentang Pembelajaran",
       sidebarBody: "Ruang ini berisi materi belajar yang disusun dalam format ringkas.",
+      sidebarLinks: [
+        { label: "Ceritaku", href: "/ceritaku" },
+        { label: "Bacaanku", href: "/bacaanku" },
+        { label: "Inspirasiku", href: "/inspirasiku" },
+        { label: "Forum Diskusi", href: "/forum-diskusi" },
+      ],
     },
     fields: [
       { name: "sidebarTitle", label: "Judul Sidebar", type: "string" },
       { name: "sidebarBody", label: "Isi Sidebar", type: "textarea" },
+      {
+        name: "sidebarLinks",
+        label: "Link Sidebar \"Jelajahi ruang lain\"",
+        type: "items",
+        help: "Daftar link ke rubrik/halaman lain. Hapus entry yang halamannya sudah dihapus.",
+        itemFields: [
+          { name: "label", label: "Label", type: "string" },
+          { name: "href", label: "URL", type: "string" },
+        ],
+      },
     ],
   },
   {
