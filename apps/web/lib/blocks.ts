@@ -41,6 +41,7 @@ export type FieldDef =
       placeholder?: string;
     })
   | (FieldBase & { type: "items"; itemFields: ItemField[] })
+  | (FieldBase & { type: "strings"; placeholder?: string })
   | (FieldBase & { type: "select"; options: SelectOption[] });
 
 export type BlockCategory =
@@ -2055,6 +2056,13 @@ export const blockSchemas: BlockSchema[] = [
       { name: "sidebarTitle", label: "Judul Sidebar", type: "string" },
       { name: "sidebarBody", label: "Isi Sidebar", type: "textarea" },
       {
+        name: "sidebarTags",
+        label: "Topik Sidebar",
+        type: "strings",
+        help: "Daftar label topik di card \"Topik\". Satu baris = satu topik.",
+        placeholder: "Praktik Baik",
+      },
+      {
         name: "sidebarLinks",
         label: "Link Sidebar \"Jelajahi ruang lain\"",
         type: "items",
@@ -2073,6 +2081,7 @@ export const blockSchemas: BlockSchema[] = [
     emoji: "💬",
     description: "List topik forum — data dari rubric=forum-diskusi",
     defaults: {
+      participants: ["Guru", "Siswa", "Orang tua", "Pembaca"],
       sidebarLinks: [
         { label: "Ceritaku", href: "/ceritaku" },
         { label: "Bacaanku", href: "/bacaanku" },
@@ -2080,6 +2089,13 @@ export const blockSchemas: BlockSchema[] = [
       ],
     },
     fields: [
+      {
+        name: "participants",
+        label: "Partisipan Diskusi",
+        type: "strings",
+        help: "Siapa saja yang terlibat di forum. Satu baris = satu label.",
+        placeholder: "Guru",
+      },
       {
         name: "sidebarLinks",
         label: "Link Sidebar \"Jelajahi ruang lain\"",
@@ -2111,6 +2127,13 @@ export const blockSchemas: BlockSchema[] = [
     fields: [
       { name: "sidebarTitle", label: "Judul Sidebar", type: "string" },
       { name: "sidebarBody", label: "Isi Sidebar", type: "textarea" },
+      {
+        name: "sidebarTags",
+        label: "Topik Sidebar",
+        type: "strings",
+        help: "Daftar label topik di card \"Topik\". Satu baris = satu topik.",
+        placeholder: "Cerpen",
+      },
       {
         name: "sidebarLinks",
         label: "Link Sidebar \"Jelajahi ruang lain\"",

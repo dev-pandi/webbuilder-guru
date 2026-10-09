@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -330,6 +330,88 @@ function Field({
           onChange={(md) => onChange(md)}
           placeholder={field.placeholder ?? "Tulis konten…"}
         />
+        {field.help && <Help text={field.help} />}
+      </div>
+    );
+  }
+
+  // strings — array of plain strings (vs items which has named fields).
+  // Dipakai untuk tag list, participants, dsb. Satu input per entry +
+  // tombol tambah/hapus.
+  if (field.type === "strings") {
+    const list = Array.isArray(value) ? (value as unknown[]).map((v) => String(v ?? "")) : [];
+    function updateStr(i: number, next: string) {
+      const copy = [...list];
+      copy[i] = next;
+      onChange(copy);
+    }
+    function removeStr(i: number) {
+      onChange(list.filter((_, idx) => idx !== i));
+    }
+    function addStr() {
+      onChange([...list, ""]);
+    }
+    function moveStr(i: number, dir: -1 | 1) {
+      const j = i + dir;
+      if (j < 0 || j >= list.length) return;
+      const copy = [...list];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      onChange(copy);
+    }
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          {labelEl}
+          <Button type="button" variant="ghost" size="sm" onClick={addStr} className="h-7 gap-1 px-2">
+            <Plus className="size-3" />
+            Tambah
+          </Button>
+        </div>
+        <div className="space-y-1.5">
+          {list.map((s, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <Input
+                value={s}
+                onChange={(e) => updateStr(i, e.target.value)}
+                placeholder={field.placeholder ?? ""}
+                className="h-8"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                onClick={() => moveStr(i, -1)}
+                title="Naik"
+              >
+                <ChevronUp className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                onClick={() => moveStr(i, 1)}
+                title="Turun"
+              >
+                <ChevronDown className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 text-destructive hover:text-destructive"
+                onClick={() => removeStr(i)}
+                title="Hapus"
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+          {list.length === 0 && (
+            <p className="text-xs text-muted-foreground">Belum ada entry. Klik Tambah.</p>
+          )}
+        </div>
         {field.help && <Help text={field.help} />}
       </div>
     );
