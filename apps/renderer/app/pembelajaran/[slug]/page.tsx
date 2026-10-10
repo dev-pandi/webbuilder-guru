@@ -53,6 +53,7 @@ function initials(name: string): string {
     .join("");
 }
 
+// timeAgo — relative untuk < 24 jam; setelah itu switch ke tanggal+jam konkret.
 function timeAgo(iso: string): string {
   const t = new Date(iso).getTime();
   const diff = Date.now() - t;
@@ -61,8 +62,6 @@ function timeAgo(iso: string): string {
   if (min < 60) return `${min} menit lalu`;
   const hr = Math.round(min / 60);
   if (hr < 24) return `${hr} jam lalu`;
-  const day = Math.round(hr / 24);
-  if (day < 30) return `${day} hari lalu`;
   return fmtDateTime(iso);
 }
 

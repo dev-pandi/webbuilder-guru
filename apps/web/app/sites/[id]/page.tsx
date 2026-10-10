@@ -122,9 +122,14 @@ function timeAgo(iso: string): string {
   if (min < 60) return `${min} menit lalu`;
   const hr = Math.round(min / 60);
   if (hr < 24) return `${hr} jam lalu`;
-  const day = Math.round(hr / 24);
-  if (day < 30) return `${day} hari lalu`;
-  return new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  // >= 24 jam: tampilkan tanggal + jam konkret (konsisten dengan renderer).
+  return new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 // Fill missing daily buckets dengan 0 supaya chart tidak lompat-lompat.
