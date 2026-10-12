@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -314,6 +315,92 @@ func (r *Repo) ListAll(ctx context.Context, limit, offset int) ([]Invoice, error
 		LIMIT $1 OFFSET $2
 	`, limit, offset)
 	return scanInvoiceList(rows, err)
+}
+
+// AdminListFilter — filter query untuk admin invoices list.
+type AdminListFilter struct {
+	Status string // exact match ("" = semua)
+	Like   string // LIKE pattern (lowercased, dengan %) — match number, metadata.domain, user email/name
+	Limit  int
+	Offset int
+}
+
+// AdminListRow = Invoice + user context (email + name) untuk admin table.
+// Dibentuk via JOIN supaya admin tidak perlu N+1 lookup per row.
+type AdminListRow struct {
+	Invoice
+	UserEmail string `json:"user_email"`
+	UserName  string `json:"user_name"`
+}
+
+// AdminList — paginated + filter + JOIN users untuk tabel admin invoices.
+// Search `q` match number ATAU metadata.domain ATAU user email/name — satu
+// query pattern dipakai di beberapa kolom (acceptable: tabel ini kecil + ada
+// index di invoices.number).
+func (r *Repo) AdminList(ctx context.Context, f AdminListFilter) ([]AdminListRow, error) {
+	if f.Limit <= 0 || f.Limit > 200 {
+		f.Limit = 50
+	}
+	where := []string{"1=1"}
+	args := []any{}
+	pos := 1
+	if f.Status != "" {
+		where = append(where, "i.status = $"+itoa(pos))
+		args = append(args, f.Status)
+		pos++
+	}
+	if f.Like != "" && f.Like != "%%" {
+		// metadata->>'domain' aman walau metadata null (jsonb operator return NULL).
+		where = append(where,
+			"(LOWER(i.number) LIKE $"+itoa(pos)+
+				" OR LOWER(COALESCE(i.metadata->>'domain','')) LIKE $"+itoa(pos)+
+				" OR LOWER(COALESCE(u.email,'')) LIKE $"+itoa(pos)+
+				" OR LOWER(COALESCE(u.name,'')) LIKE $"+itoa(pos)+")")
+		args = append(args, f.Like)
+		pos++
+	}
+	args = append(args, f.Limit, f.Offset)
+	q := `
+		SELECT i.id, i.number, i.user_id, i.purchased_by, i.subtotal, i.tax_rate, i.tax_amount,
+		       i.total, i.currency, i.status, i.payment_method, i.payment_gw_ref, i.paid_at,
+		       i.due_at, i.created_at, i.updated_at, i.metadata,
+		       COALESCE(u.email, ''), COALESCE(u.name, '')
+		FROM invoices i
+		LEFT JOIN users u ON u.id = i.user_id
+		WHERE ` + strings.Join(where, " AND ") + `
+		ORDER BY i.created_at DESC
+		LIMIT $` + itoa(pos) + ` OFFSET $` + itoa(pos+1)
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AdminListRow{}
+	for rows.Next() {
+		var row AdminListRow
+		if err := rows.Scan(
+			&row.ID, &row.Number, &row.UserID, &row.PurchasedBy,
+			&row.Subtotal, &row.TaxRate, &row.TaxAmount, &row.Total,
+			&row.Currency, &row.Status, &row.PaymentMethod, &row.PaymentGwRef,
+			&row.PaidAt, &row.DueAt, &row.CreatedAt, &row.UpdatedAt, &row.Metadata,
+			&row.UserEmail, &row.UserName,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// itoa — small int → string tanpa strconv dep (match pola di domain_purchase).
+func itoa(n int) string {
+	if n < 10 {
+		return string(rune('0' + n))
+	}
+	if n < 100 {
+		return string(rune('0'+n/10)) + string(rune('0'+n%10))
+	}
+	return string(rune('0'+n/100)) + string(rune('0'+(n/10)%10)) + string(rune('0'+n%10))
 }
 
 // SavePaymentRef — set payment_gw_ref (Midtrans transaction_id) + promote

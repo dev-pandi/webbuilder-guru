@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/metrics"
 	"github.com/webbuilder/api/internal/registrar"
@@ -326,9 +327,17 @@ type ownerProfile struct {
 //
 // Kita cast via h.users.GetByID langsung — auth.User punya field yang kita
 // butuh. Wrapper cuma untuk decoupling test.
+//
+// Field contact divalidasi di sini juga sebagai second line of defense:
+// kalau data lama (sebelum validasi profile ditambahkan) berbentuk invalid,
+// kita gagal cepat dengan pesan jelas sebelum hit EPP (yang hanya return
+// 2001/2004 cryptic).
 func (h *Handler) resolveOwner(ctx context.Context, id uuid.UUID) (*ownerProfile, error) {
 	u, err := h.users.GetByID(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateOwnerForEPP(u.Name, u.Email, u.PhoneNumber, u.Address, u.City, u.PostalCode); err != nil {
 		return nil, err
 	}
 	return &ownerProfile{
@@ -341,6 +350,32 @@ func (h *Handler) resolveOwner(ctx context.Context, id uuid.UUID) (*ownerProfile
 		State:       u.State,
 		PostalCode:  u.PostalCode,
 	}, nil
+}
+
+// validateOwnerForEPP — minimal viable contact check sebelum RegisterDomainDirect.
+// Mirror validasi UpdateMe / ResellerApply tapi untuk data yang sudah tersimpan
+// (misal akun lama). Kalau fail, caller mark purchase failed dengan reason yang
+// langsung actionable: user tahu field mana yang harus diperbaiki.
+func validateOwnerForEPP(name, email, phone, address, city, postal string) error {
+	if name == "" || !auth.IsASCIIPrintable(name) {
+		return fmt.Errorf("profil kontak invalid: nama kosong atau mengandung karakter non-ASCII — perbaiki di Pengaturan → Profil")
+	}
+	if !auth.ValidEmail(email) {
+		return fmt.Errorf("profil kontak invalid: email %q tidak valid untuk WHOIS", email)
+	}
+	if !auth.ValidPhone(phone) {
+		return fmt.Errorf("profil kontak invalid: nomor HP tidak valid (minimal 7 digit) — perbaiki di Pengaturan → Profil")
+	}
+	if address == "" || !auth.IsASCIIPrintable(address) {
+		return fmt.Errorf("profil kontak invalid: alamat kosong atau mengandung karakter non-ASCII — perbaiki di Pengaturan → Profil")
+	}
+	if city == "" || !auth.IsASCIIPrintable(city) {
+		return fmt.Errorf("profil kontak invalid: kota kosong atau mengandung karakter non-ASCII — perbaiki di Pengaturan → Profil")
+	}
+	if !auth.ValidPostalCode(postal) {
+		return fmt.Errorf("profil kontak invalid: kode pos harus 4-10 digit angka — perbaiki di Pengaturan → Profil")
+	}
+	return nil
 }
 
 // parseInvoiceMetadata — safe JSON decode. Return empty map kalau invalid.

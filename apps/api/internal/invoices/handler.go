@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -178,10 +179,23 @@ func (h *Handler) GetPDFMine(c *fiber.Ctx) error {
 
 // --- Admin endpoints ---
 
-// GET /api/v1/admin/invoices — list all.
+// GET /api/v1/admin/invoices — list all + search by number/domain/email/user_name.
+// Query params: page, limit, status, q
 func (h *Handler) ListAdmin(c *fiber.Ctx) error {
 	limit, offset := parsePage(c)
-	items, err := h.repo.ListAll(c.Context(), limit, offset)
+	q := strings.TrimSpace(c.Query("q"))
+	status := strings.TrimSpace(c.Query("status"))
+	// Build LIKE pattern: lowercase + wrap "%…%". Kosong → "%%" (match semua).
+	like := "%%"
+	if q != "" {
+		like = "%" + strings.ToLower(q) + "%"
+	}
+	items, err := h.repo.AdminList(c.Context(), AdminListFilter{
+		Status: status,
+		Like:   like,
+		Limit:  limit,
+		Offset: offset,
+	})
 	if err != nil {
 		return httpx.Internal(c, err.Error())
 	}

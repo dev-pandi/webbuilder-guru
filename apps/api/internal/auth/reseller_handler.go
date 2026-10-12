@@ -32,8 +32,13 @@ func (r *resellerApplyReq) validate() error {
 	r.Email = strings.ToLower(strings.TrimSpace(r.Email))
 	r.Name = strings.TrimSpace(r.Name)
 	r.ResellerDisplayName = strings.TrimSpace(r.ResellerDisplayName)
-	if !strings.Contains(r.Email, "@") {
-		return errors.New("email tidak valid")
+	r.PhoneNumber = strings.TrimSpace(r.PhoneNumber)
+	r.Address = strings.TrimSpace(r.Address)
+	r.City = strings.TrimSpace(r.City)
+	r.State = strings.TrimSpace(r.State)
+	r.PostalCode = strings.TrimSpace(r.PostalCode)
+	if !ValidEmail(r.Email) {
+		return errors.New("format email tidak valid")
 	}
 	if len(r.Password) < 8 {
 		return errors.New("password minimal 8 karakter")
@@ -41,23 +46,41 @@ func (r *resellerApplyReq) validate() error {
 	if r.Name == "" {
 		return errors.New("nama PIC wajib diisi")
 	}
+	if !IsASCIIPrintable(r.Name) {
+		return errors.New("nama hanya boleh huruf/angka standar (tanpa aksen atau emoji)")
+	}
 	if r.ResellerDisplayName == "" {
 		return errors.New("nama bisnis wajib diisi")
 	}
 	// Contact/postal wajib untuk EPP contact + WHOIS (nanti dipakai saat
 	// register domain first-time). Cegah reseller yang belum lengkap
 	// profil trigger flow beli domain lalu gagal di tengah.
-	if strings.TrimSpace(r.PhoneNumber) == "" {
+	if r.PhoneNumber == "" {
 		return errors.New("nomor HP wajib diisi")
 	}
-	if strings.TrimSpace(r.Address) == "" {
+	if !ValidPhone(r.PhoneNumber) {
+		return errors.New("nomor HP minimal 7 digit (contoh: +62 812 3456 7890)")
+	}
+	if r.Address == "" {
 		return errors.New("alamat wajib diisi")
 	}
-	if strings.TrimSpace(r.City) == "" {
+	if !IsASCIIPrintable(r.Address) {
+		return errors.New("alamat hanya boleh karakter ASCII (tanpa aksen atau emoji)")
+	}
+	if r.City == "" {
 		return errors.New("kota wajib diisi")
 	}
-	if strings.TrimSpace(r.PostalCode) == "" {
+	if !IsASCIIPrintable(r.City) {
+		return errors.New("nama kota hanya boleh karakter ASCII")
+	}
+	if r.State != "" && !IsASCIIPrintable(r.State) {
+		return errors.New("nama provinsi hanya boleh karakter ASCII")
+	}
+	if r.PostalCode == "" {
 		return errors.New("kode pos wajib diisi")
+	}
+	if !ValidPostalCode(r.PostalCode) {
+		return errors.New("kode pos harus 4-10 digit angka")
 	}
 	return nil
 }

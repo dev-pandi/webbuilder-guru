@@ -315,14 +315,21 @@ export default function AdminPurchasesPage() {
                     </TableCell>
                     <TableCell className="align-top">
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium">{r.user_name || "—"}</span>
-                        <a
-                          href={`mailto:${r.user_email}`}
+                        <Link
+                          href={`/admin/users/${r.user_id}`}
+                          className="text-sm font-medium hover:text-primary hover:underline underline-offset-4"
+                          title="Buka detail user"
+                        >
+                          {r.user_name || "—"}
+                        </Link>
+                        <Link
+                          href={`/admin/users/${r.user_id}`}
                           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                          title="Buka detail user"
                         >
                           <Mail className="size-3" />
                           {r.user_email}
-                        </a>
+                        </Link>
                       </div>
                     </TableCell>
                     <TableCell className="align-top">
@@ -361,6 +368,10 @@ export default function AdminPurchasesPage() {
                           Detail
                           <ExternalLink className="size-3" />
                         </Link>
+                        {/* Retry untuk pending_payment / pending_provisioning / failed.
+                            Backend syncFromEPPIfActive cek registry dulu — kalau EPP
+                            sudah punya domain, langsung promote ke active (no duplicate
+                            register). Status active otomatis skip tombol. */}
                         {(r.status === "pending_payment" ||
                           r.status === "pending_provisioning" ||
                           r.status === "failed") && (

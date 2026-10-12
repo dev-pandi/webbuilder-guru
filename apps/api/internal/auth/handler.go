@@ -162,8 +162,11 @@ func (h *Handler) Register(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "invalid json")
 	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-	if !strings.Contains(req.Email, "@") || len(req.Password) < 8 {
-		return httpx.BadRequest(c, "email/password invalid (password min 8 chars)")
+	if !ValidEmail(req.Email) {
+		return httpx.BadRequest(c, "format email tidak valid")
+	}
+	if len(req.Password) < 8 {
+		return httpx.BadRequest(c, "password minimal 8 karakter")
 	}
 	hash, err := HashPassword(req.Password)
 	if err != nil {
@@ -364,23 +367,57 @@ func (h *Handler) UpdateMe(c *fiber.Ctx) error {
 
 	// Basic length caps — DB has TEXT so no hard limit, but reject obvious
 	// abuse before writing. Matches the migration comments (255/128/32/16).
-	if req.Name != nil && len(*req.Name) > 128 {
-		return httpx.BadRequest(c, "name terlalu panjang (max 128)")
+	//
+	// Semua contact field (Name/Address/City/State/PostalCode) juga di-gate
+	// ASCII printable karena EPP contact:create pakai PostalInfoInternational
+	// (RFC 5733 §2.6) — registry reject karakter di luar ASCII dengan 2001.
+	if req.Name != nil {
+		if len(*req.Name) > 128 {
+			return httpx.BadRequest(c, "nama terlalu panjang (max 128)")
+		}
+		if *req.Name != "" && !IsASCIIPrintable(*req.Name) {
+			return httpx.BadRequest(c, "nama hanya boleh huruf/angka standar (tanpa karakter aksen atau emoji)")
+		}
 	}
-	if req.PhoneNumber != nil && len(*req.PhoneNumber) > 32 {
-		return httpx.BadRequest(c, "nomor HP terlalu panjang (max 32)")
+	if req.PhoneNumber != nil {
+		if len(*req.PhoneNumber) > 32 {
+			return httpx.BadRequest(c, "nomor HP terlalu panjang (max 32)")
+		}
+		if *req.PhoneNumber != "" && !ValidPhone(*req.PhoneNumber) {
+			return httpx.BadRequest(c, "nomor HP minimal 7 digit (contoh: +62 812 3456 7890)")
+		}
 	}
-	if req.Address != nil && len(*req.Address) > 255 {
-		return httpx.BadRequest(c, "alamat terlalu panjang (max 255)")
+	if req.Address != nil {
+		if len(*req.Address) > 255 {
+			return httpx.BadRequest(c, "alamat terlalu panjang (max 255)")
+		}
+		if *req.Address != "" && !IsASCIIPrintable(*req.Address) {
+			return httpx.BadRequest(c, "alamat hanya boleh karakter ASCII (tanpa aksen atau emoji)")
+		}
 	}
-	if req.City != nil && len(*req.City) > 128 {
-		return httpx.BadRequest(c, "kota terlalu panjang (max 128)")
+	if req.City != nil {
+		if len(*req.City) > 128 {
+			return httpx.BadRequest(c, "kota terlalu panjang (max 128)")
+		}
+		if *req.City != "" && !IsASCIIPrintable(*req.City) {
+			return httpx.BadRequest(c, "nama kota hanya boleh karakter ASCII")
+		}
 	}
-	if req.State != nil && len(*req.State) > 128 {
-		return httpx.BadRequest(c, "provinsi terlalu panjang (max 128)")
+	if req.State != nil {
+		if len(*req.State) > 128 {
+			return httpx.BadRequest(c, "provinsi terlalu panjang (max 128)")
+		}
+		if *req.State != "" && !IsASCIIPrintable(*req.State) {
+			return httpx.BadRequest(c, "nama provinsi hanya boleh karakter ASCII")
+		}
 	}
-	if req.PostalCode != nil && len(*req.PostalCode) > 16 {
-		return httpx.BadRequest(c, "kode pos terlalu panjang (max 16)")
+	if req.PostalCode != nil {
+		if len(*req.PostalCode) > 16 {
+			return httpx.BadRequest(c, "kode pos terlalu panjang (max 16)")
+		}
+		if *req.PostalCode != "" && !ValidPostalCode(*req.PostalCode) {
+			return httpx.BadRequest(c, "kode pos harus 4-10 digit angka")
+		}
 	}
 	if req.Nik != nil && *req.Nik != "" {
 		// NIK Indonesia = 16 digit numeric. Reject bentuk lain supaya registrar
@@ -489,8 +526,8 @@ func (h *Handler) ForgotPassword(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "invalid json")
 	}
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	if !strings.Contains(email, "@") {
-		return httpx.BadRequest(c, "email invalid")
+	if !ValidEmail(email) {
+		return httpx.BadRequest(c, "format email tidak valid")
 	}
 
 	go h.dispatchPasswordReset(email)

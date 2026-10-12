@@ -12,6 +12,7 @@ import {
   Filter,
   Globe,
   Loader2,
+  Mail,
   Receipt,
   RefreshCw,
   Search,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, openBlob } from "@/lib/api";
+import { useDebounced } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +65,8 @@ type Invoice = {
   id: string;
   number: string;
   user_id: string;
+  user_email: string;
+  user_name: string;
   subtotal: number;
   tax_rate: number;
   tax_amount: number;
@@ -95,20 +99,32 @@ export default function AdminInvoicesPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
+  const debouncedQ = useDebounced(q, 300);
   const [markPaidTarget, setMarkPaidTarget] = useState<Invoice | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Invoice | null>(null);
+
+  // Reset ke page 1 saat filter berubah (biar tidak nyangkut di halaman kosong).
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQ, status]);
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, debouncedQ, status]);
 
   async function load() {
     setLoading(true);
     setErr(null);
     try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(PAGE_LIMIT),
+      });
+      if (debouncedQ.trim()) params.set("q", debouncedQ.trim());
+      if (status) params.set("status", status);
       const res = await api<{ items: Invoice[] }>(
-        `/api/v1/admin/invoices?page=${page}&limit=${PAGE_LIMIT}`,
+        `/api/v1/admin/invoices?${params.toString()}`,
       );
       setItems(res.items || []);
     } catch (e: unknown) {
@@ -117,17 +133,6 @@ export default function AdminInvoicesPage() {
       setLoading(false);
     }
   }
-
-  // Client-side filter — API belum expose status/q params, jadi filter list
-  // yang sudah ke-fetch per halaman.
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    return items.filter((inv) => {
-      if (status && inv.status !== status) return false;
-      if (query && !inv.number.toLowerCase().includes(query)) return false;
-      return true;
-    });
-  }, [items, status, q]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -175,12 +180,12 @@ export default function AdminInvoicesPage() {
               </button>
             ))}
           </div>
-          <div className="relative ml-auto w-full max-w-xs">
+          <div className="relative ml-auto w-full max-w-sm">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Cari nomor invoice…"
+              placeholder="Cari nomor invoice, domain, email, atau nama…"
               className="h-9 pl-8"
             />
           </div>
@@ -199,6 +204,7 @@ export default function AdminInvoicesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Nomor</TableHead>
+              <TableHead>User</TableHead>
               <TableHead>Untuk</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Metode</TableHead>
@@ -211,26 +217,42 @@ export default function AdminInvoicesPage() {
           <TableBody className={loading ? "opacity-60" : ""}>
             {loading && items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center">
+                <TableCell colSpan={9} className="py-10 text-center">
                   <Loader2 className="mx-auto size-4 animate-spin text-muted-foreground" />
                 </TableCell>
               </TableRow>
-            ) : filtered.length === 0 ? (
+            ) : items.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={9}
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
-                  {items.length === 0
-                    ? "Belum ada invoice."
-                    : `Tidak ada invoice untuk filter ini.`}
+                  {debouncedQ || status
+                    ? "Tidak ada invoice untuk filter ini."
+                    : "Belum ada invoice."}
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((inv) => (
+              items.map((inv) => (
                 <TableRow key={inv.id}>
                   <TableCell className="font-mono text-xs font-medium">
                     {inv.number}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium">
+                        {inv.user_name || "—"}
+                      </span>
+                      {inv.user_email && (
+                        <a
+                          href={`mailto:${inv.user_email}`}
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                        >
+                          <Mail className="size-3" />
+                          {inv.user_email}
+                        </a>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <SubjectCell meta={inv.metadata} />
@@ -303,7 +325,7 @@ export default function AdminInvoicesPage() {
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
           {items.length > 0
-            ? `${filtered.length} dari ${items.length} · Halaman ${page}`
+            ? `${items.length} di halaman ${page}`
             : "0 total"}
         </span>
         <div className="flex gap-2">

@@ -6,7 +6,10 @@
 package domain_purchase
 
 import (
+	"context"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -15,6 +18,53 @@ import (
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 )
+
+// syncFromEPPIfActive — cek EPP registry. Kalau domain sudah ada (artinya
+// EPP sudah berhasil register dari attempt sebelumnya tapi local nyangkut
+// di pending_provisioning / failed karena api-registry crash mid-request),
+// langsung promote local status ke active + upsert ke registered_domains.
+// Return (true, nil) kalau sudah di-sync (caller skip re-execute).
+// Return (false, nil) kalau EPP tidak punya domain (lanjut retry normal).
+func (h *Handler) syncFromEPPIfActive(ctx context.Context, job *Purchase) (bool, error) {
+	if h.registrar == nil || !h.registrar.UsesAPIRegistry() {
+		return false, nil
+	}
+	info, err := h.registrar.InfoDomain(ctx, job.Domain)
+	if err != nil || info == nil {
+		// Treat semua error sebagai "belum ada di EPP" — biar normal retry
+		// handle (ExecuteAfterPayment punya error handling sendiri).
+		return false, nil
+	}
+	// Domain exists di EPP. Promote local ke active + upsert registered_domains.
+	d := Domain{
+		UserID:         job.UserID,
+		PurchasedBy:    job.PurchasedBy,
+		Name:           job.Domain,
+		ContactID:      info.Registrant,
+		Status:         "active",
+		RegistrarJobID: job.RegistrarJobID,
+	}
+	if !info.ExpiresAt.IsZero() {
+		exp := info.ExpiresAt
+		d.ExpiresAt = &exp
+	}
+	if !info.CreatedAt.IsZero() {
+		d.RegisteredAt = info.CreatedAt
+	}
+	if _, err := h.repo.UpsertDomain(ctx, d); err != nil {
+		slog.Error("retry sync: upsert domain gagal",
+			"domain", job.Domain, "error", err)
+	}
+	var expPtr *time.Time
+	if d.ExpiresAt != nil {
+		exp := *d.ExpiresAt
+		expPtr = &exp
+	}
+	if _, err := h.repo.UpdateStatus(ctx, job.RegistrarJobID, StatusActive, "", expPtr); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 // Retry — POST /api/v1/domains/purchases/:job_id/retry
 //
@@ -73,6 +123,23 @@ func (h *Handler) Retry(c *fiber.Ctx) error {
 	if inv.Status != "paid" {
 		return httpx.BadRequest(c,
 			"invoice belum lunas — bayar dulu di /settings/invoices sebelum retry")
+	}
+
+	// Shortcut: cek EPP dulu — kalau domain sudah terdaftar (local nyangkut
+	// karena api-registry crash saat callback), promote ke active tanpa
+	// re-execute. Cegah risk duplicate register.
+	if job.Kind == KindRegister {
+		if synced, err := h.syncFromEPPIfActive(c.Context(), job); err == nil && synced {
+			h.logAudit(c.Context(), cl.UserID, audit.EventDomainRetried, "job", jobID, map[string]any{
+				"kind":        job.Kind,
+				"sync_source": "epp_info",
+			})
+			fresh, _ := h.repo.GetByJobIDForActor(c.Context(), jobID, cl.UserID)
+			if fresh == nil {
+				return httpx.OK(c, fiber.Map{"job_id": jobID, "status": StatusActive})
+			}
+			return httpx.OK(c, toResp(fresh))
+		}
 	}
 
 	// Clear status ke pending_provisioning supaya visual reset saat retry.
@@ -145,6 +212,24 @@ func (h *Handler) AdminRetry(c *fiber.Ctx) error {
 	if inv.Status != "paid" {
 		return httpx.BadRequest(c,
 			"invoice belum lunas — mark-paid dulu via /admin/invoices sebelum retry")
+	}
+
+	// Shortcut: cek EPP dulu — kalau domain sudah terdaftar (local nyangkut
+	// karena api-registry crash saat callback), promote ke active tanpa
+	// re-execute. Cegah risk duplicate register.
+	if job.Kind == KindRegister {
+		if synced, err := h.syncFromEPPIfActive(c.Context(), job); err == nil && synced {
+			h.logAudit(c.Context(), cl.UserID, audit.EventDomainRetried, "job", jobID, map[string]any{
+				"kind":        job.Kind,
+				"admin":       true,
+				"sync_source": "epp_info",
+			})
+			fresh, _ := h.repo.GetByJobIDAny(c.Context(), jobID)
+			if fresh == nil {
+				return httpx.OK(c, fiber.Map{"job_id": jobID, "status": StatusActive})
+			}
+			return httpx.OK(c, toResp(fresh))
+		}
 	}
 
 	// Clear status ke pending_provisioning supaya visual reset saat retry.

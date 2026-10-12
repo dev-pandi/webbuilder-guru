@@ -54,6 +54,55 @@ const EDITABLE = [
 ] as const;
 type EditableKey = (typeof EDITABLE)[number];
 
+// ASCII printable range — mirror auth.IsASCIIPrintable di backend. EPP
+// contact:create pakai PostalInfoInternational (RFC 5733 §2.6) yang hanya
+// terima ASCII. Preview di sini supaya user tahu sebelum submit.
+function isASCIIPrintable(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code < 0x20 || code > 0x7e) return false;
+  }
+  return true;
+}
+
+function countDigits(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 48 && c <= 57) n++;
+  }
+  return n;
+}
+
+function fieldErrors(f: Record<EditableKey, string>): Partial<Record<EditableKey, string>> {
+  const e: Partial<Record<EditableKey, string>> = {};
+  if (f.name && !isASCIIPrintable(f.name)) {
+    e.name = "Nama hanya boleh huruf/angka standar (tanpa aksen atau emoji)";
+  }
+  if (f.phone_number) {
+    const d = countDigits(f.phone_number);
+    if (d < 7 || d > 15) e.phone_number = "Nomor HP harus 7-15 digit (contoh: +62 812 3456 7890)";
+  }
+  if (f.address && !isASCIIPrintable(f.address)) {
+    e.address = "Alamat hanya boleh karakter ASCII (tanpa aksen atau emoji)";
+  }
+  if (f.city && !isASCIIPrintable(f.city)) {
+    e.city = "Nama kota hanya boleh karakter ASCII";
+  }
+  if (f.state && !isASCIIPrintable(f.state)) {
+    e.state = "Nama provinsi hanya boleh karakter ASCII";
+  }
+  if (f.postal_code) {
+    const d = countDigits(f.postal_code);
+    const allowed = /^[0-9\s\-]+$/.test(f.postal_code);
+    if (!allowed || d < 4 || d > 10) e.postal_code = "Kode pos harus 4-10 digit angka";
+  }
+  if (f.nik && (f.nik.length !== 16 || !/^\d{16}$/.test(f.nik))) {
+    e.nik = "NIK harus 16 digit angka";
+  }
+  return e;
+}
+
 export function ProfileForm({
   title = "Profil Akun",
   description = "Data kontak & alamat dipakai sebagai WHOIS contact + invoice untuk domain baru. Perubahan di sini tidak otomatis ter-update ke domain yang sudah aktif.",
@@ -96,9 +145,12 @@ export function ProfileForm({
     ? EDITABLE.some((k) => form[k] !== ((me as unknown as Record<string, string>)[k] ?? ""))
     : false;
 
+  const errors = fieldErrors(form);
+  const hasErrors = Object.keys(errors).length > 0;
+
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!me || !dirty) return;
+    if (!me || !dirty || hasErrors) return;
     setSaving(true);
     try {
       const patch: Partial<Record<EditableKey, string>> = {};
@@ -149,17 +201,18 @@ export function ProfileForm({
               </p>
             </FieldRow>
 
-            <FieldRow icon={UserIcon} label="Nama Lengkap">
+            <FieldRow icon={UserIcon} label="Nama Lengkap" error={errors.name}>
               <Input
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Nama sesuai KTP"
                 maxLength={128}
                 className="max-w-md"
+                aria-invalid={!!errors.name}
               />
             </FieldRow>
 
-            <FieldRow icon={Phone} label="Nomor HP / WhatsApp">
+            <FieldRow icon={Phone} label="Nomor HP / WhatsApp" error={errors.phone_number}>
               <Input
                 value={form.phone_number}
                 onChange={(e) => setForm((f) => ({ ...f, phone_number: e.target.value }))}
@@ -167,10 +220,11 @@ export function ProfileForm({
                 maxLength={32}
                 inputMode="tel"
                 className="max-w-md"
+                aria-invalid={!!errors.phone_number}
               />
             </FieldRow>
 
-            <FieldRow icon={Fingerprint} label="NIK (KTP)">
+            <FieldRow icon={Fingerprint} label="NIK (KTP)" error={errors.nik}>
               <Input
                 value={form.nik}
                 onChange={(e) =>
@@ -180,6 +234,7 @@ export function ProfileForm({
                 maxLength={16}
                 inputMode="numeric"
                 className="max-w-md tracking-wider font-mono"
+                aria-invalid={!!errors.nik}
               />
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Wajib untuk registrasi domain <code>.id</code> (regulasi Kemenkominfo).
@@ -194,36 +249,39 @@ export function ProfileForm({
             <CardTitle>Alamat</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            <FieldRow icon={MapPin} label="Alamat Jalan">
+            <FieldRow icon={MapPin} label="Alamat Jalan" error={errors.address}>
               <Input
                 value={form.address}
                 onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
                 placeholder="Jl. Contoh No. 123, RT 01/RW 02"
                 maxLength={255}
+                aria-invalid={!!errors.address}
               />
             </FieldRow>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <FieldRow icon={Building2} label="Kota">
+              <FieldRow icon={Building2} label="Kota" error={errors.city}>
                 <Input
                   value={form.city}
                   onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
                   placeholder="Jakarta Selatan"
                   maxLength={128}
+                  aria-invalid={!!errors.city}
                 />
               </FieldRow>
 
-              <FieldRow icon={Map} label="Provinsi">
+              <FieldRow icon={Map} label="Provinsi" error={errors.state}>
                 <Input
                   value={form.state}
                   onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
                   placeholder="DKI Jakarta"
                   maxLength={128}
+                  aria-invalid={!!errors.state}
                 />
               </FieldRow>
             </div>
 
-            <FieldRow icon={Hash} label="Kode Pos">
+            <FieldRow icon={Hash} label="Kode Pos" error={errors.postal_code}>
               <Input
                 value={form.postal_code}
                 onChange={(e) => setForm((f) => ({ ...f, postal_code: e.target.value }))}
@@ -231,18 +289,23 @@ export function ProfileForm({
                 maxLength={16}
                 inputMode="numeric"
                 className="max-w-[10rem]"
+                aria-invalid={!!errors.postal_code}
               />
             </FieldRow>
           </CardContent>
         </Card>
 
         <div className="mt-6 flex items-center justify-end gap-3">
-          {dirty && (
+          {hasErrors ? (
+            <span className="text-xs text-destructive">
+              Perbaiki field yang bertanda merah sebelum menyimpan
+            </span>
+          ) : dirty ? (
             <span className="text-xs text-muted-foreground">
               Ada perubahan yang belum disimpan
             </span>
-          )}
-          <Button type="submit" disabled={!dirty || saving} className="gap-2">
+          ) : null}
+          <Button type="submit" disabled={!dirty || saving || hasErrors} className="gap-2">
             {saving ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
@@ -264,10 +327,12 @@ export function ProfileForm({
 function FieldRow({
   icon: Icon,
   label,
+  error,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -277,6 +342,7 @@ function FieldRow({
         {label}
       </Label>
       {children}
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }
