@@ -15,11 +15,13 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,10 +68,23 @@ type Client struct {
 	cfg      Config
 	logger   *zap.Logger // shared di across sessions (dipakai library util WithLogger)
 	logFile  *os.File    // ref file untuk graceful close
-	client   *epp.Client
-	connMu   sync.Mutex // serialize commands (EPP not concurrent)
-	loggedIn bool
+	// opsLogger — structured JSON logger per-operation (op/bytes/code/ok/
+	// error/xml snippet). Beda dari logger yang nulis raw EPP XML stream.
+	// Dipakai parseResponse — tiap command EPP otomatis logged tanpa perlu
+	// boilerplate per call-site. Debug trace error upstream (misal
+	// "Transaction rolled back") tanpa aktifkan DebugXML.
+	opsLogger *slog.Logger
+	opsFile   *os.File
+	client    *epp.Client
+	connMu    sync.Mutex // serialize commands (EPP not concurrent)
+	loggedIn  bool
 }
+
+// Package-level fallback supaya helper parseResponse (yang nggak terima
+// *Client) tetap bisa log. Di-set oleh New() sekali — multi-instance
+// hanya terpakai yang terakhir, acceptable karena biasanya satu client
+// per proses.
+var defaultOpsLogger *slog.Logger
 
 // New — construct client. Belum connect — call Connect() explicitly saat
 // startup atau lazy on-first-use.
@@ -113,6 +128,21 @@ func New(cfg Config) (*Client, error) {
 		)
 		c.logger = zap.New(core)
 		c.logFile = f
+
+		// Dedicated structured ops log — 1 baris JSON per EPP operation
+		// (op/bytes/code/ok/xml snippet). Co-located dengan cfg.LogFile
+		// supaya ops/debug file sejajar. Nama file: <base>-ops.jsonl.
+		// Dipakai parseResponse auto-emit — nggak butuh enable DebugXML.
+		opsPath := strings.TrimSuffix(cfg.LogFile, filepath.Ext(cfg.LogFile)) + "-ops.jsonl"
+		opsFile, err := os.OpenFile(opsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, fmt.Errorf("epp: open ops log: %w", err)
+		}
+		c.opsFile = opsFile
+		c.opsLogger = slog.New(slog.NewJSONHandler(opsFile, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
+		defaultOpsLogger = c.opsLogger
 	}
 	return c, nil
 }
@@ -241,6 +271,10 @@ func (c *Client) Shutdown() error {
 		_ = c.logFile.Close()
 		c.logFile = nil
 	}
+	if c.opsFile != nil {
+		_ = c.opsFile.Close()
+		c.opsFile = nil
+	}
 	return err
 }
 
@@ -302,20 +336,70 @@ func (c *Client) DumpResponse(op string, raw []byte, err error, extra ...any) {
 // parseResponse — helper: parse raw XML ke Response envelope + return error
 // kalau EPP result code >= 2000. `resultData`/`extension` bisa nil kalau
 // caller tidak butuh typed data.
+//
+// Side effect: tiap panggilan auto-emit structured log entry ke
+// defaultOpsLogger (kalau sudah di-init via New() dengan LogFile != "").
+// Field: op/bytes/code/ok/msg/xml-snippet/error. Jadi debugging error
+// upstream (misal "Transaction rolled back") langsung ter-trace tanpa
+// perlu aktifkan DebugXML — selalu masuk ke logs/epp-ops.jsonl.
 func parseResponse(raw []byte, op string, resultData, extension any) (*frames.Response, error) {
 	resp := &frames.Response{
 		ResultData: resultData,
 		Extension:  extension,
 	}
 	if err := xml.Unmarshal(raw, resp); err != nil {
+		logEPPResponse(op, raw, 0, "", false, err)
 		return nil, fmt.Errorf("epp: unmarshal response (%s): %w", op, err)
 	}
 	if len(resp.Result) == 0 {
+		logEPPResponse(op, raw, 0, "", false, errors.New("missing <result>"))
 		return resp, fmt.Errorf("epp: response missing <result> (%s)", op)
 	}
 	r := resp.Result[0]
-	if r.Code >= 2000 {
-		return resp, &EPPResponseError{Code: r.Code, Message: r.Message, Op: op}
+	ok := r.Code < 2000
+	var retErr error
+	if !ok {
+		retErr = &EPPResponseError{Code: r.Code, Message: r.Message, Op: op}
 	}
-	return resp, nil
+	logEPPResponse(op, raw, r.Code, r.Message, ok, retErr)
+	return resp, retErr
+}
+
+// logEPPResponse — write structured log entry per EPP operation. No-op kalau
+// defaultOpsLogger belum di-init (unit test tanpa LogFile).
+//
+// Field:
+//   - op: "contact:create" / "domain:info" / dst
+//   - bytes: ukuran raw XML response
+//   - code: EPP result code (1000-2500) — 0 kalau unmarshal gagal duluan
+//   - msg: human-readable message dari <msg> di response
+//   - ok: true kalau code < 2000
+//   - xml: snippet raw XML (cap 2KB supaya log file tidak membengkak)
+//   - error: unmarshal/parse error atau EPPResponseError
+//
+// Level: Error kalau !ok atau err != nil, Info kalau sukses.
+func logEPPResponse(op string, raw []byte, code int, msg string, ok bool, err error) {
+	if defaultOpsLogger == nil {
+		return
+	}
+	snippet := string(raw)
+	if len(snippet) > 2048 {
+		snippet = snippet[:2048] + "…(truncated)"
+	}
+	attrs := []slog.Attr{
+		slog.String("op", op),
+		slog.Int("bytes", len(raw)),
+		slog.Int("code", code),
+		slog.String("msg", msg),
+		slog.Bool("ok", ok),
+		slog.String("xml", snippet),
+	}
+	if err != nil {
+		attrs = append(attrs, slog.String("error", err.Error()))
+	}
+	level := slog.LevelInfo
+	if !ok || err != nil {
+		level = slog.LevelError
+	}
+	defaultOpsLogger.LogAttrs(context.Background(), level, "EPP response", attrs...)
 }

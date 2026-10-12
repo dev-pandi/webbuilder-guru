@@ -1,2 +1,6 @@
 /cert/*
 /tmp
+# EPP log files — berisi XML frames + PII (email, phone, NIK dari contact).
+# Jangan commit. Keep dir via .gitkeep.
+/logs/*
+!/logs/.gitkeep

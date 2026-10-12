@@ -10,10 +10,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GoogleButton } from "@/components/GoogleButton";
 
+// EMAIL_RE — mirror auth.ValidEmail di backend (RFC 5322 subset praktis).
+// Konsisten supaya browser tidak terima "foo@a" tapi backend tolak dengan
+// pesan cryptic. Blokir di client lebih dulu untuk UX cepat.
+const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+
+function validateEmail(s: string): string | null {
+  const v = s.trim();
+  if (!v) return null; // kosong → native required handle, jangan tampilkan pre-blur
+  if (v.length > 254) return "Email terlalu panjang";
+  if (!EMAIL_RE.test(v)) return "Format email tidak valid (contoh: nama@email.com)";
+  return null;
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailTouched, setEmailTouched] = useState(false);
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -23,14 +37,29 @@ export default function RegisterPage() {
   const pwColors = ["", "bg-red-500", "bg-amber-500", "bg-emerald-500"];
   const pwLabels = ["", "Terlalu pendek", "Cukup", "Kuat"];
 
+  const emailError = emailTouched ? validateEmail(email) : null;
+  const canSubmit =
+    !loading &&
+    name.trim().length > 0 &&
+    EMAIL_RE.test(email.trim()) &&
+    password.length >= 8;
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Gate client-side sebelum network call — kalau user bypass tombol disabled
+    // via DevTools / Enter, tetap tangkap di sini.
+    setEmailTouched(true);
+    const emailProblem = validateEmail(email);
+    if (emailProblem) {
+      setErr(emailProblem);
+      return;
+    }
     setErr(null);
     setLoading(true);
     try {
       const data = await api<{ access_token: string; refresh_token: string }>(
         "/api/v1/auth/register",
-        { method: "POST", body: JSON.stringify({ name, email, password }), auth: false },
+        { method: "POST", body: JSON.stringify({ name, email: email.trim(), password }), auth: false },
       );
       setTokens(data.access_token, data.refresh_token);
       router.push("/dashboard");
@@ -107,11 +136,19 @@ export default function RegisterPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => setEmailTouched(true)}
                   autoComplete="email"
                   placeholder="nama@email.com"
                   className="pl-9 h-10"
+                  aria-invalid={!!emailError}
+                  aria-describedby={emailError ? "email-error" : undefined}
                 />
               </div>
+              {emailError && (
+                <p id="email-error" className="text-xs text-destructive">
+                  {emailError}
+                </p>
+              )}
             </div>
 
             {/* Password */}
@@ -174,7 +211,7 @@ export default function RegisterPage() {
             <Button
               type="submit"
               className="mt-1 w-full h-10 gap-2 font-medium shadow-sm"
-              disabled={loading}
+              disabled={!canSubmit}
             >
               {loading ? (
                 <>
