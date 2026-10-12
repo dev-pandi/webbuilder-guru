@@ -79,6 +79,40 @@ func TestDefaultAuthInfo_Deterministic(t *testing.T) {
 	}
 }
 
+func TestSanitizeASCII(t *testing.T) {
+	cases := []struct {
+		name       string
+		in         string
+		wantOut    string
+		wantChange bool
+	}{
+		{"empty", "", "", false},
+		{"pure ascii", "Jakarta Selatan", "Jakarta Selatan", false},
+		{"em dash", "Jawa Barat — West Java", "Jawa Barat - West Java", true},
+		{"en dash", "A – B", "A - B", true},
+		{"smart quotes", "O’Brien", "O'Brien", true},
+		{"smart double", "“Hello”", "\"Hello\"", true},
+		{"nbsp", "A B", "A B", true},
+		{"ellipsis", "dst…", "dst...", true},
+		{"accents", "São José", "Sao Jose", true},
+		{"nitrogen n-tilde", "Niño", "Nino", true},
+		{"german ess-zett", "Straße", "Strasse", true},
+		{"ligature", "Encyclopædia", "Encyclopaedia", true},
+		{"mixed drop", "Hello 👋 world", "Hello  world", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := sanitizeASCII(tc.in)
+			if got != tc.wantOut {
+				t.Errorf("sanitizeASCII(%q) = %q, want %q", tc.in, got, tc.wantOut)
+			}
+			if changed != tc.wantChange {
+				t.Errorf("sanitizeASCII(%q) changed=%v, want %v", tc.in, changed, tc.wantChange)
+			}
+		})
+	}
+}
+
 func TestDeriveHandleFromExternalID_StripsUUIDDashes(t *testing.T) {
 	uuid := "550e8400-e29b-41d4-a716-446655440000"
 	h, err := deriveHandleFromExternalID(uuid)

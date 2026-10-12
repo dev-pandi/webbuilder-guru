@@ -21,6 +21,7 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Get("/users/:id", deps.Admin.GetUser)
 	g.Get("/users/:id/sites", deps.Admin.ListUserSites)
 	g.Patch("/users/:id/role", deps.Admin.UpdateUserRole)
+	g.Patch("/users/:id/profile", deps.Admin.UpdateUserProfile)
 	g.Delete("/users/:id", deps.Admin.DeleteUser)
 
 	g.Get("/sites", deps.Admin.ListSites)

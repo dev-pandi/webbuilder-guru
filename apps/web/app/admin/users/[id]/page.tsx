@@ -20,6 +20,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Pencil,
   Phone,
   Printer,
   ShieldCheck,
@@ -32,7 +33,17 @@ import { api, openBlob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -353,7 +364,7 @@ export default function AdminUserDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <OverviewTab user={user} />
+          <OverviewTab user={user} onUpdated={refresh} />
         </TabsContent>
         <TabsContent value="sites" className="mt-4">
           {tab === "sites" && <SitesTab id={id} />}
@@ -393,12 +404,30 @@ function StatTile({
   );
 }
 
-function OverviewTab({ user }: { user: UserDetail }) {
+function OverviewTab({
+  user,
+  onUpdated,
+}: {
+  user: UserDetail;
+  onUpdated: () => void;
+}) {
+  const [editOpen, setEditOpen] = useState(false);
   const hasContact = user.phone_number || user.address || user.city;
   const isResellerLike = user.role === "reseller" || user.role === "agent";
   return (
     <Card>
       <CardContent className="grid gap-4 p-6 sm:grid-cols-2">
+        <div className="sm:col-span-2 flex items-center justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setEditOpen(true)}
+            className="gap-1.5"
+          >
+            <Pencil className="size-3.5" />
+            Edit profil kontak
+          </Button>
+        </div>
         <Section title="Identitas">
           <Row label="Nama" value={user.name || "—"} />
           <Row label="Email" value={user.email} mono />
@@ -425,6 +454,16 @@ function OverviewTab({ user }: { user: UserDetail }) {
             mono
           />
         </Section>
+        {editOpen && (
+          <EditProfileDialog
+            user={user}
+            onClose={() => setEditOpen(false)}
+            onDone={() => {
+              setEditOpen(false);
+              onUpdated();
+            }}
+          />
+        )}
         {isResellerLike && (
           <Section title="Konteks Bisnis">
             {user.role === "reseller" ? (
@@ -463,6 +502,229 @@ function OverviewTab({ user }: { user: UserDetail }) {
         </Section>
       </CardContent>
     </Card>
+  );
+}
+
+// EDITABLE_FIELDS — subset profil yang admin boleh edit. Email + role tidak
+// di sini (ganti role lewat tombol khusus, ganti email butuh re-verify flow).
+type EditableField = "name" | "phone_number" | "address" | "city" | "state" | "postal_code" | "nik";
+
+// ASCII printable check — mirror auth.IsASCIIPrintable di backend.
+// Em-dash '—' / aksen / emoji di-reject supaya EPP contact:create tidak gagal
+// dengan "Transaction rolled back" di PANDI side.
+function isASCIIPrintable(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x20 || c > 0x7e) return false;
+  }
+  return true;
+}
+
+function countDigits(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 48 && c <= 57) n++;
+  }
+  return n;
+}
+
+function fieldErrors(f: Record<EditableField, string>): Partial<Record<EditableField, string>> {
+  const e: Partial<Record<EditableField, string>> = {};
+  if (f.name && !isASCIIPrintable(f.name)) {
+    e.name = "Nama hanya boleh karakter ASCII (tanpa aksen / em-dash / emoji)";
+  }
+  if (f.phone_number) {
+    const d = countDigits(f.phone_number);
+    if (d < 7 || d > 15) e.phone_number = "Nomor HP harus 7-15 digit";
+  }
+  if (f.address && !isASCIIPrintable(f.address)) {
+    e.address = "Alamat hanya boleh karakter ASCII";
+  }
+  if (f.city && !isASCIIPrintable(f.city)) {
+    e.city = "Nama kota hanya boleh karakter ASCII";
+  }
+  if (f.state && !isASCIIPrintable(f.state)) {
+    e.state = "Nama provinsi hanya boleh karakter ASCII (mis. em-dash '—')";
+  }
+  if (f.postal_code) {
+    const d = countDigits(f.postal_code);
+    const allowed = /^[0-9\s\-]+$/.test(f.postal_code);
+    if (!allowed || d < 4 || d > 10) e.postal_code = "Kode pos harus 4-10 digit angka";
+  }
+  if (f.nik && (f.nik.length !== 16 || !/^\d{16}$/.test(f.nik))) {
+    e.nik = "NIK harus 16 digit angka";
+  }
+  return e;
+}
+
+function EditProfileDialog({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: UserDetail;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [form, setForm] = useState<Record<EditableField, string>>({
+    name: user.name ?? "",
+    phone_number: user.phone_number ?? "",
+    address: user.address ?? "",
+    city: user.city ?? "",
+    state: user.state ?? "",
+    postal_code: user.postal_code ?? "",
+    nik: user.nik ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const errors = fieldErrors(form);
+  const hasErrors = Object.keys(errors).length > 0;
+
+  const dirty = (Object.keys(form) as EditableField[]).some(
+    (k) => form[k] !== ((user as unknown as Record<string, string>)[k] ?? ""),
+  );
+
+  async function save() {
+    if (!dirty || hasErrors) return;
+    setSaving(true);
+    try {
+      // PATCH partial — hanya field yang berubah supaya audit log akurat
+      // (fields_changed only lists what admin touched).
+      const patch: Partial<Record<EditableField, string>> = {};
+      (Object.keys(form) as EditableField[]).forEach((k) => {
+        if (form[k] !== ((user as unknown as Record<string, string>)[k] ?? "")) {
+          patch[k] = form[k];
+        }
+      });
+      await api(`/api/v1/admin/users/${user.id}/profile`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      toast.success("Profil kontak user tersimpan");
+      onDone();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Edit profil kontak user</DialogTitle>
+          <DialogDescription>
+            Field kontak dipakai sebagai WHOIS + EPP contact. Hanya karakter
+            ASCII — em-dash <code>—</code>, aksen, dan emoji akan ditolak
+            registry PANDI. Email dan role tidak diubah di sini.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 py-2 sm:grid-cols-2">
+          <EditField
+            label="Nama Lengkap"
+            value={form.name}
+            onChange={(v) => setForm((f) => ({ ...f, name: v }))}
+            error={errors.name}
+            maxLength={128}
+            className="sm:col-span-2"
+          />
+          <EditField
+            label="Nomor HP"
+            value={form.phone_number}
+            onChange={(v) => setForm((f) => ({ ...f, phone_number: v }))}
+            error={errors.phone_number}
+            maxLength={32}
+            placeholder="+62812xxxxxxx"
+          />
+          <EditField
+            label="NIK (16 digit)"
+            value={form.nik}
+            onChange={(v) => setForm((f) => ({ ...f, nik: v.replace(/\D/g, "").slice(0, 16) }))}
+            error={errors.nik}
+            maxLength={16}
+          />
+          <EditField
+            label="Alamat"
+            value={form.address}
+            onChange={(v) => setForm((f) => ({ ...f, address: v }))}
+            error={errors.address}
+            maxLength={255}
+            className="sm:col-span-2"
+          />
+          <EditField
+            label="Kota"
+            value={form.city}
+            onChange={(v) => setForm((f) => ({ ...f, city: v }))}
+            error={errors.city}
+            maxLength={128}
+          />
+          <EditField
+            label="Provinsi"
+            value={form.state}
+            onChange={(v) => setForm((f) => ({ ...f, state: v }))}
+            error={errors.state}
+            maxLength={128}
+          />
+          <EditField
+            label="Kode Pos"
+            value={form.postal_code}
+            onChange={(v) => setForm((f) => ({ ...f, postal_code: v }))}
+            error={errors.postal_code}
+            maxLength={16}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Batal
+          </Button>
+          <Button onClick={save} disabled={!dirty || hasErrors || saving} className="gap-1.5">
+            {saving ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Menyimpan…
+              </>
+            ) : (
+              "Simpan"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditField({
+  label,
+  value,
+  onChange,
+  error,
+  maxLength,
+  placeholder,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  error?: string;
+  maxLength?: number;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`space-y-1 ${className ?? ""}`}>
+      <Label className="text-xs">{label}</Label>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        aria-invalid={!!error}
+      />
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
   );
 }
 

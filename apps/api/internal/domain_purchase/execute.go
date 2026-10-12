@@ -337,7 +337,7 @@ func (h *Handler) resolveOwner(ctx context.Context, id uuid.UUID) (*ownerProfile
 	if err != nil {
 		return nil, err
 	}
-	if err := validateOwnerForEPP(u.Name, u.Email, u.PhoneNumber, u.Address, u.City, u.PostalCode); err != nil {
+	if err := validateOwnerForEPP(u.Name, u.Email, u.PhoneNumber, u.Address, u.City, u.State, u.PostalCode); err != nil {
 		return nil, err
 	}
 	return &ownerProfile{
@@ -356,7 +356,12 @@ func (h *Handler) resolveOwner(ctx context.Context, id uuid.UUID) (*ownerProfile
 // Mirror validasi UpdateMe / ResellerApply tapi untuk data yang sudah tersimpan
 // (misal akun lama). Kalau fail, caller mark purchase failed dengan reason yang
 // langsung actionable: user tahu field mana yang harus diperbaiki.
-func validateOwnerForEPP(name, email, phone, address, city, postal string) error {
+//
+// Semua field postal (name/address/city/state) wajib ASCII murni karena EPP
+// contact:create pakai PostalInfo type="int" (RFC 5733 §2.6). Em-dash,
+// aksen, tanda kutip kurva, dsb. akan ditolak PANDI dengan "Transaction
+// rolled back" — cegah di sini supaya user dapat pesan jelas.
+func validateOwnerForEPP(name, email, phone, address, city, state, postal string) error {
 	if name == "" || !auth.IsASCIIPrintable(name) {
 		return fmt.Errorf("profil kontak invalid: nama kosong atau mengandung karakter non-ASCII — perbaiki di Pengaturan → Profil")
 	}
@@ -371,6 +376,9 @@ func validateOwnerForEPP(name, email, phone, address, city, postal string) error
 	}
 	if city == "" || !auth.IsASCIIPrintable(city) {
 		return fmt.Errorf("profil kontak invalid: kota kosong atau mengandung karakter non-ASCII — perbaiki di Pengaturan → Profil")
+	}
+	if state != "" && !auth.IsASCIIPrintable(state) {
+		return fmt.Errorf("profil kontak invalid: provinsi mengandung karakter non-ASCII (mis. em-dash '—', aksen) — perbaiki di Pengaturan → Profil")
 	}
 	if !auth.ValidPostalCode(postal) {
 		return fmt.Errorf("profil kontak invalid: kode pos harus 4-10 digit angka — perbaiki di Pengaturan → Profil")

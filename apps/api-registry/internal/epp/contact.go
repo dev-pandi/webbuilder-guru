@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/al0fayz/epp-pandi-client/frames"
@@ -64,13 +65,31 @@ func (p *EPPDirectProvider) ensureContact(ctx context.Context, handle string, c 
 	if countryCode == "" {
 		countryCode = "ID"
 	}
+	// Sanitize ke ASCII dulu — EPP PostalInfo type="int" (RFC 5733 §2.6)
+	// wajib ASCII. Em-dash/en-dash/aksen/smart quotes → ASCII equivalent.
+	// Defense-in-depth: web-builder sudah validate tapi api-registry juga
+	// safeguard supaya karakter non-ASCII tidak sampai PANDI (yang bakal
+	// return "Transaction rolled back" dari Spring/Hibernate validator).
+	sanitizedName, nameChanged := sanitizeASCII(c.Name)
+	sanitizedAddr, addrChanged := sanitizeASCII(c.Address)
+	sanitizedCity, cityChanged := sanitizeASCII(c.City)
+	sanitizedState, stateChanged := sanitizeASCII(c.State)
+	if nameChanged || addrChanged || cityChanged || stateChanged {
+		slog.Warn("contact:create — field non-ASCII di-sanitize",
+			"handle", handle,
+			"name_changed", nameChanged,
+			"address_changed", addrChanged,
+			"city_changed", cityChanged,
+			"state_changed", stateChanged,
+		)
+	}
 	postal := frames.PostalInfo{
-		Name: c.Name,
+		Name: sanitizedName,
 		Type: frames.PostalInfoInternational,
 		Address: frames.Address{
-			Street:        streetLines(c.Address),
-			City:          c.City,
-			StateProvince: c.State,
+			Street:        streetLines(sanitizedAddr),
+			City:          sanitizedCity,
+			StateProvince: sanitizedState,
 			PostalCode:    c.PostalCode,
 			CountryCode:   countryCode,
 		},
@@ -215,13 +234,29 @@ func (p *EPPDirectProvider) updateContactByHandle(ctx context.Context, handle, d
 	if countryCode == "" {
 		countryCode = "ID"
 	}
+	// Sanitize ASCII — mirror ensureContact (defense-in-depth untuk EPP
+	// PostalInfo type="int" yang wajib ASCII).
+	sanitizedName, nameChanged := sanitizeASCII(req.Name)
+	sanitizedAddr, addrChanged := sanitizeASCII(req.Address)
+	sanitizedCity, cityChanged := sanitizeASCII(req.City)
+	sanitizedState, stateChanged := sanitizeASCII(req.State)
+	if nameChanged || addrChanged || cityChanged || stateChanged {
+		slog.Warn("contact:update — field non-ASCII di-sanitize",
+			"handle", handle,
+			"domain", domain,
+			"name_changed", nameChanged,
+			"address_changed", addrChanged,
+			"city_changed", cityChanged,
+			"state_changed", stateChanged,
+		)
+	}
 	frame.ChangePostalInfo(frames.PostalInfo{
-		Name: req.Name,
+		Name: sanitizedName,
 		Type: frames.PostalInfoInternational,
 		Address: frames.Address{
-			Street:        streetLines(req.Address),
-			City:          req.City,
-			StateProvince: req.State,
+			Street:        streetLines(sanitizedAddr),
+			City:          sanitizedCity,
+			StateProvince: sanitizedState,
 			PostalCode:    req.PostalCode,
 			CountryCode:   countryCode,
 		},
@@ -365,4 +400,99 @@ func onlyDigits(s string) string {
 // dari handle supaya deterministic per contact (idempotent re-create).
 func defaultAuthInfo(handle string) string {
 	return handle + "-authinfo"
+}
+
+// sanitizeASCII — konversi string ke ASCII-safe untuk EPP PostalInfo
+// type="int" (RFC 5733 §2.6). Return (sanitized, changed).
+//
+// Transformasi (deterministic, no external library):
+//   - Smart quotes "" '' → straight " '
+//   - Em-dash — (U+2014) / en-dash – (U+2013) → "-"
+//   - Non-breaking space (U+00A0) → regular space
+//   - Ellipsis … (U+2026) → "..."
+//   - Latin accent (é ñ ü ç dsb.) → NFD decompose + strip combining marks
+//     fallback: huruf dasar (é → e)
+//   - Karakter non-ASCII lain yang tak dikenal → drop (silent)
+//
+// Trade-off: lossy transliteration lebih baik daripada reject karena
+// invoice sudah paid. Log warn di call-site supaya ops tahu field apa
+// yang berubah — bisa minta user perbaiki profil untuk kiriman berikutnya.
+func sanitizeASCII(s string) (string, bool) {
+	if s == "" {
+		return "", false
+	}
+	// Fast path: kalau sudah pure ASCII, return as-is.
+	allASCII := true
+	for _, r := range s {
+		if r > 0x7E || r < 0x20 {
+			allASCII = false
+			break
+		}
+	}
+	if allASCII {
+		return s, false
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 0x20 && r <= 0x7E:
+			b.WriteRune(r)
+		case r == '–' || r == '—': // en/em dash → -
+			b.WriteByte('-')
+		case r == '‘' || r == '’' || r == '‚' || r == '′': // smart single quotes → '
+			b.WriteByte('\'')
+		case r == '“' || r == '”' || r == '„' || r == '″': // smart double quotes → "
+			b.WriteByte('"')
+		case r == ' ': // nbsp → space
+			b.WriteByte(' ')
+		case r == '…': // ellipsis → ...
+			b.WriteString("...")
+		case r == '«' || r == '»': // guillemets → "
+			b.WriteByte('"')
+		case r == '•' || r == '·': // bullet → *
+			b.WriteByte('*')
+		default:
+			if ascii, ok := asciiFoldMap[r]; ok {
+				b.WriteString(ascii)
+			}
+			// Unknown non-ASCII → drop silently.
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	return out, out != s
+}
+
+// asciiFoldMap — Latin-1/Latin Extended-A folding ke ASCII dasar.
+// Cukup untuk nama/alamat Indonesia yang kadang punya aksen Belanda/Portugis
+// peninggalan kolonial (é, ü, ç, ñ) atau kebijakan transliterasi daerah.
+var asciiFoldMap = map[rune]string{
+	// Vowels
+	'À': "A", 'Á': "A", 'Â': "A", 'Ã': "A", 'Ä': "A", 'Å': "A", 'Ā': "A", 'Ă': "A", 'Ą': "A",
+	'à': "a", 'á': "a", 'â': "a", 'ã': "a", 'ä': "a", 'å': "a", 'ā': "a", 'ă': "a", 'ą': "a",
+	'È': "E", 'É': "E", 'Ê': "E", 'Ë': "E", 'Ē': "E", 'Ĕ': "E", 'Ė': "E", 'Ę': "E", 'Ě': "E",
+	'è': "e", 'é': "e", 'ê': "e", 'ë': "e", 'ē': "e", 'ĕ': "e", 'ė': "e", 'ę': "e", 'ě': "e",
+	'Ì': "I", 'Í': "I", 'Î': "I", 'Ï': "I", 'Ī': "I", 'Ĭ': "I", 'Į': "I", 'İ': "I",
+	'ì': "i", 'í': "i", 'î': "i", 'ï': "i", 'ī': "i", 'ĭ': "i", 'į': "i", 'ı': "i",
+	'Ò': "O", 'Ó': "O", 'Ô': "O", 'Õ': "O", 'Ö': "O", 'Ø': "O", 'Ō': "O", 'Ŏ': "O", 'Ő': "O",
+	'ò': "o", 'ó': "o", 'ô': "o", 'õ': "o", 'ö': "o", 'ø': "o", 'ō': "o", 'ŏ': "o", 'ő': "o",
+	'Ù': "U", 'Ú': "U", 'Û': "U", 'Ü': "U", 'Ū': "U", 'Ŭ': "U", 'Ů': "U", 'Ű': "U", 'Ų': "U",
+	'ù': "u", 'ú': "u", 'û': "u", 'ü': "u", 'ū': "u", 'ŭ': "u", 'ů': "u", 'ű': "u", 'ų': "u",
+	'Ý': "Y", 'Ÿ': "Y", 'ý': "y", 'ÿ': "y",
+	// Consonants
+	'Ç': "C", 'Ć': "C", 'Č': "C", 'ç': "c", 'ć': "c", 'č': "c",
+	'Ď': "D", 'Đ': "D", 'ď': "d", 'đ': "d",
+	'Ğ': "G", 'ğ': "g",
+	'Ĥ': "H", 'ĥ': "h",
+	'Ĵ': "J", 'ĵ': "j",
+	'Ķ': "K", 'ķ': "k",
+	'Ĺ': "L", 'Ļ': "L", 'Ľ': "L", 'Ł': "L", 'ĺ': "l", 'ļ': "l", 'ľ': "l", 'ł': "l",
+	'Ń': "N", 'Ņ': "N", 'Ň': "N", 'Ñ': "N", 'ń': "n", 'ņ': "n", 'ň': "n", 'ñ': "n",
+	'Ŕ': "R", 'Ř': "R", 'ŕ': "r", 'ř': "r",
+	'Ś': "S", 'Š': "S", 'Ş': "S", 'ś': "s", 'š': "s", 'ş': "s", 'ß': "ss",
+	'Ţ': "T", 'Ť': "T", 'ţ': "t", 'ť': "t",
+	'Ź': "Z", 'Ż': "Z", 'Ž': "Z", 'ź': "z", 'ż': "z", 'ž': "z",
+	// Ligatures
+	'Æ': "AE", 'æ': "ae", 'Œ': "OE", 'œ': "oe",
 }
