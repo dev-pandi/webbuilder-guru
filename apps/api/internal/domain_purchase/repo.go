@@ -481,7 +481,7 @@ func (r *Repo) AdminList(ctx context.Context, f AdminListFilter) ([]AdminPurchas
 		if err := rows.Scan(
 			&a.ID, &a.UserID, &a.PurchasedBy, &a.SiteID, &a.RegistrarJobID, &a.Domain, &a.Years, &a.Kind,
 			&a.Status, &a.Reason, &a.PaymentMethod, &a.PaymentURL,
-			&a.ExpiresAt, &a.CreatedAt, &a.UpdatedAt,
+			&a.ExpiresAt, &a.DNSProviderChoice, &a.CreatedAt, &a.UpdatedAt,
 			&a.UserEmail, &a.UserName,
 		); err != nil {
 			return nil, 0, err
