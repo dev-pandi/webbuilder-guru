@@ -1111,6 +1111,32 @@ func (h *Handler) UpdateContact(c *fiber.Ctx) error {
 			"Field wajib kosong: "+strings.Join(missing, ", "))
 	}
 
+	// Format + ASCII validation sebelum hit EPP — RFC 5733 §2.6 PostalInfo
+	// type="int" wajib ASCII. Em-dash/aksen/emoji akan di-reject PANDI dengan
+	// "Transaction rolled back" cryptic error. Blokir di sini supaya user
+	// dapat pesan jelas.
+	if !auth.ValidEmail(req.Email) {
+		return httpx.BadRequest(c, "format email tidak valid")
+	}
+	if !auth.ValidPhone(req.Phone) {
+		return httpx.BadRequest(c, "nomor HP minimal 7 digit (contoh: +62 812 3456 7890)")
+	}
+	if !auth.ValidPostalCode(req.PostalCode) {
+		return httpx.BadRequest(c, "kode pos harus 4-10 digit angka")
+	}
+	if !auth.IsASCIIPrintable(req.Name) {
+		return httpx.BadRequest(c, "nama hanya boleh karakter ASCII (tanpa aksen atau emoji)")
+	}
+	if !auth.IsASCIIPrintable(req.Address) {
+		return httpx.BadRequest(c, "alamat hanya boleh karakter ASCII (tanpa aksen atau emoji)")
+	}
+	if !auth.IsASCIIPrintable(req.City) {
+		return httpx.BadRequest(c, "nama kota hanya boleh karakter ASCII")
+	}
+	if req.State != "" && !auth.IsASCIIPrintable(req.State) {
+		return httpx.BadRequest(c, "nama provinsi hanya boleh karakter ASCII (mis. em-dash '—', aksen)")
+	}
+
 	resp, err := h.registrar.UpdateDomainContact(c.Context(), name, registrar.Contact{
 		Name:        req.Name,
 		Email:       req.Email,

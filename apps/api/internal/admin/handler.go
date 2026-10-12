@@ -146,10 +146,15 @@ func (h *Handler) UpdateUserRole(c *fiber.Ctx) error {
 
 // updateUserProfileReq — pointer fields = partial update (COALESCE di SQL).
 // Mirror auth.updateMeReq tapi dengan subset yang relevant untuk admin fix
-// (nama, kontak, alamat, NIK). Role + email + password NOT di sini —
-// pakai endpoint khusus (role→UpdateUserRole, email/pass→reset flow).
+// (nama, kontak, alamat, NIK). Role + password NOT di sini — pakai endpoint
+// khusus (role→UpdateUserRole, password→reset flow).
+//
+// Email bisa diubah di sini sebagai admin override — mis. user salah ketik
+// saat daftar. Side effect: email_verified_at di-reset supaya user harus
+// verify ulang dari address baru.
 type updateUserProfileReq struct {
 	Name        *string `json:"name,omitempty"`
+	Email       *string `json:"email,omitempty"`
 	PhoneNumber *string `json:"phone_number,omitempty"`
 	Address     *string `json:"address,omitempty"`
 	City        *string `json:"city,omitempty"`
@@ -185,6 +190,7 @@ func (h *Handler) UpdateUserProfile(c *fiber.Ctx) error {
 		return &v
 	}
 	req.Name = trim(req.Name)
+	req.Email = trim(req.Email)
 	req.PhoneNumber = trim(req.PhoneNumber)
 	req.Address = trim(req.Address)
 	req.City = trim(req.City)
@@ -193,6 +199,17 @@ func (h *Handler) UpdateUserProfile(c *fiber.Ctx) error {
 	req.Nik = trim(req.Nik)
 
 	// Mirror validasi auth.UpdateMe — ASCII + length + format checks.
+	if req.Email != nil {
+		if *req.Email == "" {
+			return httpx.BadRequest(c, "email tidak boleh kosong")
+		}
+		// Lowercase + validate — mirror Register endpoint.
+		lower := strings.ToLower(*req.Email)
+		req.Email = &lower
+		if !auth.ValidEmail(*req.Email) {
+			return httpx.BadRequest(c, "format email tidak valid")
+		}
+	}
 	if req.Name != nil {
 		if len(*req.Name) > 128 {
 			return httpx.BadRequest(c, "nama terlalu panjang (max 128)")
@@ -262,7 +279,28 @@ func (h *Handler) UpdateUserProfile(c *fiber.Ctx) error {
 		Nik:         req.Nik,
 	})
 	if err != nil {
+		if errors.Is(err, auth.ErrNotFound) {
+			return httpx.NotFound(c, "user not found")
+		}
 		return httpx.Internal(c, "update profile failed: "+err.Error())
+	}
+
+	// Email dipisah karena ada side effect (reset email_verified_at) +
+	// unique constraint. Dilakukan setelah UpdateProfile sukses supaya
+	// kalau email collision, field profil lain tidak di-rollback (lossy
+	// behavior OK: admin bisa retry hanya untuk email).
+	if req.Email != nil && *req.Email != u.Email {
+		uWithEmail, emailErr := h.authRepo.AdminUpdateEmail(c.Context(), id, *req.Email)
+		if errors.Is(emailErr, auth.ErrEmailTaken) {
+			return httpx.Conflict(c, "email sudah dipakai user lain")
+		}
+		if errors.Is(emailErr, auth.ErrNotFound) {
+			return httpx.NotFound(c, "user not found")
+		}
+		if emailErr != nil {
+			return httpx.Internal(c, "update email failed: "+emailErr.Error())
+		}
+		u = uWithEmail
 	}
 
 	// Audit: catat field apa saja yang diubah (bukan nilai, demi privacy).
@@ -273,6 +311,7 @@ func (h *Handler) UpdateUserProfile(c *fiber.Ctx) error {
 		}
 	}
 	add("name", req.Name)
+	add("email", req.Email)
 	add("phone_number", req.PhoneNumber)
 	add("address", req.Address)
 	add("city", req.City)

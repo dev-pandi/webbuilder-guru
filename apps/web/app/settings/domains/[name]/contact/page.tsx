@@ -59,6 +59,57 @@ type ContactForm = {
   postal_code: string;
 };
 
+// EMAIL_RE — mirror auth.ValidEmail backend.
+const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+
+// EPP PostalInfo type="int" (RFC 5733 §2.6) wajib ASCII — em-dash/aksen/emoji
+// akan ditolak PANDI dengan "Transaction rolled back". Blokir di client.
+function isASCIIPrintable(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x20 || c > 0x7e) return false;
+  }
+  return true;
+}
+
+function countDigits(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 48 && c <= 57) n++;
+  }
+  return n;
+}
+
+function formErrors(f: ContactForm): Partial<Record<keyof ContactForm, string>> {
+  const e: Partial<Record<keyof ContactForm, string>> = {};
+  if (f.name && !isASCIIPrintable(f.name)) {
+    e.name = "Nama hanya boleh karakter ASCII (tanpa aksen atau emoji)";
+  }
+  if (f.email && !EMAIL_RE.test(f.email.trim())) {
+    e.email = "Format email tidak valid";
+  }
+  if (f.phone) {
+    const d = countDigits(f.phone);
+    if (d < 7 || d > 15) e.phone = "Nomor HP harus 7-15 digit (contoh: +62 812 3456 7890)";
+  }
+  if (f.address && !isASCIIPrintable(f.address)) {
+    e.address = "Alamat hanya boleh karakter ASCII";
+  }
+  if (f.city && !isASCIIPrintable(f.city)) {
+    e.city = "Nama kota hanya boleh karakter ASCII";
+  }
+  if (f.state && !isASCIIPrintable(f.state)) {
+    e.state = "Nama provinsi hanya boleh karakter ASCII (mis. em-dash '—')";
+  }
+  if (f.postal_code) {
+    const d = countDigits(f.postal_code);
+    const allowed = /^[0-9\s\-]+$/.test(f.postal_code);
+    if (!allowed || d < 4 || d > 10) e.postal_code = "Kode pos harus 4-10 digit angka";
+  }
+  return e;
+}
+
 export default function ContactUpdatePage() {
   const router = useRouter();
   const params = useParams<{ name: string }>();
@@ -77,6 +128,8 @@ export default function ContactUpdatePage() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<UpdateResp | null>(null);
+  const errors = formErrors(form);
+  const hasErrors = Object.keys(errors).length > 0;
 
   // Prefill dari profil user — bukan dari registry (kalau butuh WHOIS current,
   // fetch terpisah). Baseline profile lebih user-friendly untuk tipikal flow
@@ -119,6 +172,10 @@ export default function ContactUpdatePage() {
     const missing = required.filter((k) => !form[k].trim());
     if (missing.length > 0) {
       setErr("Field wajib kosong: " + missing.join(", "));
+      return;
+    }
+    if (hasErrors) {
+      setErr("Perbaiki field yang bertanda merah sebelum menyimpan");
       return;
     }
 
@@ -193,7 +250,9 @@ export default function ContactUpdatePage() {
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     required
+                    aria-invalid={!!errors.name}
                   />
+                  {errors.name && <p className="text-[11px] text-destructive">{errors.name}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="email">
@@ -205,7 +264,9 @@ export default function ContactUpdatePage() {
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     required
+                    aria-invalid={!!errors.email}
                   />
+                  {errors.email && <p className="text-[11px] text-destructive">{errors.email}</p>}
                 </div>
               </div>
 
@@ -219,10 +280,15 @@ export default function ContactUpdatePage() {
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="+6281234567890"
                   required
+                  aria-invalid={!!errors.phone}
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  Format E.164 direkomendasikan (mis. <code>+6281234567890</code>).
-                </p>
+                {errors.phone ? (
+                  <p className="text-[11px] text-destructive">{errors.phone}</p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Format E.164 direkomendasikan (mis. <code>+6281234567890</code>).
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -234,7 +300,9 @@ export default function ContactUpdatePage() {
                   value={form.address}
                   onChange={(e) => setForm({ ...form, address: e.target.value })}
                   required
+                  aria-invalid={!!errors.address}
                 />
+                {errors.address && <p className="text-[11px] text-destructive">{errors.address}</p>}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
@@ -247,7 +315,9 @@ export default function ContactUpdatePage() {
                     value={form.city}
                     onChange={(e) => setForm({ ...form, city: e.target.value })}
                     required
+                    aria-invalid={!!errors.city}
                   />
+                  {errors.city && <p className="text-[11px] text-destructive">{errors.city}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="state">Provinsi</Label>
@@ -255,7 +325,9 @@ export default function ContactUpdatePage() {
                     id="state"
                     value={form.state}
                     onChange={(e) => setForm({ ...form, state: e.target.value })}
+                    aria-invalid={!!errors.state}
                   />
+                  {errors.state && <p className="text-[11px] text-destructive">{errors.state}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="postal_code">
@@ -266,7 +338,11 @@ export default function ContactUpdatePage() {
                     value={form.postal_code}
                     onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
                     required
+                    aria-invalid={!!errors.postal_code}
                   />
+                  {errors.postal_code && (
+                    <p className="text-[11px] text-destructive">{errors.postal_code}</p>
+                  )}
                 </div>
               </div>
 
@@ -282,7 +358,7 @@ export default function ContactUpdatePage() {
                   Perubahan langsung propagate ke WHOIS PANDI (butuh 1–5 menit
                   untuk terlihat publik).
                 </p>
-                <Button type="submit" disabled={saving} className="gap-2">
+                <Button type="submit" disabled={saving || hasErrors} className="gap-2">
                   {saving ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />

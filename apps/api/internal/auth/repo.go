@@ -220,6 +220,40 @@ func (r *Repo) UpdateProfile(ctx context.Context, userID uuid.UUID, p ProfileUpd
 	return &u, err
 }
 
+// AdminUpdateEmail — ganti email user via admin override. Clear
+// email_verified_at karena email baru belum terbukti milik user — user harus
+// klik link verify dari email baru.
+//
+// Return ErrEmailTaken kalau email collision dengan user lain.
+// Return ErrNotFound kalau userID tidak ada.
+//
+// Flow di handler:
+//   1. Validate email syntax (ValidEmail)
+//   2. Call method ini
+//   3. Opsional: trigger send verification email ke address baru
+func (r *Repo) AdminUpdateEmail(ctx context.Context, userID uuid.UUID, newEmail string) (*User, error) {
+	var u User
+	err := r.pool.QueryRow(ctx, `
+		UPDATE users
+		   SET email              = $2,
+		       email_verified_at  = NULL,
+		       updated_at         = now()
+		 WHERE id = $1
+		RETURNING `+scanUserCols,
+		userID, newEmail,
+	).Scan(scanUser(&u)...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		if pgErrCode(err) == "23505" {
+			return nil, ErrEmailTaken
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
 // GuruProfileDefaults — struct untuk seed profil guru saat user pilih
 // template guru-pandi-upi. Field yang sudah diisi user tidak akan ditimpa
 // (COALESCE NULLIF pattern) — jadi aman idempotent kalau seed re-run.

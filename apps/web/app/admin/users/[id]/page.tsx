@@ -505,9 +505,22 @@ function OverviewTab({
   );
 }
 
-// EDITABLE_FIELDS — subset profil yang admin boleh edit. Email + role tidak
-// di sini (ganti role lewat tombol khusus, ganti email butuh re-verify flow).
-type EditableField = "name" | "phone_number" | "address" | "city" | "state" | "postal_code" | "nik";
+// EDITABLE_FIELDS — profil + email yang admin boleh edit. Role diubah lewat
+// tombol khusus (toggleRole). Password tidak di sini — pakai forgot-password.
+//
+// Catatan email: ganti email reset email_verified_at di DB — user harus
+// verify ulang dari email baru. Dipakai untuk perbaikan typo saat daftar.
+type EditableField =
+  | "name"
+  | "email"
+  | "phone_number"
+  | "address"
+  | "city"
+  | "state"
+  | "postal_code"
+  | "nik";
+
+const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
 
 // ASCII printable check — mirror auth.IsASCIIPrintable di backend.
 // Em-dash '—' / aksen / emoji di-reject supaya EPP contact:create tidak gagal
@@ -533,6 +546,14 @@ function fieldErrors(f: Record<EditableField, string>): Partial<Record<EditableF
   const e: Partial<Record<EditableField, string>> = {};
   if (f.name && !isASCIIPrintable(f.name)) {
     e.name = "Nama hanya boleh karakter ASCII (tanpa aksen / em-dash / emoji)";
+  }
+  if (f.email) {
+    const trimmed = f.email.trim();
+    if (!EMAIL_RE.test(trimmed) || trimmed.length > 254) {
+      e.email = "Format email tidak valid";
+    }
+  } else {
+    e.email = "Email tidak boleh kosong";
   }
   if (f.phone_number) {
     const d = countDigits(f.phone_number);
@@ -569,6 +590,7 @@ function EditProfileDialog({
 }) {
   const [form, setForm] = useState<Record<EditableField, string>>({
     name: user.name ?? "",
+    email: user.email ?? "",
     phone_number: user.phone_number ?? "",
     address: user.address ?? "",
     city: user.city ?? "",
@@ -617,9 +639,17 @@ function EditProfileDialog({
           <DialogDescription>
             Field kontak dipakai sebagai WHOIS + EPP contact. Hanya karakter
             ASCII — em-dash <code>—</code>, aksen, dan emoji akan ditolak
-            registry PANDI. Email dan role tidak diubah di sini.
+            registry PANDI. Role diubah lewat tombol khusus.
           </DialogDescription>
         </DialogHeader>
+
+        {form.email !== (user.email ?? "") && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <strong className="block">Email akan diubah.</strong>
+            User harus verify ulang dari email baru — status Email verified
+            akan di-reset. Pastikan email yang baru benar milik user.
+          </div>
+        )}
 
         <div className="grid gap-3 py-2 sm:grid-cols-2">
           <EditField
@@ -628,6 +658,15 @@ function EditProfileDialog({
             onChange={(v) => setForm((f) => ({ ...f, name: v }))}
             error={errors.name}
             maxLength={128}
+            className="sm:col-span-2"
+          />
+          <EditField
+            label="Email"
+            value={form.email}
+            onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+            error={errors.email}
+            maxLength={254}
+            placeholder="user@example.com"
             className="sm:col-span-2"
           />
           <EditField
