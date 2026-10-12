@@ -116,20 +116,26 @@ export function GuruStylesEditor() {
       dangerouslySetInnerHTML={{
         __html: `
 :root{
+  /* Base — langsung dari theme user (4 picker di Theme Drawer). */
   --guru-navy: var(--color-primary, #14233b);
-  --guru-navy-2: #233b60;
   --guru-ink: var(--color-fg, #263247);
-  --guru-muted: #6f7888;
   --guru-cream: var(--color-bg, #fbf8f1);
-  --guru-paper: #ffffff;
-  --guru-line: #e9e5dc;
   --guru-red: var(--color-secondary, #b6423d);
-  --guru-red-soft: #f5e9e7;
-  --guru-gold: #d6a84d;
-  --guru-blue-soft: #eaf1f7;
-  --guru-sage: #e9f0e8;
-  --guru-shadow: 0 20px 60px rgba(29,42,62,.08);
-  --guru-shadow-sm: 0 10px 30px rgba(29,42,62,.07);
+
+  /* Derived via color-mix — supaya semua guru-* ikut berubah saat user ganti
+     theme. Rasio dipilih supaya tetap "feel" PANDI × UPI. Chrome 111+/
+     Safari 16.2+/Firefox 113+. SYNC dengan renderer GuruBlocks.tsx. */
+  --guru-navy-2:   color-mix(in srgb, var(--guru-navy) 70%, #ffffff);
+  --guru-muted:    color-mix(in srgb, var(--guru-ink) 55%, var(--guru-cream));
+  --guru-paper:    color-mix(in srgb, var(--guru-cream) 30%, #ffffff);
+  --guru-line:     color-mix(in srgb, var(--guru-ink) 10%, var(--guru-cream));
+  --guru-red-soft: color-mix(in srgb, var(--guru-red) 15%, var(--guru-cream));
+  --guru-blue-soft:color-mix(in srgb, var(--guru-navy) 10%, var(--guru-cream));
+  --guru-sage:     color-mix(in srgb, var(--guru-navy) 6%, var(--guru-cream));
+  --guru-gold:     color-mix(in srgb, var(--guru-red) 60%, #d6a84d);
+
+  --guru-shadow: 0 20px 60px color-mix(in srgb, var(--guru-navy) 20%, transparent);
+  --guru-shadow-sm: 0 10px 30px color-mix(in srgb, var(--guru-navy) 15%, transparent);
   --guru-radius: 26px;
   --guru-radius-sm: 18px;
   --guru-max: 1180px;
@@ -146,14 +152,14 @@ export function GuruStylesEditor() {
 .guru-brand__copy{line-height:1.1;font-size:15px}
 .guru-brand__copy small{display:block;color:var(--guru-muted);font-weight:600;font-size:10px;letter-spacing:.13em;text-transform:uppercase;margin-top:4px}
 .guru-site-nav{display:flex;align-items:center;gap:2px;margin-left:auto}
-.guru-site-nav a{padding:10px 11px;border-radius:10px;color:#4e596a;font-size:14px;font-weight:650;white-space:nowrap;text-decoration:none}
+.guru-site-nav a{padding:10px 11px;border-radius:10px;color:var(--guru-muted);font-size:14px;font-weight:650;white-space:nowrap;text-decoration:none}
 .guru-site-nav a.is-active{color:var(--guru-navy);background:#fff}
 .guru-hero{position:relative;overflow:hidden;padding:70px 0 54px;background:var(--guru-cream);color:var(--guru-ink);font-family:var(--font-body,Inter),system-ui,sans-serif}
-.guru-hero__blob{position:absolute;width:500px;height:500px;border-radius:50%;background:#f2e8db;right:-180px;top:-180px;opacity:.65}
+.guru-hero__blob{position:absolute;width:500px;height:500px;border-radius:50%;background:var(--guru-red-soft);right:-180px;top:-180px;opacity:.65}
 .guru-hero__grid{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(360px,.92fr);gap:60px;align-items:center;position:relative}
 .guru-hero__title{font-family:var(--font-heading,Georgia),"Times New Roman",serif;color:var(--guru-navy);line-height:1.12;margin:0;font-size:clamp(38px,5vw,64px);letter-spacing:-.045em}
 .guru-hero__title em{font-weight:400;color:var(--guru-red);font-style:italic}
-.guru-hero__lead{font-size:17px;color:#5f6978;max-width:650px;margin:22px 0 0;line-height:1.7}
+.guru-hero__lead{font-size:17px;color:var(--guru-muted);max-width:650px;margin:22px 0 0;line-height:1.7}
 .guru-hero__actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
 .guru-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;padding:11px 18px;font-weight:750;font-size:13px;border:1px solid transparent;text-decoration:none;cursor:pointer}
 .guru-btn--primary{background:var(--guru-navy);color:#fff;box-shadow:0 10px 24px rgba(20,35,59,.18)}
@@ -162,7 +168,7 @@ export function GuruStylesEditor() {
 .guru-hero__stat strong{font-family:var(--font-heading,Georgia),serif;color:var(--guru-navy);font-size:22px;display:block}
 .guru-hero__stat span{font-size:11px;color:var(--guru-muted);text-transform:uppercase;letter-spacing:.08em}
 .guru-hero__visual{position:relative;min-height:440px;display:grid;place-items:end center}
-.guru-hero__figure-blob{position:absolute;inset:60px 28px 0;background:linear-gradient(145deg,#dfeaf1,#f5ede5);border-radius:48% 52% 44% 56%/52% 42% 58% 48%;transform:rotate(-5deg)}
+.guru-hero__figure-blob{position:absolute;inset:60px 28px 0;background:linear-gradient(145deg,var(--guru-blue-soft),var(--guru-red-soft));border-radius:48% 52% 44% 56%/52% 42% 58% 48%;transform:rotate(-5deg)}
 .guru-hero__img{position:relative;z-index:2;max-height:420px;object-fit:contain;filter:drop-shadow(0 20px 24px rgba(30,45,66,.12));max-width:100%;display:block}
 .guru-hero__note{position:absolute;z-index:3;background:#fff;border:1px solid rgba(20,35,59,.07);box-shadow:var(--guru-shadow-sm);border-radius:16px;padding:12px 15px;font-size:12px;color:var(--guru-ink);display:grid;gap:2px}
 .guru-hero__note strong{color:var(--guru-navy);font-family:var(--font-heading,Georgia),serif;font-size:15px;font-weight:700}
@@ -175,7 +181,7 @@ export function GuruStylesEditor() {
 .guru-section-heading p{margin:0;color:var(--guru-muted);max-width:640px;line-height:1.7;font-size:14px}
 .guru-promo{padding:24px 0;background:var(--guru-cream)}
 .guru-promo__viewport{position:relative;overflow:hidden;border-radius:var(--guru-radius);box-shadow:var(--guru-shadow);background:#fff;width:100%}
-.guru-promo__slide{aspect-ratio:2/1;display:block;overflow:hidden;position:relative;background:linear-gradient(135deg,#dce8ef,#f2e3d6)}
+.guru-promo__slide{aspect-ratio:2/1;display:block;overflow:hidden;position:relative;background:linear-gradient(135deg,var(--guru-blue-soft),var(--guru-red-soft))}
 .guru-promo__slide img{width:100%;height:100%;object-fit:cover}
 .guru-promo__dots{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:8px;z-index:2}
 .guru-promo__dot{width:9px;height:9px;border:0;border-radius:50%;background:rgba(255,255,255,.65);padding:0}
@@ -184,25 +190,25 @@ export function GuruStylesEditor() {
 .guru-rubric-card{position:relative;min-height:200px;background:#fff;border:1px solid var(--guru-line);border-radius:22px;padding:22px;overflow:hidden;text-decoration:none;color:inherit;display:block}
 .guru-rubric-card__icon{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;margin-bottom:22px;background:var(--guru-blue-soft);color:var(--guru-navy)}
 .guru-rubric-card--v2 .guru-rubric-card__icon{background:var(--guru-red-soft);color:var(--guru-red)}
-.guru-rubric-card--v3 .guru-rubric-card__icon{background:var(--guru-sage);color:#496b55}
+.guru-rubric-card--v3 .guru-rubric-card__icon{background:var(--guru-sage);color:color-mix(in srgb,var(--guru-navy) 60%,#496b55)}
 .guru-rubric-card__icon svg{width:20px;height:20px}
 .guru-rubric-card h3{font-family:var(--font-heading,Georgia),serif;font-size:22px;margin:0 0 8px;color:var(--guru-navy);line-height:1.15}
 .guru-rubric-card p{font-size:13px;color:var(--guru-muted);margin:0;max-width:280px;line-height:1.6}
 .guru-rubric-card__arrow{position:absolute;right:18px;bottom:16px;width:32px;height:32px;border-radius:50%;border:1px solid var(--guru-line);display:grid;place-items:center;color:var(--guru-navy);background:#fff;font-size:13px}
 .guru-latest-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
 .guru-featured-post{background:var(--guru-navy);color:#fff;border-radius:var(--guru-radius);padding:28px;min-height:320px;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;text-decoration:none}
-.guru-featured-post .guru-meta{color:#e9d8bb}
+.guru-featured-post .guru-meta{color:color-mix(in srgb,var(--guru-red) 55%,#ffffff)}
 .guru-featured-post h3{font-family:var(--font-heading,Georgia),serif;color:#fff;font-size:30px;max-width:560px;margin:8px 0 10px;line-height:1.15}
-.guru-featured-post p{color:#d5dce6;max-width:540px;margin:0;line-height:1.6;font-size:14px}
-.guru-featured-post .guru-engagement-meta{color:#dbe4ed}
+.guru-featured-post p{color:color-mix(in srgb,var(--guru-cream) 65%,#ffffff);max-width:540px;margin:0;line-height:1.6;font-size:14px}
+.guru-featured-post .guru-engagement-meta{color:color-mix(in srgb,var(--guru-cream) 55%,#ffffff)}
 .guru-side-posts{display:grid;gap:14px}
 .guru-post-card{background:#fff;border:1px solid var(--guru-line);border-radius:20px;padding:18px;display:flex;gap:14px;align-items:flex-start;text-decoration:none;color:inherit}
-.guru-post-card__mini-cover{flex:0 0 64px;height:64px;border-radius:14px;background:linear-gradient(145deg,#e9f1f6,#f1e5d9);display:grid;place-items:center;color:var(--guru-navy)}
+.guru-post-card__mini-cover{flex:0 0 64px;height:64px;border-radius:14px;background:linear-gradient(145deg,var(--guru-blue-soft),var(--guru-red-soft));display:grid;place-items:center;color:var(--guru-navy)}
 .guru-post-card__mini-cover svg{width:22px;height:22px}
 .guru-post-card h3{font-family:var(--font-heading,Georgia),serif;font-size:17px;margin:4px 0 5px;color:var(--guru-navy);line-height:1.2}
 .guru-post-card p{font-size:12px;color:var(--guru-muted);margin:0;line-height:1.6}
 .guru-quote-section{padding:48px 0 68px;background:var(--guru-cream)}
-.guru-quote-card{background:#efe7db;border-radius:30px;padding:44px 50px;display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:start}
+.guru-quote-card{background:var(--guru-paper);border-radius:30px;padding:44px 50px;display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:start}
 .guru-quote-card__mark{font-family:var(--font-heading,Georgia),serif;font-size:76px;color:var(--guru-red);line-height:.7}
 .guru-quote-card blockquote{font-family:var(--font-heading,Georgia),serif;color:var(--guru-navy);font-size:clamp(20px,2.5vw,30px);line-height:1.3;margin:0}
 .guru-quote-card cite{display:block;font-family:var(--font-body,Inter),system-ui,sans-serif;font-style:normal;font-size:12px;color:var(--guru-muted);margin-top:14px;text-transform:uppercase;letter-spacing:.1em}
@@ -221,10 +227,10 @@ export function GuruStylesEditor() {
 .guru-article-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 .guru-article-card{background:#fff;border:1px solid var(--guru-line);border-radius:22px;overflow:hidden}
 .guru-article-card--featured{grid-column:1/-1;display:grid;grid-template-columns:1fr 1.2fr}
-.guru-article-cover{min-height:160px;background:linear-gradient(135deg,#dce8ef,#f2e3d6);position:relative;overflow:hidden}
-.guru-article-cover--red{background:linear-gradient(135deg,#f1deda,#e7edf3)}
-.guru-article-cover--sage{background:linear-gradient(135deg,#dce8df,#f2eadb)}
-.guru-article-cover--gold{background:linear-gradient(135deg,#f1e8cc,#e7edf4)}
+.guru-article-cover{min-height:160px;background:linear-gradient(135deg,var(--guru-blue-soft),var(--guru-red-soft));position:relative;overflow:hidden}
+.guru-article-cover--red{background:linear-gradient(135deg,var(--guru-red-soft),var(--guru-blue-soft))}
+.guru-article-cover--sage{background:linear-gradient(135deg,var(--guru-sage),var(--guru-sage))}
+.guru-article-cover--gold{background:linear-gradient(135deg,color-mix(in srgb,var(--guru-gold) 25%,var(--guru-cream)),var(--guru-blue-soft))}
 .guru-article-card__body{padding:20px}
 .guru-article-card h2,.guru-article-card h3{font-family:var(--font-heading,Georgia),serif;font-size:22px;margin:6px 0 8px;color:var(--guru-navy);line-height:1.15}
 .guru-article-card p{color:var(--guru-muted);font-size:13px;margin:0;line-height:1.6}
@@ -234,21 +240,21 @@ export function GuruStylesEditor() {
 .guru-sidebar-card h3{font-family:var(--font-heading,Georgia),serif;font-size:18px;margin:0 0 10px;color:var(--guru-navy)}
 .guru-sidebar-card p{color:var(--guru-muted);font-size:12px;margin:0;line-height:1.6}
 .guru-tag-list{display:flex;flex-wrap:wrap;gap:6px}
-.guru-tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:#f4f1eb;border:1px solid var(--guru-line);font-size:11px;font-weight:700;color:#596273}
+.guru-tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:var(--guru-paper);border:1px solid var(--guru-line);font-size:11px;font-weight:700;color:var(--guru-muted)}
 /* Profile page layout — halaman /profil template guru */
 .guru-profile-layout{display:grid;grid-template-columns:340px 1fr;gap:28px;align-items:start}
 .guru-profile-card{background:#fff;border:1px solid var(--guru-line);border-radius:26px;overflow:hidden}
-.guru-profile-card__photo{background:linear-gradient(160deg,#e3ecf3,#f2e7dc);height:340px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
+.guru-profile-card__photo{background:linear-gradient(160deg,var(--guru-blue-soft),var(--guru-red-soft));height:340px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
 .guru-profile-card__photo img{height:94%;width:auto;object-fit:contain}
 .guru-profile-card__body{padding:22px}
 .guru-profile-card h2{font-family:var(--font-heading,Georgia),serif;font-size:26px;color:var(--guru-navy);margin:0;line-height:1.15}
 .guru-profile-card p{color:var(--guru-muted);margin:6px 0 16px;line-height:1.6;font-size:13px}
-.guru-profile-contact{display:grid;gap:8px;font-size:13px;color:#5d6777}
+.guru-profile-contact{display:grid;gap:8px;font-size:13px;color:var(--guru-muted)}
 .guru-profile-contact span{display:flex;gap:9px;align-items:center}
 .guru-profile-content{display:grid;gap:16px}
 .guru-content-panel{background:#fff;border:1px solid var(--guru-line);border-radius:22px;padding:24px}
 .guru-content-panel h2{font-family:var(--font-heading,Georgia),serif;color:var(--guru-navy);font-size:24px;margin:0 0 10px;line-height:1.2}
-.guru-content-panel p{color:#5d6777;line-height:1.7;margin:0;font-size:14px}
+.guru-content-panel p{color:var(--guru-muted);line-height:1.7;margin:0;font-size:14px}
 /* Timeline — dipakai di halaman profil untuk jejak mengajar */
 .guru-timeline{display:grid;gap:16px;margin-top:14px}
 .guru-timeline-item{display:grid;grid-template-columns:80px 1fr;gap:16px;padding-top:16px;border-top:1px solid var(--guru-line)}
@@ -257,31 +263,31 @@ export function GuruStylesEditor() {
 .guru-timeline-item strong{color:var(--guru-navy);font-size:14px}
 .guru-timeline-item span{color:var(--guru-muted);font-size:13px;line-height:1.6}
 .guru-topic-list{display:grid;gap:0}
-.guru-topic-link{padding:9px 0;border-top:1px solid var(--guru-line);font-size:12px;color:#566174;text-decoration:none}
+.guru-topic-link{padding:9px 0;border-top:1px solid var(--guru-line);font-size:12px;color:var(--guru-muted);text-decoration:none}
 .guru-topic-link:first-child{border-top:0}
 .guru-forum-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:24px;align-items:start}
 .guru-thread-list{display:grid;gap:12px}
 .guru-thread-card{background:#fff;border:1px solid var(--guru-line);border-radius:20px;padding:18px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;align-items:start}
-.guru-thread-card--featured{border-color:#d9b0a9;background:linear-gradient(135deg,#fff,#fbf3f1)}
+.guru-thread-card--featured{border-color:color-mix(in srgb,var(--guru-red) 40%,var(--guru-line));background:linear-gradient(135deg,#fff,var(--guru-red-soft))}
 .guru-thread-avatar{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;font-size:11px;font-weight:900}
-.guru-thread-avatar--red{background:#ead7d2;color:#8c3935}
-.guru-thread-avatar--blue{background:#dce8ef;color:#27455e}
-.guru-thread-avatar--sage{background:#dfe9df;color:#3d5d45}
-.guru-thread-avatar--gold{background:#efe5c8;color:#70581d}
+.guru-thread-avatar--red{background:var(--guru-red-soft);color:var(--guru-red)}
+.guru-thread-avatar--blue{background:var(--guru-blue-soft);color:var(--guru-navy)}
+.guru-thread-avatar--sage{background:var(--guru-sage);color:color-mix(in srgb,var(--guru-navy) 70%,#3d5d45)}
+.guru-thread-avatar--gold{background:color-mix(in srgb,var(--guru-gold) 25%,var(--guru-cream));color:color-mix(in srgb,var(--guru-gold) 80%,var(--guru-ink))}
 .guru-thread-topline{display:flex;justify-content:space-between;gap:12px;color:var(--guru-muted);font-size:10px}
 .guru-thread-label{color:var(--guru-red);font-weight:900;text-transform:uppercase;letter-spacing:.08em}
 .guru-thread-main h2{font-family:var(--font-heading,Georgia),serif;font-size:20px;margin:6px 0 6px;color:var(--guru-navy);line-height:1.2}
 .guru-thread-main p{color:var(--guru-muted);font-size:12px;margin:0;line-height:1.6}
 .guru-thread-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.guru-thread-tags span{background:#f4f1eb;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;color:#687181}
-.guru-site-footer{background:var(--guru-navy);color:#d9e0e9;padding:44px 0 24px;font-family:var(--font-body,Inter),system-ui,sans-serif}
+.guru-thread-tags span{background:var(--guru-paper);border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;color:var(--guru-muted)}
+.guru-site-footer{background:var(--guru-navy);color:color-mix(in srgb,var(--guru-cream) 60%,#ffffff);padding:44px 0 24px;font-family:var(--font-body,Inter),system-ui,sans-serif}
 .guru-footer-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:50px;padding-bottom:30px;border-bottom:1px solid rgba(255,255,255,.12)}
 .guru-site-footer .guru-brand{color:#fff}
 .guru-site-footer .guru-brand__mark{background:#fff;color:var(--guru-navy)}
-.guru-footer-copy{color:#aeb9c8;max-width:520px;font-size:13px;margin-top:12px;line-height:1.6}
+.guru-footer-copy{color:color-mix(in srgb,var(--guru-cream) 50%,#ffffff);max-width:520px;font-size:13px;margin-top:12px;line-height:1.6}
 .guru-footer-links{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 24px}
-.guru-footer-links a{font-size:12px;color:#d4dce6;text-decoration:none}
-.guru-footer-bottom{display:flex;justify-content:space-between;gap:20px;padding-top:20px;color:#9aa7b7;font-size:11px}
+.guru-footer-links a{font-size:12px;color:color-mix(in srgb,var(--guru-cream) 55%,#ffffff);text-decoration:none}
+.guru-footer-bottom{display:flex;justify-content:space-between;gap:20px;padding-top:20px;color:color-mix(in srgb,var(--guru-cream) 40%,#ffffff);font-size:11px}
 `,
       }}
     />
@@ -745,9 +751,9 @@ export function GuruFooterEditor(p: {
 // Sample fallback untuk kondisi kosong (belum ada items) — 3 slide gradient
 // warna dengan label copy.
 const FALLBACK_PROMO_SLIDES = [
-  { bg: "linear-gradient(135deg,#dce8ef 0%,#f2e3d6 100%)", label: "Contoh Banner 1", sub: "1200 × 600" },
-  { bg: "linear-gradient(135deg,#f1deda 0%,#e7edf3 100%)", label: "Contoh Banner 2", sub: "1200 × 600" },
-  { bg: "linear-gradient(135deg,#dce8df 0%,#f2eadb 100%)", label: "Contoh Banner 3", sub: "1200 × 600" },
+  { bg: "linear-gradient(135deg,var(--guru-blue-soft) 0%,var(--guru-red-soft) 100%)", label: "Contoh Banner 1", sub: "1200 × 600" },
+  { bg: "linear-gradient(135deg,var(--guru-red-soft) 0%,var(--guru-blue-soft) 100%)", label: "Contoh Banner 2", sub: "1200 × 600" },
+  { bg: "linear-gradient(135deg,var(--guru-sage) 0%,var(--guru-sage) 100%)", label: "Contoh Banner 3", sub: "1200 × 600" },
 ];
 
 // Sample banners untuk Dynamic variant — image path match backend seed
@@ -803,14 +809,14 @@ export function GuruPromoCarouselEditorPreview(p: {
                 style={{
                   position: "absolute", inset: 0, display: "flex",
                   flexDirection: "column", alignItems: "center", justifyContent: "center",
-                  color: "#4c5b70", textAlign: "center", padding: 20, gap: 8,
+                  color: "var(--guru-ink)", textAlign: "center", padding: 20, gap: 8,
                 }}
               >
                 <div style={{ fontSize: 34, opacity: 0.55 }}>🖼</div>
-                <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 700, color: "#172033" }}>
+                <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 700, color: "var(--guru-navy)" }}>
                   {(slides[0] as { isFallback?: boolean }).isFallback ? slides[0].alt : "Belum ada gambar"}
                 </div>
-                <div style={{ fontSize: 12, color: "#6f7888", letterSpacing: ".05em" }}>
+                <div style={{ fontSize: 12, color: "var(--guru-muted)", letterSpacing: ".05em" }}>
                   {(slides[0] as { sub?: string }).sub ?? "Rasio 2:1 · unggah gambar di panel kanan"}
                 </div>
               </div>
@@ -839,11 +845,11 @@ export function GuruPromoCarouselEditorPreview(p: {
         </div>
         {/* Info footer untuk kejelasan sumber data */}
         {p.isDynamic ? (
-          <p style={{ marginTop: 10, fontSize: 12, color: "#6f7888", textAlign: "center" }}>
+          <p style={{ marginTop: 10, fontSize: 12, color: "var(--guru-muted)", textAlign: "center" }}>
             📊 <strong>Dynamic</strong> — banner asli diambil dari menu <strong>Guru → Ruang Promosi</strong> saat website di-render.
           </p>
         ) : !hasUserItems ? (
-          <p style={{ marginTop: 10, fontSize: 12, color: "#6f7888", textAlign: "center" }}>
+          <p style={{ marginTop: 10, fontSize: 12, color: "var(--guru-muted)", textAlign: "center" }}>
             💡 Placeholder — tambahkan item banner di panel <strong>Properti</strong> kanan supaya carousel terisi.
           </p>
         ) : null}
@@ -1095,7 +1101,7 @@ export function GuruProfileCardEditor(p: {
         <aside className="guru-profile-card">
           <div
             className="guru-profile-card__photo"
-            style={p.image ? undefined : { alignItems: "center", justifyContent: "center", color: "#a5aebf" }}
+            style={p.image ? undefined : { alignItems: "center", justifyContent: "center", color: "color-mix(in srgb,var(--guru-cream) 45%,#ffffff)" }}
           >
             {p.image ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -1103,7 +1109,7 @@ export function GuruProfileCardEditor(p: {
             ) : (
               <div style={{ textAlign: "center", padding: 20 }}>
                 <div style={{ fontSize: 48, marginBottom: 8 }}>👤</div>
-                <div style={{ fontSize: 12, letterSpacing: ".05em", color: "#8790a1" }}>
+                <div style={{ fontSize: 12, letterSpacing: ".05em", color: "var(--guru-muted)" }}>
                   Placeholder foto profil
                 </div>
               </div>
