@@ -1,6 +1,7 @@
 package router
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -9,6 +10,24 @@ import (
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
 )
+
+// rateLimitDisabled — toggle global untuk disable semua rate limit tanpa
+// perlu hapus middleware di route. Dipakai saat debug "kena 429 tapi harus
+// bisa test cepat" atau selama load test. Default false (rate limit aktif).
+//
+// Set via SetRateLimitDisabled(true) di startup (biasanya dari env var).
+// Atomic supaya safe untuk read dari banyak request goroutine tanpa lock.
+var rateLimitDisabled atomic.Bool
+
+// SetRateLimitDisabled toggles global rate limit kill-switch. Dipanggil dari
+// main.go setelah load config. True = semua RateLimitIP/RateLimitUser
+// middleware pass-through (no gate).
+func SetRateLimitDisabled(disabled bool) {
+	rateLimitDisabled.Store(disabled)
+}
+
+// RateLimitEnabled reports current state (dipakai health check / debug).
+func RateLimitEnabled() bool { return !rateLimitDisabled.Load() }
 
 // Rate limit budgets — generous enough for legitimate use, tight enough to
 // blunt credential stuffing / spam upload / API scraping.
@@ -70,10 +89,14 @@ const (
 
 // RateLimitIP keys by client IP. Use for unauthenticated endpoints (login,
 // register, refresh, password reset, etc.) where there's no user identity yet.
+//
+// Kalau SetRateLimitDisabled(true) sudah dipanggil, middleware pass-through
+// semua request (no gate) — tanpa perlu hapus limiter dari route definitions.
 func RateLimitIP(max int, window time.Duration) fiber.Handler {
 	return limiter.New(limiter.Config{
 		Max:        max,
 		Expiration: window,
+		Next:       func(_ *fiber.Ctx) bool { return rateLimitDisabled.Load() },
 		KeyGenerator: func(c *fiber.Ctx) string {
 			// Prefer X-Forwarded-For first IP if behind trusted proxy (Caddy).
 			if xff := c.Get("X-Forwarded-For"); xff != "" {
@@ -91,10 +114,13 @@ func RateLimitIP(max int, window time.Duration) fiber.Handler {
 // RateLimitUser keys by authenticated user ID, falling back to IP if claims
 // not present (defense in depth — should not happen behind auth.Required).
 // Use AFTER auth.Required middleware.
+//
+// Same kill-switch semantics as RateLimitIP via SetRateLimitDisabled.
 func RateLimitUser(max int, window time.Duration) fiber.Handler {
 	return limiter.New(limiter.Config{
 		Max:        max,
 		Expiration: window,
+		Next:       func(_ *fiber.Ctx) bool { return rateLimitDisabled.Load() },
 		KeyGenerator: func(c *fiber.Ctx) string {
 			if cl := auth.ClaimsFrom(c); cl != nil {
 				return "uid:" + cl.UserID.String()

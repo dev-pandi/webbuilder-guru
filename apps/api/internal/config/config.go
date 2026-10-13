@@ -63,6 +63,13 @@ type Config struct {
 	// PprofEnabled mounts /debug/pprof when true. Always behind admin role.
 	PprofEnabled bool
 
+	// RateLimitDisabled — kalau true, semua rate limit middleware pass-through
+	// (RateLimitIP/RateLimitUser di router jadi no-op). Default false.
+	// Dipakai saat development, load test, atau debug cepat "kena 429".
+	// JANGAN aktifkan di production — kecuali ada WAF/CDN di depan yang
+	// handle rate limiting sendiri.
+	RateLimitDisabled bool
+
 	// TrustProxy — set true kalau API di-deploy behind Caddy/Nginx reverse
 	// proxy yang menambahkan X-Forwarded-For. Efek: Fiber c.IP() akan resolve
 	// dari header proxy (bukan connecting IP yang selalu localhost). Wajib
@@ -173,7 +180,8 @@ func Load() Config {
 		DBMaxConnIdleTime:    envDuration("DB_MAX_CONN_IDLE_TIME", 15*time.Minute),
 		DBSlowQueryThreshold: envDuration("DB_SLOW_QUERY_THRESHOLD", 500*time.Millisecond),
 
-		PprofEnabled: env("PPROF_ENABLED", "false") == "true",
+		PprofEnabled:      env("PPROF_ENABLED", "false") == "true",
+		RateLimitDisabled: env("RATE_LIMIT_DISABLED", "false") == "true",
 		TrustProxy:   env("TRUST_PROXY", "false") == "true",
 
 		ImageCompressEnabled: env("IMAGE_COMPRESS_ENABLED", "true") == "true",

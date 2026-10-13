@@ -88,6 +88,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Rate limit kill-switch — pass-through semua RateLimitIP/RateLimitUser
+	// kalau RATE_LIMIT_DISABLED=true. Log eksplisit supaya operator sadar.
+	router.SetRateLimitDisabled(cfg.RateLimitDisabled)
+	if cfg.RateLimitDisabled {
+		slog.Warn("rate limit DISABLED via RATE_LIMIT_DISABLED=true — jangan pakai di production tanpa WAF/CDN di depan")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
