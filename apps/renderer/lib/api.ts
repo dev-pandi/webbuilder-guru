@@ -127,41 +127,66 @@ const FETCH_TIMEOUT_MS = 8_000;
 // resource memang tidak ada).
 const FETCH_MAX_ATTEMPTS = 3;
 
-// fetchJson — helper untuk /public/* endpoints. Default revalidate short
-// (5 detik) karena user edit theme/pages di dashboard, expect update visible
-// segera di renderer.
+// fetchJson — helper untuk /public/* endpoints.
+//
+// `revalidateSec`:
+//   - `0` (atau negatif) → `cache: "no-store"` — SETIAP call hit backend.
+//     Dipakai untuk lookup kritikal (site/page) supaya tidak ada ghost 404
+//     dari Next.js data cache. User reload tetap trigger request asli.
+//   - `>0` → `next: { revalidate: N }` — Next.js cache response (termasuk
+//     4xx!) selama N detik. HANYA pakai untuk data yang tidak critical
+//     untuk 404-correctness (products, blog, dsb.) karena kalau backend
+//     sempat 404, cache akan serve 404 instan selama N detik walau
+//     backend sudah pulih.
 //
 // Perilaku non-trivial:
 //   1. Retry dengan backoff untuk 5xx + network + timeout — supaya transient
 //      backend blip tidak bikin user lihat 404 palsu.
 //   2. 4xx TIDAK di-retry — resource memang tidak ada, retry buang waktu.
-//   3. Failure response TIDAK di-cache ke Next.js data layer: pakai
-//      `cache: "no-store"` saat non-OK sudah di-detect. Kalau tidak,
-//      Next bisa cache 404 selama `revalidateSec` → user masuk setelahnya
-//      tetap 404 walau backend sudah pulih.
-//   4. Caller yang pakai .ok=false TIDAK tahu beda 404 vs 500. Yang perlu
+//   3. Caller yang pakai .ok=false TIDAK tahu beda 404 vs 500. Yang perlu
 //      distinguish gunakan `fetchJsonOrThrow` (throw FetchError untuk non-404)
 //      supaya Next.js error.tsx muncul (bukan page 404 palsu).
+// DEBUG — kalau RENDERER_FETCH_DEBUG=true, log tiap backend call ke stderr.
+// Dipakai saat verifikasi "apakah backend benar-benar di-hit". Buka container
+// renderer: `docker logs -f <renderer>` → saat refresh page akan muncul
+// `[fetch] GET /public/...` dengan status + ms.
+const FETCH_DEBUG = process.env.RENDERER_FETCH_DEBUG === "true";
+
 async function fetchJson<T>(
   path: string,
   revalidateSec = 5,
 ): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
   const host = currentHost();
+  const noCache = revalidateSec <= 0;
 
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= FETCH_MAX_ATTEMPTS; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const started = Date.now();
     try {
       const init: RequestInit & { next?: { revalidate?: number } } = {
-        next: { revalidate: revalidateSec },
         signal: controller.signal,
       };
+      if (noCache) {
+        init.cache = "no-store";
+      } else {
+        init.next = { revalidate: revalidateSec };
+      }
       if (host) {
         init.headers = { "X-Renderer-Host": host };
       }
       const res = await fetch(`${API}${path}`, init);
       clearTimeout(timer);
+      const elapsed = Date.now() - started;
+
+      // DEBUG log — selalu untuk 5xx/404, opt-in via env untuk 2xx.
+      if (FETCH_DEBUG || res.status >= 400) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[fetch] ${res.status} GET ${path} ${elapsed}ms attempt=${attempt} cache=${noCache ? "no-store" : `rev${revalidateSec}`} host=${host}`,
+        );
+      }
 
       if (res.ok) {
         const body = await res.json();
@@ -183,6 +208,11 @@ async function fetchJson<T>(
       lastErr = new FetchError(res.status, undefined, path);
     } catch (e) {
       clearTimeout(timer);
+      const elapsed = Date.now() - started;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[fetch] ERR GET ${path} ${elapsed}ms attempt=${attempt} err=${(e as Error).message}`,
+      );
       // AbortError / TypeError (network) — treat as transient.
       lastErr = e;
     }
@@ -229,7 +259,13 @@ export type SiteLookup =
   | { kind: "not_found"; reason: "site_not_published" | "no_site_for_host" | "unknown" };
 
 export async function lookupSiteByHost(host: string): Promise<SiteLookup> {
-  const r = await fetchJson<Site>(`/public/site-by-host?host=${encodeURIComponent(host)}`);
+  // revalidateSec=0 → cache:"no-store". Site lookup wajib hit backend tiap
+  // request supaya publish/unpublish langsung visible + tidak ada ghost 404
+  // yang di-cache Next.js data layer.
+  const r = await fetchJson<Site>(
+    `/public/site-by-host?host=${encodeURIComponent(host)}`,
+    0,
+  );
   if (r.ok) return { kind: "found", site: r.data };
   // 5xx / network / timeout → throw ke error boundary. Jangan treat sebagai
   // "domain belum terhubung" (misleading — backend yang nganggur, bukan
@@ -252,19 +288,19 @@ export async function getSiteByHost(host: string): Promise<Site | null> {
   return r.kind === "found" ? r.site : null;
 }
 
-// getPage — revalidate 1 detik (bukan default 5). Guru sering publish +
-// langsung buka domain untuk verify — cache 5 detik terasa lag/"page belum
-// publish". Backend juga punya cache 5s, tapi kalau Next.js layer minimal
-// stale window jadi 6s max instead of 10s.
+// getPage — no cache (revalidateSec=0 → cache:"no-store"). Setiap request
+// hit backend. Sebelumnya pakai revalidate=1, tapi Next.js tetap cache 404
+// selama 1 detik — user yang buka langsung setelah publish lihat 404 "palsu"
+// yang instan (seperti tidak ada backend call). Sekarang setiap render SSR
+// pasti tanya backend dulu.
 //
 // Pakai fetchJsonOrThrow — kalau backend 5xx / timeout / network, THROW
 // bukan return null. Supaya `page.tsx` tidak mis-render 404 untuk kegagalan
-// backend transient (user lebih baik lihat 500/error ketimbang "page tidak
-// ada" yang menyesatkan).
+// backend transient.
 export async function getPage(siteId: string, slug: string): Promise<Page | null> {
   return fetchJsonOrThrow<Page>(
     `/public/sites/${siteId}/pages/${encodeURIComponent(slug)}`,
-    1,
+    0,
   );
 }
 
@@ -324,8 +360,11 @@ export async function listProducts(siteId: string, limit = 20): Promise<Product[
 }
 
 export async function getProduct(siteId: string, slug: string): Promise<Product | null> {
-  const r = await fetchJson<Product>(`/public/sites/${siteId}/products/${encodeURIComponent(slug)}`);
-  return r.ok ? r.data : null;
+  // revalidateSec=0 → no Next.js data cache (cegah ghost 404 saat race publish).
+  return fetchJsonOrThrow<Product>(
+    `/public/sites/${siteId}/products/${encodeURIComponent(slug)}`,
+    0,
+  );
 }
 
 export async function listBlogPosts(siteId: string, limit = 20): Promise<BlogPost[]> {
@@ -334,9 +373,12 @@ export async function listBlogPosts(siteId: string, limit = 20): Promise<BlogPos
 }
 
 export async function getBlogPost(siteId: string, slug: string): Promise<BlogPost | null> {
-  // revalidate 1s — guru sering publish + verify langsung, minimalisir "belum publish" lag.
-  const r = await fetchJson<BlogPost>(`/public/sites/${siteId}/blog-posts/${encodeURIComponent(slug)}`, 1);
-  return r.ok ? r.data : null;
+  // revalidateSec=0 → no cache. Guru sering publish lalu verify langsung;
+  // cache 1 detik tetap kemungkinan serve 404 "palsu" instant kalau race.
+  return fetchJsonOrThrow<BlogPost>(
+    `/public/sites/${siteId}/blog-posts/${encodeURIComponent(slug)}`,
+    0,
+  );
 }
 
 // --- Forms (public read for renderer) ---
@@ -504,11 +546,12 @@ export async function getArticle(
   slug: string,
 ): Promise<ArticleDetail | null> {
   // No cache — detail endpoint increments view counter.
-  const r = await fetchJson<ArticleDetail>(
+  // Pakai fetchJsonOrThrow: 404 = null (page notFound), 5xx/network = throw
+  // (error.tsx muncul, bukan 404 palsu).
+  return fetchJsonOrThrow<ArticleDetail>(
     `/public/sites/${siteId}/articles/${rubric}/${encodeURIComponent(slug)}`,
     0,
   );
-  return r.ok ? r.data : null;
 }
 
 export async function listArticleResponses(
@@ -573,17 +616,20 @@ export async function getLearningMaterial(
   siteId: string,
   slug: string,
 ): Promise<LearningMaterialDetail | null> {
-  const r = await fetchJson<LearningMaterialDetail | LearningMaterial>(
+  // No cache — approve tanggapan harus langsung visible.
+  // fetchJsonOrThrow: 404 → null, 5xx/network → throw ke error.tsx (bukan
+  // 404 palsu "materi tidak ditemukan").
+  const data = await fetchJsonOrThrow<LearningMaterialDetail | LearningMaterial>(
     `/public/sites/${siteId}/learning-materials/${encodeURIComponent(slug)}`,
-    0, // no cache — approve tanggapan harus langsung visible.
+    0,
   );
-  if (!r.ok) return null;
-  const data = r.data as LearningMaterialDetail & LearningMaterial;
-  if (data.material) {
+  if (!data) return null;
+  const d = data as LearningMaterialDetail & LearningMaterial;
+  if (d.material) {
     return {
-      material: data.material,
-      response_count: data.response_count ?? 0,
-      responses: data.responses,
+      material: d.material,
+      response_count: d.response_count ?? 0,
+      responses: d.responses,
     };
   }
   // Backward compat: backend lama kembalikan material langsung.

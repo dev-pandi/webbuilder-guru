@@ -81,6 +81,20 @@ export function middleware(req: NextRequest) {
   }
 
   res.headers.set("Content-Security-Policy", csp);
+
+  // Cache-Control: no-store, must-revalidate — cegah browser (atau CDN) cache
+  // 404/200 page HTML. Alasan: user publish situs, lalu buka langsung — kalau
+  // browser cache 404 1 menit (default heuristic), user kesal karena refresh
+  // tetap 404. Static assets (css/js/image) tidak kena matcher ini, jadi tetap
+  // bisa di-cache panjang via _next/static.
+  //
+  // Trade-off: setiap page request tidak reuse by browser; backend hit mandatory.
+  // Diperbolehkan karena page HTML renderer SSR-ed dengan dynamic='force-dynamic'
+  // di semua route — expectation per-request fresh.
+  if (!res.headers.get("Cache-Control")) {
+    res.headers.set("Cache-Control", "no-store, must-revalidate");
+  }
+
   return res;
 }
 
