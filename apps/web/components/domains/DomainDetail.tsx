@@ -86,6 +86,26 @@ type NameserverInfo = {
   nameservers: string[];
 };
 
+// PurchaseRow — purchase transaction (register/renew event) untuk fallback
+// context saat domain tidak ada di `registered_domains` table. Shape mirror
+// AdminListPurchases response. Dipakai saat row utama null supaya admin
+// tetap bisa trace status + retry.
+type PurchaseRow = {
+  job_id: string;
+  domain: string;
+  status: string;
+  kind: string;
+  reason?: string;
+  years: number;
+  payment_method?: string;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  user_email: string;
+  user_name: string;
+};
+
 // DomainDetail — shared component untuk halaman kelola 1 domain.
 //
 // Data source: /api/v1/domains (aggregate `domains` table) — one row per
@@ -115,51 +135,68 @@ export function DomainDetail({
   const [row, setRow] = useState<DomainRow | null>(null);
   const [whois, setWhois] = useState<Whois | null>(null);
   const [ns, setNs] = useState<string[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [renewOpen, setRenewOpen] = useState(false);
 
+  // refresh — strategi "best-effort": semua fetch jalan paralel, tidak ada
+  // early return. Row null + whois null + ns kosong semua OK — page tetap
+  // render dengan panel yang tersedia + fallback purchase context untuk
+  // admin yang bisa trace + retry walau domain belum sinkron ke tabel
+  // registered_domains.
   async function refresh() {
     setLoading(true);
     setErr(null);
     try {
-      // 1) Domain aggregate — user mode: list + filter by name. Admin mode:
-      //    direct GET /:name (endpoint tunggal).
-      let found: DomainRow | null = null;
-      if (adminMode) {
-        const single = await api<DomainRow & { name: string }>(
-          `${endpointPrefix}/${encodeURIComponent(domain)}`,
-        );
-        if (single) found = single;
-      } else {
-        const list = await api<DomainRow[]>(endpointPrefix);
-        found = (list ?? []).find((d) => d.name === domain) ?? null;
-      }
-      if (!found) {
-        setErr(
-          adminMode
-            ? "Domain tidak ditemukan di database."
-            : "Domain tidak ditemukan di akun Anda.",
-        );
-        setLoading(false);
-        return;
-      }
-      setRow(found);
+      // Semua fetch allSettled. Row lookup gagal (404) OK — tampilkan
+      // panel lain + purchase status untuk admin.
+      const rowPromise = adminMode
+        ? api<DomainRow & { name: string }>(
+            `${endpointPrefix}/${encodeURIComponent(domain)}`,
+          )
+        : api<DomainRow[]>(endpointPrefix).then(
+            (list) =>
+              (list ?? []).find((d) => d.name === domain) ??
+              (null as unknown as DomainRow),
+          );
 
-      // 2 + 3) WHOIS + Nameservers parallel. Kalau salah satu gagal, non-fatal
-      //         — tampilkan yang berhasil, error inline.
-      const [whoisRes, nsRes] = await Promise.allSettled([
+      const purchasesPromise = adminMode
+        ? api<{ items: PurchaseRow[] }>(
+            `/api/v1/admin/registrar/purchases?q=${encodeURIComponent(domain)}&page_size=20`,
+          ).then((r) => r.items ?? [])
+        : Promise.resolve([] as PurchaseRow[]);
+
+      const [rowRes, whoisRes, nsRes, purchasesRes] = await Promise.allSettled([
+        rowPromise,
         api<Whois>(`${endpointPrefix}/${encodeURIComponent(domain)}/whois`),
         api<NameserverInfo>(`${endpointPrefix}/${encodeURIComponent(domain)}/nameservers`),
+        purchasesPromise,
       ]);
-      if (whoisRes.status === "fulfilled") setWhois(whoisRes.value);
-      if (nsRes.status === "fulfilled") setNs(nsRes.value.nameservers ?? []);
+
+      setRow(rowRes.status === "fulfilled" && rowRes.value ? rowRes.value : null);
+      setWhois(whoisRes.status === "fulfilled" ? whoisRes.value : null);
+      setNs(nsRes.status === "fulfilled" ? nsRes.value.nameservers ?? [] : []);
+      setPurchases(purchasesRes.status === "fulfilled" ? purchasesRes.value : []);
     } catch (e) {
+      // Catastrophic (network down) — tampilkan error banner tapi tidak
+      // kosongkan state yang mungkin sudah ada dari render sebelumnya.
       setErr(errMessage(e));
     } finally {
       setLoading(false);
     }
   }
+
+  // latestPurchase — baris purchase terbaru untuk domain ini (admin fallback).
+  // Dipakai untuk pending/failed status card + retry button. Backend sudah
+  // ORDER BY created_at DESC jadi [0] = terbaru.
+  const latestPurchase = useMemo(() => purchases[0] ?? null, [purchases]);
+  // showPendingBanner — true kalau row utama tidak ada ATAU purchase terbaru
+  // bukan active (ada work pending/failed yang perlu attention admin).
+  const showPendingBanner =
+    adminMode &&
+    (row === null ||
+      (latestPurchase && latestPurchase.status !== "active"));
 
   useEffect(() => {
     if (domain) refresh();
@@ -188,17 +225,47 @@ export function DomainDetail({
         </h1>
       </div>
 
-      {loading && !row ? (
+      {loading && !row && !whois && purchases.length === 0 ? (
         <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Memuat…
         </div>
-      ) : err ? (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>{err}</span>
-        </div>
       ) : (
-        row && (
+        <>
+          {err && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
+
+          {/* Pending/failed purchase banner — admin only, muncul kalau row utama
+              null (belum sinkron) atau purchase terbaru belum active. Berisi
+              context + tombol retry supaya admin bisa resolve dari sini. */}
+          {showPendingBanner && (
+            <PendingPurchaseCard
+              domain={domain}
+              rowMissing={row === null}
+              purchases={purchases}
+              onRetried={refresh}
+            />
+          )}
+
+          {/* Row absent + bukan admin → explain. User butuh signal kenapa
+              page tidak tampil overview normal. */}
+          {row === null && !adminMode && !loading && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              <Info className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <div className="font-medium">Domain belum tersinkron</div>
+                <p className="mt-0.5 text-xs">
+                  Domain belum terdaftar di akun Anda, atau sedang diproses.
+                  Panel WHOIS + Nameserver di bawah tetap bisa dicoba.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {row && (
           <>
             {/* Overview card */}
             <Card>
@@ -271,50 +338,51 @@ export function DomainDetail({
                 (/cloudflare-retry) + Switch Provider. User dapat Switch
                 Provider only (sync state kalau mereka flip NS manual).
                 Badge provider ditampilkan di card. */}
-            {row && (
-              <DNSAttachStatusCard
-                domain={domain}
-                initial={row}
-                adminMode={adminMode}
-                endpointPrefix={endpointPrefix}
-                onRefreshed={(fresh) => setRow(fresh)}
-              />
-            )}
+            <DNSAttachStatusCard
+              domain={domain}
+              initial={row}
+              adminMode={adminMode}
+              endpointPrefix={endpointPrefix}
+              onRefreshed={(fresh) => setRow(fresh)}
+            />
 
             {/* Health panel per-provider.
                 - cloudflare / undefined (legacy row sebelum field dns_provider) → CF panel
                 - dnscloud → DNSCloud panel
                 - external → no panel (user manage zone di luar) */}
-            {(row?.dns_provider === "cloudflare" || !row?.dns_provider) && (
+            {(row.dns_provider === "cloudflare" || !row.dns_provider) && (
               <CloudflareHealthPanel domain={domain} endpointPrefix={endpointPrefix} />
             )}
-            {row?.dns_provider === "dnscloud" && (
+            {row.dns_provider === "dnscloud" && (
               <DNSCloudInfoCard domain={domain} endpointPrefix={endpointPrefix} />
             )}
-            {row?.dns_provider === "external" && (
+            {row.dns_provider === "external" && (
               <ExternalProviderInfoCard domain={domain} />
             )}
-
-            {/* WHOIS */}
-            <WhoisPanel whois={whois} />
-
-            {/* Nameservers — admin view-only */}
-            <NameserverPanel
-              domain={domain}
-              initial={ns}
-              onUpdated={(next) => setNs(next)}
-              readOnly={adminMode}
-            />
-
-            {/* Edit-only panels — hide di admin mode */}
-            {!adminMode && (
-              <>
-                <DnsPanelLink domain={domain} />
-                <ContactPanelLink domain={domain} />
-              </>
-            )}
           </>
-        )
+          )}
+
+          {/* WHOIS + Nameservers tetap render walau row null — kedua endpoint
+              langsung hit EPP (bukan DB). Kalau domain memang belum ada di
+              registry, panel akan tampil "info tidak tersedia" tanpa crash. */}
+          <WhoisPanel whois={whois} />
+
+          <NameserverPanel
+            domain={domain}
+            initial={ns}
+            onUpdated={(next) => setNs(next)}
+            readOnly={adminMode}
+          />
+
+          {/* Edit-only panels — hide di admin mode. DNS + Contact link butuh
+              row untuk link ke sub-page yang asumsi domain terdaftar. */}
+          {!adminMode && row && (
+            <>
+              <DnsPanelLink domain={domain} />
+              <ContactPanelLink domain={domain} />
+            </>
+          )}
+        </>
       )}
 
       {renewOpen && row && (
@@ -329,6 +397,209 @@ export function DomainDetail({
         />
       )}
     </div>
+  );
+}
+
+// -------------- Pending/failed purchase card (admin fallback) --------------
+//
+// Dipakai saat row utama `registered_domains` null atau purchase terbaru
+// belum active. Tampilkan status + alasan + daftar event + tombol Retry.
+// Retry memanggil AdminRetry — backend `syncFromEPPIfActive` cek EPP dulu,
+// kalau domain sudah ada di registry (silent drop saat callback) langsung
+// promote ke active + upsert tabel domains tanpa re-register.
+
+function PendingPurchaseCard({
+  domain,
+  rowMissing,
+  purchases,
+  onRetried,
+}: {
+  domain: string;
+  rowMissing: boolean;
+  purchases: PurchaseRow[];
+  onRetried: () => void;
+}) {
+  const [retrying, setRetrying] = useState<Record<string, boolean>>({});
+  const latest = purchases[0] ?? null;
+
+  async function retry(jobID: string) {
+    if (retrying[jobID]) return;
+    if (
+      !confirm(
+        `Retry provisioning untuk ${domain}?\n\n` +
+          `Backend akan cek EPP registry dulu. Kalau domain sudah terdaftar ` +
+          `(callback silent-drop), status langsung sync ke active tanpa re-register ` +
+          `(tidak charge ulang). Kalau belum ada, akan re-run EPP CREATE.`,
+      )
+    ) {
+      return;
+    }
+    setRetrying((s) => ({ ...s, [jobID]: true }));
+    try {
+      await api(`/api/v1/admin/registrar/purchases/${jobID}/retry`, {
+        method: "POST",
+      });
+      toast.success(`Retry ${domain} dikirim`);
+      onRetried();
+    } catch (e) {
+      toast.error(`Retry gagal: ${errMessage(e)}`);
+    } finally {
+      setRetrying((s) => ({ ...s, [jobID]: false }));
+    }
+  }
+
+  // Kalau tidak ada purchase sama sekali + row juga null → domain memang
+  // asing (belum pernah dibeli lewat platform). Tampilkan info saja.
+  if (purchases.length === 0 && rowMissing) {
+    return (
+      <Card className="border-amber-300/60">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <AlertCircle className="size-4 text-amber-600" />
+            Domain tidak ada di database
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p>
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              {domain}
+            </code>{" "}
+            tidak ditemukan di tabel <code>registered_domains</code> dan tidak
+            punya transaction log di <code>domain_purchases</code>.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Kemungkinan: belum pernah dibeli lewat platform, atau sudah di-hard
+            delete. Coba panel WHOIS di bawah untuk cek apakah domain exist di
+            registry independen.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-amber-300/60">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <AlertCircle className="size-4 text-amber-600" />
+          {rowMissing ? "Domain belum tersinkron" : "Ada transaksi belum selesai"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {latest && (
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                Status terakhir:
+              </span>
+              <Badge
+                variant={
+                  latest.status === "active"
+                    ? "success"
+                    : latest.status === "failed" || latest.status === "expired"
+                      ? "destructive"
+                      : "warning"
+                }
+                className="text-xs"
+              >
+                {latest.status}
+              </Badge>
+              <Badge variant="secondary" className="text-xs capitalize">
+                {latest.kind}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                oleh {latest.user_email}
+              </span>
+            </div>
+            {latest.reason && (
+              <p className="mt-2 text-xs text-destructive">
+                Alasan: {latest.reason}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              Dibuat {formatDate(latest.created_at)} · diperbarui{" "}
+              {formatDate(latest.updated_at)}
+            </p>
+            {(latest.status === "pending_payment" ||
+              latest.status === "pending_provisioning" ||
+              latest.status === "failed") && (
+              <div className="mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => retry(latest.job_id)}
+                  disabled={!!retrying[latest.job_id]}
+                  className="gap-1.5"
+                >
+                  {retrying[latest.job_id] ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Retry…
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="size-3.5" />
+                      Retry provisioning
+                    </>
+                  )}
+                </Button>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Backend cek EPP dulu. Kalau domain sudah ada di registry →
+                  langsung sync ke active. Tidak charge ulang.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {purchases.length > 1 && (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              {purchases.length - 1} transaksi lebih lama (klik untuk lihat)
+            </summary>
+            <ul className="mt-2 space-y-1">
+              {purchases.slice(1).map((p) => (
+                <li
+                  key={p.job_id}
+                  className="rounded border bg-muted/20 px-2 py-1.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={
+                        p.status === "active"
+                          ? "success"
+                          : p.status === "failed"
+                            ? "destructive"
+                            : "secondary"
+                      }
+                      className="text-[10px]"
+                    >
+                      {p.status}
+                    </Badge>
+                    <Badge variant="secondary" className="text-[10px] capitalize">
+                      {p.kind}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatDate(p.created_at)}
+                    </span>
+                  </div>
+                  {p.reason && (
+                    <p className="mt-1 text-[10px] text-destructive">
+                      {p.reason}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          Setelah retry sukses atau sync dari EPP, refresh halaman untuk lihat
+          overview domain. Panel Nameserver + DNS di bawah bisa dicoba juga —
+          berhasil kalau domain memang sudah ada di registry.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
