@@ -420,7 +420,35 @@ function PendingPurchaseCard({
   onRetried: () => void;
 }) {
   const [retrying, setRetrying] = useState<Record<string, boolean>>({});
+  const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const latest = purchases[0] ?? null;
+
+  async function sync(jobID: string) {
+    if (syncing[jobID]) return;
+    if (
+      !confirm(
+        `Sync manual untuk ${domain}?\n\n` +
+          `Backend akan panggil EPP InfoDomain → upsert ke tabel registered_domains ` +
+          `+ update expires_at dari registry. Tidak charge ulang, tidak register ulang. ` +
+          `Dipakai untuk kasus purchase sudah 'active' tapi row utama null karena ` +
+          `upsert gagal saat callback asli.`,
+      )
+    ) {
+      return;
+    }
+    setSyncing((s) => ({ ...s, [jobID]: true }));
+    try {
+      await api(`/api/v1/admin/registrar/purchases/${jobID}/sync`, {
+        method: "POST",
+      });
+      toast.success(`Sync ${domain} berhasil`);
+      onRetried();
+    } catch (e) {
+      toast.error(`Sync gagal: ${errMessage(e)}`);
+    } finally {
+      setSyncing((s) => ({ ...s, [jobID]: false }));
+    }
+  }
 
   async function retry(jobID: string) {
     if (retrying[jobID]) return;
@@ -520,10 +548,43 @@ function PendingPurchaseCard({
               Dibuat {formatDate(latest.created_at)} · diperbarui{" "}
               {formatDate(latest.updated_at)}
             </p>
+            {/* Action buttons — tergantung status purchase.
+                - active + row missing: tombol "Sync dari EPP" (prioritas,
+                  tidak re-execute payment flow)
+                - pending/failed: tombol "Retry provisioning" (full flow;
+                  backend tetap cek EPP dulu via syncFromEPPIfActive)
+                Untuk register kind, kedua tombol tampil kalau rowMissing
+                karena admin boleh pilih approach yang sesuai. */}
+            {latest.kind === "register" && rowMissing && latest.status === "active" && (
+              <div className="mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => sync(latest.job_id)}
+                  disabled={!!syncing[latest.job_id]}
+                  className="gap-1.5"
+                >
+                  {syncing[latest.job_id] ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      Sync…
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="size-3.5" />
+                      Sync dari EPP
+                    </>
+                  )}
+                </Button>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Backend panggil EPP InfoDomain → upsert ke registered_domains.
+                  Tanpa re-register, tanpa charge ulang.
+                </p>
+              </div>
+            )}
             {(latest.status === "pending_payment" ||
               latest.status === "pending_provisioning" ||
               latest.status === "failed") && (
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   onClick={() => retry(latest.job_id)}
@@ -542,9 +603,34 @@ function PendingPurchaseCard({
                     </>
                   )}
                 </Button>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  Backend cek EPP dulu. Kalau domain sudah ada di registry →
-                  langsung sync ke active. Tidak charge ulang.
+                {/* Sync juga tersedia untuk kasus failed/pending yang
+                    domainnya sebenarnya sudah terdaftar — admin bisa pilih
+                    yang paling aman (tanpa trigger ExecuteAfterPayment). */}
+                {latest.kind === "register" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => sync(latest.job_id)}
+                    disabled={!!syncing[latest.job_id]}
+                    className="gap-1.5"
+                  >
+                    {syncing[latest.job_id] ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Sync…
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="size-3.5" />
+                        Sync dari EPP
+                      </>
+                    )}
+                  </Button>
+                )}
+                <p className="w-full mt-1.5 text-[11px] text-muted-foreground">
+                  <strong>Retry</strong>: re-run ExecuteAfterPayment (safe-guard
+                  cek EPP dulu). <strong>Sync</strong>: hanya baca EPP + upsert
+                  local (tidak trigger payment flow).
                 </p>
               </div>
             )}

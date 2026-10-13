@@ -252,3 +252,62 @@ func (h *Handler) AdminRetry(c *fiber.Ctx) error {
 	}
 	return httpx.OK(c, toResp(fresh))
 }
+
+// AdminSyncFromEPP — POST /api/v1/admin/registrar/purchases/:job_id/sync
+//
+// Kalau purchase sudah 'active' tapi tabel `registered_domains` belum punya
+// row (misal upsert fail saat callback asli), tombol Retry ditolak karena
+// status terminal. Endpoint ini bypass gate itu — forcibly re-cek EPP
+// InfoDomain lalu UpsertDomain + UpdateStatus (idempotent).
+//
+// Juga berfungsi untuk purchase failed/pending_provisioning yang domainnya
+// ternyata sudah terdaftar — tanpa trigger ExecuteAfterPayment (yang
+// re-charge logic-nya tidak kita butuhkan di sini).
+//
+// Return 404 kalau job tidak ada. Return 200 dengan status terbaru kalau
+// sync sukses. Return 422 kalau EPP tidak mengenali domain (artinya memang
+// belum di-register di registry; admin perlu Retry provisioning normal).
+func (h *Handler) AdminSyncFromEPP(c *fiber.Ctx) error {
+	if h.registrar == nil || !h.registrar.UsesAPIRegistry() {
+		return httpx.Err(c, fiber.StatusServiceUnavailable, "api_registry_required",
+			"Sync butuh API_REGISTRY_URL di-set.")
+	}
+	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
+	jobID := strings.TrimSpace(c.Params("job_id"))
+	if jobID == "" {
+		return httpx.BadRequest(c, "job_id required")
+	}
+
+	job, err := h.repo.GetByJobIDAny(c.Context(), jobID)
+	if err != nil || job == nil {
+		return httpx.NotFound(c, "job tidak ditemukan")
+	}
+	if job.Kind != KindRegister {
+		return httpx.BadRequest(c,
+			"sync hanya untuk kind=register (renew tidak perlu sync)")
+	}
+
+	synced, syncErr := h.syncFromEPPIfActive(c.Context(), job)
+	if syncErr != nil {
+		return httpx.Internal(c, "sync gagal: "+syncErr.Error())
+	}
+	if !synced {
+		return httpx.Err(c, fiber.StatusUnprocessableEntity, "epp_not_found",
+			"Domain tidak ditemukan di EPP registry. Kalau job pending/failed, pakai Retry provisioning untuk re-run EPP CREATE.")
+	}
+
+	h.logAudit(c.Context(), cl.UserID, audit.EventDomainRetried, "job", jobID, map[string]any{
+		"kind":        job.Kind,
+		"admin":       true,
+		"sync_source": "manual_epp_sync",
+	})
+
+	fresh, _ := h.repo.GetByJobIDAny(c.Context(), jobID)
+	if fresh == nil {
+		return httpx.OK(c, fiber.Map{"job_id": jobID, "status": StatusActive})
+	}
+	return httpx.OK(c, toResp(fresh))
+}

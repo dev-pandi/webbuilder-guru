@@ -60,6 +60,11 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		// Admin retry — unblock user yang stuck (invoice paid tapi EPP fail
 		// tanpa transisi purchase status). Bypass ownership, idempotent.
 		g.Post("/registrar/purchases/:job_id/retry", deps.DomainPurchase.AdminRetry)
+		// Manual sync — force-cek EPP InfoDomain + upsert ke registered_domains.
+		// Dipakai untuk purchase 'active' tapi row utama null (upsert gagal saat
+		// callback). Beda dari Retry: bypass gate terminal-status + tidak
+		// trigger ExecuteAfterPayment (tidak re-charge).
+		g.Post("/registrar/purchases/:job_id/sync", deps.DomainPurchase.AdminSyncFromEPP)
 	}
 
 	// Audit log — read-only viewer (Phase 7). Nil-safe.
