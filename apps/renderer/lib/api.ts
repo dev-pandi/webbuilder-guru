@@ -103,37 +103,122 @@ type ResponsivePatch = {
   bg?: string;
 };
 
+// FetchError — status 0 = network/timeout failure (bukan dari HTTP response).
+// Status 5xx = backend reachable tapi error. Code = business error code.
+export class FetchError extends Error {
+  constructor(
+    public status: number,
+    public code: string | undefined,
+    public path: string,
+  ) {
+    super(`fetch ${path} → ${status}${code ? ` [${code}]` : ""}`);
+    this.name = "FetchError";
+  }
+}
+
+// FETCH_TIMEOUT_MS — hard cap per attempt. Backend normal respond <500ms;
+// kalau >8s pasti ada yang stuck (slow query, lock contention, EPP hang).
+// Lebih baik timeout + retry daripada hang indefinitely bikin Next.js
+// render stuck 30+ detik lalu user refresh paksa.
+const FETCH_TIMEOUT_MS = 8_000;
+
+// FETCH_MAX_ATTEMPTS — initial + N retry. Hanya retry untuk failure yang
+// transient (5xx, network, timeout). 404 TIDAK di-retry (semantic jelas:
+// resource memang tidak ada).
+const FETCH_MAX_ATTEMPTS = 3;
+
 // fetchJson — helper untuk /public/* endpoints. Default revalidate short
 // (5 detik) karena user edit theme/pages di dashboard, expect update visible
-// segera di renderer. Cache tetap ada supaya spike traffic tidak hammer API.
-// Untuk endpoint yang jarang berubah (products/blog) bisa override via
-// fetchJsonCached dengan TTL lebih panjang.
-async function fetchJson<T>(path: string, revalidateSec = 5): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
-  // Forward Host header ke API supaya HostSiteGuard middleware bisa verify
-  // site.id URL match dengan host request. Cegah cross-tenant leak walaupun
-  // renderer bug pass site.id yang salah (dari cache atau data anomaly).
+// segera di renderer.
+//
+// Perilaku non-trivial:
+//   1. Retry dengan backoff untuk 5xx + network + timeout — supaya transient
+//      backend blip tidak bikin user lihat 404 palsu.
+//   2. 4xx TIDAK di-retry — resource memang tidak ada, retry buang waktu.
+//   3. Failure response TIDAK di-cache ke Next.js data layer: pakai
+//      `cache: "no-store"` saat non-OK sudah di-detect. Kalau tidak,
+//      Next bisa cache 404 selama `revalidateSec` → user masuk setelahnya
+//      tetap 404 walau backend sudah pulih.
+//   4. Caller yang pakai .ok=false TIDAK tahu beda 404 vs 500. Yang perlu
+//      distinguish gunakan `fetchJsonOrThrow` (throw FetchError untuk non-404)
+//      supaya Next.js error.tsx muncul (bukan page 404 palsu).
+async function fetchJson<T>(
+  path: string,
+  revalidateSec = 5,
+): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
   const host = currentHost();
-  const init: RequestInit & { next?: { revalidate?: number } } = {
-    next: { revalidate: revalidateSec },
-  };
-  if (host) {
-    init.headers = { "X-Renderer-Host": host };
-  }
-  const res = await fetch(`${API}${path}`, init);
-  if (!res.ok) {
-    // Parse error envelope kalau ada supaya caller bisa branch berdasarkan
-    // business code (mis. site_not_published vs no_site_for_host).
-    let code: string | undefined;
+
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= FETCH_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const err = await res.json();
-      if (err?.error?.code) code = String(err.error.code);
-    } catch {
-      // Body bukan JSON valid, biarkan code undefined.
+      const init: RequestInit & { next?: { revalidate?: number } } = {
+        next: { revalidate: revalidateSec },
+        signal: controller.signal,
+      };
+      if (host) {
+        init.headers = { "X-Renderer-Host": host };
+      }
+      const res = await fetch(`${API}${path}`, init);
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const body = await res.json();
+        return { ok: true, data: body.data as T };
+      }
+
+      // 4xx — client error, resource genuinely tidak ada. Baca body untuk
+      // business code, return tanpa retry.
+      if (res.status >= 400 && res.status < 500) {
+        let code: string | undefined;
+        try {
+          const err = await res.json();
+          if (err?.error?.code) code = String(err.error.code);
+        } catch {}
+        return { ok: false, status: res.status, code };
+      }
+
+      // 5xx — transient, retry dengan backoff.
+      lastErr = new FetchError(res.status, undefined, path);
+    } catch (e) {
+      clearTimeout(timer);
+      // AbortError / TypeError (network) — treat as transient.
+      lastErr = e;
     }
-    return { ok: false, status: res.status, code };
+
+    // Backoff: 150ms, 450ms. Total max wait: 600ms + 3 × 8s timeout = 24.6s
+    // worst-case tapi normally sukses di attempt 1 atau 2.
+    if (attempt < FETCH_MAX_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, 150 * attempt * attempt));
+    }
   }
-  const body = await res.json();
-  return { ok: true, data: body.data as T };
+
+  // All retries habis — return error so caller bisa decide. Caller yang
+  // sensitive (page/site lookup) sebaiknya pakai fetchJsonOrThrow.
+  if (lastErr instanceof FetchError) {
+    return { ok: false, status: lastErr.status };
+  }
+  // Network / timeout / abort — status 0 sentinel.
+  return { ok: false, status: 0 };
+}
+
+// fetchJsonOrThrow — wrapper yang throw untuk failure non-404.
+//
+// Kenapa penting: `page.tsx` punya pattern `if (!page) notFound()`. Kalau
+// backend 5xx atau network error, treat as null = user lihat 404 palsu.
+// Dengan throw, Next.js error.tsx muncul (menampilkan 500 asli) — lebih
+// jujur ke user + tim ops bisa trace via Sentry/log.
+//
+// 404 tetap return null (benar-benar not found) — caller lanjut notFound()
+// atau fallback.
+async function fetchJsonOrThrow<T>(path: string, revalidateSec = 5): Promise<T | null> {
+  const r = await fetchJson<T>(path, revalidateSec);
+  if (r.ok) return r.data;
+  // 404 = genuine not found. Null.
+  if (r.status === 404) return null;
+  // Error lain (5xx, 0 = network/timeout) = throw. Next.js error.tsx handle.
+  throw new FetchError(r.status, r.code, path);
 }
 
 // SiteLookup — hasil resolve host, dengan reason kalau site tidak return.
@@ -146,6 +231,12 @@ export type SiteLookup =
 export async function lookupSiteByHost(host: string): Promise<SiteLookup> {
   const r = await fetchJson<Site>(`/public/site-by-host?host=${encodeURIComponent(host)}`);
   if (r.ok) return { kind: "found", site: r.data };
+  // 5xx / network / timeout → throw ke error boundary. Jangan treat sebagai
+  // "domain belum terhubung" (misleading — backend yang nganggur, bukan
+  // domain-nya yang salah).
+  if (r.status >= 500 || r.status === 0) {
+    throw new FetchError(r.status, r.code, `/public/site-by-host?host=${host}`);
+  }
   const reason =
     r.code === "site_not_published"
       ? "site_not_published"
@@ -165,9 +256,16 @@ export async function getSiteByHost(host: string): Promise<Site | null> {
 // langsung buka domain untuk verify — cache 5 detik terasa lag/"page belum
 // publish". Backend juga punya cache 5s, tapi kalau Next.js layer minimal
 // stale window jadi 6s max instead of 10s.
+//
+// Pakai fetchJsonOrThrow — kalau backend 5xx / timeout / network, THROW
+// bukan return null. Supaya `page.tsx` tidak mis-render 404 untuk kegagalan
+// backend transient (user lebih baik lihat 500/error ketimbang "page tidak
+// ada" yang menyesatkan).
 export async function getPage(siteId: string, slug: string): Promise<Page | null> {
-  const r = await fetchJson<Page>(`/public/sites/${siteId}/pages/${encodeURIComponent(slug)}`, 1);
-  return r.ok ? r.data : null;
+  return fetchJsonOrThrow<Page>(
+    `/public/sites/${siteId}/pages/${encodeURIComponent(slug)}`,
+    1,
+  );
 }
 
 export async function listPages(siteId: string): Promise<Page[]> {
