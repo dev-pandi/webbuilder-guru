@@ -47,6 +47,13 @@ function SpinnerIcon() {
     </svg>
   );
 }
+function SpeakerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="h-3.5 w-3.5">
+      <path d="M3 10v4a1 1 0 0 0 1 1h3l4 4V5L7 9H4a1 1 0 0 0-1 1zm13.5 2a4.5 4.5 0 0 0-2-3.74v7.48a4.5 4.5 0 0 0 2-3.74zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9.01 9.01 0 0 0 21 12a9.01 9.01 0 0 0-7-8.77z" />
+    </svg>
+  );
+}
 
 type State = "idle" | "loading" | "playing" | "paused";
 
@@ -197,94 +204,106 @@ export function ArticleAudio({
   // Setelah mount: kalau browser tidak support, hidden total.
   if (!mounted || !supported) return null;
 
-  return (
-    <div className="my-6 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-      {state === "idle" && (
-        <button
-          type="button"
-          onClick={play}
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          <PlayIcon />
-          Dengarkan artikel
-        </button>
-      )}
-      {state === "loading" && (
-        <button
-          type="button"
-          disabled
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white opacity-70"
-        >
-          <SpinnerIcon />
-          Memuat…
-        </button>
-      )}
-      {state === "playing" && (
-        <>
-          <button
-            type="button"
-            onClick={pause}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            <PauseIcon />
-            Jeda
-          </button>
-          <button
-            type="button"
-            onClick={stop}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-          >
-            <StopIcon />
-            Hentikan
-          </button>
-          <span className="text-xs text-slate-500">Memutar…</span>
-        </>
-      )}
-      {state === "paused" && (
-        <>
-          <button
-            type="button"
-            onClick={resume}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            <PlayIcon />
-            Lanjut
-          </button>
-          <button
-            type="button"
-            onClick={stop}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-          >
-            <StopIcon />
-            Hentikan
-          </button>
-          <span className="text-xs text-slate-500">Dijeda</span>
-        </>
-      )}
+  const isActive = state === "playing" || state === "paused";
+  // Main button handler — toggle play/pause/resume.
+  const mainAction =
+    state === "idle" || state === "loading"
+      ? play
+      : state === "playing"
+        ? pause
+        : resume;
 
-      <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-slate-600">
-        <label className="flex items-center gap-1.5">
-          <span>Kecepatan</span>
-          <select
-            value={rate}
-            onChange={(e) => setRate(Number(e.target.value))}
-            disabled={state !== "idle"}
-            className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs"
+  return (
+    <div className="guru-audio-player my-7">
+      <AudioPlayerStyles />
+      {/* Decorative gradient background strip supaya ter-highlight visually
+          dibanding body text. Pakai var guru-* biar ikut theme user. */}
+      <div className="guru-audio-player__card">
+        {/* LEFT: Big circular play/pause button */}
+        <button
+          type="button"
+          onClick={mainAction}
+          disabled={state === "loading"}
+          aria-label={
+            state === "playing"
+              ? "Jeda"
+              : state === "paused"
+                ? "Lanjut"
+                : "Dengarkan artikel"
+          }
+          className="guru-audio-player__play"
+        >
+          {state === "loading" ? (
+            <SpinnerIcon />
+          ) : state === "playing" ? (
+            <PauseIcon />
+          ) : (
+            <PlayIcon />
+          )}
+        </button>
+
+        {/* MIDDLE: Title + animated audio bars when playing */}
+        <div className="guru-audio-player__center">
+          <div className="guru-audio-player__title">
+            {state === "idle" || state === "loading"
+              ? "Dengarkan artikel"
+              : state === "playing"
+                ? "Sedang memutar"
+                : "Dijeda"}
+          </div>
+          <div className="guru-audio-player__sub">
+            {isActive ? (
+              <span className={`guru-audio-bars guru-audio-bars--${state}`}>
+                <span />
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
+            ) : (
+              <span>Teks dibacakan oleh suara {selectedVoice?.name || "default"}</span>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: Stop button (saat active) */}
+        {isActive && (
+          <button
+            type="button"
+            onClick={stop}
+            aria-label="Hentikan"
+            className="guru-audio-player__stop"
           >
-            <option value={0.75}>0.75×</option>
-            <option value={1.0}>1×</option>
-            <option value={1.25}>1.25×</option>
-            <option value={1.5}>1.5×</option>
-          </select>
-        </label>
+            <StopIcon />
+          </button>
+        )}
+      </div>
+
+      {/* Controls row — speed segmented pills + voice chip */}
+      <div className="guru-audio-player__controls">
+        <div className="guru-audio-player__rate" role="group" aria-label="Kecepatan">
+          <span className="guru-audio-player__label">Kecepatan</span>
+          {[0.75, 1.0, 1.25, 1.5].map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRate(r)}
+              disabled={state !== "idle"}
+              className={`guru-audio-player__rate-pill${rate === r ? " is-active" : ""}`}
+            >
+              {r}×
+            </button>
+          ))}
+        </div>
+
         {voices.length > 1 && (
-          <label className="flex items-center gap-1.5">
-            <span>Suara</span>
+          <label className="guru-audio-player__voice">
+            <SpeakerIcon />
             <select
               value={voiceURI}
               onChange={(e) => setVoiceURI(e.target.value)}
               disabled={state !== "idle"}
-              className="max-w-[180px] rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs"
+              aria-label="Pilih suara"
             >
               {voices.map((v) => (
                 <option key={v.voiceURI} value={v.voiceURI}>
@@ -296,5 +315,129 @@ export function ArticleAudio({
         )}
       </div>
     </div>
+  );
+}
+
+// AudioPlayerStyles — scoped CSS inject sekali per instance. Pakai var
+// guru-* (dari GuruStyles yang sudah mount di parent page) biar warna ikut
+// theme user. Fallback hex kalau GuruStyles tidak ada (misal site non-guru).
+function AudioPlayerStyles() {
+  return (
+    <style
+      dangerouslySetInnerHTML={{
+        __html: `
+.guru-audio-player{font-family:var(--font-body,Inter),system-ui,sans-serif}
+.guru-audio-player__card{
+  display:flex;align-items:center;gap:16px;
+  padding:14px 18px;
+  background:linear-gradient(135deg,
+    color-mix(in srgb, var(--guru-navy, #14233b) 6%, var(--guru-cream, #fbf8f1)),
+    color-mix(in srgb, var(--guru-red, #b6423d) 4%, var(--guru-cream, #fbf8f1))
+  );
+  border:1px solid var(--guru-line, #e9e5dc);
+  border-radius:999px;
+  box-shadow:0 2px 10px color-mix(in srgb, var(--guru-navy, #14233b) 8%, transparent);
+}
+.guru-audio-player__play{
+  flex-shrink:0;width:52px;height:52px;border-radius:50%;
+  border:0;cursor:pointer;
+  background:var(--guru-navy, #14233b);color:#fff;
+  display:grid;place-items:center;
+  box-shadow:0 6px 18px color-mix(in srgb, var(--guru-navy, #14233b) 30%, transparent);
+  transition:transform .15s ease,box-shadow .15s ease;
+}
+.guru-audio-player__play:hover:not(:disabled){
+  transform:scale(1.05);
+  box-shadow:0 8px 22px color-mix(in srgb, var(--guru-navy, #14233b) 40%, transparent);
+}
+.guru-audio-player__play:disabled{opacity:.6;cursor:wait}
+.guru-audio-player__play svg{width:20px;height:20px}
+.guru-audio-player__center{flex:1;min-width:0}
+.guru-audio-player__title{
+  font-family:var(--font-heading,Georgia),serif;
+  font-size:15px;font-weight:700;color:var(--guru-navy, #14233b);
+  line-height:1.2;letter-spacing:-.01em;
+}
+.guru-audio-player__sub{
+  margin-top:3px;font-size:12px;color:var(--guru-muted, #6f7888);
+  min-height:18px;display:flex;align-items:center;
+}
+.guru-audio-player__stop{
+  flex-shrink:0;width:40px;height:40px;border-radius:50%;
+  border:1px solid var(--guru-line, #e9e5dc);cursor:pointer;
+  background:#fff;color:var(--guru-navy, #14233b);
+  display:grid;place-items:center;
+  transition:background .15s ease,color .15s ease;
+}
+.guru-audio-player__stop:hover{
+  background:var(--guru-red, #b6423d);color:#fff;border-color:var(--guru-red, #b6423d);
+}
+.guru-audio-player__stop svg{width:14px;height:14px}
+
+/* Audio bars — 5 batang vertikal yang animate up/down saat playing. */
+.guru-audio-bars{display:inline-flex;align-items:flex-end;gap:3px;height:16px}
+.guru-audio-bars span{
+  width:3px;height:30%;border-radius:2px;
+  background:var(--guru-navy, #14233b);
+  display:inline-block;
+}
+.guru-audio-bars--playing span{animation:guru-audio-bar 1s ease-in-out infinite}
+.guru-audio-bars--playing span:nth-child(1){animation-delay:-.9s}
+.guru-audio-bars--playing span:nth-child(2){animation-delay:-.7s}
+.guru-audio-bars--playing span:nth-child(3){animation-delay:-.5s}
+.guru-audio-bars--playing span:nth-child(4){animation-delay:-.3s}
+.guru-audio-bars--playing span:nth-child(5){animation-delay:-.1s}
+.guru-audio-bars--paused span{opacity:.4}
+@keyframes guru-audio-bar{
+  0%,100%{height:30%}
+  50%{height:100%}
+}
+
+/* Controls row — speed pills + voice select. */
+.guru-audio-player__controls{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin-top:10px;padding:0 6px;
+  font-size:12px;color:var(--guru-muted, #6f7888);
+}
+.guru-audio-player__label{font-weight:600;margin-right:4px}
+.guru-audio-player__rate{display:inline-flex;align-items:center;gap:4px}
+.guru-audio-player__rate-pill{
+  min-width:38px;padding:4px 8px;border-radius:999px;
+  border:1px solid transparent;background:transparent;
+  font-size:12px;font-weight:600;cursor:pointer;
+  color:var(--guru-muted, #6f7888);
+  transition:background .15s ease,color .15s ease;
+}
+.guru-audio-player__rate-pill:hover:not(:disabled){
+  background:color-mix(in srgb, var(--guru-navy, #14233b) 6%, transparent);
+}
+.guru-audio-player__rate-pill.is-active{
+  background:var(--guru-navy, #14233b);color:#fff;
+}
+.guru-audio-player__rate-pill:disabled{opacity:.5;cursor:not-allowed}
+.guru-audio-player__voice{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:999px;
+  background:#fff;border:1px solid var(--guru-line, #e9e5dc);
+  color:var(--guru-navy, #14233b);
+}
+.guru-audio-player__voice select{
+  border:0;background:transparent;outline:0;
+  font-size:12px;font-weight:600;color:inherit;
+  max-width:160px;cursor:pointer;
+}
+.guru-audio-player__voice select:disabled{cursor:not-allowed}
+
+/* Mobile — stack vertikal + round pill → rounded rect. */
+@media (max-width:640px){
+  .guru-audio-player__card{border-radius:18px;padding:12px 14px;gap:12px}
+  .guru-audio-player__play{width:46px;height:46px}
+  .guru-audio-player__play svg{width:18px;height:18px}
+  .guru-audio-player__title{font-size:14px}
+  .guru-audio-player__controls{padding:0}
+}
+`,
+      }}
+    />
   );
 }

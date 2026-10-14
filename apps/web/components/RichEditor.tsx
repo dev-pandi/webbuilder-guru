@@ -29,7 +29,11 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import { Node, mergeAttributes } from "@tiptap/core";
+import TextStyle from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
+import FontFamily from "@tiptap/extension-font-family";
+import TextAlign from "@tiptap/extension-text-align";
+import { Extension, Node, mergeAttributes } from "@tiptap/core";
 import { marked, type Tokens } from "marked";
 import TurndownService from "turndown";
 // @ts-expect-error — turndown-plugin-gfm ships no TS types.
@@ -54,6 +58,13 @@ import {
   Undo,
   Redo,
   Strikethrough,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Palette,
+  Type,
+  ChevronDown,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
@@ -110,7 +121,16 @@ marked.use({
   // saat mdToHtml, akibatnya media hilang dari editor & renderer.
   useNewRenderer: true,
   renderer: {
-    html: () => "",
+    // Preserve inline HTML — dibutuhkan supaya styling (color/font/
+    // alignment/size) yang di-emit sebagai <span style="...">text</span>
+    // atau <p style="text-align:...">...</p> roundtrip aman via markdown.
+    // Risk XSS: kita trust karena content di-edit via TipTap yang punya
+    // schema whitelist (hanya mark/node yang didaftarkan diizinkan).
+    html: (token: Tokens.HTML | { text?: string } | string) => {
+      if (typeof token === "string") return token;
+      if ("text" in token) return token.text ?? "";
+      return "";
+    },
     // Image dengan URL fragment `#w=N` → render dengan style max-width:N%.
     // `data-size` disimpan supaya editor node bisa parseHTML lalu tombol
     // ukuran tetap active (highlight preset yang cocok).
@@ -160,6 +180,49 @@ const td = new TurndownService({
   bulletListMarker: "-",
 });
 td.use(turndownGfm);
+
+// Preserve <span style="..."> dari color/font-family/font-size.
+// Default turndown drop span. Rule: kalau span punya style, keep as HTML.
+td.addRule("styledSpan", {
+  filter: (node) => {
+    if (node.nodeName !== "SPAN") return false;
+    const style = (node as HTMLElement).getAttribute("style");
+    return !!style && style.trim().length > 0;
+  },
+  replacement: (content, node) => {
+    const style = (node as HTMLElement).getAttribute("style") ?? "";
+    return `<span style="${style}">${content}</span>`;
+  },
+});
+
+// Preserve <p style="text-align: center|right|justify"> dari TextAlign ext.
+// Default turndown convert <p> ke dua newline. Rule: kalau punya text-align
+// selain default (left), emit sebagai raw HTML.
+td.addRule("alignedParagraph", {
+  filter: (node) => {
+    if (node.nodeName !== "P") return false;
+    const style = (node as HTMLElement).getAttribute("style") ?? "";
+    return /text-align:\s*(center|right|justify)/i.test(style);
+  },
+  replacement: (content, node) => {
+    const style = (node as HTMLElement).getAttribute("style") ?? "";
+    return `\n\n<p style="${style}">${content}</p>\n\n`;
+  },
+});
+
+// Heading dengan text-align — mirror pola di atas.
+td.addRule("alignedHeading", {
+  filter: (node) => {
+    if (!/^H[1-6]$/.test(node.nodeName)) return false;
+    const style = (node as HTMLElement).getAttribute("style") ?? "";
+    return /text-align:\s*(center|right|justify)/i.test(style);
+  },
+  replacement: (content, node) => {
+    const style = (node as HTMLElement).getAttribute("style") ?? "";
+    const tag = node.nodeName.toLowerCase();
+    return `\n\n<${tag} style="${style}">${content}</${tag}>\n\n`;
+  },
+});
 
 // YouTube iframe → ```youtube\n<url>[#w=N]\n```
 // Match any iframe dengan src YouTube (embed / watch / youtu.be / shorts).
@@ -572,6 +635,77 @@ function AudioNodeView({ node, selected, deleteNode, editor }: NodeViewProps) {
   );
 }
 
+// --- FontSize custom extension ---
+//
+// TipTap tidak punya official FontSize extension — kita bikin sebagai
+// attribute `fontSize` di TextStyle mark. Ekstensi menambah command
+// `setFontSize(size)` / `unsetFontSize()` yang bisa dipanggil toolbar.
+//
+// Simpan di <span style="font-size:14px">text</span>. Markdown roundtrip
+// via HTML passthrough (marked allow HTML + turndown preserve span by
+// default kalau ada style).
+const FontSize = Extension.create({
+  name: "fontSize",
+  addOptions() {
+    return { types: ["textStyle"] };
+  },
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          fontSize: {
+            default: null as string | null,
+            parseHTML: (el) => (el as HTMLElement).style.fontSize || null,
+            renderHTML: (attrs) =>
+              attrs.fontSize ? { style: `font-size: ${attrs.fontSize}` } : {},
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      // Pakai `any` di sini — type signature `addCommands` dari @tiptap/core
+      // meng-expand ChainedCommands via module augmentation yang kita tidak
+      // ikut daftarkan. Casting lebih sederhana daripada custom declaration.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setFontSize: (size: string) => ({ chain }: any) =>
+        chain().setMark("textStyle", { fontSize: size }).run(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      unsetFontSize: () => ({ chain }: any) =>
+        chain().setMark("textStyle", { fontSize: null }).removeEmptyTextStyle().run(),
+    } as never;
+  },
+});
+
+// Font family presets — font-safe untuk web, sans/serif/mono/display.
+// Nama display → actual font stack. User lihat nama pendek di dropdown.
+const FONT_FAMILIES: Array<{ label: string; stack: string }> = [
+  { label: "Default", stack: "" },
+  { label: "Sans Serif", stack: "ui-sans-serif, system-ui, sans-serif" },
+  { label: "Serif", stack: "Georgia, 'Times New Roman', serif" },
+  { label: "Monospace", stack: "ui-monospace, 'SF Mono', Menlo, monospace" },
+  { label: "Inter", stack: "'Inter', sans-serif" },
+  { label: "Georgia", stack: "Georgia, serif" },
+  { label: "Arial", stack: "Arial, sans-serif" },
+  { label: "Times New Roman", stack: "'Times New Roman', serif" },
+  { label: "Courier New", stack: "'Courier New', monospace" },
+];
+
+// Font sizes — document-style preset (10-32px) yang biasa dipakai di Word
+// / Google Docs. Ukuran dalam px supaya rendering konsisten antar device.
+const FONT_SIZES: string[] = ["10px", "12px", "14px", "16px", "18px", "20px", "24px", "28px", "32px"];
+
+// Preset warna teks — grid 5x3 dengan warna dasar + beberapa aksen.
+// Reset ke default via tombol "Hapus warna".
+const TEXT_COLORS: string[] = [
+  "#000000", "#374151", "#6B7280", "#9CA3AF", "#D1D5DB",
+  "#DC2626", "#EA580C", "#D97706", "#CA8A04", "#65A30D",
+  "#16A34A", "#0D9488", "#0891B2", "#2563EB", "#4F46E5",
+  "#7C3AED", "#C026D3", "#DB2777", "#E11D48", "#FFFFFF",
+];
+
 // --- Component ---
 
 // sanitizePastedHTML — strip inline styles, Word artifacts, dan attribute
@@ -667,6 +801,19 @@ export function RichEditor({
       TaskItem.configure({ nested: true }),
       // Custom audio block node.
       AudioNode,
+      // --- Rich text styling: color, font, alignment, size ---
+      // TextStyle wajib — jadi parent mark untuk Color + FontFamily + FontSize.
+      TextStyle,
+      Color.configure({ types: ["textStyle"] }),
+      FontFamily.configure({ types: ["textStyle"] }),
+      FontSize,
+      // TextAlign — apply ke heading + paragraph. Simpan sebagai
+      // style="text-align:center" di HTML, roundtrip via markdown inline HTML.
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
+        alignments: ["left", "center", "right", "justify"],
+        defaultAlignment: "left",
+      }),
     ],
     content: mdToHtml(value),
     immediatelyRender: false, // avoid SSR hydration mismatch in Next.js
@@ -765,7 +912,12 @@ function Toolbar({ editor }: { editor: Editor }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-0.5 bg-muted/30 px-2 py-1.5">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1 border-b bg-background/95 px-2 py-1.5 shadow-sm backdrop-blur-sm">
+        {/* Font family + size — document-style baris pertama */}
+        <FontFamilyDropdown editor={editor} />
+        <FontSizeDropdown editor={editor} />
+        <Sep />
+
         <Btn
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive("bold")}
@@ -789,6 +941,34 @@ function Toolbar({ editor }: { editor: Editor }) {
           active={editor.isActive("code")}
           title="Inline code"
           icon={Code}
+        />
+        <ColorPickerBtn editor={editor} />
+        <Sep />
+
+        {/* Text align */}
+        <Btn
+          onClick={() => editor.chain().focus().setTextAlign("left").run()}
+          active={editor.isActive({ textAlign: "left" })}
+          title="Rata kiri"
+          icon={AlignLeft}
+        />
+        <Btn
+          onClick={() => editor.chain().focus().setTextAlign("center").run()}
+          active={editor.isActive({ textAlign: "center" })}
+          title="Rata tengah"
+          icon={AlignCenter}
+        />
+        <Btn
+          onClick={() => editor.chain().focus().setTextAlign("right").run()}
+          active={editor.isActive({ textAlign: "right" })}
+          title="Rata kanan"
+          icon={AlignRight}
+        />
+        <Btn
+          onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+          active={editor.isActive({ textAlign: "justify" })}
+          title="Rata kanan-kiri"
+          icon={AlignJustify}
         />
         <Sep />
         <Btn
@@ -1011,6 +1191,215 @@ function Btn({
 
 function Sep() {
   return <span className="mx-1 h-5 w-px bg-border" aria-hidden />;
+}
+
+// FontFamilyDropdown — pill dropdown dengan preview font name di label.
+// Current font detect via `editor.getAttributes("textStyle").fontFamily`.
+function FontFamilyDropdown({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = (editor.getAttributes("textStyle").fontFamily as string | undefined) ?? "";
+  const label = FONT_FAMILIES.find((f) => f.stack === current)?.label ?? "Default";
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as unknown as globalThis.Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-8 min-w-[112px] items-center justify-between gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium hover:bg-muted"
+        title="Jenis font"
+      >
+        <span className="flex items-center gap-1.5 truncate">
+          <Type className="size-3.5 text-muted-foreground" />
+          <span className="truncate">{label}</span>
+        </span>
+        <ChevronDown className="size-3 opacity-60" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 z-20 min-w-[180px] overflow-hidden rounded-md border bg-popover p-1 shadow-md">
+          {FONT_FAMILIES.map((f) => {
+            const active = f.stack === current;
+            return (
+              <button
+                key={f.label}
+                type="button"
+                onClick={() => {
+                  if (f.stack === "") {
+                    editor.chain().focus().unsetFontFamily().run();
+                  } else {
+                    editor.chain().focus().setFontFamily(f.stack).run();
+                  }
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground",
+                  active && "bg-accent/60",
+                )}
+                style={f.stack ? { fontFamily: f.stack } : undefined}
+              >
+                <span>{f.label}</span>
+                {active && <span className="text-xs">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// FontSizeDropdown — pill dropdown ukuran. Current size dari textStyle.fontSize.
+function FontSizeDropdown({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = (editor.getAttributes("textStyle").fontSize as string | undefined) ?? "";
+  const label = current ? current.replace("px", "") : "16";
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as unknown as globalThis.Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-8 min-w-[56px] items-center justify-between gap-1 rounded-md border border-input bg-background px-2 text-xs font-medium hover:bg-muted"
+        title="Ukuran font"
+      >
+        <span>{label}</span>
+        <ChevronDown className="size-3 opacity-60" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 z-20 min-w-[80px] overflow-hidden rounded-md border bg-popover p-1 shadow-md">
+          {FONT_SIZES.map((s) => {
+            const active = s === current;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (editor.chain().focus() as any).setFontSize(s).run();
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between rounded px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground",
+                  active && "bg-accent/60",
+                )}
+              >
+                <span>{s.replace("px", "")}</span>
+                {active && <span className="text-xs">✓</span>}
+              </button>
+            );
+          })}
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            onClick={() => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (editor.chain().focus() as any).unsetFontSize().run();
+              setOpen(false);
+            }}
+            className="flex w-full items-center rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+          >
+            Reset default
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ColorPickerBtn — tombol dengan palette popup. Current color terdeteksi
+// dari attribute textStyle.color, ditampilkan sebagai bar di bawah icon.
+function ColorPickerBtn({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = (editor.getAttributes("textStyle").color as string | undefined) ?? "";
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as unknown as globalThis.Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-8 items-center justify-center rounded-md border border-transparent px-1.5 hover:bg-muted"
+        title="Warna teks"
+      >
+        <div className="flex flex-col items-center">
+          <Palette className="size-4" />
+          <div
+            className="mt-0.5 h-[3px] w-5 rounded-sm"
+            style={{ background: current || "#000000" }}
+          />
+        </div>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 z-20 w-[200px] rounded-md border bg-popover p-2 shadow-md">
+          <div className="grid grid-cols-5 gap-1.5">
+            {TEXT_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => {
+                  editor.chain().focus().setColor(c).run();
+                  setOpen(false);
+                }}
+                className={cn(
+                  "size-6 rounded border transition hover:scale-110",
+                  current.toLowerCase() === c.toLowerCase()
+                    ? "border-foreground"
+                    : "border-border",
+                )}
+                style={{ background: c }}
+                title={c}
+                aria-label={`Warna ${c}`}
+              />
+            ))}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="color"
+              value={current || "#000000"}
+              onChange={(e) => editor.chain().focus().setColor(e.target.value).run()}
+              className="h-6 w-10 cursor-pointer rounded border-0 bg-transparent p-0"
+              title="Pilih warna lain"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                editor.chain().focus().unsetColor().run();
+                setOpen(false);
+              }}
+              className="flex-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+            >
+              Hapus warna
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function LinkBtn({ editor }: { editor: Editor }) {
