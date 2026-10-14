@@ -115,30 +115,23 @@ export function GuruStylesEditor() {
     <style
       dangerouslySetInnerHTML={{
         __html: `
+/* NOTE: --guru-* color vars tidak di-declare di sini. Nilai di-inject
+   LANGSUNG di canvasStyle (editor) / themeToCss (renderer) sebagai inline
+   atau :root style yang di-emit lebih dulu di DOM. Kalau di-declare lagi
+   di sini, "later wins" cascade bikin var(--color-primary) chain menang
+   dan nilai user tidak kelihatan. Hanya radius + max-width (bukan warna)
+   yang di-declare sebagai static constant. */
 :root{
-  /* Base — langsung dari theme user (4 picker di Theme Drawer). */
-  --guru-navy: var(--color-primary, #14233b);
-  --guru-ink: var(--color-fg, #263247);
-  --guru-cream: var(--color-bg, #fbf8f1);
-  --guru-red: var(--color-secondary, #b6423d);
-
-  /* Derived via color-mix — supaya semua guru-* ikut berubah saat user ganti
-     theme. Rasio dipilih supaya tetap "feel" PANDI × UPI. Chrome 111+/
-     Safari 16.2+/Firefox 113+. SYNC dengan renderer GuruBlocks.tsx. */
-  --guru-navy-2:   color-mix(in srgb, var(--guru-navy) 70%, #ffffff);
-  --guru-muted:    color-mix(in srgb, var(--guru-ink) 55%, var(--guru-cream));
-  --guru-paper:    color-mix(in srgb, var(--guru-cream) 30%, #ffffff);
-  --guru-line:     color-mix(in srgb, var(--guru-ink) 10%, var(--guru-cream));
-  --guru-red-soft: color-mix(in srgb, var(--guru-red) 15%, var(--guru-cream));
-  --guru-blue-soft:color-mix(in srgb, var(--guru-navy) 10%, var(--guru-cream));
-  --guru-sage:     color-mix(in srgb, var(--guru-navy) 6%, var(--guru-cream));
-  --guru-gold:     color-mix(in srgb, var(--guru-red) 60%, #d6a84d);
-
-  --guru-shadow: 0 20px 60px color-mix(in srgb, var(--guru-navy) 20%, transparent);
-  --guru-shadow-sm: 0 10px 30px color-mix(in srgb, var(--guru-navy) 15%, transparent);
   --guru-radius: 26px;
   --guru-radius-sm: 18px;
   --guru-max: 1180px;
+}
+.wb-canvas{
+  /* Fallback kalau canvasStyle tidak mount (misal preview di luar editor).
+     Pakai var() dengan fallback hex, bukan color-mix supaya tetap render
+     di browser lama. canvasStyle inline akan override ini saat editor aktif. */
+  --guru-shadow: 0 20px 60px rgba(29,42,62,.08);
+  --guru-shadow-sm: 0 10px 30px rgba(29,42,62,.07);
 }
 .guru-container{width:min(var(--guru-max),calc(100% - 40px));margin-inline:auto}
 .guru-eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--guru-red);font-size:12px;font-weight:800;letter-spacing:.15em;text-transform:uppercase;margin-bottom:16px}
@@ -187,7 +180,7 @@ export function GuruStylesEditor() {
 .guru-promo__dot{width:9px;height:9px;border:0;border-radius:50%;background:rgba(255,255,255,.65);padding:0}
 .guru-promo__dot.is-active{width:24px;border-radius:999px;background:#fff}
 .guru-rubric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.guru-rubric-card{position:relative;min-height:200px;background:#fff;border:1px solid var(--guru-line);border-radius:22px;padding:22px;overflow:hidden;text-decoration:none;color:inherit;display:block}
+.guru-rubric-card{position:relative;min-height:200px;background:#fff;border:1px solid var(--guru-line);border-radius:22px;padding:22px 22px 56px;overflow:hidden;text-decoration:none;color:inherit;display:block}
 .guru-rubric-card__icon{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;margin-bottom:22px;background:var(--guru-blue-soft);color:var(--guru-navy)}
 .guru-rubric-card--v2 .guru-rubric-card__icon{background:var(--guru-red-soft);color:var(--guru-red)}
 .guru-rubric-card--v3 .guru-rubric-card__icon{background:var(--guru-sage);color:color-mix(in srgb,var(--guru-navy) 60%,#496b55)}
@@ -601,13 +594,13 @@ export function GuruRubricGridEditor(p: {
   items?: Array<{ title: string; desc?: string; href?: string; icon?: string }>;
   edit?: GuruEditCtx;
 }) {
-  const sample = [
-    { title: "Ceritaku", desc: "Cerita keseharian dan pengalaman mengajar.", icon: "book" },
-    { title: "Bacaanku", desc: "Buku yang saya baca dan bawa kembali ke ruang kelas.", icon: "bookmark" },
-    { title: "Inspirasiku", desc: "Praktik baik, ide sederhana, dan orang yang menginspirasi.", icon: "sparkle" },
-    { title: "Bangsaku", desc: "Belajar Indonesia lewat kewargaan, keberagaman, bahasa.", icon: "flag" },
-    { title: "Peradaban", desc: "Membaca sejarah, budaya, dan warisan sebagai percakapan.", icon: "temple" },
-    { title: "Forum Diskusi", desc: "Ruang percakapan bersama pembaca dan sesama guru.", icon: "chat" },
+  const sample: Array<{ title: string; desc?: string; href?: string; icon?: string }> = [
+    { title: "Ceritaku", desc: "Cerita keseharian dan pengalaman mengajar.", icon: "book", href: "/ceritaku" },
+    { title: "Bacaanku", desc: "Buku yang saya baca dan bawa kembali ke ruang kelas.", icon: "bookmark", href: "/bacaanku" },
+    { title: "Inspirasiku", desc: "Praktik baik, ide sederhana, dan orang yang menginspirasi.", icon: "sparkle", href: "/inspirasiku" },
+    { title: "Bangsaku", desc: "Belajar Indonesia lewat kewargaan, keberagaman, bahasa.", icon: "flag", href: "/bangsaku" },
+    { title: "Peradaban", desc: "Membaca sejarah, budaya, dan warisan sebagai percakapan.", icon: "temple", href: "/peradaban" },
+    { title: "Forum Diskusi", desc: "Ruang percakapan bersama pembaca dan sesama guru.", icon: "chat", href: "/forum-diskusi" },
   ];
   // Kalau editable, render p.items apa adanya supaya edit commit ke state
   // yang benar. Fallback sample cuma untuk visual preview kondisi kosong.
@@ -627,17 +620,123 @@ export function GuruRubricGridEditor(p: {
             const iconKey = it.icon ?? Object.keys(RUBRIC_ICONS)[i % 6];
             const iconEl = RUBRIC_ICONS[iconKey] ?? RUBRIC_ICONS.book;
             return (
-              <a key={i} href="#" className={`guru-rubric-card guru-rubric-card--v${(i % 3) + 1}`}>
+              <a
+                key={i}
+                // Honor user's href. "#" hanya fallback kalau belum di-set.
+                href={it.href || "#"}
+                className={`guru-rubric-card guru-rubric-card--v${(i % 3) + 1}`}
+              >
                 <div className="guru-rubric-card__icon">{iconEl}</div>
                 <EditableItemField edit={p.edit} arrName="items" idx={i} field="title" value={it.title} as="h3" placeholder="Judul rubric" />
                 <EditableItemField edit={p.edit} arrName="items" idx={i} field="desc" value={it.desc ?? ""} as="p" placeholder="Deskripsi rubric" multiline />
                 <span className="guru-rubric-card__arrow" aria-hidden>→</span>
+                {/* Edit bar untuk link + icon — muncul saat editable mode.
+                    Fallback kalau onItemChange nggak di-wire: readonly. */}
+                {p.edit?.editable && (
+                  <RubricCardEditBar
+                    iconKey={iconKey}
+                    href={it.href ?? ""}
+                    onIcon={(v) => p.edit?.onItemChange?.("items", i, "icon", v)}
+                    onHref={(v) => p.edit?.onItemChange?.("items", i, "href", v)}
+                  />
+                )}
               </a>
             );
           })}
         </div>
       </div>
     </section>
+  );
+}
+
+// RubricCardEditBar — control panel kecil di bawah tiap card untuk edit
+// icon + href. Hanya muncul di edit mode. Posisi absolute di dalam <a>
+// supaya menyatu dengan card; stopPropagation + preventDefault di input/
+// select onClick biar tidak trigger navigasi anchor parent-nya saat klik.
+function RubricCardEditBar({
+  iconKey,
+  href,
+  onIcon,
+  onHref,
+}: {
+  iconKey: string;
+  href: string;
+  onIcon: (v: string) => void;
+  onHref: (v: string) => void;
+}) {
+  // Prevent all pointer events dari bubble ke parent <a> (yang bakal navigate).
+  const noPropagation = {
+    onClick: (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onMouseDown: (e: React.MouseEvent) => {
+      e.stopPropagation();
+    },
+  };
+  return (
+    <div
+      // contentEditable=false — supaya TipTap / content editor tidak masuk ke
+      // dalam toolbar ini. Hint ke browser kalau ini bukan body text.
+      contentEditable={false}
+      style={{
+        position: "absolute",
+        left: 12,
+        right: 12,
+        bottom: 12,
+        display: "flex",
+        gap: 6,
+        padding: "6px 8px",
+        background: "rgba(255,255,255,0.95)",
+        border: "1px solid rgba(0,0,0,0.08)",
+        borderRadius: 10,
+        boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+        backdropFilter: "blur(4px)",
+        fontSize: 11,
+        zIndex: 5,
+      }}
+      {...noPropagation}
+    >
+      <select
+        value={iconKey}
+        onChange={(e) => onIcon(e.target.value)}
+        title="Pilih ikon"
+        {...noPropagation}
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 6,
+          padding: "3px 6px",
+          background: "#fff",
+          fontSize: 11,
+          fontWeight: 600,
+          minWidth: 72,
+        }}
+      >
+        {Object.keys(RUBRIC_ICONS).map((k) => (
+          <option key={k} value={k}>
+            {k}
+          </option>
+        ))}
+      </select>
+      <input
+        type="text"
+        value={href}
+        onChange={(e) => onHref(e.target.value)}
+        placeholder="/ceritaku atau https://..."
+        title="URL link kartu"
+        {...noPropagation}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          border: "1px solid #e5e7eb",
+          borderRadius: 6,
+          padding: "3px 7px",
+          background: "#fff",
+          fontSize: 11,
+          outline: "none",
+        }}
+      />
+    </div>
   );
 }
 

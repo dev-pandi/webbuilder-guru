@@ -573,6 +573,25 @@ export default function EditorPage() {
       "--color-secondary": secondary,
       "--color-bg": bg,
       "--color-fg": fg,
+      // --- Guru template vars DIRECT INJECTION ---
+      // Sebelumnya GuruStylesEditor declare --guru-navy = var(--color-primary)
+      // di :root (= <html>). Chromium kadang cache resolved value di :root
+      // sebagai fallback (karena :root sendiri nggak punya --color-primary).
+      // Dengan inject --guru-* langsung di .wb-canvas wrapper ini, descendant
+      // GUARANTEED pakai turunan dari user theme (specificity: inline > :root).
+      // Pola color-mix sama dengan GuruStylesEditor.
+      "--guru-navy": primary,
+      "--guru-ink": fg,
+      "--guru-cream": bg,
+      "--guru-red": secondary,
+      "--guru-navy-2": `color-mix(in srgb, ${primary} 70%, #ffffff)`,
+      "--guru-muted": `color-mix(in srgb, ${fg} 55%, ${bg})`,
+      "--guru-paper": `color-mix(in srgb, ${bg} 30%, #ffffff)`,
+      "--guru-line": `color-mix(in srgb, ${fg} 10%, ${bg})`,
+      "--guru-red-soft": `color-mix(in srgb, ${secondary} 15%, ${bg})`,
+      "--guru-blue-soft": `color-mix(in srgb, ${primary} 10%, ${bg})`,
+      "--guru-sage": `color-mix(in srgb, ${primary} 6%, ${bg})`,
+      "--guru-gold": `color-mix(in srgb, ${secondary} 60%, #d6a84d)`,
       // Font vars — read by .wb-canvas typography rules in globals.css.
       "--wb-font-heading": theme.font?.heading
         ? `"${theme.font.heading}", system-ui, sans-serif`

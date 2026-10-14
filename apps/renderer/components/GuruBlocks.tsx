@@ -846,27 +846,12 @@ export function GuruStyles() {
     <style
       dangerouslySetInnerHTML={{
         __html: `
+/* NOTE: --guru-* color vars DIHILANGKAN dari sini. themeToCss di-emit lebih
+   dulu di <head> dengan direct user colors + color-mix() derivations.
+   Kalau di-declare lagi di :root sini (yang di-mount belakangan di body),
+   "later wins" cascade bikin value-nya menang dan user theme kalah.
+   Hanya non-color constants yang di-declare di sini. */
 :root{
-  /* Base — langsung dari theme user (4 picker di Theme Drawer). */
-  --guru-navy: var(--color-primary, #14233b);
-  --guru-ink: var(--color-fg, #263247);
-  --guru-cream: var(--color-bg, #fbf8f1);
-  --guru-red: var(--color-secondary, #b6423d);
-
-  /* Derived — pakai color-mix supaya ikut berubah saat user ganti theme.
-     Rasio dipilih supaya tetap "feel" PANDI × UPI tapi responsif ke warna
-     user. Chrome 111+ / Safari 16.2+ / Firefox 113+ — semua modern browser. */
-  --guru-navy-2:   color-mix(in srgb, var(--guru-navy) 70%, #ffffff);
-  --guru-muted:    color-mix(in srgb, var(--guru-ink) 55%, var(--guru-cream));
-  --guru-paper:    color-mix(in srgb, var(--guru-cream) 30%, #ffffff);
-  --guru-line:     color-mix(in srgb, var(--guru-ink) 10%, var(--guru-cream));
-  --guru-red-soft: color-mix(in srgb, var(--guru-red) 15%, var(--guru-cream));
-  --guru-blue-soft:color-mix(in srgb, var(--guru-navy) 10%, var(--guru-cream));
-  --guru-sage:     color-mix(in srgb, var(--guru-navy) 6%, var(--guru-cream));
-  --guru-gold:     color-mix(in srgb, var(--guru-red) 60%, #d6a84d);
-
-  --guru-shadow: 0 20px 60px color-mix(in srgb, var(--guru-navy) 20%, transparent);
-  --guru-shadow-sm: 0 10px 30px color-mix(in srgb, var(--guru-navy) 15%, transparent);
   --guru-radius: 26px;
   --guru-radius-sm: 18px;
   --guru-max: 1180px;

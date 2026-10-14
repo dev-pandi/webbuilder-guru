@@ -140,6 +140,45 @@ function layoutWrapperStyle(b: Block): React.CSSProperties | undefined {
       out["--color-fg"] = O.fg;
       out.color = O.fg;
     }
+
+    // --- Guru template vars override ---
+    // Guru block CSS pakai var(--guru-navy), --guru-cream, dsb. — bukan
+    // var(--color-primary) langsung. Nilai di-set static di canvasStyle
+    // (editor) + themeToCss (renderer :root). Kalau cuma override
+    // --color-* di wrapper ini, --guru-* di wrapper tetap pakai nilai
+    // canvas → override block visually tidak ngaruh.
+    // Fallback ke primary/secondary/bg/fg override di atas → pakai nilai
+    // itu. Kalau salah satu field nggak di-override, fallback ke CSS var
+    // dari canvas (jadi hanya field yang di-override yg ter-replace).
+    const primary = O.primary ?? "var(--guru-navy)";
+    const secondary = O.secondary ?? "var(--guru-red)";
+    const bg = O.bg ?? "var(--guru-cream)";
+    const fg = O.fg ?? "var(--guru-ink)";
+    if (O.primary) out["--guru-navy"] = O.primary;
+    if (O.secondary) out["--guru-red"] = O.secondary;
+    if (O.bg) out["--guru-cream"] = O.bg;
+    if (O.fg) out["--guru-ink"] = O.fg;
+    // Derived — pakai field apapun yang di-override. Kalau cuma primary
+    // yang override, --guru-navy-2 akan mix primary user baru dengan
+    // nilai cream canvas (atau cream override kalau juga di-override).
+    if (O.primary || O.bg) {
+      out["--guru-navy-2"] = `color-mix(in srgb, ${primary} 70%, #ffffff)`;
+      out["--guru-blue-soft"] = `color-mix(in srgb, ${primary} 10%, ${bg})`;
+      out["--guru-sage"] = `color-mix(in srgb, ${primary} 6%, ${bg})`;
+      out["--guru-shadow"] = `0 20px 60px color-mix(in srgb, ${primary} 20%, transparent)`;
+      out["--guru-shadow-sm"] = `0 10px 30px color-mix(in srgb, ${primary} 15%, transparent)`;
+    }
+    if (O.fg || O.bg) {
+      out["--guru-muted"] = `color-mix(in srgb, ${fg} 55%, ${bg})`;
+      out["--guru-line"] = `color-mix(in srgb, ${fg} 10%, ${bg})`;
+    }
+    if (O.bg) {
+      out["--guru-paper"] = `color-mix(in srgb, ${bg} 30%, #ffffff)`;
+    }
+    if (O.secondary || O.bg) {
+      out["--guru-red-soft"] = `color-mix(in srgb, ${secondary} 15%, ${bg})`;
+      out["--guru-gold"] = `color-mix(in srgb, ${secondary} 60%, #d6a84d)`;
+    }
   }
   return Object.keys(out).length ? (out as React.CSSProperties) : undefined;
 }
