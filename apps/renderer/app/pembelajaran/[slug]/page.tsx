@@ -15,6 +15,7 @@ import {
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
+import { ArticleAudio } from "@/components/ArticleAudio";
 import { GuruStyles } from "@/components/GuruBlocks";
 import { GuruResponseForm } from "@/components/GuruResponseForm";
 import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
@@ -134,6 +135,8 @@ export default async function LearningMaterialDetail({
             <img src={m.cover_image_url} alt={m.title} />
           </div>
         )}
+
+        <ArticleAudio title={m.title} />
 
         <div
           className="guru-article-detail__body"

@@ -18,6 +18,7 @@ import {
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
+import { ArticleAudio } from "@/components/ArticleAudio";
 import { GuruStyles } from "@/components/GuruBlocks";
 import { GuruResponseForm } from "@/components/GuruResponseForm";
 import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
@@ -159,6 +160,8 @@ export default async function ArticleDetail({
             <img src={article.cover_image_url} alt={article.title} />
           </div>
         )}
+
+        <ArticleAudio title={article.title} />
 
         <div
           className="guru-article-detail__body"
