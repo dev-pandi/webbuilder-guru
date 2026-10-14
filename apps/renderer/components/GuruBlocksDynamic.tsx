@@ -344,6 +344,9 @@ export async function GuruArticleGridDynamic({
     href: `/${a.rubric}/${a.slug}`,
     engagement: engagement(a),
     coverVariant: coverVariant(a.rubric),
+    // Kalau artikel punya cover image → render photo, bukan gradient.
+    // Guru tanpa cover tetap dapat colored gradient (coverVariant fallback).
+    coverImage: a.cover_image_url || undefined,
     featured: i === 0,
   }));
   return (
@@ -422,6 +425,7 @@ export async function GuruLearningGridDynamic({
     meta: m.published_at ? `Pembelajaran · ${fmtDate(m.published_at)}` : "Pembelajaran",
     href: `/pembelajaran/${m.slug}`,
     coverVariant: variants[i % variants.length],
+    coverImage: m.cover_image_url || undefined,
     featured: i === 0,
   }));
   return (

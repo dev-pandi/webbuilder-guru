@@ -553,6 +553,10 @@ export function GuruArticleGrid(p: {
     href?: string;
     engagement?: string;
     coverVariant?: "default" | "red" | "sage" | "gold";
+    // coverImage — kalau diisi, render <img> di area cover. Kalau kosong,
+    // fallback ke colored gradient (via coverVariant / default). Dipakai
+    // dynamic variant yang pull cover_image_url dari backend.
+    coverImage?: string;
     featured?: boolean;
   }>;
   // Label CTA "read more" per card. Default "Baca selengkapnya →" untuk
@@ -580,7 +584,14 @@ export function GuruArticleGrid(p: {
                 key={i}
                 className={`guru-article-card ${featuredClass}`.trim()}
               >
-                <div className={`guru-article-cover ${coverClass}`.trim()} />
+                {it.coverImage ? (
+                  <div className="guru-article-cover guru-article-cover--img">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={it.coverImage} alt={it.title} />
+                  </div>
+                ) : (
+                  <div className={`guru-article-cover ${coverClass}`.trim()} />
+                )}
                 <div className="guru-article-card__body">
                   {it.meta ? <div className="guru-meta">{it.meta}</div> : null}
                   <h2>{it.title}</h2>
@@ -1023,6 +1034,11 @@ export function GuruStyles() {
 .guru-article-cover:before,.guru-article-cover:after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.55)}
 .guru-article-cover:before{width:140px;height:140px;right:-30px;top:-30px}
 .guru-article-cover:after{width:55px;height:55px;left:24px;bottom:28px}
+/* Image cover — override gradient + blob decorative dengan photo asli.
+   Pakai object-fit:cover supaya image fill area tanpa distortion. */
+.guru-article-cover--img{background:var(--guru-paper)}
+.guru-article-cover--img:before,.guru-article-cover--img:after{display:none}
+.guru-article-cover--img img{width:100%;height:100%;min-height:190px;object-fit:cover;display:block;position:absolute;inset:0}
 .guru-article-cover--red{background:linear-gradient(135deg,var(--guru-red-soft),var(--guru-blue-soft))}
 .guru-article-cover--sage{background:linear-gradient(135deg,var(--guru-sage),var(--guru-red-soft))}
 .guru-article-cover--gold{background:linear-gradient(135deg,color-mix(in srgb,var(--guru-gold) 25%,var(--guru-cream)),var(--guru-blue-soft))}

@@ -224,6 +224,8 @@ export function GuruStylesEditor() {
 .guru-article-cover--red{background:linear-gradient(135deg,var(--guru-red-soft),var(--guru-blue-soft))}
 .guru-article-cover--sage{background:linear-gradient(135deg,var(--guru-sage),var(--guru-sage))}
 .guru-article-cover--gold{background:linear-gradient(135deg,color-mix(in srgb,var(--guru-gold) 25%,var(--guru-cream)),var(--guru-blue-soft))}
+.guru-article-cover--img{background:var(--guru-paper)}
+.guru-article-cover--img img{width:100%;height:100%;min-height:160px;object-fit:cover;display:block;position:absolute;inset:0}
 .guru-article-card__body{padding:20px}
 .guru-article-card h2,.guru-article-card h3{font-family:var(--font-heading,Georgia),serif;font-size:22px;margin:6px 0 8px;color:var(--guru-navy);line-height:1.15}
 .guru-article-card p{color:var(--guru-muted);font-size:13px;margin:0;line-height:1.6}
@@ -1052,9 +1054,19 @@ export function GuruArticleGridEditorPreview(p: {
           {items.map((it, i) => {
             const coverClass = it.coverVariant ? `guru-article-cover--${it.coverVariant}` : "";
             const featuredClass = it.featured ? "guru-article-card--featured" : "";
+            // Preview demo: artikel dengan cover_image_url di-render pakai img.
+            // Fallback ke gradient coverVariant kalau tidak ada image.
+            const img = (it as { coverImage?: string }).coverImage;
             return (
               <article key={i} className={`guru-article-card ${featuredClass}`.trim()}>
-                <div className={`guru-article-cover ${coverClass}`.trim()} />
+                {img ? (
+                  <div className="guru-article-cover guru-article-cover--img">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img} alt={it.title} />
+                  </div>
+                ) : (
+                  <div className={`guru-article-cover ${coverClass}`.trim()} />
+                )}
                 <div className="guru-article-card__body">
                   <div className="guru-meta"><span>{it.meta}</span></div>
                   <h2>{it.title}</h2>
