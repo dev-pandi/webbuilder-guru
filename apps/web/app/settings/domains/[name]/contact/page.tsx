@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CitySelect, CountryBadge, ProvinceSelect } from "@/components/WilayahSelect";
 
 type Me = {
   id: string;
@@ -292,6 +293,11 @@ export default function ContactUpdatePage() {
               </div>
 
               <div className="space-y-1.5">
+                <Label>Negara</Label>
+                <CountryBadge />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="address">
                   Alamat <span className="text-destructive">*</span>
                 </Label>
@@ -307,27 +313,25 @@ export default function ContactUpdatePage() {
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="city">
-                    Kota <span className="text-destructive">*</span>
+                  <Label>
+                    Provinsi <span className="text-destructive">*</span>
                   </Label>
-                  <Input
-                    id="city"
-                    value={form.city}
-                    onChange={(e) => setForm({ ...form, city: e.target.value })}
-                    required
-                    aria-invalid={!!errors.city}
-                  />
-                  {errors.city && <p className="text-[11px] text-destructive">{errors.city}</p>}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="state">Provinsi</Label>
-                  <Input
-                    id="state"
+                  <ProvinceSelect
                     value={form.state}
-                    onChange={(e) => setForm({ ...form, state: e.target.value })}
-                    aria-invalid={!!errors.state}
+                    onChange={(v) => setForm({ ...form, state: v, city: "" })}
                   />
                   {errors.state && <p className="text-[11px] text-destructive">{errors.state}</p>}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>
+                    Kota / Kabupaten <span className="text-destructive">*</span>
+                  </Label>
+                  <CitySelect
+                    province={form.state}
+                    value={form.city}
+                    onChange={(v) => setForm({ ...form, city: v })}
+                  />
+                  {errors.city && <p className="text-[11px] text-destructive">{errors.city}</p>}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="postal_code">

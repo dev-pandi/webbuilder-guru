@@ -481,6 +481,27 @@ func (h *Handler) enrichCheckResults(ctx context.Context, userID uuid.UUID, resu
 // Kalau zonesRepo nil + input SLD → error (frontend harus provide TLD).
 func (h *Handler) checkDomain(ctx context.Context, input string) (*registrar.DomainCheckResponse, error) {
 	if strings.Contains(input, ".") {
+		// FQDN input — kalau SLD premium (terlalu pendek untuk .id),
+		// langsung tandai unavailable tanpa panggil EPP. Save 1 round-trip.
+		if err := validateDomainLength(input); err != nil {
+			// Extract TLD inline (strings.SplitN pattern) — first dot
+			// adalah separator SLD, sisanya TLD.
+			tld := ""
+			if idx := strings.Index(input, "."); idx > 0 {
+				tld = input[idx+1:]
+			}
+			return &registrar.DomainCheckResponse{
+				Query: input,
+				Results: []registrar.DomainCheckEntry{
+					{
+						Domain:    input,
+						TLD:       tld,
+						Available: false,
+						Reason:    err.Error(),
+					},
+				},
+			}, nil
+		}
 		return h.registrar.CheckDomain(ctx, input)
 	}
 	// SLD path — butuh zones catalog untuk expand.
@@ -512,6 +533,20 @@ func (h *Handler) checkDomain(ctx context.Context, input string) (*registrar.Dom
 	for i, z := range activeZones {
 		i, z := i, z
 		fqdn := input + "." + z.TLD
+		// Pre-check premium length — skip EPP call untuk SLD yang pasti ditolak.
+		// Hemat round-trip + tampilkan reason konsisten di grid.
+		if err := validateDomainLength(fqdn); err != nil {
+			slots[i] = slot{
+				entry: registrar.DomainCheckEntry{
+					Domain:    fqdn,
+					TLD:       z.TLD,
+					Available: false,
+					Reason:    err.Error(),
+				},
+				ok: true,
+			}
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

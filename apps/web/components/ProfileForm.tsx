@@ -28,6 +28,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  CitySelect,
+  CountryBadge,
+  ProvinceSelect,
+} from "@/components/WilayahSelect";
 
 type Me = {
   id: string;
@@ -259,24 +264,26 @@ export function ProfileForm({
               />
             </FieldRow>
 
+            <FieldRow icon={Map} label="Negara">
+              <CountryBadge className="max-w-md" />
+            </FieldRow>
+
             <div className="grid gap-5 sm:grid-cols-2">
-              <FieldRow icon={Building2} label="Kota" error={errors.city}>
-                <Input
-                  value={form.city}
-                  onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                  placeholder="Jakarta Selatan"
-                  maxLength={128}
-                  aria-invalid={!!errors.city}
+              <FieldRow icon={Map} label="Provinsi" error={errors.state}>
+                {/* Ganti provinsi → reset city (dropdown kota filter by provinsi). */}
+                <ProvinceSelect
+                  value={form.state}
+                  onChange={(v) =>
+                    setForm((f) => ({ ...f, state: v, city: "" }))
+                  }
                 />
               </FieldRow>
 
-              <FieldRow icon={Map} label="Provinsi" error={errors.state}>
-                <Input
-                  value={form.state}
-                  onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
-                  placeholder="DKI Jakarta"
-                  maxLength={128}
-                  aria-invalid={!!errors.state}
+              <FieldRow icon={Building2} label="Kota / Kabupaten" error={errors.city}>
+                <CitySelect
+                  province={form.state}
+                  value={form.city}
+                  onChange={(v) => setForm((f) => ({ ...f, city: v }))}
                 />
               </FieldRow>
             </div>

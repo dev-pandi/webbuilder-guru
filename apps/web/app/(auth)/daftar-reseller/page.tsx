@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CitySelect, ProvinceSelect } from "@/components/WilayahSelect";
 
 type FormState = {
   email: string;
@@ -254,22 +255,22 @@ export default function DaftarResellerPage() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
-                <Label htmlFor="city">Kota *</Label>
-                <Input
-                  id="city"
-                  required
-                  value={form.city}
-                  onChange={(e) => set("city", e.target.value)}
-                  placeholder="Jakarta Pusat"
+                <Label>Provinsi *</Label>
+                {/* Ganti provinsi → reset city (list kota filter by provinsi). */}
+                <ProvinceSelect
+                  value={form.state}
+                  onChange={(v) => {
+                    set("state", v);
+                    set("city", "");
+                  }}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="state">Provinsi</Label>
-                <Input
-                  id="state"
-                  value={form.state}
-                  onChange={(e) => set("state", e.target.value)}
-                  placeholder="DKI Jakarta"
+                <Label>Kota / Kabupaten *</Label>
+                <CitySelect
+                  province={form.state}
+                  value={form.city}
+                  onChange={(v) => set("city", v)}
                 />
               </div>
               <div className="space-y-1.5">

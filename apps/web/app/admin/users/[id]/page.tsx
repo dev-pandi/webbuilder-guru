@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CitySelect, ProvinceSelect } from "@/components/WilayahSelect";
 import {
   Dialog,
   DialogContent,
@@ -692,20 +693,30 @@ function EditProfileDialog({
             maxLength={255}
             className="sm:col-span-2"
           />
-          <EditField
-            label="Kota"
-            value={form.city}
-            onChange={(v) => setForm((f) => ({ ...f, city: v }))}
-            error={errors.city}
-            maxLength={128}
-          />
-          <EditField
-            label="Provinsi"
-            value={form.state}
-            onChange={(v) => setForm((f) => ({ ...f, state: v }))}
-            error={errors.state}
-            maxLength={128}
-          />
+          <div className="space-y-1">
+            <Label className="text-xs">Provinsi</Label>
+            {/* Ganti provinsi → reset city supaya dropdown kota accurate. */}
+            <ProvinceSelect
+              value={form.state}
+              onChange={(v) =>
+                setForm((f) => ({ ...f, state: v, city: "" }))
+              }
+            />
+            {errors.state && (
+              <p className="text-[11px] text-destructive">{errors.state}</p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Kota / Kabupaten</Label>
+            <CitySelect
+              province={form.state}
+              value={form.city}
+              onChange={(v) => setForm((f) => ({ ...f, city: v }))}
+            />
+            {errors.city && (
+              <p className="text-[11px] text-destructive">{errors.city}</p>
+            )}
+          </div>
           <EditField
             label="Kode Pos"
             value={form.postal_code}

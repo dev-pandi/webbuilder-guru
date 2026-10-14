@@ -102,6 +102,13 @@ func (h *Handler) Purchase(c *fiber.Ctx) error {
 	if req.Domain == "" || !strings.Contains(req.Domain, ".") {
 		return httpx.BadRequest(c, "domain full FQDN wajib (mis. myshop.id)")
 	}
+	// Blokir domain premium .id yang punya SLD terlalu pendek — reseller
+	// catalog hanya satu tier harga per TLD, jadi domain premium harus
+	// di-flow terpisah (manual oleh admin). Pesan error user-facing eksplisit
+	// supaya user tidak merasa dikerjain.
+	if err := validateDomainLength(req.Domain); err != nil {
+		return httpx.Err(c, fiber.StatusBadRequest, "domain_premium_blocked", err.Error())
+	}
 	if req.Years < 1 || req.Years > 10 {
 		return httpx.BadRequest(c, "years harus 1-10")
 	}
