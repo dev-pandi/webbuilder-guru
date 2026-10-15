@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   CircleAlert,
+  Clock,
   ExternalLink,
   Image as ImageIcon,
   Loader2,
@@ -564,86 +565,196 @@ export function TulisanForm({
             </div>
           </section>
 
-          {/* ===== LITERA NFT PANEL ===== */}
-          <section className={`rounded-2xl border bg-white shadow-sm ${
-            literaEnabled ? "border-indigo-200" : "border-slate-200"
-          }`}>
-            <div className={`flex items-center justify-between gap-3 border-b px-5 py-4 ${
-              literaEnabled ? "border-indigo-200 bg-gradient-to-r from-indigo-50 to-fuchsia-50" : "border-slate-200"
-            }`}>
-              <div className="flex items-center gap-2">
-                <Sparkles className={`size-4 ${literaEnabled ? "text-indigo-600" : "text-slate-400"}`} />
-                <h3 className="text-[15px] font-bold text-slate-900">Terbitkan di Blockchain</h3>
-              </div>
-              <label className="relative inline-flex cursor-pointer items-center">
-                <input
-                  type="checkbox"
-                  checked={literaEnabled}
-                  onChange={(e) => setLiteraEnabled(e.target.checked)}
-                  className="peer sr-only"
-                />
-                <span className="h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-indigo-600" />
-                <span className="absolute left-0.5 top-0.5 size-4 rounded-full bg-white transition peer-checked:translate-x-4" />
-              </label>
-            </div>
-            <div className="grid gap-4 p-5">
-              <div className="rounded-xl bg-indigo-50/50 px-4 py-3 text-[12px] text-indigo-900">
-                <p className="font-semibold">Jadikan Koleksi Digital Litera</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-indigo-800/80">
-                  Artikel akan terdaftar sebagai NFT di jaringan Polygon.
-                  Pembaca dapat mengoleksi (klaim gratis), mengakses materi
-                  eksklusif, atau mengerjakan kuis refleksi.
-                </p>
-              </div>
+          {/* ===== LITERA NFT PANEL — status-first design =====
+              Status derived dari kombinasi literaEnabled + article state:
+                - idle:       belum pernah enable (default)
+                - ready:      enable, belum publish (akan daftar saat publish)
+                - sending:    enable + published, intent_id kosong + no error (goroutine running)
+                - registered: punya intent_id ✓ terdaftar
+                - failed:     ada error, belum ada intent_id */}
+          {(() => {
+            const litState: "idle" | "ready" | "sending" | "registered" | "failed" =
+              article?.litera_intent_id
+                ? "registered"
+                : article?.litera_register_error && article?.litera_enabled
+                  ? "failed"
+                  : literaEnabled
+                    ? article?.status === "published"
+                      ? "sending"
+                      : "ready"
+                    : "idle";
 
-              {/* Status chip — tampilkan intent_id atau error */}
-              {article?.litera_registered_at && article.litera_intent_id && (
-                <div className="flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-[12px] text-emerald-900">
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold">Terdaftar di Litera</div>
-                    <div className="truncate text-[10px] font-mono text-emerald-700">
-                      intent: {article.litera_intent_id}
-                    </div>
-                    <a
-                      href={`https://literaa.xyz/creator?articleUrl=${encodeURIComponent(
-                        `https://${window.location.host}/${rubric}/${slug}`,
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
-                    >
-                      Buka di Literaa <ExternalLink className="size-3" />
-                    </a>
+            const STATE_META = {
+              idle: {
+                icon: Sparkles,
+                color: "slate",
+                title: "Belum terdaftar sebagai NFT",
+                desc: "Artikel ini belum didaftarkan ke blockchain Litera.",
+              },
+              ready: {
+                icon: Clock,
+                color: "amber",
+                title: "Siap didaftarkan",
+                desc: 'Pengaturan sudah lengkap. Artikel akan didaftarkan ke Litera saat Anda klik "Publikasikan".',
+              },
+              sending: {
+                icon: Loader2,
+                color: "indigo",
+                title: "Sedang didaftarkan…",
+                desc: "Pendaftaran sedang dikirim ke Litera. Refresh halaman ini dalam beberapa detik untuk melihat status.",
+              },
+              registered: {
+                icon: CheckCircle2,
+                color: "emerald",
+                title: "Terdaftar di Litera",
+                desc: "Artikel sudah masuk antrian mint di platform Litera. Setelah admin mint ke blockchain, widget NFT akan muncul di halaman detail artikel.",
+              },
+              failed: {
+                icon: CircleAlert,
+                color: "rose",
+                title: "Pendaftaran gagal",
+                desc: "Admin platform akan mencoba mendaftarkan ulang secara otomatis. Anda tidak perlu melakukan apa-apa.",
+              },
+            };
+            const meta = STATE_META[litState];
+            const Icon = meta.icon;
+            const colorMap: Record<string, string> = {
+              slate: "border-slate-200 bg-white",
+              amber: "border-amber-200 bg-amber-50/40",
+              indigo: "border-indigo-200 bg-indigo-50/40",
+              emerald: "border-emerald-200 bg-emerald-50/40",
+              rose: "border-rose-200 bg-rose-50/40",
+            };
+            const titleColor: Record<string, string> = {
+              slate: "text-slate-700",
+              amber: "text-amber-900",
+              indigo: "text-indigo-900",
+              emerald: "text-emerald-900",
+              rose: "text-rose-900",
+            };
+            const iconColor: Record<string, string> = {
+              slate: "text-slate-400",
+              amber: "text-amber-600",
+              indigo: "text-indigo-600",
+              emerald: "text-emerald-600",
+              rose: "text-rose-600",
+            };
+
+            return (
+              <section className={`rounded-2xl border bg-white shadow-sm ${colorMap[meta.color]}`}>
+                <div className="border-b border-current/10 px-5 py-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="size-4 text-indigo-500" />
+                    <h3 className="text-[15px] font-bold text-slate-900">
+                      Koleksi Digital NFT (Litera)
+                    </h3>
                   </div>
                 </div>
-              )}
-              {article?.litera_register_error && !article.litera_intent_id && (
-                <div className="flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-[12px] text-rose-900">
-                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-rose-600" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold">Gagal daftar</div>
-                    <p className="mt-0.5 line-clamp-3 text-[11px] text-rose-800">
-                      {article.litera_register_error}
-                    </p>
-                    <p className="mt-1 text-[10px] text-rose-700">
-                      Admin platform akan melakukan retry otomatis.
-                    </p>
-                  </div>
-                </div>
-              )}
+                <div className="grid gap-4 p-5">
+                  {/* Status card — pusat perhatian */}
+                  <div className={`rounded-xl border px-4 py-3.5 ${colorMap[meta.color]}`}>
+                    <div className="flex items-start gap-3">
+                      <Icon
+                        className={`mt-0.5 size-5 shrink-0 ${iconColor[meta.color]} ${
+                          litState === "sending" ? "animate-spin" : ""
+                        }`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-[13px] font-bold ${titleColor[meta.color]}`}>
+                          {meta.title}
+                        </div>
+                        <p className={`mt-1 text-[11.5px] leading-relaxed ${titleColor[meta.color]} opacity-90`}>
+                          {meta.desc}
+                        </p>
 
-              {literaEnabled && (
-                <>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5 text-[11px] text-amber-900">
-                    <div className="flex items-start gap-1.5">
-                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
-                      <div>
-                        Butuh: <strong>Ringkasan</strong>, <strong>Gambar cover</strong>.
-                        Kuis & materi eksklusif opsional.
+                        {/* Extra detail per state */}
+                        {litState === "registered" && (
+                          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px]">
+                            <code className="rounded bg-white/70 px-2 py-0.5 font-mono text-[10px] text-emerald-800 ring-1 ring-emerald-200">
+                              intent: {article!.litera_intent_id.slice(0, 12)}…
+                            </code>
+                            {article?.litera_registered_at && (
+                              <span className="text-emerald-700/80">
+                                · {new Date(article.litera_registered_at).toLocaleDateString("id-ID", {
+                                  day: "2-digit", month: "short", year: "numeric",
+                                })}
+                              </span>
+                            )}
+                            <a
+                              href={`https://literaa.xyz/creator?articleUrl=${encodeURIComponent(
+                                `https://${window.location.host}/${rubric}/${slug}`,
+                              )}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-0.5 font-bold text-white hover:bg-emerald-700"
+                            >
+                              Buka di Literaa <ExternalLink className="size-3" />
+                            </a>
+                          </div>
+                        )}
+                        {litState === "failed" && article?.litera_register_error && (
+                          <p className="mt-2 line-clamp-2 rounded bg-white/70 px-2 py-1 font-mono text-[10px] text-rose-800 ring-1 ring-rose-200">
+                            {article.litera_register_error}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
+
+                  {/* Action: Daftarkan atau Batalkan */}
+                  {litState === "idle" && (
+                    <button
+                      type="button"
+                      onClick={() => setLiteraEnabled(true)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-sm hover:bg-indigo-700"
+                    >
+                      <Plus className="size-4" />
+                      Daftarkan sebagai Koleksi NFT
+                    </button>
+                  )}
+                  {litState === "ready" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm("Batalkan pendaftaran NFT? Pengaturan akan di-reset.")) {
+                          setLiteraEnabled(false);
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Batalkan pendaftaran
+                    </button>
+                  )}
+
+                  {/* Config form — tampil di ready/sending/registered. Warning
+                      "butuh ringkasan + cover" HANYA di ready (pre-publish).
+                      Di sending/registered, data sudah terkirim ke Litera. */}
+                  {(litState === "ready" || litState === "sending" || litState === "registered") && (
+                <>
+                  {litState === "ready" && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5 text-[11px] text-amber-900">
+                      <div className="flex items-start gap-1.5">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+                        <div>
+                          Butuh: <strong>Ringkasan</strong>, <strong>Gambar cover</strong>.
+                          Kuis & materi eksklusif opsional.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {(litState === "sending" || litState === "registered") && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] text-slate-700">
+                      <div className="flex items-start gap-1.5">
+                        <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
+                        <div>
+                          Pengaturan ini sudah dikirim ke Litera.
+                          {litState === "registered"
+                            ? " Perubahan di sini tidak otomatis mengubah data yang sudah terdaftar."
+                            : " Admin platform sedang memproses pendaftaran."}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Unlockable Content */}
                   <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
@@ -818,8 +929,10 @@ export function TulisanForm({
                   </div>
                 </>
               )}
-            </div>
-          </section>
+                </div>
+              </section>
+            );
+          })()}
 
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
