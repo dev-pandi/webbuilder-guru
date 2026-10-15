@@ -320,6 +320,28 @@ func (r *Repo) GetByJobIDAny(ctx context.Context, jobID string) (*Purchase, erro
 }
 
 // ListByUser — buat halaman "Domain saya" (kalau nanti diperlukan).
+// GetAnyBySite — cari domain purchase apapun untuk site, prefer status
+// 'active'. Dipakai saat pencarian active (via registered_domains) tidak
+// cocok, misalnya domain masih dalam proses provisioning. Return nama
+// domain + status supaya caller bisa kasih info "domain pending, tunggu".
+func (r *Repo) GetAnyBySite(ctx context.Context, siteID uuid.UUID) (domain, status string, err error) {
+	err = r.pool.QueryRow(ctx, `
+		SELECT domain, status
+		FROM domain_purchases
+		WHERE site_id = $1 AND kind = 'register'
+		ORDER BY
+		  CASE status
+		    WHEN 'active' THEN 0
+		    WHEN 'pending_provisioning' THEN 1
+		    WHEN 'pending_payment' THEN 2
+		    ELSE 9
+		  END,
+		  created_at DESC
+		LIMIT 1
+	`, siteID).Scan(&domain, &status)
+	return domain, status, err
+}
+
 func (r *Repo) ListByUser(ctx context.Context, userID uuid.UUID, limit int) ([]Purchase, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+cols+` FROM domain_purchases WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,

@@ -13,15 +13,17 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
+	"github.com/webbuilder/api/internal/domain_purchase"
 	"github.com/webbuilder/api/internal/httpx"
 	"github.com/webbuilder/api/internal/litera"
 	"github.com/webbuilder/api/internal/sites"
 )
 
 type Handler struct {
-	repo   *Repo
-	sites  *sites.Repo
-	litera *litera.Client // nil = fitur Litera disabled
+	repo      *Repo
+	sites     *sites.Repo
+	litera    *litera.Client         // nil = fitur Litera disabled
+	purchases *domain_purchase.Repo  // nil = tidak ada anchor hostname fallback
 }
 
 func NewHandler(r *Repo, s *sites.Repo) *Handler { return &Handler{repo: r, sites: s} }
@@ -29,6 +31,39 @@ func NewHandler(r *Repo, s *sites.Repo) *Handler { return &Handler{repo: r, site
 // SetLitera inject Litera client untuk NFT publishing. Nil-safe (publish tetap
 // jalan tanpa register ke Litera kalau client nil atau config disabled).
 func (h *Handler) SetLitera(c *litera.Client) { h.litera = c }
+
+// SetPurchases inject domain_purchase repo untuk resolve anchor hostname
+// fallback. Dipakai saat sites.primary_hostname kosong — ambil domain yang
+// user beli sebagai hostname efektif. Nil-safe.
+func (h *Handler) SetPurchases(p *domain_purchase.Repo) { h.purchases = p }
+
+// resolveHostname — resolve effective hostname untuk site. Cascade:
+//  1. sites.primary_hostname kalau non-empty (user explicitly set).
+//  2. anchor domain active (via GetDomainBySite — registered_domains.status='active').
+//  3. domain purchase apapun (termasuk pending) — supaya UI bisa jelasin
+//     "domain masih provisioning, tunggu beberapa menit".
+//  4. "" + source="none" kalau site benar-benar tidak punya domain.
+//
+// Return `pending=true` kalau source=anchor_pending supaya caller tidak
+// pakai hostname-nya (belum resolveable di DNS) tapi tetap bisa inform user.
+func (h *Handler) resolveHostname(ctx context.Context, siteID uuid.UUID) (hostname, source string, pending bool) {
+	explicit, _ := h.sites.GetPrimaryHostname(ctx, siteID)
+	if explicit != "" {
+		return explicit, "primary_hostname", false
+	}
+	if h.purchases != nil {
+		// Try active anchor first.
+		if d, err := h.purchases.GetDomainBySite(ctx, siteID); err == nil && d != nil && d.Name != "" {
+			return d.Name, "anchor_purchased", false
+		}
+		// Fallback: any domain purchase (pending/provisioning/etc).
+		if dom, status, err := h.purchases.GetAnyBySite(ctx, siteID); err == nil && dom != "" {
+			// Pending = belum active. Return hostname sebagai info tapi flag pending.
+			return dom, "anchor_pending:" + status, true
+		}
+	}
+	return "", "none", false
+}
 
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,80}[a-z0-9])?$`)
 
@@ -437,11 +472,22 @@ func (h *Handler) registerLitera(ctx context.Context, a *Article) {
 		_ = h.repo.MarkLiteraFailed(ctx, a.ID, "site tidak ditemukan: "+err.Error())
 		return
 	}
-	host, err := h.sites.GetPrimaryHostname(ctx, a.SiteID)
-	if err != nil || host == "" {
-		slog.Warn("litera register: site has no primary hostname",
+	host, src, pending := h.resolveHostname(ctx, a.SiteID)
+	if host == "" {
+		slog.Warn("litera register: no resolvable hostname",
 			"article", a.ID, "site", a.SiteID)
-		_ = h.repo.MarkLiteraFailed(ctx, a.ID, "site belum punya domain publik — set primary hostname dulu")
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID,
+			"site tidak terhubung ke domain apapun — harap beli domain dulu lewat halaman beli domain")
+		return
+	}
+	if pending {
+		// Domain masih provisioning — hostname belum resolveable di DNS.
+		// Jangan kirim ke Litera (akan 403 CORS). Simpan info ke error field,
+		// goroutine notifier atau admin retry akan kick ulang saat active.
+		slog.Info("litera register: domain still pending",
+			"article", a.ID, "site", a.SiteID, "status", src)
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID,
+			"domain "+host+" masih dalam proses ("+src+") — Litera akan daftar otomatis setelah domain aktif")
 		return
 	}
 	canonicalURL := litera.CanonicalArticleURL(host, a.Rubric, a.Slug)
@@ -562,7 +608,7 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "site lookup failed")
 	}
-	hostname, _ := h.sites.GetPrimaryHostname(c.Context(), a.SiteID)
+	hostname, hostnameSource, hostnamePending := h.resolveHostname(c.Context(), a.SiteID)
 	hasHostname := strings.TrimSpace(hostname) != ""
 
 	// Canonical URL — "" kalau hostname belum di-set.
@@ -571,11 +617,15 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 		canonicalURL = litera.CanonicalArticleURL(hostname, a.Rubric, a.Slug)
 	}
 
-	// Payload preview — build via litera.BuildRegisterRequest kalau client ada.
-	// Nil-safe: kalau litera client nil (config disabled), tampilkan payload
-	// manual tanpa smart contract defaults.
+	// Payload preview — selalu build (walau hostname belum di-set) supaya admin
+	// bisa lihat apa yang AKAN dikirim ke Litera. Hostname kosong = pakai
+	// placeholder di articleUrl supaya jelas ini bagian yang perlu diisi.
 	var payloadPreview any
-	if h.litera != nil && hasHostname {
+	if h.litera != nil {
+		previewURL := canonicalURL
+		if previewURL == "" {
+			previewURL = "https://(hostname-site-belum-di-set)/" + a.Rubric + "/" + a.Slug
+		}
 		var quiz *litera.QuizPayload
 		if len(a.LiteraQuizJSON) > 0 && string(a.LiteraQuizJSON) != "{}" && string(a.LiteraQuizJSON) != "null" {
 			var q litera.QuizPayload
@@ -584,7 +634,7 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 			}
 		}
 		req, err := h.litera.BuildRegisterRequest(c.Context(),
-			canonicalURL, a.Title, site.Name, a.Excerpt, a.CoverImageURL,
+			previewURL, a.Title, site.Name, a.Excerpt, a.CoverImageURL,
 			a.LiteraUnlockableURL, a.LiteraUnlockableDescription, quiz,
 		)
 		if err == nil {
@@ -599,14 +649,14 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 		msg := strings.ToLower(a.LiteraRegisterError)
 		switch {
 		case strings.Contains(msg, "domain publik") || strings.Contains(msg, "primary hostname") || strings.Contains(msg, "no primary hostname"):
-			errorCategory = "config"
-			errorHint = "Buka Settings site → Domain, set Primary Hostname. Setelah itu klik Retry."
+			errorCategory = "site_domain"
+			errorHint = "Site belum punya domain publik (primary hostname). Minta guru buka Settings site → Domain, set Primary Hostname di salah satu custom domain yang sudah verified. Ini TIDAK terkait dengan API key Litera."
 		case strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401"):
-			errorCategory = "config"
-			errorHint = "API key Litera invalid/expired. Buka /admin/litera → tab Konfigurasi, periksa API key."
+			errorCategory = "litera_apikey"
+			errorHint = "API key Litera invalid/expired. Buka /admin/litera → tab Konfigurasi, periksa API key dari dashboard Literaa."
 		case strings.Contains(msg, "domain not in cors") || strings.Contains(msg, "403"):
-			errorCategory = "config"
-			errorHint = "Domain belum di-whitelist Litera CORS. Tunggu 60 detik lalu Retry — biasanya auto-approve."
+			errorCategory = "litera_cors"
+			errorHint = "Domain site belum di-whitelist CORS Litera. Tunggu 60 detik lalu Retry — biasanya auto-approve. Kalau tetap 403, hubungi Litera support."
 		case strings.Contains(msg, "rate limit") || strings.Contains(msg, "429"):
 			errorCategory = "api"
 			errorHint = "Rate limit Litera (60 req/menit). Tunggu beberapa saat lalu Retry."
@@ -644,6 +694,14 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 			"slug":             site.Slug,
 			"primary_hostname": hostname,
 			"has_hostname":     hasHostname,
+			// Source: "primary_hostname" = user explicitly set, "anchor_purchased"
+			// = fallback dari domain yang dibeli (active), "anchor_pending:<status>"
+			// = domain masih dalam proses, "none" = belum ada domain apapun.
+			"hostname_source":  hostnameSource,
+			// hostname_pending = true kalau domain ada tapi belum fully active
+			// (misal pending_provisioning). UI pakai ini untuk tampilkan info
+			// "domain masih diproses, tunggu beberapa menit".
+			"hostname_pending": hostnamePending,
 		},
 		"canonical_url":    canonicalURL,
 		"payload_preview":  payloadPreview,

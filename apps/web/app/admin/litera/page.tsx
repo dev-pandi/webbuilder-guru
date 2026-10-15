@@ -479,6 +479,8 @@ type LiteraPreview = {
     slug: string;
     primary_hostname: string;
     has_hostname: boolean;
+    hostname_source: string; // "primary_hostname" | "anchor_purchased" | "anchor_pending:<status>" | "none"
+    hostname_pending: boolean;
   };
   canonical_url: string;
   payload_preview: Record<string, unknown> | null;
@@ -879,24 +881,43 @@ function DetailModal({
               <section>
                 <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
                   <FileText className="size-4 text-muted-foreground" />
-                  Site & Domain
+                  Site & Domain Publik
                 </h3>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                   <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5">
                     <dt className="font-medium text-muted-foreground">Nama Site:</dt>
                     <dd>{data.site.name}</dd>
                     <dt className="font-medium text-muted-foreground">
-                      Primary Hostname:
+                      Hostname Efektif:
                     </dt>
                     <dd>
                       {data.site.has_hostname ? (
-                        <code className="rounded bg-white px-1.5 py-0.5 font-mono text-xs">
-                          {data.site.primary_hostname}
-                        </code>
+                        <div className="flex flex-col gap-0.5">
+                          <code
+                            className={`w-fit rounded px-1.5 py-0.5 font-mono text-xs ${
+                              data.site.hostname_pending
+                                ? "bg-amber-100 text-amber-900 line-through"
+                                : "bg-white"
+                            }`}
+                          >
+                            {data.site.primary_hostname}
+                          </code>
+                          <span className="text-[10px] text-muted-foreground">
+                            {data.site.hostname_source === "primary_hostname" &&
+                              "Sumber: Primary hostname (user set manual)"}
+                            {data.site.hostname_source === "anchor_purchased" &&
+                              "Sumber: Domain yang dibeli (fallback otomatis, status aktif)"}
+                            {data.site.hostname_source.startsWith("anchor_pending") &&
+                              `Sumber: Domain yang dibeli — tapi status ${data.site.hostname_source.replace(
+                                "anchor_pending:",
+                                "",
+                              )}`}
+                          </span>
+                        </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
                           <CircleAlert className="size-3" />
-                          Belum di-set
+                          Belum ada domain
                         </span>
                       )}
                     </dd>
@@ -910,53 +931,92 @@ function DetailModal({
                         </code>
                       ) : (
                         <span className="text-xs text-muted-foreground italic">
-                          Belum bisa dibangun — hostname belum di-set
+                          Belum bisa dibangun — belum ada domain
                         </span>
                       )}
                     </dd>
                   </dl>
                   {!data.site.has_hostname && (
-                    <p className="mt-3 text-xs text-rose-700">
-                      Fix: buka{" "}
-                      <Link
-                        href={`/sites/${data.site.id}/settings/domain`}
-                        className="font-semibold underline"
-                      >
-                        Settings site → Domain
-                      </Link>
-                      , klik "Set sebagai Primary" di salah satu custom domain.
-                    </p>
+                    <div className="mt-3 rounded-lg bg-rose-50 p-3 ring-1 ring-rose-200">
+                      <div className="text-[11px] font-bold uppercase text-rose-700">
+                        Site tidak terhubung ke domain apapun
+                      </div>
+                      <p className="mt-1 text-xs text-rose-900 leading-relaxed">
+                        Normalnya 1 site = 1 domain. Site ini belum punya
+                        domain purchase sama sekali di tabel{" "}
+                        <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px]">
+                          domain_purchases
+                        </code>
+                        . Kemungkinan data corruption atau site dibuat tanpa
+                        beli domain.
+                      </p>
+                    </div>
+                  )}
+                  {data.site.hostname_pending && (
+                    <div className="mt-3 rounded-lg bg-amber-50 p-3 ring-1 ring-amber-200">
+                      <div className="text-[11px] font-bold uppercase text-amber-700">
+                        Domain masih dalam proses
+                      </div>
+                      <p className="mt-1 text-xs text-amber-900 leading-relaxed">
+                        Site sudah beli domain{" "}
+                        <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px]">
+                          {data.site.primary_hostname}
+                        </code>
+                        , tapi statusnya belum{" "}
+                        <code className="font-mono">active</code>. Litera
+                        TIDAK akan diaftarkan sekarang (akan 403 CORS kalau
+                        dipaksa).
+                      </p>
+                      <p className="mt-2 text-xs text-amber-900">
+                        <strong>Fix:</strong> tunggu domain purchase selesai
+                        provisioning (biasanya 1-5 menit). Setelah status
+                        active, klik Retry di bawah.
+                      </p>
+                    </div>
+                  )}
+                  {data.site.hostname_source === "anchor_purchased" && (
+                    <div className="mt-3 rounded-lg bg-emerald-50 p-2.5 ring-1 ring-emerald-200">
+                      <p className="text-[11px] text-emerald-900">
+                        <strong>✓ Fallback otomatis bekerja:</strong> site
+                        belum klik "Set as Primary" tapi punya domain yang
+                        dibeli. Litera pakai domain itu sebagai canonical URL.
+                        Guru bisa override di Settings site → Domain kalau mau.
+                      </p>
+                    </div>
                   )}
                 </div>
               </section>
 
               {/* Payload Preview */}
-              {data.payload_preview ? (
-                <section>
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                    <Code className="size-4 text-muted-foreground" />
-                    Payload ke Litera
-                  </h3>
+              <section>
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                  <Code className="size-4 text-muted-foreground" />
+                  Payload ke Litera {data.site.has_hostname ? "" : "(preview — belum terkirim)"}
+                </h3>
+                {!data.site.has_hostname && data.payload_preview && (
+                  <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900">
+                    Ini preview payload yang akan dikirim. Field{" "}
+                    <code className="font-mono font-bold">articleUrl</code> masih
+                    placeholder karena site belum punya primary hostname.
+                    Semua field lain (title, author, cover, smart contract
+                    defaults) sudah benar — tinggal set hostname lalu Retry.
+                  </div>
+                )}
+                {data.payload_preview ? (
                   <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-900 p-4 text-xs text-slate-100">
                     {JSON.stringify(data.payload_preview, null, 2)}
                   </pre>
-                </section>
-              ) : (
-                <section>
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                    <Code className="size-4 text-muted-foreground" />
-                    Payload ke Litera
-                  </h3>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                    Payload tidak bisa dibangun. Kemungkinan Litera belum
-                    dikonfigurasi (buka{" "}
+                ) : (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+                    Payload belum bisa di-generate — Litera client tidak
+                    tersedia. Buka{" "}
                     <Link href="/admin/litera" className="font-bold underline">
                       /admin/litera → Konfigurasi
-                    </Link>
-                    ) atau hostname belum di-set.
+                    </Link>{" "}
+                    dan pastikan API key sudah terisi + status Aktif.
                   </div>
-                </section>
-              )}
+                )}
+              </section>
 
               {/* Konten source */}
               <section>

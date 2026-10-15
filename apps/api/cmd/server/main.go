@@ -152,6 +152,7 @@ func main() {
 	literaHandler := litera.NewHandler(literaConfigRepo, literaClient)
 	articlesHandler := articles.NewHandler(articlesRepo, siteRepo)
 	articlesHandler.SetLitera(literaClient)
+	// SetPurchases di-wire setelah purchaseRepo diinisialisasi (block di bawah).
 	responsesRepo := responses.NewRepo(pool)
 	bannersRepo := banners.NewRepo(pool)
 	platformArticlesRepo := platform_articles.NewRepo(pool)
@@ -342,6 +343,7 @@ func main() {
 	// setelah audit dibangun (spec §27: track admin banner override).
 	bannersHandler := banners.NewHandler(bannersRepo, siteRepo)
 	if purchaseRepo != nil {
+		articlesHandler.SetPurchases(purchaseRepo)
 		adminHandler.SetPurchases(purchaseRepo)
 	}
 
