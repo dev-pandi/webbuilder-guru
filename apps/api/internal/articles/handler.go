@@ -1,24 +1,34 @@
 package articles
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/webbuilder/api/internal/auth"
 	"github.com/webbuilder/api/internal/httpx"
+	"github.com/webbuilder/api/internal/litera"
 	"github.com/webbuilder/api/internal/sites"
 )
 
 type Handler struct {
-	repo  *Repo
-	sites *sites.Repo
+	repo   *Repo
+	sites  *sites.Repo
+	litera *litera.Client // nil = fitur Litera disabled
 }
 
 func NewHandler(r *Repo, s *sites.Repo) *Handler { return &Handler{repo: r, sites: s} }
+
+// SetLitera inject Litera client untuk NFT publishing. Nil-safe (publish tetap
+// jalan tanpa register ke Litera kalau client nil atau config disabled).
+func (h *Handler) SetLitera(c *litera.Client) { h.litera = c }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,80}[a-z0-9])?$`)
 
@@ -35,6 +45,11 @@ type createReq struct {
 	ReadingTimeMin  int             `json:"reading_time_min"`
 	SEOTitle        string          `json:"seo_title"`
 	SEODescription  string          `json:"seo_description"`
+	// Litera opt-in fields
+	LiteraEnabled               bool            `json:"litera_enabled"`
+	LiteraUnlockableURL         string          `json:"litera_unlockable_url"`
+	LiteraUnlockableDescription string          `json:"litera_unlockable_description"`
+	LiteraQuizJSON              json.RawMessage `json:"litera_quiz_json"`
 }
 
 type updateReq struct {
@@ -49,6 +64,11 @@ type updateReq struct {
 	ReadingTimeMin  *int            `json:"reading_time_min"`
 	SEOTitle        *string         `json:"seo_title"`
 	SEODescription  *string         `json:"seo_description"`
+	// Litera opt-in — pointer = kirim/ubah; nil = tidak diubah.
+	LiteraEnabled               *bool           `json:"litera_enabled"`
+	LiteraUnlockableURL         *string         `json:"litera_unlockable_url"`
+	LiteraUnlockableDescription *string         `json:"litera_unlockable_description"`
+	LiteraQuizJSON              json.RawMessage `json:"litera_quiz_json"`
 }
 
 // GET /api/v1/sites/:id/articles?rubric=&status=
@@ -112,11 +132,20 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 		commentsEnabled = *req.CommentsEnabled
 	}
 	_ = site // reserved for future quota check
+	// Validator Litera: kalau toggle on + status published, cek required fields.
+	if req.LiteraEnabled && req.Status == "published" {
+		if err := validateLiteraFields(req.Title, req.Excerpt, req.CoverImageURL, req.LiteraQuizJSON); err != nil {
+			return httpx.BadRequest(c, err.Error())
+		}
+	}
 	a, err := h.repo.Create(c.Context(), siteID, CreateInput{
 		Rubric: req.Rubric, Slug: req.Slug, Title: req.Title, Excerpt: req.Excerpt,
 		BodyMD: req.BodyMD, CoverImageURL: req.CoverImageURL, Tags: req.Tags,
 		Status: req.Status, CommentsEnabled: commentsEnabled,
 		ReadingTimeMin: req.ReadingTimeMin, SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
+		LiteraEnabled: req.LiteraEnabled, LiteraUnlockableURL: req.LiteraUnlockableURL,
+		LiteraUnlockableDescription: req.LiteraUnlockableDescription,
+		LiteraQuizJSON:              req.LiteraQuizJSON,
 	})
 	if errors.Is(err, ErrSlugTaken) {
 		return httpx.Conflict(c, "slug already used in this rubric")
@@ -126,6 +155,11 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return httpx.Internal(c, "create failed")
+	}
+	// Litera hook — artikel baru + status=published + enabled → async register.
+	// Soft-fail: tidak block response.
+	if a.Status == "published" && a.LiteraEnabled && a.LiteraIntentID == "" {
+		h.maybeRegisterLitera(a)
 	}
 	return httpx.Created(c, a)
 }
@@ -182,11 +216,46 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	if req.CommentsEnabled != nil && !*req.CommentsEnabled && IsForumRubric(existing.Rubric) {
 		return httpx.BadRequest(c, "comments cannot be disabled on forum-diskusi")
 	}
+	// Resolve nilai efektif setelah merge (untuk Litera validator check).
+	// Pakai req kalau non-nil, fallback ke existing.
+	effTitle := existing.Title
+	if req.Title != nil {
+		effTitle = *req.Title
+	}
+	effExcerpt := existing.Excerpt
+	if req.Excerpt != nil {
+		effExcerpt = *req.Excerpt
+	}
+	effCover := existing.CoverImageURL
+	if req.CoverImageURL != nil {
+		effCover = *req.CoverImageURL
+	}
+	effLiteraEnabled := existing.LiteraEnabled
+	if req.LiteraEnabled != nil {
+		effLiteraEnabled = *req.LiteraEnabled
+	}
+	effStatus := existing.Status
+	if req.Status != nil {
+		effStatus = *req.Status
+	}
+	effQuiz := existing.LiteraQuizJSON
+	if len(req.LiteraQuizJSON) > 0 {
+		effQuiz = req.LiteraQuizJSON
+	}
+	// Validator Litera: kalau toggle on + mau publish, cek required fields.
+	if effLiteraEnabled && effStatus == "published" {
+		if err := validateLiteraFields(effTitle, effExcerpt, effCover, effQuiz); err != nil {
+			return httpx.BadRequest(c, err.Error())
+		}
+	}
 	a, err := h.repo.Update(c.Context(), id, UpdateInput{
 		Slug: req.Slug, Title: req.Title, Excerpt: req.Excerpt, BodyMD: req.BodyMD,
 		CoverImageURL: req.CoverImageURL, Tags: req.Tags, Status: req.Status,
 		CommentsEnabled: req.CommentsEnabled, ReadingTimeMin: req.ReadingTimeMin,
 		SEOTitle: req.SEOTitle, SEODescription: req.SEODescription,
+		LiteraEnabled: req.LiteraEnabled, LiteraUnlockableURL: req.LiteraUnlockableURL,
+		LiteraUnlockableDescription: req.LiteraUnlockableDescription,
+		LiteraQuizJSON:              req.LiteraQuizJSON,
 	})
 	if errors.Is(err, ErrSlugTaken) {
 		return httpx.Conflict(c, "slug already used in this rubric")
@@ -199,6 +268,14 @@ func (h *Handler) Update(c *fiber.Ctx) error {
 	}
 	if err != nil {
 		return httpx.Internal(c, "update failed")
+	}
+	// Litera hook — kalau transition ke published AND enabled AND belum punya
+	// intent_id, async register. Juga handle "retry" case: existing failed
+	// (litera_register_error != "") + user re-publish.
+	needsRegister := a.Status == "published" && a.LiteraEnabled && a.LiteraIntentID == "" &&
+		(existing.Status != "published" || existing.LiteraRegisterError != "" || !existing.LiteraEnabled)
+	if needsRegister {
+		h.maybeRegisterLitera(a)
 	}
 	return httpx.OK(c, a)
 }
@@ -220,10 +297,21 @@ func (h *Handler) Publish(c *fiber.Ctx) error {
 	if _, err := h.sites.GetOwnedOrAdmin(c.Context(), existing.SiteID, uid, auth.IsAdminFrom(c)); err != nil {
 		return httpx.NotFound(c, "article not found")
 	}
+	// Validator Litera: artikel ini mau di-publish — kalau Litera enabled,
+	// cek required fields. Short-circuit sebelum DB update.
+	if existing.LiteraEnabled {
+		if err := validateLiteraFields(existing.Title, existing.Excerpt, existing.CoverImageURL, existing.LiteraQuizJSON); err != nil {
+			return httpx.BadRequest(c, err.Error())
+		}
+	}
 	status := "published"
 	a, err := h.repo.Update(c.Context(), id, UpdateInput{Status: &status})
 	if err != nil {
 		return httpx.Internal(c, "publish failed")
+	}
+	// Litera hook — async register kalau enabled + belum punya intent.
+	if a.LiteraEnabled && a.LiteraIntentID == "" {
+		h.maybeRegisterLitera(a)
 	}
 	return httpx.OK(c, a)
 }
@@ -266,4 +354,189 @@ func (h *Handler) Stats(c *fiber.Ctx) error {
 		return httpx.Internal(c, "stats failed")
 	}
 	return httpx.OK(c, s)
+}
+
+// ========================= LITERA INTEGRATION HOOKS =========================
+
+// validateLiteraFields — enforce syarat Litera register saat publish.
+// Required: title, excerpt (jadi description), cover_image_url. Kalau quiz
+// non-kosong, pastikan struktur valid (1-3 pertanyaan, 4 opsi, correctOption
+// terset).
+func validateLiteraFields(title, excerpt, coverImageURL string, quizJSON json.RawMessage) error {
+	var missing []string
+	if strings.TrimSpace(title) == "" {
+		missing = append(missing, "judul")
+	}
+	if strings.TrimSpace(excerpt) == "" {
+		missing = append(missing, "ringkasan")
+	}
+	if strings.TrimSpace(coverImageURL) == "" {
+		missing = append(missing, "gambar cover")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("field wajib untuk Litera belum diisi: %s", strings.Join(missing, ", "))
+	}
+	// Quiz optional — kalau kosong, skip. Kalau non-empty, validasi struktur.
+	if len(quizJSON) > 0 && string(quizJSON) != "{}" && string(quizJSON) != "null" {
+		var quiz litera.QuizPayload
+		if err := json.Unmarshal(quizJSON, &quiz); err != nil {
+			return fmt.Errorf("quiz format tidak valid")
+		}
+		if len(quiz.Questions) == 0 {
+			return nil // treated as no quiz
+		}
+		if len(quiz.Questions) > 3 {
+			return fmt.Errorf("maksimal 3 pertanyaan quiz")
+		}
+		for i, q := range quiz.Questions {
+			if strings.TrimSpace(q.Question) == "" {
+				return fmt.Errorf("pertanyaan ke-%d belum diisi", i+1)
+			}
+			if len(q.Options) != 4 {
+				return fmt.Errorf("pertanyaan ke-%d harus punya 4 opsi", i+1)
+			}
+			for j, opt := range q.Options {
+				if strings.TrimSpace(opt) == "" {
+					return fmt.Errorf("pertanyaan ke-%d opsi %c kosong", i+1, 'A'+j)
+				}
+			}
+			if q.CorrectOption != "A" && q.CorrectOption != "B" && q.CorrectOption != "C" && q.CorrectOption != "D" {
+				return fmt.Errorf("pertanyaan ke-%d harus pilih jawaban benar (A/B/C/D)", i+1)
+			}
+		}
+	}
+	return nil
+}
+
+// maybeRegisterLitera — fire-and-forget goroutine untuk register ke Litera API.
+// Soft-fail: artikel tetap published walau register gagal; error tersimpan di
+// litera_register_error untuk admin retry manual.
+func (h *Handler) maybeRegisterLitera(a *Article) {
+	if h.litera == nil {
+		return
+	}
+	go func() {
+		// Context terpisah dari request — pakai background dengan timeout 60s.
+		// Alasan: HTTP request parent sudah closed, tidak boleh share ctx.
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		h.registerLitera(ctx, a)
+	}()
+}
+
+// registerLitera — synchronous registration; dipanggil dari goroutine di
+// maybeRegisterLitera atau admin retry endpoint.
+func (h *Handler) registerLitera(ctx context.Context, a *Article) {
+	if h.litera == nil {
+		return
+	}
+	// Build canonical URL dari site hostname + rubric + slug.
+	site, err := h.sites.GetByID(ctx, a.SiteID)
+	if err != nil {
+		slog.Warn("litera register: site lookup failed", "article", a.ID, "err", err)
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID, "site tidak ditemukan: "+err.Error())
+		return
+	}
+	host, err := h.sites.GetPrimaryHostname(ctx, a.SiteID)
+	if err != nil || host == "" {
+		slog.Warn("litera register: site has no primary hostname",
+			"article", a.ID, "site", a.SiteID)
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID, "site belum punya domain publik — set primary hostname dulu")
+		return
+	}
+	canonicalURL := litera.CanonicalArticleURL(host, a.Rubric, a.Slug)
+	// Author = nama site (platform guru pakai nama guru sebagai nama site).
+	author := site.Name
+
+	var quiz *litera.QuizPayload
+	if len(a.LiteraQuizJSON) > 0 && string(a.LiteraQuizJSON) != "{}" && string(a.LiteraQuizJSON) != "null" {
+		var q litera.QuizPayload
+		if err := json.Unmarshal(a.LiteraQuizJSON, &q); err == nil && len(q.Questions) > 0 {
+			quiz = &q
+		}
+	}
+
+	req, err := h.litera.BuildRegisterRequest(ctx,
+		canonicalURL, a.Title, author, a.Excerpt, a.CoverImageURL,
+		a.LiteraUnlockableURL, a.LiteraUnlockableDescription, quiz,
+	)
+	if err != nil {
+		if errors.Is(err, litera.ErrDisabled) {
+			// Config disabled — jangan tandai failed, user mungkin baru enable.
+			slog.Info("litera register skipped: integration disabled",
+				"article", a.ID)
+			return
+		}
+		slog.Warn("litera register: build request failed", "article", a.ID, "err", err)
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID, err.Error())
+		return
+	}
+
+	resp, err := h.litera.Register(ctx, req)
+	if err != nil {
+		slog.Warn("litera register: API call failed",
+			"article", a.ID, "url", canonicalURL, "err", err)
+		msg := err.Error()
+		if len(msg) > 500 {
+			msg = msg[:500]
+		}
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID, msg)
+		return
+	}
+	if err := h.repo.MarkLiteraRegistered(ctx, a.ID, resp.Data.Intent.ID); err != nil {
+		slog.Error("litera register: DB mark success failed",
+			"article", a.ID, "intent", resp.Data.Intent.ID, "err", err)
+		return
+	}
+	slog.Info("litera register success",
+		"article", a.ID, "intent", resp.Data.Intent.ID, "url", canonicalURL)
+}
+
+// RetryLiteraRegister — admin endpoint helper (dipanggil dari admin handler).
+// Reset error flag + re-run register.
+func (h *Handler) RetryLiteraRegister(ctx context.Context, id uuid.UUID) error {
+	a, err := h.repo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !a.LiteraEnabled {
+		return fmt.Errorf("artikel tidak enable Litera")
+	}
+	if a.LiteraIntentID != "" {
+		return fmt.Errorf("artikel sudah ter-register dengan intent %s", a.LiteraIntentID)
+	}
+	h.registerLitera(ctx, a)
+	return nil
+}
+
+// ========================= ADMIN LITERA DASHBOARD =========================
+
+// LiteraAdminList — GET /api/v1/admin/litera/intents
+// Paginated list artikel yang litera_enabled=true. Filter status via query
+// param `?status=registered|pending|failed`.
+func (h *Handler) LiteraAdminList(c *fiber.Ctx) error {
+	p := httpx.ParsePagination(c)
+	status := strings.TrimSpace(c.Query("status"))
+	if status != "" && status != "registered" && status != "pending" && status != "failed" {
+		return httpx.BadRequest(c, "status harus registered/pending/failed")
+	}
+	items, total, err := h.repo.LiteraAdminList(c.Context(), p.LikePattern(), status, p.Sort, p.PageSize, p.Offset())
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, httpx.MakePaginated(items, p, total))
+}
+
+// LiteraAdminRetry — POST /api/v1/admin/articles/:id/litera-retry
+// Re-run register untuk artikel yang soft-failed. Admin-only (route protected
+// di admin router).
+func (h *Handler) LiteraAdminRetry(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	if err := h.RetryLiteraRegister(c.Context(), id); err != nil {
+		return httpx.BadRequest(c, err.Error())
+	}
+	return httpx.OK(c, fiber.Map{"ok": true, "message": "retry dijadwalkan"})
 }

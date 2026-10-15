@@ -21,7 +21,9 @@ import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 import { ArticleAudio } from "@/components/ArticleAudio";
 import { GuruStyles } from "@/components/GuruBlocks";
 import { GuruResponseForm } from "@/components/GuruResponseForm";
+import { LiteraWidget } from "@/components/LiteraWidget";
 import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
+import { canonicalArticleURL } from "@/lib/canonical";
 
 export const dynamic = "force-dynamic";
 
@@ -176,6 +178,15 @@ export default async function ArticleDetail({
               </a>
             ))}
           </div>
+        )}
+
+        {/* Litera NFT widget — hanya tampil kalau artikel sudah terdaftar
+            (litera_enabled + punya intent_id). Widget auto-handle status
+            "sedang diproses" sampai admin mint di dashboard Literaa. */}
+        {article.litera_enabled && article.litera_intent_id && (
+          <LiteraWidget
+            canonicalURL={canonicalArticleURL(host(), rubric, article.slug)}
+          />
         )}
 
         {article.comments_enabled && (

@@ -31,6 +31,7 @@ import (
 	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/learning"
+	"github.com/webbuilder/api/internal/litera"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/payments"
 	platform_articles "github.com/webbuilder/api/internal/platform_articles"
@@ -87,6 +88,11 @@ type Deps struct {
 	// Guru content model — Phase 1 spec Rumah Digital Guru.
 	Articles  *articles.Handler
 	Learning  *learning.Handler
+
+	// Litera — NFT publishing integration (Phase 1 artikel-only). Nil = fitur
+	// disabled (config DB kosong / API key not set). Admin kelola di
+	// /admin/settings/litera.
+	Litera *litera.Handler
 	Responses *responses.Handler
 	Banners   *banners.Handler
 	// PublicGuru — public endpoints untuk website guru + portal directory.

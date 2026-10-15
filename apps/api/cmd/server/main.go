@@ -34,6 +34,7 @@ import (
 	"github.com/webbuilder/api/internal/forms"
 	"github.com/webbuilder/api/internal/invoices"
 	"github.com/webbuilder/api/internal/learning"
+	"github.com/webbuilder/api/internal/litera"
 	"github.com/webbuilder/api/internal/logging"
 	"github.com/webbuilder/api/internal/mail"
 	"github.com/webbuilder/api/internal/metrics"
@@ -146,6 +147,11 @@ func main() {
 	blogRepo := blog.NewRepo(pool)
 	articlesRepo := articles.NewRepo(pool)
 	learningRepo := learning.NewRepo(pool)
+	literaConfigRepo := litera.NewConfigRepo(pool)
+	literaClient := litera.NewClient(literaConfigRepo)
+	literaHandler := litera.NewHandler(literaConfigRepo, literaClient)
+	articlesHandler := articles.NewHandler(articlesRepo, siteRepo)
+	articlesHandler.SetLitera(literaClient)
 	responsesRepo := responses.NewRepo(pool)
 	bannersRepo := banners.NewRepo(pool)
 	platformArticlesRepo := platform_articles.NewRepo(pool)
@@ -367,6 +373,7 @@ func main() {
 	auditHandler := audit.NewHandler(auditRepo)
 	adminHandler.SetAudit(auditRepo)
 	resellerHandler.SetAudit(auditRepo)
+	literaHandler.SetAudit(auditRepo)
 	if purchaseHandler != nil {
 		purchaseHandler.SetAudit(auditRepo)
 	}
@@ -585,8 +592,9 @@ func main() {
 		Documents:        documentsHandler,
 		Promos:           promosHandler,
 		SiteBYODomains:   byoHandler,
-		Articles:         articles.NewHandler(articlesRepo, siteRepo),
+		Articles:         articlesHandler,
 		Learning:         learning.NewHandler(learningRepo, siteRepo),
+		Litera:           literaHandler,
 		Responses:        responses.NewHandler(responsesRepo, siteRepo, articlesRepo, learningRepo),
 		Banners:          bannersHandler,
 		PublicGuru:       publicGuruHandler,

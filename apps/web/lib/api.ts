@@ -140,6 +140,17 @@ export const GURU_RUBRIC_LABEL: Record<GuruRubric, string> = {
 
 export type ArticleStatus = "draft" | "published";
 
+export type LiteraQuizQuestion = {
+  question: string;
+  options: string[]; // 4 opsi (A/B/C/D)
+  correctOption: "A" | "B" | "C" | "D" | "";
+};
+
+export type LiteraQuiz = {
+  passingScore: number;
+  questions: LiteraQuizQuestion[];
+};
+
 export type Article = {
   id: string;
   site_id: string;
@@ -156,6 +167,14 @@ export type Article = {
   view_count: number;
   seo_title: string;
   seo_description: string;
+  // Litera NFT integration (migration 0067)
+  litera_enabled: boolean;
+  litera_intent_id: string;
+  litera_registered_at: string | null;
+  litera_unlockable_url: string;
+  litera_unlockable_description: string;
+  litera_quiz_json: LiteraQuiz | Record<string, never>;
+  litera_register_error: string;
   published_at: string | null;
   created_at: string;
   updated_at: string;

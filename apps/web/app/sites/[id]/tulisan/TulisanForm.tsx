@@ -8,13 +8,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
+  CheckCircle2,
+  CircleAlert,
+  ExternalLink,
   Image as ImageIcon,
   Loader2,
   MessageSquare,
   MessageSquareOff,
+  Plus,
   Save,
   Send,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +30,8 @@ import {
   GURU_RUBRIC_LABEL,
   type Article,
   type GuruRubric,
+  type LiteraQuiz,
+  type LiteraQuizQuestion,
 } from "@/lib/api";
 import { ImagePicker } from "@/components/ImagePicker";
 import { RichEditor } from "@/components/RichEditor";
@@ -36,6 +45,10 @@ function slugify(s: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+function emptyQuestion(): LiteraQuizQuestion {
+  return { question: "", options: ["", "", "", ""], correctOption: "" };
 }
 
 function fmtStamp(iso: string): string {
@@ -78,6 +91,34 @@ export function TulisanForm({
   );
   const [saving, setSaving] = useState<"draft" | "published" | null>(null);
 
+  // Litera NFT publishing state
+  const literaQuizInitial: LiteraQuiz | null = (() => {
+    const raw = article?.litera_quiz_json;
+    if (!raw || typeof raw !== "object") return null;
+    if ("questions" in raw && Array.isArray(raw.questions) && raw.questions.length > 0) {
+      return raw as LiteraQuiz;
+    }
+    return null;
+  })();
+  const [literaEnabled, setLiteraEnabled] = useState<boolean>(
+    article?.litera_enabled ?? false,
+  );
+  const [literaUnlockableURL, setLiteraUnlockableURL] = useState<string>(
+    article?.litera_unlockable_url ?? "",
+  );
+  const [literaUnlockableDesc, setLiteraUnlockableDesc] = useState<string>(
+    article?.litera_unlockable_description ?? "",
+  );
+  const [literaQuizEnabled, setLiteraQuizEnabled] = useState<boolean>(
+    !!literaQuizInitial,
+  );
+  const [literaQuiz, setLiteraQuiz] = useState<LiteraQuiz>(() =>
+    literaQuizInitial ?? {
+      passingScore: 60,
+      questions: [emptyQuestion()],
+    },
+  );
+
   useEffect(() => {
     if (slugTouched) return;
     setSlug(slugify(title));
@@ -112,6 +153,10 @@ export function TulisanForm({
       tagsText: (article?.tags ?? []).join(", "),
       commentsEnabled: article?.comments_enabled ?? true,
       readingTime: article?.reading_time_min ?? 0,
+      literaEnabled: article?.litera_enabled ?? false,
+      literaUnlockableURL: article?.litera_unlockable_url ?? "",
+      literaUnlockableDesc: article?.litera_unlockable_description ?? "",
+      literaQuiz: literaQuizInitial ? JSON.stringify(literaQuizInitial) : "",
     }),
   );
   const currentSnapshot = useMemo(
@@ -126,8 +171,17 @@ export function TulisanForm({
         tagsText,
         commentsEnabled,
         readingTime,
+        literaEnabled,
+        literaUnlockableURL,
+        literaUnlockableDesc,
+        literaQuiz: literaQuizEnabled ? JSON.stringify(literaQuiz) : "",
       }),
-    [rubric, title, slug, excerpt, bodyMD, coverImageURL, tagsText, commentsEnabled, readingTime],
+    [
+      rubric, title, slug, excerpt, bodyMD, coverImageURL, tagsText,
+      commentsEnabled, readingTime,
+      literaEnabled, literaUnlockableURL, literaUnlockableDesc,
+      literaQuizEnabled, literaQuiz,
+    ],
   );
   const dirty = currentSnapshot !== savedSnapshot;
 
@@ -156,8 +210,45 @@ export function TulisanForm({
       if (!opts?.silent) toast.error("Slug wajib diisi");
       return;
     }
+    // Litera validator — hanya aktif saat publish + toggle on. Draft bebas.
+    if (!opts?.silent && targetStatus === "published" && literaEnabled) {
+      const missing: string[] = [];
+      if (!excerpt.trim()) missing.push("Ringkasan");
+      if (!coverImageURL.trim()) missing.push("Gambar cover");
+      if (missing.length > 0) {
+        toast.error(
+          `Litera butuh: ${missing.join(", ")}. Isi dulu atau nonaktifkan Litera.`,
+        );
+        return;
+      }
+      if (literaQuizEnabled) {
+        if (literaQuiz.questions.length === 0 || literaQuiz.questions.length > 3) {
+          toast.error("Kuis Litera harus punya 1-3 pertanyaan.");
+          return;
+        }
+        for (let i = 0; i < literaQuiz.questions.length; i++) {
+          const q = literaQuiz.questions[i];
+          if (!q.question.trim()) {
+            toast.error(`Pertanyaan ${i + 1} belum diisi.`);
+            return;
+          }
+          if (q.options.some((o) => !o.trim())) {
+            toast.error(`Pertanyaan ${i + 1}: semua 4 opsi wajib diisi.`);
+            return;
+          }
+          if (!q.correctOption) {
+            toast.error(`Pertanyaan ${i + 1}: pilih jawaban benar (A/B/C/D).`);
+            return;
+          }
+        }
+      }
+    }
     setSaving(targetStatus);
     try {
+      // Build Litera payload: quiz hanya include kalau toggle on + ada pertanyaan.
+      const literaQuizPayload = literaQuizEnabled && literaQuiz.questions.length > 0
+        ? literaQuiz
+        : {};
       const body = {
         rubric,
         title,
@@ -169,6 +260,10 @@ export function TulisanForm({
         status: targetStatus,
         comments_enabled: commentsEnabled,
         reading_time_min: readingTime,
+        litera_enabled: literaEnabled,
+        litera_unlockable_url: literaUnlockableURL,
+        litera_unlockable_description: literaUnlockableDesc,
+        litera_quiz_json: literaQuizPayload,
       };
       if (isEdit) {
         const { rubric: _r, ...patchBody } = body;
@@ -466,6 +561,263 @@ export function TulisanForm({
                   </span>
                 </span>
               </label>
+            </div>
+          </section>
+
+          {/* ===== LITERA NFT PANEL ===== */}
+          <section className={`rounded-2xl border bg-white shadow-sm ${
+            literaEnabled ? "border-indigo-200" : "border-slate-200"
+          }`}>
+            <div className={`flex items-center justify-between gap-3 border-b px-5 py-4 ${
+              literaEnabled ? "border-indigo-200 bg-gradient-to-r from-indigo-50 to-fuchsia-50" : "border-slate-200"
+            }`}>
+              <div className="flex items-center gap-2">
+                <Sparkles className={`size-4 ${literaEnabled ? "text-indigo-600" : "text-slate-400"}`} />
+                <h3 className="text-[15px] font-bold text-slate-900">Terbitkan di Blockchain</h3>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  checked={literaEnabled}
+                  onChange={(e) => setLiteraEnabled(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <span className="h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-indigo-600" />
+                <span className="absolute left-0.5 top-0.5 size-4 rounded-full bg-white transition peer-checked:translate-x-4" />
+              </label>
+            </div>
+            <div className="grid gap-4 p-5">
+              <div className="rounded-xl bg-indigo-50/50 px-4 py-3 text-[12px] text-indigo-900">
+                <p className="font-semibold">Jadikan Koleksi Digital Litera</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-indigo-800/80">
+                  Artikel akan terdaftar sebagai NFT di jaringan Polygon.
+                  Pembaca dapat mengoleksi (klaim gratis), mengakses materi
+                  eksklusif, atau mengerjakan kuis refleksi.
+                </p>
+              </div>
+
+              {/* Status chip — tampilkan intent_id atau error */}
+              {article?.litera_registered_at && article.litera_intent_id && (
+                <div className="flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-[12px] text-emerald-900">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold">Terdaftar di Litera</div>
+                    <div className="truncate text-[10px] font-mono text-emerald-700">
+                      intent: {article.litera_intent_id}
+                    </div>
+                    <a
+                      href={`https://literaa.xyz/creator?articleUrl=${encodeURIComponent(
+                        `https://${window.location.host}/${rubric}/${slug}`,
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
+                    >
+                      Buka di Literaa <ExternalLink className="size-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
+              {article?.litera_register_error && !article.litera_intent_id && (
+                <div className="flex items-start gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-[12px] text-rose-900">
+                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-rose-600" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold">Gagal daftar</div>
+                    <p className="mt-0.5 line-clamp-3 text-[11px] text-rose-800">
+                      {article.litera_register_error}
+                    </p>
+                    <p className="mt-1 text-[10px] text-rose-700">
+                      Admin platform akan melakukan retry otomatis.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {literaEnabled && (
+                <>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5 text-[11px] text-amber-900">
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+                      <div>
+                        Butuh: <strong>Ringkasan</strong>, <strong>Gambar cover</strong>.
+                        Kuis & materi eksklusif opsional.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Unlockable Content */}
+                  <div className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                    <div className="text-[12px] font-bold text-slate-700">
+                      Materi Eksklusif (opsional)
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Konten terkunci NFT. Pembaca harus klaim koleksi untuk akses.
+                      Contoh: PDF modul, link Google Drive, video pengayaan.
+                    </p>
+                    <input
+                      type="url"
+                      value={literaUnlockableURL}
+                      onChange={(e) => setLiteraUnlockableURL(e.target.value)}
+                      placeholder="https://drive.google.com/..."
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                    />
+                    <input
+                      value={literaUnlockableDesc}
+                      onChange={(e) => setLiteraUnlockableDesc(e.target.value)}
+                      placeholder="Deskripsi singkat"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                    />
+                  </div>
+
+                  {/* Quiz Builder */}
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[12px] font-bold text-slate-700">
+                          Kuis Refleksi (opsional)
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          1-3 pertanyaan pilihan ganda sebelum pembaca klaim NFT.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          checked={literaQuizEnabled}
+                          onChange={(e) => setLiteraQuizEnabled(e.target.checked)}
+                          className="peer sr-only"
+                        />
+                        <span className="h-5 w-9 rounded-full bg-slate-300 transition peer-checked:bg-indigo-600" />
+                        <span className="absolute left-0.5 top-0.5 size-4 rounded-full bg-white transition peer-checked:translate-x-4" />
+                      </label>
+                    </div>
+
+                    {literaQuizEnabled && (
+                      <>
+                        <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                          <label className="text-[11px] font-bold text-slate-600">
+                            Nilai lulus (%)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={literaQuiz.passingScore}
+                            onChange={(e) =>
+                              setLiteraQuiz({
+                                ...literaQuiz,
+                                passingScore: parseInt(e.target.value || "0", 10),
+                              })
+                            }
+                            className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-400"
+                          />
+                        </div>
+
+                        {literaQuiz.questions.map((q, qi) => (
+                          <div
+                            key={qi}
+                            className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase text-slate-500">
+                                Pertanyaan {qi + 1}
+                              </span>
+                              {literaQuiz.questions.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = {
+                                      ...literaQuiz,
+                                      questions: literaQuiz.questions.filter((_, i) => i !== qi),
+                                    };
+                                    setLiteraQuiz(next);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50"
+                                >
+                                  <Trash2 className="size-3" /> Hapus
+                                </button>
+                              )}
+                            </div>
+                            <textarea
+                              value={q.question}
+                              onChange={(e) => {
+                                const next = { ...literaQuiz };
+                                next.questions = [...next.questions];
+                                next.questions[qi] = { ...q, question: e.target.value };
+                                setLiteraQuiz(next);
+                              }}
+                              placeholder="Tulis pertanyaan..."
+                              rows={2}
+                              className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                            />
+                            {q.options.map((opt, oi) => {
+                              const letter = ["A", "B", "C", "D"][oi];
+                              const isCorrect = q.correctOption === letter;
+                              return (
+                                <div key={oi} className="flex items-center gap-2">
+                                  <label
+                                    className={`grid size-7 cursor-pointer place-items-center rounded-full border-2 text-[11px] font-bold transition ${
+                                      isCorrect
+                                        ? "border-emerald-500 bg-emerald-500 text-white"
+                                        : "border-slate-300 bg-white text-slate-500 hover:border-indigo-400"
+                                    }`}
+                                    title={isCorrect ? "Jawaban benar" : "Klik untuk tandai sebagai jawaban benar"}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`correct-${qi}`}
+                                      className="sr-only"
+                                      checked={isCorrect}
+                                      onChange={() => {
+                                        const next = { ...literaQuiz };
+                                        next.questions = [...next.questions];
+                                        next.questions[qi] = {
+                                          ...q,
+                                          correctOption: letter as "A" | "B" | "C" | "D",
+                                        };
+                                        setLiteraQuiz(next);
+                                      }}
+                                    />
+                                    {letter}
+                                  </label>
+                                  <input
+                                    value={opt}
+                                    onChange={(e) => {
+                                      const next = { ...literaQuiz };
+                                      next.questions = [...next.questions];
+                                      const options = [...q.options];
+                                      options[oi] = e.target.value;
+                                      next.questions[qi] = { ...q, options };
+                                      setLiteraQuiz(next);
+                                    }}
+                                    placeholder={`Opsi ${letter}`}
+                                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+
+                        {literaQuiz.questions.length < 3 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLiteraQuiz({
+                                ...literaQuiz,
+                                questions: [...literaQuiz.questions, emptyQuestion()],
+                              });
+                            }}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-indigo-300 bg-white px-3 py-2 text-[12px] font-bold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            <Plus className="size-3.5" /> Tambah Pertanyaan
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </section>
 

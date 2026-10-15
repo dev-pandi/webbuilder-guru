@@ -35,6 +35,20 @@ func MountAdmin(app *fiber.App, deps Deps) {
 		g.Delete("/assets/:id", deps.Assets.AdminDelete)
 	}
 
+	// Litera NFT publishing config — singleton DB-backed, admin edit via
+	// /admin/settings/litera. Nil-safe (handler mounted conditionally).
+	if deps.Litera != nil {
+		g.Get("/litera/config", deps.Litera.GetConfig)
+		g.Patch("/litera/config", deps.Litera.UpdateConfig)
+	}
+	// Litera intents dashboard — list artikel yang Litera-enabled + status
+	// (registered/pending/failed) + retry endpoint untuk soft-failed.
+	// Hidup di articles.Handler karena akses articles repo.
+	if deps.Articles != nil {
+		g.Get("/litera/intents", deps.Articles.LiteraAdminList)
+		g.Post("/articles/:id/litera-retry", deps.Articles.LiteraAdminRetry)
+	}
+
 	// Reseller management — approve/suspend applications + tabbed detail view.
 	// Handler cek `authRepo == nil` → return 503 kalau feature belum di-wire.
 	g.Get("/resellers", deps.Admin.ListResellers)

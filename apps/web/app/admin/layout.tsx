@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Briefcase, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2, Cloud, ScrollText, DollarSign, LayoutTemplate, Mail, Settings, MapPin, CreditCard, Receipt, Tag, Wallet, Megaphone, Newspaper, HardDrive } from "lucide-react";
+import { BarChart3, Briefcase, Users, Globe2, ArrowLeft, LogOut, ShieldCheck, Loader2, Cloud, ScrollText, DollarSign, LayoutTemplate, Mail, Settings, MapPin, CreditCard, Receipt, Tag, Wallet, Megaphone, Newspaper, HardDrive, Sparkles } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -27,6 +27,7 @@ const nav = [
   { href: "/admin/invoices", label: "Invoices", icon: Receipt },
   { href: "/admin/wallet/topups", label: "Wallet Top-up", icon: Wallet },
   { href: "/admin/settings", label: "Settings", icon: Settings },
+  { href: "/admin/litera", label: "Litera NFT", icon: Sparkles },
   { href: "/admin/domain", label: "Domain", icon: Globe2 },
   { href: "/admin/dns-providers", label: "DNS Provider", icon: Cloud },
   { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },
