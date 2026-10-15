@@ -19,6 +19,29 @@ import {
 } from "@/components/GuruBlocks";
 import { GuruNavbarClient } from "@/components/GuruNavbarClient";
 import {
+  GuruPlusAudioEpisode,
+  GuruPlusAwardShowcase,
+  GuruPlusBeforeAfter,
+  GuruPlusBookingSlot,
+  GuruPlusBookshelf,
+  GuruPlusCertificateGrid,
+  GuruPlusContactCTA,
+  GuruPlusFAQ,
+  GuruPlusLessonCard,
+  GuruPlusMapLocation,
+  GuruPlusMarquee,
+  GuruPlusNewsletter,
+  GuruPlusPhotoEssay,
+  GuruPlusSkillBars,
+  GuruPlusStats,
+  GuruPlusStoryBlock,
+  GuruPlusStudentWall,
+  GuruPlusStyles,
+  GuruPlusTestimonials,
+  GuruPlusTimeline,
+  GuruPlusVideoEmbed,
+} from "@/components/GuruPlusBlocks";
+import {
   GuruArticleGridDynamic,
   GuruForumThreadListDynamic,
   GuruLatestGridDynamic,
@@ -1910,6 +1933,152 @@ function BlockView({ block }: { block: Block }) {
       return <GuruTagList {...(p as Parameters<typeof GuruTagList>[0])} />;
     case "GuruFooter":
       return <GuruFooter {...(p as Parameters<typeof GuruFooter>[0])} />;
+
+    // -------- Guru Plus — extensi modern block (Phase 1) --------
+    // Satu <style> inject sekali via GuruPlusStyles pada case pertama; sisanya
+    // reuse. Pattern sama dengan GuruStyles di template core.
+    case "GuruPlusStyles":
+      return <GuruPlusStyles />;
+    case "GuruPlusFAQ":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusFAQ {...(p as Parameters<typeof GuruPlusFAQ>[0])} />
+        </>
+      );
+    case "GuruPlusStats":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusStats {...(p as Parameters<typeof GuruPlusStats>[0])} />
+        </>
+      );
+    case "GuruPlusTimeline":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusTimeline {...(p as Parameters<typeof GuruPlusTimeline>[0])} />
+        </>
+      );
+    case "GuruPlusTestimonials":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusTestimonials {...(p as Parameters<typeof GuruPlusTestimonials>[0])} />
+        </>
+      );
+    case "GuruPlusMarquee":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusMarquee {...(p as Parameters<typeof GuruPlusMarquee>[0])} />
+        </>
+      );
+    case "GuruPlusBookshelf":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusBookshelf {...(p as Parameters<typeof GuruPlusBookshelf>[0])} />
+        </>
+      );
+    case "GuruPlusVideoEmbed":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusVideoEmbed {...(p as Parameters<typeof GuruPlusVideoEmbed>[0])} />
+        </>
+      );
+    case "GuruPlusPhotoEssay":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusPhotoEssay {...(p as Parameters<typeof GuruPlusPhotoEssay>[0])} />
+        </>
+      );
+    case "GuruPlusAudioEpisode":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusAudioEpisode {...(p as Parameters<typeof GuruPlusAudioEpisode>[0])} />
+        </>
+      );
+    case "GuruPlusCertificateGrid":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusCertificateGrid {...(p as Parameters<typeof GuruPlusCertificateGrid>[0])} />
+        </>
+      );
+    case "GuruPlusBeforeAfter":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusBeforeAfter {...(p as Parameters<typeof GuruPlusBeforeAfter>[0])} />
+        </>
+      );
+    case "GuruPlusLessonCard":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusLessonCard {...(p as Parameters<typeof GuruPlusLessonCard>[0])} />
+        </>
+      );
+    case "GuruPlusMapLocation":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusMapLocation {...(p as Parameters<typeof GuruPlusMapLocation>[0])} />
+        </>
+      );
+    case "GuruPlusSkillBars":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusSkillBars {...(p as Parameters<typeof GuruPlusSkillBars>[0])} />
+        </>
+      );
+    case "GuruPlusAwardShowcase":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusAwardShowcase {...(p as Parameters<typeof GuruPlusAwardShowcase>[0])} />
+        </>
+      );
+    case "GuruPlusContactCTA":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusContactCTA {...(p as Parameters<typeof GuruPlusContactCTA>[0])} />
+        </>
+      );
+    case "GuruPlusBookingSlot":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusBookingSlot {...(p as Parameters<typeof GuruPlusBookingSlot>[0])} />
+        </>
+      );
+    case "GuruPlusNewsletter":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusNewsletter {...(p as Parameters<typeof GuruPlusNewsletter>[0])} />
+        </>
+      );
+    case "GuruPlusStudentWall":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusStudentWall {...(p as Parameters<typeof GuruPlusStudentWall>[0])} />
+        </>
+      );
+    case "GuruPlusStoryBlock":
+      return (
+        <>
+          <GuruPlusStyles />
+          <GuruPlusStoryBlock {...(p as Parameters<typeof GuruPlusStoryBlock>[0])} />
+        </>
+      );
 
     default:
       return null;

@@ -76,6 +76,29 @@ import {
   GuruTagListEditor,
   GuruTimelineEditor,
 } from "@/components/GuruEditorBlocks";
+import {
+  GuruPlusAudioEpisodeEditor,
+  GuruPlusAwardShowcaseEditor,
+  GuruPlusBeforeAfterEditor,
+  GuruPlusBookingSlotEditor,
+  GuruPlusBookshelfEditor,
+  GuruPlusCertificateGridEditor,
+  GuruPlusContactCTAEditor,
+  GuruPlusFAQEditor,
+  GuruPlusLessonCardEditor,
+  GuruPlusMapLocationEditor,
+  GuruPlusMarqueeEditor,
+  GuruPlusNewsletterEditor,
+  GuruPlusPhotoEssayEditor,
+  GuruPlusSkillBarsEditor,
+  GuruPlusStatsEditor,
+  GuruPlusStoryBlockEditor,
+  GuruPlusStudentWallEditor,
+  GuruPlusStylesEditor,
+  GuruPlusTestimonialsEditor,
+  GuruPlusTimelineEditor,
+  GuruPlusVideoEmbedEditor,
+} from "@/components/GuruPlusEditorBlocks";
 import { LayoutPanel } from "./LayoutPanel";
 import { ThemeDrawer, type ThemeJson } from "./ThemeDrawer";
 import { buildLayoutStyle, buildMaxWidthStyle, layoutForBreakpoint } from "@/lib/blockLayout";
@@ -2811,6 +2834,7 @@ function Preview({
           styling identik dengan template preview beneran. Aman untuk site
           non-guru: CSS scoped ke class .guru-* + :root var yang read theme. */}
       <GuruStylesEditor />
+      <GuruPlusStylesEditor />
       <SortableContext
         items={visibleBlocks.map((v) => pathKey([v.index]))}
         strategy={verticalListSortingStrategy}
@@ -4655,6 +4679,280 @@ function BlockView({
           links={p.links as Array<{ label: string; href: string }> | undefined}
           bottomLeft={p.bottomLeft as string | undefined}
           bottomRight={p.bottomRight as string | undefined}
+          edit={guruEdit}
+        />
+      );
+
+    // -------- Guru Plus — modern animated block set --------
+    case "GuruPlusStyles":
+      return (
+        <div className="mx-6 my-2 rounded-md border border-dashed border-fuchsia-300 bg-fuchsia-50 px-3 py-1.5 text-[11px] text-fuchsia-700">
+          ✨ <strong>GuruPlusStyles</strong> · CSS Guru Plus (tidak render visual — sudah aktif)
+        </div>
+      );
+    case "GuruPlusFAQ":
+      return (
+        <GuruPlusFAQEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={p.items as Array<{ q: string; a: string }> | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusStats":
+      return (
+        <GuruPlusStatsEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={p.items as Array<{ value: number; suffix?: string; label: string }> | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusTimeline":
+      return (
+        <GuruPlusTimelineEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={p.items as Array<{ year: string; title: string; desc?: string }> | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusTestimonials":
+      return (
+        <GuruPlusTestimonialsEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{ quote: string; author: string; role?: string; avatar?: string }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusMarquee":
+      return (
+        <GuruPlusMarqueeEditor
+          items={p.items as string[] | undefined}
+          speed={p.speed as "slow" | "normal" | "fast" | undefined}
+        />
+      );
+    case "GuruPlusBookshelf":
+      return (
+        <GuruPlusBookshelfEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{ title: string; author?: string; cover?: string; year?: string; note?: string }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusVideoEmbed":
+      return (
+        <GuruPlusVideoEmbedEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{ url: string; title: string; description?: string; thumbnail?: string }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusPhotoEssay":
+      return (
+        <GuruPlusPhotoEssayEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as Array<{ image: string; caption?: string; meta?: string }> | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusAudioEpisode":
+      return (
+        <GuruPlusAudioEpisodeEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{
+                  title: string;
+                  src: string;
+                  duration?: string;
+                  description?: string;
+                  cover?: string;
+                }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusCertificateGrid":
+      return (
+        <GuruPlusCertificateGridEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{ title: string; issuer?: string; date?: string; image?: string; href?: string }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusBeforeAfter":
+      return (
+        <GuruPlusBeforeAfterEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          beforeImage={p.beforeImage as string | undefined}
+          afterImage={p.afterImage as string | undefined}
+          beforeLabel={p.beforeLabel as string | undefined}
+          afterLabel={p.afterLabel as string | undefined}
+          caption={p.caption as string | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusLessonCard":
+      return (
+        <GuruPlusLessonCardEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{
+                  title: string;
+                  level?: string;
+                  duration?: string;
+                  description?: string;
+                  icon?: string;
+                  href?: string;
+                  ctaLabel?: string;
+                }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusMapLocation":
+      return (
+        <GuruPlusMapLocationEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          address={p.address as string | undefined}
+          lat={p.lat as number | string | undefined}
+          lon={p.lon as number | string | undefined}
+          zoom={p.zoom as number | string | undefined}
+          directionsHref={p.directionsHref as string | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusSkillBars":
+      return (
+        <GuruPlusSkillBarsEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{ label: string; value: number | string; note?: string }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusAwardShowcase":
+      return (
+        <GuruPlusAwardShowcaseEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{ rank?: string; title: string; subtitle?: string; year?: string; icon?: string }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusContactCTA":
+      return (
+        <GuruPlusContactCTAEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          ctaLabel={p.ctaLabel as string | undefined}
+          ctaHref={p.ctaHref as string | undefined}
+          ctaSecondaryLabel={p.ctaSecondaryLabel as string | undefined}
+          ctaSecondaryHref={p.ctaSecondaryHref as string | undefined}
+          contacts={
+            p.contacts as
+              | Array<{ icon?: string; label: string; value: string; href?: string }>
+              | undefined
+          }
+          variant={p.variant as "navy" | "cream" | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusBookingSlot":
+      return (
+        <GuruPlusBookingSlotEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          slots={
+            p.slots as
+              | Array<{ day?: string; time: string; status?: "available" | "booked" | "full"; href?: string }>
+              | undefined
+          }
+          footerNote={p.footerNote as string | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusNewsletter":
+      return (
+        <GuruPlusNewsletterEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          subtitle={p.subtitle as string | undefined}
+          placeholder={p.placeholder as string | undefined}
+          buttonLabel={p.buttonLabel as string | undefined}
+          disclaimer={p.disclaimer as string | undefined}
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusStudentWall":
+      return (
+        <GuruPlusStudentWallEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          items={
+            p.items as
+              | Array<{
+                  message: string;
+                  author: string;
+                  grade?: string;
+                  color?: "amber" | "pink" | "blue" | "green";
+                }>
+              | undefined
+          }
+          edit={guruEdit}
+        />
+      );
+    case "GuruPlusStoryBlock":
+      return (
+        <GuruPlusStoryBlockEditor
+          eyebrow={p.eyebrow as string | undefined}
+          title={p.title as string | undefined}
+          byline={p.byline as string | undefined}
+          body={p.body as string | undefined}
+          pullquote={p.pullquote as string | undefined}
+          image={p.image as string | undefined}
+          imageCaption={p.imageCaption as string | undefined}
           edit={guruEdit}
         />
       );

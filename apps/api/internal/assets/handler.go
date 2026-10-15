@@ -299,6 +299,48 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.Map{"ok": true})
 }
 
+// ---------- Admin ----------
+
+// AdminList — GET /api/v1/admin/assets
+// Paginated search lintas site/user. Dipakai admin untuk audit upload
+// mencurigakan (nama file aneh, size besar, user tertentu). Query `q`
+// matches: filename (url basename), mime, owner email/name, site name.
+// Sort whitelist: newest|oldest|size_desc|size_asc.
+func (h *Handler) AdminList(c *fiber.Ctx) error {
+	p := httpx.ParsePagination(c)
+	items, total, err := h.repo.AdminListAssetsPage(c.Context(), p.LikePattern(), p.Sort, p.PageSize, p.Offset())
+	if err != nil {
+		return httpx.Internal(c, "list failed")
+	}
+	return httpx.OK(c, httpx.MakePaginated(items, p, total))
+}
+
+// AdminDelete — DELETE /api/v1/admin/assets/:id
+// Admin hard-delete bypass ownership. Dipakai untuk takedown upload yang
+// melanggar (abuse / malware / konten tidak pantas). Audit log via admin
+// handler layer (bukan di sini).
+func (h *Handler) AdminDelete(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid asset id")
+	}
+	asset, err := h.repo.GetByID(c.Context(), id)
+	if err != nil {
+		return httpx.NotFound(c, "asset not found")
+	}
+	key := storageKeyFromURL(asset.URL)
+	if key != "" {
+		if err := h.storage.Delete(c.Context(), key); err != nil {
+			slog.Warn("admin asset delete: storage cleanup failed (continue DB delete)",
+				"error", err, "asset_id", id, "key", key)
+		}
+	}
+	if _, err := h.repo.Delete(c.Context(), id); err != nil {
+		return httpx.Internal(c, "delete failed")
+	}
+	return httpx.OK(c, fiber.Map{"ok": true})
+}
+
 // storageKeyFromURL extract storage key dari serving URL. Format URL bisa:
 //   - local:  "http://api.localhost/uploads/xxxx.png" → "xxxx.png"
 //   - s3:     "https://cdn.example/assets/yyyy.jpg"  → "yyyy.jpg"

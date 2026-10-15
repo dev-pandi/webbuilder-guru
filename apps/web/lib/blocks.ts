@@ -55,7 +55,8 @@ export type BlockCategory =
   | "media"
   | "list"
   | "dynamic"
-  | "guru";
+  | "guru"
+  | "guru-plus";
 
 export const CATEGORY_LABELS: Record<BlockCategory, string> = {
   pro: "Pro ✨",
@@ -69,6 +70,7 @@ export const CATEGORY_LABELS: Record<BlockCategory, string> = {
   list: "List",
   dynamic: "Dynamic (DB)",
   guru: "Rumah Digital Guru 🎓",
+  "guru-plus": "Guru Plus ✨",
 };
 
 export type BlockSchema = {
@@ -2263,6 +2265,682 @@ export const blockSchemas: BlockSchema[] = [
       { name: "subtitle", label: "Subtitle", type: "textarea" },
     ],
   },
+
+  // ========================= GURU PLUS (Phase 1) =========================
+  // Set block modern dengan animasi scroll + marquee pure CSS. Terpisah
+  // kategori dari "Rumah Digital Guru" supaya user tidak bingung. Namespace
+  // komponen GuruPlus* (lihat renderer: apps/renderer/components/GuruPlusBlocks.tsx).
+  {
+    type: "GuruPlusStyles",
+    label: "Guru Plus Styles",
+    category: "guru-plus",
+    emoji: "🎨",
+    description: "WAJIB untuk block Guru Plus — inject CSS .guruplus-*",
+    defaults: {},
+    fields: [],
+  },
+  {
+    type: "GuruPlusFAQ",
+    label: "Guru Plus FAQ",
+    category: "guru-plus",
+    emoji: "❓",
+    description: "Accordion FAQ elegan dengan nomor besar",
+    defaults: {
+      eyebrow: "Tanya Jawab",
+      title: "Pertanyaan yang sering ditanyakan",
+      items: [
+        { q: "Apakah materi di sini bisa diunduh?", a: "Ya, sebagian besar materi tersedia untuk diunduh dalam format PDF." },
+        { q: "Bagaimana cara menghubungi guru?", a: "Silakan isi form respon atau hubungi via kontak yang tertera di halaman profil." },
+        { q: "Apakah ada biaya untuk mengakses konten?", a: "Semua konten di ruang ini gratis untuk tujuan belajar." },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar FAQ",
+        type: "items",
+        itemFields: [
+          { name: "q", label: "Pertanyaan", type: "string" },
+          { name: "a", label: "Jawaban", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusStats",
+    label: "Guru Plus Stats",
+    category: "guru-plus",
+    emoji: "📊",
+    description: "Angka counting-up saat di-scroll ke viewport",
+    defaults: {
+      eyebrow: "Jejak kami",
+      title: "Dalam angka",
+      items: [
+        { value: 1200, suffix: "+", label: "Murid terbantu" },
+        { value: 85, suffix: "%", label: "Tingkat kehadiran" },
+        { value: 12, label: "Tahun mengajar" },
+        { value: 48, label: "Materi diterbitkan" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar Statistik",
+        type: "items",
+        itemFields: [
+          { name: "value", label: "Angka", type: "string" },
+          { name: "suffix", label: "Suffix (ex: +, %)", type: "string" },
+          { name: "label", label: "Label", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusTimeline",
+    label: "Guru Plus Timeline",
+    category: "guru-plus",
+    emoji: "📅",
+    description: "Timeline vertikal dengan dot connector + reveal animasi",
+    defaults: {
+      eyebrow: "Perjalanan",
+      title: "Milestone yang saya syukuri",
+      items: [
+        { year: "2012", title: "Mulai mengajar", desc: "Masuk kelas pertama di sekolah dasar." },
+        { year: "2016", title: "Koordinator literasi", desc: "Membangun klub baca mingguan." },
+        { year: "2020", title: "Workshop daring", desc: "Memandu lokakarya menulis untuk guru lain." },
+        { year: "2024", title: "Rumah Digital Guru", desc: "Membuka ruang digital untuk murid & ortu." },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Timeline",
+        type: "items",
+        itemFields: [
+          { name: "year", label: "Tahun / Periode", type: "string" },
+          { name: "title", label: "Judul", type: "string" },
+          { name: "desc", label: "Deskripsi", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusTestimonials",
+    label: "Guru Plus Testimonials",
+    category: "guru-plus",
+    emoji: "💬",
+    description: "Dinding kutipan testimoni (masonry layout)",
+    defaults: {
+      eyebrow: "Suara mereka",
+      title: "Apa kata murid & ortu",
+      items: [
+        { quote: "Rangkuman materinya ringkas, anak saya jadi semangat belajar.", author: "Ibu Dewi", role: "Orang tua kelas 5" },
+        { quote: "Guru favorit saya, selalu sabar menjawab pertanyaan.", author: "Rama", role: "Murid kelas 6" },
+        { quote: "Terima kasih sudah mengenalkan kebiasaan membaca jurnal.", author: "Pak Hendra", role: "Rekan guru" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Testimoni",
+        type: "items",
+        itemFields: [
+          { name: "quote", label: "Kutipan", type: "textarea" },
+          { name: "author", label: "Nama", type: "string" },
+          { name: "role", label: "Peran", type: "string" },
+          { name: "avatar", label: "Avatar (URL)", type: "image" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusMarquee",
+    label: "Guru Plus Marquee",
+    category: "guru-plus",
+    emoji: "🎠",
+    description: "Baris teks berjalan horizontal (seamless loop)",
+    defaults: {
+      items: ["Literasi", "Numerasi", "Kreativitas", "Empati", "Berbagi", "Belajar sepanjang hayat"],
+      speed: "normal",
+    },
+    fields: [
+      {
+        name: "items",
+        label: "Teks Marquee",
+        type: "strings",
+        placeholder: "Satu baris = satu item",
+      },
+      {
+        name: "speed",
+        label: "Kecepatan",
+        type: "select",
+        options: [
+          { value: "slow", label: "Lambat" },
+          { value: "normal", label: "Normal" },
+          { value: "fast", label: "Cepat" },
+        ],
+      },
+    ],
+  },
+
+  // ========================= GURU PLUS (Phase 2) =========================
+  {
+    type: "GuruPlusBookshelf",
+    label: "Guru Plus Bookshelf",
+    category: "guru-plus",
+    emoji: "📚",
+    description: "Rak buku rekomendasi dengan cover + catatan",
+    defaults: {
+      eyebrow: "Yang saya baca",
+      title: "Rekomendasi bacaan",
+      items: [
+        { title: "Totto-chan: Gadis Cilik di Jendela", author: "Tetsuko Kuroyanagi", year: "1981", note: "Pengingat bahwa ruang kelas yang ramah mengubah hidup." },
+        { title: "Pedagogy of the Oppressed", author: "Paulo Freire", year: "1968", note: "Mendidik adalah membebaskan." },
+        { title: "The Courage to Teach", author: "Parker J. Palmer", year: "1998", note: "Guru sebagai pribadi yang hadir." },
+        { title: "Laskar Pelangi", author: "Andrea Hirata", year: "2005", note: "Semangat belajar di tengah keterbatasan." },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar Buku",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul buku", type: "string" },
+          { name: "author", label: "Penulis", type: "string" },
+          { name: "cover", label: "Cover (URL)", type: "image" },
+          { name: "year", label: "Tahun", type: "string" },
+          { name: "note", label: "Catatan singkat", type: "textarea" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusVideoEmbed",
+    label: "Guru Plus Video",
+    category: "guru-plus",
+    emoji: "🎬",
+    description: "Gallery video YouTube/Vimeo (lazy load)",
+    defaults: {
+      eyebrow: "Dokumentasi",
+      title: "Momen di kelas",
+      items: [
+        { url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", title: "Kelas membaca jurnal", description: "Dokumentasi sesi membaca jurnal di kelas 5." },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar Video",
+        type: "items",
+        itemFields: [
+          { name: "url", label: "URL (YouTube/Vimeo)", type: "url" },
+          { name: "title", label: "Judul", type: "string" },
+          { name: "description", label: "Deskripsi", type: "textarea" },
+          { name: "thumbnail", label: "Thumbnail (opsional)", type: "image" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusPhotoEssay",
+    label: "Guru Plus Photo Essay",
+    category: "guru-plus",
+    emoji: "🖼️",
+    description: "Foto essay asimetris dengan caption + meta",
+    defaults: {
+      eyebrow: "Foto cerita",
+      title: "Satu hari di kelas",
+      items: [
+        { image: "/placeholder-1.jpg", caption: "Suasana pagi", meta: "Senin · Kelas 5" },
+        { image: "/placeholder-2.jpg", caption: "Bacaan jurnal", meta: "08:00" },
+        { image: "/placeholder-3.jpg", caption: "Diskusi kelompok", meta: "09:30" },
+        { image: "/placeholder-4.jpg", caption: "Istirahat", meta: "10:15" },
+        { image: "/placeholder-5.jpg", caption: "Pelajaran lanjutan", meta: "11:00" },
+        { image: "/placeholder-6.jpg", caption: "Pulang sekolah", meta: "13:00" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Foto",
+        type: "items",
+        itemFields: [
+          { name: "image", label: "Foto", type: "image" },
+          { name: "caption", label: "Caption", type: "string" },
+          { name: "meta", label: "Meta (tanggal/lokasi)", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusAudioEpisode",
+    label: "Guru Plus Audio",
+    category: "guru-plus",
+    emoji: "🎧",
+    description: "Daftar episode audio dengan HTML5 player",
+    defaults: {
+      eyebrow: "Dengarkan",
+      title: "Episode audio",
+      items: [
+        { title: "Pengantar kelas literasi", src: "", duration: "08:12", description: "Pengantar singkat tentang literasi di kelas 5." },
+        { title: "Membaca jurnal: Episode 1", src: "", duration: "12:40", description: "Diskusi tentang kebiasaan membaca jurnal harian." },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Episode",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul episode", type: "string" },
+          { name: "src", label: "URL audio (mp3/ogg)", type: "url" },
+          { name: "duration", label: "Durasi (mis. 12:40)", type: "string" },
+          { name: "description", label: "Deskripsi", type: "textarea" },
+          { name: "cover", label: "Cover (opsional)", type: "image" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusCertificateGrid",
+    label: "Guru Plus Certificate",
+    category: "guru-plus",
+    emoji: "🏆",
+    description: "Grid sertifikat / penghargaan dengan gambar + link",
+    defaults: {
+      eyebrow: "Pengakuan",
+      title: "Sertifikat & penghargaan",
+      items: [
+        { title: "Guru Berprestasi Tingkat Kabupaten", issuer: "Dinas Pendidikan", date: "2023" },
+        { title: "Workshop Literasi Nasional", issuer: "Kemendikbud", date: "2022" },
+        { title: "Pelatihan Microsoft Educator", issuer: "Microsoft Education", date: "2021" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Sertifikat",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul", type: "string" },
+          { name: "issuer", label: "Penerbit", type: "string" },
+          { name: "date", label: "Tanggal / Tahun", type: "string" },
+          { name: "image", label: "Gambar (opsional)", type: "image" },
+          { name: "href", label: "Link verifikasi (opsional)", type: "url" },
+        ],
+      },
+    ],
+  },
+
+  // ========================= GURU PLUS (Phase 3) =========================
+  {
+    type: "GuruPlusBeforeAfter",
+    label: "Guru Plus Before/After",
+    category: "guru-plus",
+    emoji: "↔️",
+    description: "Slider perbandingan 2 foto (draggable divider)",
+    defaults: {
+      eyebrow: "Sebelum & sesudah",
+      title: "Perubahan di kelas kami",
+      beforeImage: "",
+      afterImage: "",
+      beforeLabel: "Sebelum",
+      afterLabel: "Sesudah",
+      caption: "Geser pembatas untuk membandingkan ruang kelas sebelum dan sesudah renovasi.",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "beforeImage", label: "Foto Sebelum", type: "image" },
+      { name: "afterImage", label: "Foto Sesudah", type: "image" },
+      { name: "beforeLabel", label: "Label 'Sebelum'", type: "string" },
+      { name: "afterLabel", label: "Label 'Sesudah'", type: "string" },
+      { name: "caption", label: "Caption bawah", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruPlusLessonCard",
+    label: "Guru Plus Lesson",
+    category: "guru-plus",
+    emoji: "📘",
+    description: "Grid kartu pelajaran dengan level + durasi + CTA",
+    defaults: {
+      eyebrow: "Modul pembelajaran",
+      title: "Pelajaran yang tersedia",
+      items: [
+        { title: "Membaca Jurnal Harian", level: "Pemula", duration: "15 menit", description: "Membangun kebiasaan refleksi lewat jurnal.", icon: "📓", href: "#", ctaLabel: "Mulai modul" },
+        { title: "Menulis Cerita Pendek", level: "Menengah", duration: "30 menit", description: "Teknik dasar menyusun narasi.", icon: "✍️", href: "#", ctaLabel: "Mulai modul" },
+        { title: "Analisis Puisi", level: "Lanjutan", duration: "45 menit", description: "Membedah struktur dan makna puisi.", icon: "📜", href: "#", ctaLabel: "Mulai modul" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar Pelajaran",
+        type: "items",
+        itemFields: [
+          { name: "title", label: "Judul pelajaran", type: "string" },
+          { name: "level", label: "Tingkat (mis. Pemula)", type: "string" },
+          { name: "duration", label: "Durasi (mis. 15 menit)", type: "string" },
+          { name: "description", label: "Deskripsi", type: "textarea" },
+          { name: "icon", label: "Ikon (emoji)", type: "string" },
+          { name: "href", label: "Link mulai belajar", type: "url" },
+          { name: "ctaLabel", label: "Label tombol", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusMapLocation",
+    label: "Guru Plus Peta Lokasi",
+    category: "guru-plus",
+    emoji: "📍",
+    description: "Peta OpenStreetMap + alamat + petunjuk arah",
+    defaults: {
+      eyebrow: "Temui kami",
+      title: "Lokasi sekolah",
+      address: "Jl. Pendidikan No. 1, Jakarta Selatan",
+      lat: -6.2,
+      lon: 106.816666,
+      zoom: 14,
+      directionsHref: "",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "address", label: "Alamat", type: "textarea" },
+      { name: "lat", label: "Latitude (contoh -6.2)", type: "string" },
+      { name: "lon", label: "Longitude (contoh 106.816666)", type: "string" },
+      { name: "zoom", label: "Zoom (10-18)", type: "string" },
+      { name: "directionsHref", label: "Link Google Maps / Petunjuk arah", type: "url" },
+    ],
+  },
+  {
+    type: "GuruPlusSkillBars",
+    label: "Guru Plus Skill Bars",
+    category: "guru-plus",
+    emoji: "📈",
+    description: "Progress bar skill/fokus dengan reveal animasi",
+    defaults: {
+      eyebrow: "Fokus pengajaran",
+      title: "Komposisi kelas",
+      items: [
+        { label: "Literasi membaca", value: 90, note: "Fokus utama di kelas 5-6." },
+        { label: "Numerasi dasar", value: 75 },
+        { label: "Keterampilan menulis", value: 85, note: "Jurnal + cerita pendek." },
+        { label: "Diskusi kelompok", value: 70 },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar Skill",
+        type: "items",
+        itemFields: [
+          { name: "label", label: "Nama skill", type: "string" },
+          { name: "value", label: "Nilai (0-100)", type: "string" },
+          { name: "note", label: "Catatan (opsional)", type: "string" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusAwardShowcase",
+    label: "Guru Plus Award",
+    category: "guru-plus",
+    emoji: "🏆",
+    description: "Showcase penghargaan dengan medal emas/perak/perunggu",
+    defaults: {
+      eyebrow: "Penghargaan",
+      title: "Juara yang membanggakan",
+      items: [
+        { rank: "Juara 1", title: "Lomba Guru Teladan", subtitle: "Tingkat Kabupaten", year: "2024" },
+        { rank: "Juara 2", title: "Olimpiade Literasi", subtitle: "Tingkat Provinsi", year: "2023" },
+        { rank: "Juara 3", title: "Festival Sastra Guru", subtitle: "Tingkat Nasional", year: "2022" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Daftar Penghargaan",
+        type: "items",
+        itemFields: [
+          { name: "rank", label: "Peringkat (Juara 1/Emas/dll)", type: "string" },
+          { name: "title", label: "Judul lomba", type: "string" },
+          { name: "subtitle", label: "Keterangan", type: "string" },
+          { name: "year", label: "Tahun", type: "string" },
+          { name: "icon", label: "Ikon (emoji)", type: "string" },
+        ],
+      },
+    ],
+  },
+
+  // ========================= GURU PLUS (Phase 4) =========================
+  {
+    type: "GuruPlusContactCTA",
+    label: "Guru Plus Contact CTA",
+    category: "guru-plus",
+    emoji: "📞",
+    description: "Section call-to-action besar dengan kontak",
+    defaults: {
+      eyebrow: "Hubungi kami",
+      title: "Mari bekerja sama untuk murid.",
+      subtitle: "Buka ruang diskusi dengan guru melalui kontak di bawah ini.",
+      ctaLabel: "Jadwalkan konsultasi",
+      ctaHref: "#",
+      ctaSecondaryLabel: "Pelajari lebih lanjut",
+      ctaSecondaryHref: "#",
+      variant: "navy",
+      contacts: [
+        { icon: "✉️", label: "Email", value: "guru@example.id", href: "mailto:guru@example.id" },
+        { icon: "📱", label: "WhatsApp", value: "+62 812-3456-7890", href: "https://wa.me/62" },
+        { icon: "📍", label: "Alamat", value: "Jl. Pendidikan No. 1" },
+      ],
+    },
+    fields: [
+      {
+        name: "variant",
+        label: "Varian warna",
+        type: "select",
+        options: [
+          { value: "navy", label: "Navy (gelap)" },
+          { value: "cream", label: "Cream (terang)" },
+        ],
+      },
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subtitle", type: "textarea" },
+      { name: "ctaLabel", label: "Tombol utama (label)", type: "string" },
+      { name: "ctaHref", label: "Tombol utama (link)", type: "url" },
+      { name: "ctaSecondaryLabel", label: "Tombol sekunder (label)", type: "string" },
+      { name: "ctaSecondaryHref", label: "Tombol sekunder (link)", type: "url" },
+      {
+        name: "contacts",
+        label: "Daftar Kontak",
+        type: "items",
+        itemFields: [
+          { name: "icon", label: "Ikon (emoji)", type: "string" },
+          { name: "label", label: "Label", type: "string" },
+          { name: "value", label: "Nilai", type: "string" },
+          { name: "href", label: "Link (opsional)", type: "url" },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusBookingSlot",
+    label: "Guru Plus Booking Slot",
+    category: "guru-plus",
+    emoji: "🗓️",
+    description: "Grid slot waktu konsultasi (available / booked / full)",
+    defaults: {
+      eyebrow: "Jadwal konsultasi",
+      title: "Pilih slot yang tersedia",
+      subtitle: "Konsultasi 1-on-1 untuk murid, orang tua, atau rekan guru.",
+      slots: [
+        { day: "Senin", time: "09:00", status: "available", href: "#" },
+        { day: "Senin", time: "11:00", status: "booked" },
+        { day: "Selasa", time: "10:00", status: "available", href: "#" },
+        { day: "Rabu", time: "13:00", status: "available", href: "#" },
+        { day: "Kamis", time: "09:30", status: "full" },
+        { day: "Jumat", time: "14:00", status: "available", href: "#" },
+      ],
+      footerNote: "Setiap sesi berdurasi 30 menit. Konfirmasi lewat email setelah booking.",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subtitle", type: "textarea" },
+      {
+        name: "slots",
+        label: "Slot Waktu",
+        type: "items",
+        itemFields: [
+          { name: "day", label: "Hari", type: "string" },
+          { name: "time", label: "Waktu (mis. 09:00)", type: "string" },
+          {
+            name: "status",
+            label: "Status",
+            type: "select",
+            options: [
+              { value: "available", label: "Tersedia" },
+              { value: "booked", label: "Dipesan" },
+              { value: "full", label: "Penuh" },
+            ],
+          },
+          { name: "href", label: "Link booking (jika tersedia)", type: "url" },
+        ],
+      },
+      { name: "footerNote", label: "Catatan bawah", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruPlusNewsletter",
+    label: "Guru Plus Newsletter",
+    category: "guru-plus",
+    emoji: "📧",
+    description: "Form langganan email dengan gradient card",
+    defaults: {
+      eyebrow: "Tetap terhubung",
+      title: "Dapatkan materi mingguan",
+      subtitle: "Satu email per minggu — ringkas, tanpa spam.",
+      placeholder: "Email kamu…",
+      buttonLabel: "Langganan",
+      actionHref: "",
+      disclaimer: "Dengan berlangganan, kamu setuju dengan kebijakan privasi kami.",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      { name: "subtitle", label: "Subtitle", type: "textarea" },
+      { name: "placeholder", label: "Placeholder email", type: "string" },
+      { name: "buttonLabel", label: "Label tombol", type: "string" },
+      {
+        name: "actionHref",
+        label: "URL action form (opsional)",
+        type: "url",
+        help: "Kosongkan untuk preview-only (menampilkan pesan sukses).",
+      },
+      { name: "disclaimer", label: "Disclaimer bawah", type: "textarea" },
+    ],
+  },
+  {
+    type: "GuruPlusStudentWall",
+    label: "Guru Plus Student Wall",
+    category: "guru-plus",
+    emoji: "📝",
+    description: "Dinding pesan murid (sticky-note bergaya tulis tangan)",
+    defaults: {
+      eyebrow: "Suara mereka",
+      title: "Pesan dari murid",
+      items: [
+        { message: "Terima kasih sudah membuat belajar jadi menyenangkan!", author: "Rama", grade: "Kelas 5", color: "amber" },
+        { message: "Ibu guru paling sabar yang pernah aku kenal 💛", author: "Siti", grade: "Kelas 6", color: "pink" },
+        { message: "Aku jadi suka membaca gara-gara Ibu.", author: "Dira", grade: "Kelas 5", color: "blue" },
+        { message: "Kami rindu kelas puisi hari Jumat!", author: "Angga", grade: "Kelas 6", color: "green" },
+      ],
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul", type: "string" },
+      {
+        name: "items",
+        label: "Pesan Murid",
+        type: "items",
+        itemFields: [
+          { name: "message", label: "Pesan", type: "textarea" },
+          { name: "author", label: "Nama murid", type: "string" },
+          { name: "grade", label: "Kelas", type: "string" },
+          {
+            name: "color",
+            label: "Warna note",
+            type: "select",
+            options: [
+              { value: "amber", label: "Amber (kuning)" },
+              { value: "pink", label: "Pink" },
+              { value: "blue", label: "Blue" },
+              { value: "green", label: "Green" },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    type: "GuruPlusStoryBlock",
+    label: "Guru Plus Story",
+    category: "guru-plus",
+    emoji: "📖",
+    description: "Long-form story dengan dropcap + pullquote",
+    defaults: {
+      eyebrow: "Catatan guru",
+      title: "Satu hari di kelas literasi",
+      byline: "Oleh Ibu Sari · 15 Oktober 2026",
+      image: "",
+      imageCaption: "",
+      body: "Hari ini kami membuka kelas dengan ritual sederhana: lima menit menulis bebas di jurnal. Tidak ada aturan baku — anak-anak boleh menulis apapun, dari mimpi semalam, keluh kesah, sampai sekadar deskripsi langit pagi.\n\nSaat saya berkeliling, saya menemukan satu catatan dari Rani: 'Pak Hendra kemarin bilang, membaca itu seperti mendapat teman baru setiap hari.' Saya terdiam sejenak. Kalimat itu lebih kuat dari seribu lembar modul.\n\nIni yang saya pelajari setelah dua belas tahun mengajar: metode terbaik tidak selalu metode yang paling rumit. Kadang, cukup dengan ruang yang aman untuk berpikir, anak-anak akan menemukan jalannya sendiri.",
+      pullquote: "Metode terbaik tidak selalu metode yang paling rumit. Kadang, cukup dengan ruang yang aman untuk berpikir.",
+    },
+    fields: [
+      { name: "eyebrow", label: "Eyebrow", type: "string" },
+      { name: "title", label: "Judul cerita", type: "string" },
+      { name: "byline", label: "Byline (penulis + tanggal)", type: "string" },
+      { name: "image", label: "Foto header (opsional)", type: "image" },
+      { name: "imageCaption", label: "Caption foto", type: "string" },
+      {
+        name: "body",
+        label: "Isi cerita",
+        type: "textarea",
+        help: "Pisahkan paragraf dengan baris kosong. Huruf pertama paragraf pertama otomatis dropcap.",
+      },
+      { name: "pullquote", label: "Pullquote (opsional)", type: "textarea" },
+    ],
+  },
 ];
 
 export function schemaFor(type: string): BlockSchema | undefined {
@@ -2287,6 +2965,7 @@ export function blockSchemasByCategory(): Array<{
     "list",
     "dynamic",
     "guru",
+    "guru-plus",
   ];
   return order.map((key) => ({
     key,

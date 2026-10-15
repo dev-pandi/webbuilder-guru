@@ -28,6 +28,13 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Patch("/sites/:id/quota", deps.Admin.UpdateSiteQuota)
 	g.Delete("/sites/:id", deps.Admin.DeleteSite)
 
+	// Assets moderation — paginated cross-user search untuk deteksi upload
+	// mencurigakan + admin takedown. Nil-safe (asset storage dep opsional).
+	if deps.Assets != nil {
+		g.Get("/assets", deps.Assets.AdminList)
+		g.Delete("/assets/:id", deps.Assets.AdminDelete)
+	}
+
 	// Reseller management — approve/suspend applications + tabbed detail view.
 	// Handler cek `authRepo == nil` → return 503 kalau feature belum di-wire.
 	g.Get("/resellers", deps.Admin.ListResellers)
