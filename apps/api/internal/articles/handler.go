@@ -540,3 +540,117 @@ func (h *Handler) LiteraAdminRetry(c *fiber.Ctx) error {
 	}
 	return httpx.OK(c, fiber.Map{"ok": true, "message": "retry dijadwalkan"})
 }
+
+// LiteraAdminPreview — GET /api/v1/admin/articles/:id/litera-preview
+// Return detail debug untuk admin: canonical URL, payload yang akan/sudah
+// dikirim ke Litera, analisis error + hint perbaikan.
+func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid id")
+	}
+	a, err := h.repo.Get(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return httpx.NotFound(c, "article not found")
+	}
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+
+	// Fetch site + primary hostname.
+	site, err := h.sites.GetByID(c.Context(), a.SiteID)
+	if err != nil {
+		return httpx.Internal(c, "site lookup failed")
+	}
+	hostname, _ := h.sites.GetPrimaryHostname(c.Context(), a.SiteID)
+	hasHostname := strings.TrimSpace(hostname) != ""
+
+	// Canonical URL — "" kalau hostname belum di-set.
+	var canonicalURL string
+	if hasHostname {
+		canonicalURL = litera.CanonicalArticleURL(hostname, a.Rubric, a.Slug)
+	}
+
+	// Payload preview — build via litera.BuildRegisterRequest kalau client ada.
+	// Nil-safe: kalau litera client nil (config disabled), tampilkan payload
+	// manual tanpa smart contract defaults.
+	var payloadPreview any
+	if h.litera != nil && hasHostname {
+		var quiz *litera.QuizPayload
+		if len(a.LiteraQuizJSON) > 0 && string(a.LiteraQuizJSON) != "{}" && string(a.LiteraQuizJSON) != "null" {
+			var q litera.QuizPayload
+			if err := json.Unmarshal(a.LiteraQuizJSON, &q); err == nil && len(q.Questions) > 0 {
+				quiz = &q
+			}
+		}
+		req, err := h.litera.BuildRegisterRequest(c.Context(),
+			canonicalURL, a.Title, site.Name, a.Excerpt, a.CoverImageURL,
+			a.LiteraUnlockableURL, a.LiteraUnlockableDescription, quiz,
+		)
+		if err == nil {
+			payloadPreview = req
+		}
+	}
+
+	// Error analysis — classify + suggest fix.
+	errorCategory := ""
+	errorHint := ""
+	if a.LiteraRegisterError != "" {
+		msg := strings.ToLower(a.LiteraRegisterError)
+		switch {
+		case strings.Contains(msg, "domain publik") || strings.Contains(msg, "primary hostname") || strings.Contains(msg, "no primary hostname"):
+			errorCategory = "config"
+			errorHint = "Buka Settings site → Domain, set Primary Hostname. Setelah itu klik Retry."
+		case strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401"):
+			errorCategory = "config"
+			errorHint = "API key Litera invalid/expired. Buka /admin/litera → tab Konfigurasi, periksa API key."
+		case strings.Contains(msg, "domain not in cors") || strings.Contains(msg, "403"):
+			errorCategory = "config"
+			errorHint = "Domain belum di-whitelist Litera CORS. Tunggu 60 detik lalu Retry — biasanya auto-approve."
+		case strings.Contains(msg, "rate limit") || strings.Contains(msg, "429"):
+			errorCategory = "api"
+			errorHint = "Rate limit Litera (60 req/menit). Tunggu beberapa saat lalu Retry."
+		case strings.Contains(msg, "timeout") || strings.Contains(msg, "network") || strings.Contains(msg, "dial"):
+			errorCategory = "network"
+			errorHint = "Network timeout. Litera API mungkin lagi down. Retry setelah beberapa menit."
+		case strings.Contains(msg, "field wajib") || strings.Contains(msg, "belum diisi"):
+			errorCategory = "validation"
+			errorHint = "Guru belum isi field wajib (judul/ringkasan/cover). Minta guru lengkapi di editor."
+		default:
+			errorCategory = "unknown"
+			errorHint = "Error tidak terklasifikasi. Cek log server (correlation ID di error message)."
+		}
+	}
+
+	return httpx.OK(c, fiber.Map{
+		"article": fiber.Map{
+			"id":                            a.ID,
+			"title":                         a.Title,
+			"rubric":                        a.Rubric,
+			"slug":                          a.Slug,
+			"excerpt":                       a.Excerpt,
+			"cover_image_url":               a.CoverImageURL,
+			"status":                        a.Status,
+			"litera_enabled":                a.LiteraEnabled,
+			"litera_intent_id":              a.LiteraIntentID,
+			"litera_registered_at":          a.LiteraRegisteredAt,
+			"litera_unlockable_url":         a.LiteraUnlockableURL,
+			"litera_unlockable_description": a.LiteraUnlockableDescription,
+			"litera_quiz_json":              json.RawMessage(a.LiteraQuizJSON),
+		},
+		"site": fiber.Map{
+			"id":               site.ID,
+			"name":             site.Name,
+			"slug":             site.Slug,
+			"primary_hostname": hostname,
+			"has_hostname":     hasHostname,
+		},
+		"canonical_url":    canonicalURL,
+		"payload_preview":  payloadPreview,
+		"error": fiber.Map{
+			"message":  a.LiteraRegisterError,
+			"category": errorCategory,
+			"hint":     errorHint,
+		},
+	})
+}

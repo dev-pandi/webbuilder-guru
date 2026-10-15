@@ -46,6 +46,7 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	// Hidup di articles.Handler karena akses articles repo.
 	if deps.Articles != nil {
 		g.Get("/litera/intents", deps.Articles.LiteraAdminList)
+		g.Get("/articles/:id/litera-preview", deps.Articles.LiteraAdminPreview)
 		g.Post("/articles/:id/litera-retry", deps.Articles.LiteraAdminRetry)
 	}
 

@@ -17,14 +17,18 @@ import {
   CheckCircle2,
   CircleAlert,
   Clock,
+  Code,
   ExternalLink,
   Eye,
   EyeOff,
+  FileText,
+  Info,
   Loader2,
   RefreshCw,
   Save,
   Search,
   Sparkles,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Pagination, useDebounced, type PaginatedResult } from "@/components/Pagination";
@@ -453,6 +457,38 @@ function ConfigForm() {
 
 // =========================== INTENTS LIST ===========================
 
+type LiteraPreview = {
+  article: {
+    id: string;
+    title: string;
+    rubric: string;
+    slug: string;
+    excerpt: string;
+    cover_image_url: string;
+    status: string;
+    litera_enabled: boolean;
+    litera_intent_id: string;
+    litera_registered_at: string | null;
+    litera_unlockable_url: string;
+    litera_unlockable_description: string;
+    litera_quiz_json: unknown;
+  };
+  site: {
+    id: string;
+    name: string;
+    slug: string;
+    primary_hostname: string;
+    has_hostname: boolean;
+  };
+  canonical_url: string;
+  payload_preview: Record<string, unknown> | null;
+  error: {
+    message: string;
+    category: string;
+    hint: string;
+  };
+};
+
 function IntentsList() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("newest");
@@ -463,6 +499,7 @@ function IntentsList() {
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     setPage(1);
@@ -638,6 +675,15 @@ function IntentsList() {
                     </TableCell>
                     <TableCell className="pr-5 text-right">
                       <div className="inline-flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setDetailId(it.id)}
+                          title="Lihat detail payload & error"
+                        >
+                          <Info className="mr-1 size-3" />
+                          Detail
+                        </Button>
                         {isRegistered && (
                           <a
                             href={`https://literaa.xyz/creator?articleUrl=${encodeURIComponent(
@@ -687,6 +733,288 @@ function IntentsList() {
           onPage={setPage}
         />
       )}
+
+      {detailId && (
+        <DetailModal
+          id={detailId}
+          onClose={() => setDetailId(null)}
+          onRetry={() => {
+            const row = items.find((x) => x.id === detailId);
+            if (row) retry(row.id, row.title);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// =========================== DETAIL MODAL ===========================
+
+function DetailModal({
+  id,
+  onClose,
+  onRetry,
+}: {
+  id: string;
+  onClose: () => void;
+  onRetry: () => void;
+}) {
+  const [data, setData] = useState<LiteraPreview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    api<LiteraPreview>(`/api/v1/admin/articles/${id}/litera-preview`)
+      .then((d) => {
+        setData(d);
+        setErr(null);
+      })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  // Close on escape
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="my-8 w-full max-w-3xl rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-semibold">Detail Pendaftaran Litera</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Payload, status, dan analisis error.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} className="shrink-0">
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        <div className="max-h-[70vh] overflow-y-auto p-6">
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Memuat detail…
+            </div>
+          )}
+
+          {err && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
+
+          {data && (
+            <div className="space-y-6">
+              {/* Status + Error */}
+              {data.error.message ? (
+                <section className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <CircleAlert className="mt-0.5 size-5 shrink-0 text-rose-600" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-rose-900">
+                        Pendaftaran Gagal
+                      </h3>
+                      <p className="mt-1 font-mono text-xs text-rose-800">
+                        {data.error.message}
+                      </p>
+                      {data.error.hint && (
+                        <div className="mt-3 rounded-lg bg-white/70 p-3 ring-1 ring-rose-200">
+                          <div className="mb-1 flex items-center gap-1 text-[11px] font-bold uppercase text-rose-700">
+                            <Info className="size-3" />
+                            Cara perbaiki ({data.error.category})
+                          </div>
+                          <p className="text-sm text-rose-900">{data.error.hint}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              ) : data.article.litera_intent_id ? (
+                <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-emerald-900">
+                        Terdaftar di Litera
+                      </h3>
+                      <p className="mt-1 text-sm text-emerald-800">
+                        Intent ID:{" "}
+                        <code className="rounded bg-white/70 px-2 py-0.5 font-mono text-xs">
+                          {data.article.litera_intent_id}
+                        </code>
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              ) : (
+                <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <Clock className="mt-0.5 size-5 shrink-0 text-amber-600" />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-amber-900">
+                        Belum terdaftar / sedang diproses
+                      </h3>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* Site + Hostname */}
+              <section>
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                  <FileText className="size-4 text-muted-foreground" />
+                  Site & Domain
+                </h3>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5">
+                    <dt className="font-medium text-muted-foreground">Nama Site:</dt>
+                    <dd>{data.site.name}</dd>
+                    <dt className="font-medium text-muted-foreground">
+                      Primary Hostname:
+                    </dt>
+                    <dd>
+                      {data.site.has_hostname ? (
+                        <code className="rounded bg-white px-1.5 py-0.5 font-mono text-xs">
+                          {data.site.primary_hostname}
+                        </code>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                          <CircleAlert className="size-3" />
+                          Belum di-set
+                        </span>
+                      )}
+                    </dd>
+                    <dt className="font-medium text-muted-foreground">
+                      Canonical URL:
+                    </dt>
+                    <dd>
+                      {data.canonical_url ? (
+                        <code className="break-all rounded bg-white px-1.5 py-0.5 font-mono text-xs">
+                          {data.canonical_url}
+                        </code>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">
+                          Belum bisa dibangun — hostname belum di-set
+                        </span>
+                      )}
+                    </dd>
+                  </dl>
+                  {!data.site.has_hostname && (
+                    <p className="mt-3 text-xs text-rose-700">
+                      Fix: buka{" "}
+                      <Link
+                        href={`/sites/${data.site.id}/settings/domain`}
+                        className="font-semibold underline"
+                      >
+                        Settings site → Domain
+                      </Link>
+                      , klik "Set sebagai Primary" di salah satu custom domain.
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* Payload Preview */}
+              {data.payload_preview ? (
+                <section>
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <Code className="size-4 text-muted-foreground" />
+                    Payload ke Litera
+                  </h3>
+                  <pre className="overflow-x-auto rounded-lg border border-slate-200 bg-slate-900 p-4 text-xs text-slate-100">
+                    {JSON.stringify(data.payload_preview, null, 2)}
+                  </pre>
+                </section>
+              ) : (
+                <section>
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <Code className="size-4 text-muted-foreground" />
+                    Payload ke Litera
+                  </h3>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    Payload tidak bisa dibangun. Kemungkinan Litera belum
+                    dikonfigurasi (buka{" "}
+                    <Link href="/admin/litera" className="font-bold underline">
+                      /admin/litera → Konfigurasi
+                    </Link>
+                    ) atau hostname belum di-set.
+                  </div>
+                </section>
+              )}
+
+              {/* Konten source */}
+              <section>
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                  <FileText className="size-4 text-muted-foreground" />
+                  Konten Artikel (sumber)
+                </h3>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5">
+                    <dt className="font-medium text-muted-foreground">Judul:</dt>
+                    <dd>{data.article.title}</dd>
+                    <dt className="font-medium text-muted-foreground">Ringkasan:</dt>
+                    <dd>
+                      {data.article.excerpt || (
+                        <span className="text-rose-700 italic">(kosong)</span>
+                      )}
+                    </dd>
+                    <dt className="font-medium text-muted-foreground">Cover:</dt>
+                    <dd>
+                      {data.article.cover_image_url ? (
+                        <code className="break-all font-mono text-xs">
+                          {data.article.cover_image_url}
+                        </code>
+                      ) : (
+                        <span className="text-rose-700 italic">(kosong)</span>
+                      )}
+                    </dd>
+                    <dt className="font-medium text-muted-foreground">Unlockable:</dt>
+                    <dd>
+                      {data.article.litera_unlockable_url ? (
+                        <code className="break-all font-mono text-xs">
+                          {data.article.litera_unlockable_url}
+                        </code>
+                      ) : (
+                        <span className="text-muted-foreground italic">
+                          Tidak ada
+                        </span>
+                      )}
+                    </dd>
+                  </dl>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+
+        {data && !data.article.litera_intent_id && (
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-3">
+            <Button variant="outline" onClick={onClose}>
+              Tutup
+            </Button>
+            <Button onClick={onRetry}>
+              <RefreshCw className="mr-1.5 size-4" />
+              Retry Pendaftaran
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
