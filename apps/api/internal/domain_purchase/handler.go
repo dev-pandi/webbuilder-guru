@@ -1952,6 +1952,13 @@ func (h *Handler) AdminDNSCloudInfo(c *fiber.Ctx) error {
 // (purchased_by) sejajar dengan GetNameservers/Whois pattern.
 func (h *Handler) DNSCloudInfo(c *fiber.Ctx) error {
 	cl := auth.ClaimsFrom(c)
+	// Guard: cl bisa nil kalau auth middleware gagal set claims (edge case:
+	// expired token di refresh race). Tanpa guard, cl.UserID → nil pointer
+	// deref → panic → Fiber recover envelope "runtime error". Return 401
+	// clean supaya UI handle properly.
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
 	name := strings.ToLower(strings.TrimSpace(c.Params("name")))
 	if name == "" {
 		return httpx.BadRequest(c, "name required")
@@ -2018,6 +2025,9 @@ func (h *Handler) UserSwitchProvider(c *fiber.Ctx) error {
 		return errResp
 	}
 	cl := auth.ClaimsFrom(c)
+	if cl == nil {
+		return httpx.Unauthorized(c, "no claims")
+	}
 	d, err := h.repo.GetDomainByName(c.Context(), name, cl.UserID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {

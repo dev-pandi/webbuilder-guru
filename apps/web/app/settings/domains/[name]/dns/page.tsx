@@ -119,6 +119,13 @@ export default function DnsEditorPage() {
   const [editing, setEditing] = useState<DNSRecord | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
+  // Mutate (edit/delete/add) sementara di-disable untuk user — backend
+  // DNS CRUD cuma support provider Cloudflare, belum DNSCloud. Untuk
+  // konsistensi UX (semua domain user bisa lihat tapi tidak bisa edit),
+  // disable semua tombol mutate di sini. Admin masih bisa dari panel
+  // admin yang terpisah. Ganti flag kalau backend sudah universal.
+  const USER_DNS_MUTATE_ENABLED = false;
+
   async function refresh() {
     if (!domain) return;
     const isInitial = records.length === 0 && !refreshing;
@@ -225,6 +232,20 @@ export default function DnsEditorPage() {
             </div>
           )}
 
+          {!USER_DNS_MUTATE_ENABLED && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              <AlertCircle className="size-4 shrink-0 translate-y-0.5" />
+              <div>
+                <strong className="block">Mode baca saja</strong>
+                <p className="mt-0.5 text-xs">
+                  Edit, tambah, dan hapus record DNS belum tersedia untuk user
+                  — fitur sedang dalam penyesuaian supaya kompatibel dengan
+                  semua provider DNS. Butuh perubahan? Hubungi admin.
+                </p>
+              </div>
+            </div>
+          )}
+
           <Card className="overflow-hidden p-0">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-4">
               <div>
@@ -262,6 +283,12 @@ export default function DnsEditorPage() {
                   size="sm"
                   onClick={() => setAddOpen(true)}
                   className="gap-1.5"
+                  disabled={!USER_DNS_MUTATE_ENABLED}
+                  title={
+                    USER_DNS_MUTATE_ENABLED
+                      ? undefined
+                      : "Fitur tambah DNS belum tersedia — hubungi admin untuk perubahan DNS"
+                  }
                 >
                   <Plus className="size-3.5" />
                   Tambah Record
@@ -354,7 +381,12 @@ export default function DnsEditorPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => setEditing(rec)}
-                              title="Edit"
+                              title={
+                                USER_DNS_MUTATE_ENABLED
+                                  ? "Edit"
+                                  : "Fitur edit DNS belum tersedia — hubungi admin"
+                              }
+                              disabled={!USER_DNS_MUTATE_ENABLED}
                             >
                               <Edit2 className="size-3.5" />
                             </Button>
@@ -362,7 +394,12 @@ export default function DnsEditorPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => onDelete(rec)}
-                              title="Hapus"
+                              title={
+                                USER_DNS_MUTATE_ENABLED
+                                  ? "Hapus"
+                                  : "Fitur hapus DNS belum tersedia — hubungi admin"
+                              }
+                              disabled={!USER_DNS_MUTATE_ENABLED}
                               className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                             >
                               <Trash2 className="size-3.5" />
