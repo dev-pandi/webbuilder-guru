@@ -189,6 +189,21 @@ func (h *GuruHandler) ListLearningMaterials(c *fiber.Ctx) error {
 	return httpx.OK(c, items)
 }
 
+// GET /public/sites/:id/learning-materials/tree
+// Return tree (parents + children nested) untuk sidebar Fumadocs-style di renderer.
+// Hanya materi published. Dipakai PembelajaranLayout untuk navigasi hirarkis.
+func (h *GuruHandler) LearningTree(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return httpx.BadRequest(c, "invalid site id")
+	}
+	tree, err := h.learning.ListTree(c.Context(), id)
+	if err != nil {
+		return httpx.Internal(c, "load failed")
+	}
+	return httpx.OK(c, tree)
+}
+
 // GET /public/sites/:id/learning-materials/:slug
 // Response envelope mirror article detail: material + response_count + responses.
 func (h *GuruHandler) LearningMaterialBySlug(c *fiber.Ctx) error {

@@ -225,10 +225,12 @@ func MountUser(app *fiber.App, deps Deps) {
 	// Guru — learning materials (Pembelajaran, no comments/views per spec §19)
 	if deps.Learning != nil {
 		authed.Get("/sites/:id/learning-materials", deps.Learning.ListBySite)
+		authed.Get("/sites/:id/learning-materials/parents", deps.Learning.ListParents)
 		authed.Post("/sites/:id/learning-materials", mutateLimit, deps.Learning.Create)
 		authed.Get("/learning-materials/:id", deps.Learning.Get)
 		authed.Patch("/learning-materials/:id", mutateLimit, deps.Learning.Update)
 		authed.Post("/learning-materials/:id/publish", mutateLimit, deps.Learning.Publish)
+		authed.Post("/learning-materials/:id/reorder", mutateLimit, deps.Learning.Reorder)
 		authed.Delete("/learning-materials/:id", mutateLimit, deps.Learning.Delete)
 	}
 

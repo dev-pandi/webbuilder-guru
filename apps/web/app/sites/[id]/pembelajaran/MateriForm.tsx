@@ -42,9 +42,14 @@ function fmtStamp(iso: string): string {
 export function MateriForm({
   siteId,
   material,
+  initialParentId,
 }: {
   siteId: string;
   material: LearningMaterial | null;
+  // Pre-fill parent dari query string `?parent=` saat user klik "+ Sub" dari list.
+  // Hanya efektif untuk create (material=null) — pada edit, nilai dari material
+  // selalu menang.
+  initialParentId?: string;
 }) {
   const router = useRouter();
   const isEdit = !!material;
@@ -58,7 +63,59 @@ export function MateriForm({
   const [tagsText, setTagsText] = useState((material?.tags ?? []).join(", "));
   const [summary, setSummary] = useState(material?.summary ?? "");
   const [status, setStatus] = useState<"draft" | "published">(material?.status ?? "draft");
+  // Resolve parent awal: material (edit) > initialParentId (dari query ?parent=) > "" (new topik utama).
+  const initialParent = material?.parent_id ?? initialParentId ?? "";
+  const [parentId, setParentId] = useState<string>(initialParent);
+  // Mode selector — "parent" (topik utama) vs "child" (sub-materi).
+  // Derived initial: ada parentId → child, else → parent.
+  const [mode, setMode] = useState<"parent" | "child">(
+    initialParent ? "child" : "parent",
+  );
+  const [sortOrder, setSortOrder] = useState<number>(material?.sort_order ?? 0);
+  const [emoji, setEmoji] = useState<string>(material?.emoji ?? "");
+  const [parents, setParents] = useState<LearningMaterial[]>([]);
+  const [siblings, setSiblings] = useState<LearningMaterial[]>([]);
   const [saving, setSaving] = useState<"draft" | "published" | null>(null);
+
+  // Load daftar materi top-level untuk dropdown "Materi Induk". Filter diri
+  // sendiri supaya materi tidak bisa jadi parent dirinya sendiri.
+  useEffect(() => {
+    api<LearningMaterial[]>(`/api/v1/sites/${siteId}/learning-materials/parents`)
+      .then((rows) => {
+        const filtered = isEdit && material
+          ? rows.filter((r) => r.id !== material.id)
+          : rows;
+        setParents(filtered);
+      })
+      .catch(() => setParents([]));
+  }, [siteId, isEdit, material]);
+
+  // Load siblings untuk live preview mini-tree + hint "urut di antara X & Y".
+  // Fetch flat list, filter by current scope (same parent group).
+  useEffect(() => {
+    api<{ items: LearningMaterial[] }>(
+      `/api/v1/sites/${siteId}/learning-materials?page_size=200`,
+    )
+      .then((res) => {
+        const scopeParent = mode === "child" ? parentId : null;
+        const sibs = res.items
+          .filter(
+            (m) =>
+              (m.parent_id ?? null) === scopeParent &&
+              (!isEdit || !material || m.id !== material.id),
+          )
+          .sort((a, b) => {
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+            return a.created_at.localeCompare(b.created_at);
+          });
+        setSiblings(sibs);
+      })
+      .catch(() => setSiblings([]));
+  }, [siteId, mode, parentId, isEdit, material]);
+
+  // Derived: parent object dari mode + parentId (untuk preview + header context).
+  const activeParent = mode === "child" ? parents.find((p) => p.id === parentId) : null;
+  const effectiveParentId = mode === "child" ? parentId : "";
 
   useEffect(() => {
     if (slugTouched) return;
@@ -84,6 +141,10 @@ export function MateriForm({
       coverImageURL: material?.cover_image_url ?? "",
       tagsText: (material?.tags ?? []).join(", "),
       summary: material?.summary ?? "",
+      parentId: material?.parent_id ?? "",
+      sortOrder: material?.sort_order ?? 0,
+      emoji: material?.emoji ?? "",
+      mode: material?.parent_id ? "child" : "parent",
     }),
   );
   const currentSnapshot = useMemo(
@@ -96,8 +157,12 @@ export function MateriForm({
         coverImageURL,
         tagsText,
         summary,
+        parentId: effectiveParentId,
+        sortOrder,
+        emoji: mode === "parent" ? emoji : "",
+        mode,
       }),
-    [title, slug, excerpt, bodyMD, coverImageURL, tagsText, summary],
+    [title, slug, excerpt, bodyMD, coverImageURL, tagsText, summary, effectiveParentId, sortOrder, emoji, mode],
   );
   const dirty = currentSnapshot !== savedSnapshot;
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
@@ -127,6 +192,8 @@ export function MateriForm({
     }
     setSaving(targetStatus);
     try {
+      // parent_id: "" (dropdown "Tanpa induk") → kirim null supaya backend
+      // clear parent (UpdateInput.ParentIDSet=true + nil). UUID → kirim string.
       const body = {
         title,
         slug,
@@ -136,6 +203,11 @@ export function MateriForm({
         tags,
         summary,
         status: targetStatus,
+        parent_id: effectiveParentId || null,
+        sort_order: Number.isFinite(sortOrder) ? sortOrder : 0,
+        // Emoji hanya relevan untuk topik utama (parent). Sub-materi disimpan
+        // kosong supaya tidak confusing kalau nanti dipromosikan jadi parent.
+        emoji: mode === "parent" ? emoji : "",
       };
       if (isEdit) {
         await api(`/api/v1/learning-materials/${material!.id}`, {
@@ -188,13 +260,43 @@ export function MateriForm({
 
   return (
     <div className="space-y-5">
+      {/* Breadcrumb kontekstual — kasih orientation jelas tanpa harus baca form */}
+      <nav className="flex items-center gap-1.5 text-[13px] text-slate-500">
+        <Link href={`/sites/${siteId}/pembelajaran`} className="hover:text-slate-700">
+          Pembelajaran
+        </Link>
+        {activeParent && (
+          <>
+            <span className="text-slate-300">›</span>
+            <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+              {activeParent.emoji && <span>{activeParent.emoji}</span>}
+              {activeParent.title}
+            </span>
+          </>
+        )}
+        <span className="text-slate-300">›</span>
+        <span className="font-medium text-slate-900">
+          {isEdit ? "Edit" : "Baru"}
+        </span>
+      </nav>
+
       <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-end">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
-            {isEdit ? "Edit Materi" : "Tambah Materi"}
+            {isEdit
+              ? mode === "child"
+                ? "Edit Sub-materi"
+                : "Edit Topik Utama"
+              : mode === "child"
+                ? "Tambah Sub-materi"
+                : "Tambah Topik Utama"}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Buat bahan pembelajaran untuk dibagikan melalui website.
+            {mode === "child" && activeParent
+              ? `Materi ini akan muncul sebagai bagian dari topik "${activeParent.title}" di sidebar website.`
+              : mode === "child"
+                ? "Pilih topik induk di panel kanan untuk menentukan di mana materi ini tampil."
+                : "Topik utama tampil sebagai header di sidebar, bisa punya sub-materi di bawahnya."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -351,13 +453,93 @@ export function MateriForm({
         <aside className="space-y-5">
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-5 py-4">
-              <h3 className="text-[15px] font-bold text-slate-900">Publikasi</h3>
+              <h3 className="text-[15px] font-bold text-slate-900">Lokasi di sidebar</h3>
             </div>
-            <div className="p-5">
-              <div className="rounded-xl bg-blue-50 px-4 py-3 text-[12px] text-blue-800">
-                Materi ditampilkan sebagai konten pembelajaran sederhana di website guru.
-                Tidak ada tanggapan atau views yang tercatat.
-              </div>
+            <div className="grid gap-4 p-5">
+              {/* SATU dropdown — pertanyaan konkret: "mau diletakkan di mana?" */}
+              <Field label="Letakkan di bawah">
+                <select
+                  value={parentId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setParentId(v);
+                    setMode(v === "" ? "parent" : "child");
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                >
+                  <option value="">
+                    — Tidak di bawah apapun (jadi topik utama) —
+                  </option>
+                  {parents.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.emoji ? `${p.emoji} ` : ""}
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+                <p className="pt-1 text-[11px] text-slate-500">
+                  {mode === "parent"
+                    ? "Materi akan muncul sebagai topik utama di sidebar."
+                    : activeParent
+                      ? `Materi akan muncul di bawah "${activeParent.title}" di sidebar.`
+                      : ""}
+                </p>
+              </Field>
+
+              {/* Live preview — compact, hanya text-based */}
+              <PreviewHint
+                mode={mode}
+                activeParent={activeParent}
+                siblings={siblings}
+                newTitle={title || "(materi ini)"}
+                newEmoji={emoji}
+                sortOrder={sortOrder}
+                selfId={isEdit ? material?.id : undefined}
+              />
+
+              {/* Emoji — hanya untuk topik utama */}
+              {mode === "parent" && (
+                <Field label="Ikon di sidebar (opsional)">
+                  <div className="flex items-center gap-3">
+                    <div className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-2xl">
+                      {emoji || "📘"}
+                    </div>
+                    <input
+                      type="text"
+                      value={emoji}
+                      onChange={(e) => setEmoji(e.target.value.slice(0, 4))}
+                      placeholder="📘 🎯 🖼"
+                      maxLength={4}
+                      className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                    />
+                  </div>
+                </Field>
+              )}
+
+              {/* Pengaturan lanjutan — collapsed accordion untuk sort_order.
+                  Mayoritas user pakai ↑↓ di halaman list untuk reorder,
+                  jadi field ini jarang disentuh. Sembunyikan default. */}
+              <details className="rounded-lg border border-slate-200 bg-slate-50">
+                <summary className="cursor-pointer px-3 py-2 text-[12px] font-bold text-slate-600 hover:text-slate-900">
+                  Pengaturan lanjutan
+                </summary>
+                <div className="border-t border-slate-200 p-3">
+                  <Field label="Posisi urutan (angka)">
+                    <input
+                      type="number"
+                      value={sortOrder}
+                      onChange={(e) =>
+                        setSortOrder(parseInt(e.target.value, 10) || 0)
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                    />
+                    <p className="pt-1 text-[11px] text-slate-500">
+                      Biasanya tidak perlu diubah manual — pakai tombol ↑↓ di
+                      halaman daftar materi untuk reorder.
+                    </p>
+                  </Field>
+                </div>
+              </details>
             </div>
           </section>
 
@@ -416,6 +598,107 @@ function Field({
     <div className={`grid gap-1.5 ${className ?? ""}`}>
       <label className="text-[12px] font-bold text-slate-600">{label}</label>
       {children}
+    </div>
+  );
+}
+
+// PreviewHint — compact mini-tree showing where materi will appear in the
+// website sidebar. Shows 2-3 sibling context + current item highlighted.
+function PreviewHint({
+  mode,
+  activeParent,
+  siblings,
+  newTitle,
+  newEmoji,
+  sortOrder,
+  selfId,
+}: {
+  mode: "parent" | "child";
+  activeParent: LearningMaterial | null | undefined;
+  siblings: LearningMaterial[];
+  newTitle: string;
+  newEmoji: string;
+  sortOrder: number;
+  selfId?: string;
+}) {
+  type Item = { key: string; title: string; emoji?: string; isSelf?: boolean };
+  const self: Item = {
+    key: selfId ?? "__new__",
+    title: newTitle,
+    emoji: mode === "parent" ? newEmoji : undefined,
+    isSelf: true,
+  };
+  const items: Item[] = siblings.map((s) => ({
+    key: s.id,
+    title: s.title,
+    emoji: mode === "parent" ? s.emoji : undefined,
+  }));
+  // Insert self at correct position by sort_order.
+  let insertAt = items.length;
+  for (let i = 0; i < siblings.length; i++) {
+    if (sortOrder < siblings[i].sort_order) {
+      insertAt = i;
+      break;
+    }
+  }
+  items.splice(insertAt, 0, self);
+  // Trim to 3 neighbors around self (prev + self + next). Kalau ujung, geser.
+  const selfIdx = items.findIndex((it) => it.isSelf);
+  let start = Math.max(0, selfIdx - 1);
+  let end = Math.min(items.length, start + 3);
+  if (end - start < 3) start = Math.max(0, end - 3);
+  const visible = items.slice(start, end);
+  const hasBefore = start > 0;
+  const hasAfter = end < items.length;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3.5">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <span className="size-1.5 rounded-full bg-emerald-500" />
+        Preview di sidebar website
+      </div>
+      {mode === "child" && activeParent && (
+        <div className="mb-1 flex items-center gap-1.5 text-[13px] font-bold text-slate-900">
+          {activeParent.emoji && <span>{activeParent.emoji}</span>}
+          <span className="truncate">{activeParent.title}</span>
+        </div>
+      )}
+      <ul
+        className={
+          "flex flex-col gap-0.5 text-[12.5px] " +
+          (mode === "child"
+            ? "ml-2 border-l-2 border-slate-200 pl-3"
+            : "")
+        }
+      >
+        {hasBefore && (
+          <li className="px-2 py-0.5 text-slate-400">⋮</li>
+        )}
+        {visible.map((item) => (
+          <li
+            key={item.key}
+            className={
+              "flex items-center gap-1.5 rounded-md px-2 py-1 " +
+              (item.isSelf
+                ? "bg-blue-100 font-bold text-blue-900 ring-1 ring-blue-300"
+                : mode === "parent"
+                  ? "font-semibold text-slate-600"
+                  : "text-slate-500")
+            }
+          >
+            {item.emoji && <span>{item.emoji}</span>}
+            <span className="truncate">{item.title}</span>
+            {item.isSelf && (
+              <span className="ml-auto text-[9px] font-bold uppercase text-blue-700">
+                ini
+              </span>
+            )}
+          </li>
+        ))}
+        {hasAfter && (
+          <li className="px-2 py-0.5 text-slate-400">⋮</li>
+        )}
+      </ul>
     </div>
   );
 }

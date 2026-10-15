@@ -157,6 +157,8 @@ func MountGlobal(app *fiber.App, deps Deps) {
 		pubBase.Get("/sites/:id/latest-articles", hostGuard, shortCache, deps.PublicGuru.LatestArticles)
 		pubBase.Get("/sites/:id/site-stats", hostGuard, shortCache, deps.PublicGuru.SiteStats)
 		pubBase.Get("/sites/:id/learning-materials", hostGuard, longCache, deps.PublicGuru.ListLearningMaterials)
+		// Tree di-register SEBELUM :slug supaya static match menang dari dynamic.
+		pubBase.Get("/sites/:id/learning-materials/tree", hostGuard, longCache, deps.PublicGuru.LearningTree)
 		// LearningMaterialBySlug sekarang kembalikan responses inline (mirror article
 		// detail). Jangan longCache: moderation-triggered content perlu fresh.
 		pubBase.Get("/sites/:id/learning-materials/:slug", hostGuard, deps.PublicGuru.LearningMaterialBySlug)

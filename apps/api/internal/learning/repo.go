@@ -14,6 +14,10 @@ import (
 
 // Material — "Pembelajaran". Spec §19 & §23.
 // Tidak ada views, tidak ada tanggapan.
+//
+// ParentID + SortOrder (0064) — hierarki 1-level untuk sidebar nav
+// (Fumadocs-style). URL slug tetap flat (unique per site) → link lama
+// 100% aman, hirarki hanya untuk UI.
 type Material struct {
 	ID             uuid.UUID       `json:"id"`
 	SiteID         uuid.UUID       `json:"site_id"`
@@ -27,6 +31,9 @@ type Material struct {
 	Status         string          `json:"status"`
 	SEOTitle       string          `json:"seo_title"`
 	SEODescription string          `json:"seo_description"`
+	ParentID       *uuid.UUID      `json:"parent_id,omitempty"`
+	SortOrder      int             `json:"sort_order"`
+	Emoji          string          `json:"emoji"`
 	PublishedAt    *time.Time      `json:"published_at,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
@@ -42,13 +49,14 @@ var (
 )
 
 const cols = `id, site_id, slug, title, excerpt, body_md, cover_image_url,
-    tags_json, summary, status, seo_title, seo_description, published_at, created_at, updated_at`
+    tags_json, summary, status, seo_title, seo_description,
+    parent_id, sort_order, emoji, published_at, created_at, updated_at`
 
 func scan(m *Material) []any {
 	return []any{
 		&m.ID, &m.SiteID, &m.Slug, &m.Title, &m.Excerpt, &m.BodyMD, &m.CoverImageURL,
 		&m.Tags, &m.Summary, &m.Status, &m.SEOTitle, &m.SEODescription,
-		&m.PublishedAt, &m.CreatedAt, &m.UpdatedAt,
+		&m.ParentID, &m.SortOrder, &m.Emoji, &m.PublishedAt, &m.CreatedAt, &m.UpdatedAt,
 	}
 }
 
@@ -70,6 +78,9 @@ type CreateInput struct {
 	Status         string
 	SEOTitle       string
 	SEODescription string
+	ParentID       *uuid.UUID // nil = top-level materi
+	SortOrder      int
+	Emoji          string
 }
 
 func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, in CreateInput) (*Material, error) {
@@ -87,14 +98,21 @@ func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, in CreateInput) (*M
 		t := time.Now()
 		publishedAt = &t
 	}
+	// Validasi parent (kalau diset): harus top-level (parent_id NULL) + same site_id.
+	if in.ParentID != nil {
+		if err := r.validateParent(ctx, siteID, *in.ParentID, uuid.Nil); err != nil {
+			return nil, err
+		}
+	}
 	var m Material
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO learning_materials (site_id, slug, title, excerpt, body_md, cover_image_url,
-		    tags_json, summary, status, seo_title, seo_description, published_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		    tags_json, summary, status, seo_title, seo_description, parent_id, sort_order, emoji, published_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		RETURNING `+cols+`
 	`, siteID, in.Slug, in.Title, in.Excerpt, in.BodyMD, in.CoverImageURL,
-		in.Tags, in.Summary, in.Status, in.SEOTitle, in.SEODescription, publishedAt,
+		in.Tags, in.Summary, in.Status, in.SEOTitle, in.SEODescription,
+		in.ParentID, in.SortOrder, in.Emoji, publishedAt,
 	).Scan(scan(&m)...)
 	if pgErrCode(err) == "23505" {
 		return nil, ErrSlugTaken
@@ -103,6 +121,36 @@ func (r *Repo) Create(ctx context.Context, siteID uuid.UUID, in CreateInput) (*M
 		return nil, err
 	}
 	return &m, nil
+}
+
+// Sentinel error untuk parent invalid (dipakai handler untuk map ke 400).
+var ErrInvalidParent = errors.New("invalid parent material")
+
+// validateParent enforce: parent harus same site, parent harus top-level
+// (bukan child), parent tidak sama dengan diri sendiri (saat update).
+func (r *Repo) validateParent(ctx context.Context, siteID, parentID, selfID uuid.UUID) error {
+	if parentID == selfID {
+		return ErrInvalidParent
+	}
+	var pSite uuid.UUID
+	var pParent *uuid.UUID
+	err := r.pool.QueryRow(ctx,
+		`SELECT site_id, parent_id FROM learning_materials WHERE id = $1`, parentID,
+	).Scan(&pSite, &pParent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalidParent
+	}
+	if err != nil {
+		return err
+	}
+	if pSite != siteID {
+		return ErrInvalidParent
+	}
+	// Enforce 1-level: parent harus top-level (parent_id NULL).
+	if pParent != nil {
+		return ErrInvalidParent
+	}
+	return nil
 }
 
 type UpdateInput struct {
@@ -116,6 +164,13 @@ type UpdateInput struct {
 	Status         *string
 	SEOTitle       *string
 	SEODescription *string
+	// Parent control: ParentIDSet=true + ParentID=nil → set NULL (jadi top-level).
+	// ParentIDSet=true + ParentID=X → set X. ParentIDSet=false → tidak diubah.
+	// Pattern ini supaya kita bisa bedakan "tidak kirim" vs "kirim null".
+	ParentIDSet bool
+	ParentID    *uuid.UUID
+	SortOrder   *int
+	Emoji       *string
 }
 
 func (r *Repo) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Material, error) {
@@ -126,6 +181,27 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Mater
 	if in.Status != nil && *in.Status == "published" {
 		publishedAtExpr = "COALESCE(published_at, now())"
 	}
+	// Validasi parent — perlu lookup site_id dulu untuk pastikan same site.
+	if in.ParentIDSet && in.ParentID != nil {
+		var siteID uuid.UUID
+		if err := r.pool.QueryRow(ctx,
+			`SELECT site_id FROM learning_materials WHERE id = $1`, id,
+		).Scan(&siteID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		if err := r.validateParent(ctx, siteID, *in.ParentID, id); err != nil {
+			return nil, err
+		}
+	}
+	// Parent expression: kalau explicit set → pakai $12, else keep existing.
+	parentExpr := "parent_id"
+	if in.ParentIDSet {
+		parentExpr = "$12"
+	}
+	sortExpr := "COALESCE($13, sort_order)"
 	q := fmt.Sprintf(`
 		UPDATE learning_materials SET
 		    slug            = COALESCE($2, slug),
@@ -138,15 +214,18 @@ func (r *Repo) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (*Mater
 		    status          = COALESCE($9, status),
 		    seo_title       = COALESCE($10, seo_title),
 		    seo_description = COALESCE($11, seo_description),
+		    parent_id       = %s,
+		    sort_order      = %s,
+		    emoji           = COALESCE($14, emoji),
 		    published_at    = %s,
 		    updated_at      = now()
 		WHERE id = $1
 		RETURNING `+cols+`
-	`, publishedAtExpr)
+	`, parentExpr, sortExpr, publishedAtExpr)
 	var m Material
 	err := r.pool.QueryRow(ctx, q, id, in.Slug, in.Title, in.Excerpt, in.BodyMD,
 		in.CoverImageURL, jsonOrNil(in.Tags), in.Summary, in.Status,
-		in.SEOTitle, in.SEODescription,
+		in.SEOTitle, in.SEODescription, in.ParentID, in.SortOrder, in.Emoji,
 	).Scan(scan(&m)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -246,6 +325,210 @@ func (r *Repo) ListPage(
 		out = append(out, m)
 	}
 	return out, total, rows.Err()
+}
+
+// ListParents — all top-level materi (parent_id NULL) in a site, ordered
+// by sort_order. Dipakai editor dropdown "Materi Induk".
+func (r *Repo) ListParents(ctx context.Context, siteID uuid.UUID) ([]Material, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+cols+`
+		FROM learning_materials
+		WHERE site_id = $1 AND parent_id IS NULL
+		ORDER BY sort_order ASC, created_at ASC
+	`, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Material{}
+	for rows.Next() {
+		var m Material
+		if err := rows.Scan(scan(&m)...); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// TreeNode — parent + direct children untuk sidebar nav / renderer.
+type TreeNode struct {
+	Material
+	Children []Material `json:"children,omitempty"`
+}
+
+// ListTree — materi grouped parent → children untuk sidebar Fumadocs-style.
+// Hanya materi `published` yang di-return (dipakai renderer publik). Untuk
+// editor pakai ListPage (full list termasuk draft) + separate ListParents.
+func (r *Repo) ListTree(ctx context.Context, siteID uuid.UUID) ([]TreeNode, error) {
+	// Single query ambil all materi, sort by parent group lalu order.
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+cols+`
+		FROM learning_materials
+		WHERE site_id = $1 AND status = 'published'
+		ORDER BY sort_order ASC, created_at ASC
+	`, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var parents []Material
+	children := map[uuid.UUID][]Material{}
+	for rows.Next() {
+		var m Material
+		if err := rows.Scan(scan(&m)...); err != nil {
+			return nil, err
+		}
+		if m.ParentID == nil {
+			parents = append(parents, m)
+		} else {
+			children[*m.ParentID] = append(children[*m.ParentID], m)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]TreeNode, 0, len(parents))
+	for _, p := range parents {
+		out = append(out, TreeNode{Material: p, Children: children[p.ID]})
+	}
+	// Orphan children (parent di-draft / di-hapus): append tanpa parent group.
+	// Supaya tetap kelihatan di sidebar sebagai top-level.
+	for pid, kids := range children {
+		found := false
+		for _, p := range parents {
+			if p.ID == pid {
+				found = true
+				break
+			}
+		}
+		if !found {
+			for _, k := range kids {
+				out = append(out, TreeNode{Material: k})
+			}
+		}
+	}
+	return out, nil
+}
+
+// SwapOrder — swap sort_order materi `self` dengan sibling tetangga (atas/
+// bawah). Scope sibling: sesama parent_id (atau sesama top-level kalau
+// self.ParentID NULL). Idempotent kalau sudah di posisi ujung.
+//
+// Catatan: pakai 2x UPDATE dalam transaksi supaya sort_order unik tidak
+// konflik (walau DB tidak enforce unique). Kalau sort_order sama (default 0
+// semua), fallback ke created_at ordering.
+func (r *Repo) SwapOrder(ctx context.Context, self *Material, direction string) error {
+	// Cari sibling tetangga sesuai direction.
+	var sibling Material
+	var err error
+	if self.ParentID == nil {
+		if direction == "up" {
+			err = r.pool.QueryRow(ctx, `
+				SELECT `+cols+` FROM learning_materials
+				WHERE site_id = $1 AND parent_id IS NULL AND id <> $2
+				  AND (sort_order, created_at) < ($3, $4)
+				ORDER BY sort_order DESC, created_at DESC LIMIT 1
+			`, self.SiteID, self.ID, self.SortOrder, self.CreatedAt).Scan(scan(&sibling)...)
+		} else {
+			err = r.pool.QueryRow(ctx, `
+				SELECT `+cols+` FROM learning_materials
+				WHERE site_id = $1 AND parent_id IS NULL AND id <> $2
+				  AND (sort_order, created_at) > ($3, $4)
+				ORDER BY sort_order ASC, created_at ASC LIMIT 1
+			`, self.SiteID, self.ID, self.SortOrder, self.CreatedAt).Scan(scan(&sibling)...)
+		}
+	} else {
+		if direction == "up" {
+			err = r.pool.QueryRow(ctx, `
+				SELECT `+cols+` FROM learning_materials
+				WHERE site_id = $1 AND parent_id = $2 AND id <> $3
+				  AND (sort_order, created_at) < ($4, $5)
+				ORDER BY sort_order DESC, created_at DESC LIMIT 1
+			`, self.SiteID, *self.ParentID, self.ID, self.SortOrder, self.CreatedAt).Scan(scan(&sibling)...)
+		} else {
+			err = r.pool.QueryRow(ctx, `
+				SELECT `+cols+` FROM learning_materials
+				WHERE site_id = $1 AND parent_id = $2 AND id <> $3
+				  AND (sort_order, created_at) > ($4, $5)
+				ORDER BY sort_order ASC, created_at ASC LIMIT 1
+			`, self.SiteID, *self.ParentID, self.ID, self.SortOrder, self.CreatedAt).Scan(scan(&sibling)...)
+		}
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Already at edge — no-op idempotent.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// Swap sort_order dalam transaksi.
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.Exec(ctx,
+		`UPDATE learning_materials SET sort_order = $1, updated_at = now() WHERE id = $2`,
+		sibling.SortOrder, self.ID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE learning_materials SET sort_order = $1, updated_at = now() WHERE id = $2`,
+		self.SortOrder, sibling.ID,
+	); err != nil {
+		return err
+	}
+	// Kalau sort_order asalnya sama (default 0 semua), swap jadi no-op.
+	// Fix dengan reseed: self jadi sibling.SortOrder, sibling jadi
+	// sibling.SortOrder +/- 1 sesuai direction.
+	if self.SortOrder == sibling.SortOrder {
+		delta := 1
+		if direction == "up" {
+			delta = -1
+		}
+		if _, err := tx.Exec(ctx,
+			`UPDATE learning_materials SET sort_order = $1, updated_at = now() WHERE id = $2`,
+			sibling.SortOrder+delta, self.ID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// Siblings — list materi di parent yang sama (atau top-level kalau parent_id
+// NULL). Dipakai renderer untuk Prev/Next CTA. Return hanya materi published.
+func (r *Repo) Siblings(ctx context.Context, siteID uuid.UUID, parentID *uuid.UUID) ([]Material, error) {
+	var rows pgx.Rows
+	var err error
+	if parentID == nil {
+		rows, err = r.pool.Query(ctx, `
+			SELECT `+cols+` FROM learning_materials
+			WHERE site_id = $1 AND parent_id IS NULL AND status = 'published'
+			ORDER BY sort_order ASC, created_at ASC
+		`, siteID)
+	} else {
+		rows, err = r.pool.Query(ctx, `
+			SELECT `+cols+` FROM learning_materials
+			WHERE site_id = $1 AND parent_id = $2 AND status = 'published'
+			ORDER BY sort_order ASC, created_at ASC
+		`, siteID, *parentID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Material{}
+	for rows.Next() {
+		var m Material
+		if err := rows.Scan(scan(&m)...); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func jsonOrNil(v json.RawMessage) any {

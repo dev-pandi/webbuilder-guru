@@ -478,9 +478,17 @@ export type LearningMaterial = {
   status: string;
   seo_title: string;
   seo_description: string;
+  // Hierarki 1-level (0064): parent_id null = top-level.
+  parent_id: string | null;
+  sort_order: number;
+  emoji: string;
   published_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type LearningTreeNode = LearningMaterial & {
+  children?: LearningMaterial[];
 };
 
 export type ResponseRole = "guru" | "siswa" | "orang-tua" | "pembaca";
@@ -597,6 +605,18 @@ export async function listLearningMaterials(
 ): Promise<LearningMaterial[]> {
   const r = await fetchJson<LearningMaterial[]>(
     `/public/sites/${siteId}/learning-materials?limit=${limit}`,
+    GURU_LIST_TTL,
+  );
+  return r.ok ? r.data : [];
+}
+
+// Tree lengkap parent + children untuk sidebar Fumadocs-style. Hanya materi
+// published. Dipakai PembelajaranLayout + /pembelajaran landing page.
+export async function listLearningTree(
+  siteId: string,
+): Promise<LearningTreeNode[]> {
+  const r = await fetchJson<LearningTreeNode[]>(
+    `/public/sites/${siteId}/learning-materials/tree`,
     GURU_LIST_TTL,
   );
   return r.ok ? r.data : [];

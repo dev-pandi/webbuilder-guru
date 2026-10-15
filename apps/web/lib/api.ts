@@ -174,6 +174,11 @@ export type LearningMaterial = {
   status: ArticleStatus;
   seo_title: string;
   seo_description: string;
+  // Hierarki 1-level (0064): parent_id null = top-level materi.
+  parent_id: string | null;
+  sort_order: number;
+  // Visual anchor di sidebar + landing (0065). Opsional 1 emoji.
+  emoji: string;
   published_at: string | null;
   created_at: string;
   updated_at: string;
