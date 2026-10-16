@@ -211,8 +211,12 @@ export function TulisanForm({
       if (!opts?.silent) toast.error("Slug wajib diisi");
       return;
     }
-    // Litera validator — hanya aktif saat publish + toggle on. Draft bebas.
-    if (!opts?.silent && targetStatus === "published" && literaEnabled) {
+    // Litera validator — hanya aktif saat publish + toggle on + feature flag.
+    // Draft bebas. Flag off → skip validator (artikel lama dengan toggle on
+    // tetap bisa publish tanpa validasi tambahan).
+    const literaUIEnabled =
+      process.env.NEXT_PUBLIC_LITERA_ENABLED === "true";
+    if (!opts?.silent && targetStatus === "published" && literaEnabled && literaUIEnabled) {
       const missing: string[] = [];
       if (!excerpt.trim()) missing.push("Ringkasan");
       if (!coverImageURL.trim()) missing.push("Gambar cover");
@@ -571,8 +575,12 @@ export function TulisanForm({
                 - ready:      enable, belum publish (akan daftar saat publish)
                 - sending:    enable + published, intent_id kosong + no error (goroutine running)
                 - registered: punya intent_id ✓ terdaftar
-                - failed:     ada error, belum ada intent_id */}
-          {(() => {
+                - failed:     ada error, belum ada intent_id
+
+              Feature flag: NEXT_PUBLIC_LITERA_ENABLED=true untuk tampil.
+              Default disembunyikan karena API Litera belum stabil. Backend
+              + admin config tetap aktif — ini hanya mengatur UI editor. */}
+          {process.env.NEXT_PUBLIC_LITERA_ENABLED === "true" && (() => {
             const litState: "idle" | "ready" | "sending" | "registered" | "failed" =
               article?.litera_intent_id
                 ? "registered"
