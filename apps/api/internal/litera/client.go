@@ -256,20 +256,20 @@ func (c *Client) BuildRegisterRequest(
 		return RegisterRequest{}, err
 	}
 	req := RegisterRequest{
-		ArticleURL:              articleURL,
-		Title:                   title,
-		Author:                  author,
-		Description:             description,
-		CoverImageURL:           coverImageURL,
-		UnlockableURL:           unlockableURL,
-		UnlockableDescription:   unlockableDescription,
-		Price:                   cfg.DefaultPrice,
-		FeeEnabled:              cfg.DefaultFeeEnabled,
-		MaxMinted:               cfg.DefaultMaxMinted,
-		UserReward:              cfg.DefaultUserReward,
-		CreatorMintReward:       cfg.DefaultCreatorMintReward,
-		CreatorApproveReward:    cfg.DefaultCreatorApproveReward,
-		CollectionName:          cfg.CollectionName,
+		ArticleURL:            articleURL,
+		Title:                 title,
+		Author:                author,
+		Description:           description,
+		CoverImageURL:         coverImageURL,
+		UnlockableURL:         unlockableURL,
+		UnlockableDescription: unlockableDescription,
+		// Price:                   cfg.DefaultPrice,
+		// FeeEnabled:              cfg.DefaultFeeEnabled,
+		// MaxMinted:               cfg.DefaultMaxMinted,
+		// UserReward:              cfg.DefaultUserReward,
+		// CreatorMintReward:       cfg.DefaultCreatorMintReward,
+		// CreatorApproveReward:    cfg.DefaultCreatorApproveReward,
+		CollectionName: cfg.CollectionName,
 	}
 	if quiz != nil && !quiz.IsEmpty() {
 		req.Quiz = quiz

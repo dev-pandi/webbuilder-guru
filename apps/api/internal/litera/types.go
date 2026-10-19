@@ -21,17 +21,17 @@ import (
 // Config — isi 1 baris singleton di tabel litera_config. Snapshot in-memory
 // buat caching (TTL 60s).
 type Config struct {
-	APIKey                       string    `json:"api_key"`
-	BaseURL                      string    `json:"base_url"`
-	CollectionName               string    `json:"collection_name"`
-	DefaultPrice                 int64     `json:"default_price"`
-	DefaultFeeEnabled            bool      `json:"default_fee_enabled"`
-	DefaultMaxMinted             int       `json:"default_max_minted"`
-	DefaultUserReward            int64     `json:"default_user_reward"`
-	DefaultCreatorMintReward     int64     `json:"default_creator_mint_reward"`
-	DefaultCreatorApproveReward  int64     `json:"default_creator_approve_reward"`
-	Enabled                      bool      `json:"enabled"`
-	UpdatedAt                    time.Time `json:"updated_at"`
+	APIKey                      string    `json:"api_key"`
+	BaseURL                     string    `json:"base_url"`
+	CollectionName              string    `json:"collection_name"`
+	DefaultPrice                int64     `json:"default_price"`
+	DefaultFeeEnabled           bool      `json:"default_fee_enabled"`
+	DefaultMaxMinted            int       `json:"default_max_minted"`
+	DefaultUserReward           int64     `json:"default_user_reward"`
+	DefaultCreatorMintReward    int64     `json:"default_creator_mint_reward"`
+	DefaultCreatorApproveReward int64     `json:"default_creator_approve_reward"`
+	Enabled                     bool      `json:"enabled"`
+	UpdatedAt                   time.Time `json:"updated_at"`
 }
 
 // IsReady — client bisa dipakai kalau enabled + API key non-empty.
@@ -60,21 +60,21 @@ func (q QuizPayload) IsEmpty() bool {
 // RegisterRequest — payload lengkap untuk POST /cms/articles/register.
 // Field marked `omitempty` di-skip saat Marshal kalau zero value.
 type RegisterRequest struct {
-	ArticleURL              string       `json:"articleUrl"`
-	Title                   string       `json:"title"`
-	Author                  string       `json:"author"`
-	Description             string       `json:"description"`
-	CoverImageURL           string       `json:"coverImageUrl"`
-	UnlockableURL           string       `json:"unlockableUrl,omitempty"`
-	UnlockableDescription   string       `json:"unlockableDescription,omitempty"`
-	Price                   int64        `json:"price"`
-	FeeEnabled              bool         `json:"feeEnabled"`
-	MaxMinted               int          `json:"maxMinted"`
-	UserReward              int64        `json:"userReward"`
-	CreatorMintReward       int64        `json:"creatorMintReward"`
-	CreatorApproveReward    int64        `json:"creatorApproveReward"`
-	CollectionName          string       `json:"collectionName"`
-	Quiz                    *QuizPayload `json:"quiz,omitempty"`
+	ArticleURL            string `json:"articleUrl"`
+	Title                 string `json:"title"`
+	Author                string `json:"author"`
+	Description           string `json:"description"`
+	CoverImageURL         string `json:"coverImageUrl"`
+	UnlockableURL         string `json:"unlockableUrl,omitempty"`
+	UnlockableDescription string `json:"unlockableDescription,omitempty"`
+	// Price                   int64        `json:"price"`
+	// FeeEnabled              bool         `json:"feeEnabled"`
+	// MaxMinted               int          `json:"maxMinted"`
+	// UserReward              int64        `json:"userReward"`
+	// CreatorMintReward       int64        `json:"creatorMintReward"`
+	// CreatorApproveReward    int64        `json:"creatorApproveReward"`
+	CollectionName string       `json:"collectionName"`
+	Quiz           *QuizPayload `json:"quiz,omitempty"`
 }
 
 // DomainRegisterRequest — payload POST /cms/domains/register.
