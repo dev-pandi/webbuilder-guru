@@ -302,7 +302,7 @@ func (h *Handler) PreviewToken(c *fiber.Ctx) error {
 // PreviewByToken serves the DRAFT page tree to anyone holding a valid signed
 // token. Anonymous endpoint — auth is the token itself. Token + audience
 // validated via HMAC; no DB lookup of the token (stateless). Bundles the
-// owning site (id/name/theme) so the renderer can apply theme + font in one
+// owning site so the renderer can apply theme + layout + custom code in one
 // roundtrip.
 func (h *Handler) PreviewByToken(c *fiber.Ctx) error {
 	if h.issuer == nil {
@@ -327,14 +327,12 @@ func (h *Handler) PreviewByToken(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.Internal(c, "site load failed")
 	}
-	return httpx.OK(c, fiber.Map{
-		"page": p,
-		"site": fiber.Map{
-			"id":    site.ID,
-			"name":  site.Name,
-			"theme": site.Theme,
-		},
-	})
+	// Kirim site utuh, sama persis dengan /public/site-by-host. Versi lama
+	// hand-pick id/name/theme saja, jadi `layout` (header/footer bersama) +
+	// custom head/body code hilang — preview tampil tanpa footer padahal versi
+	// live punya. Preview gunanya memverifikasi hasil akhir, jadi payload-nya
+	// harus identik; whitelist manual pasti ketinggalan tiap ada field baru.
+	return httpx.OK(c, fiber.Map{"page": p, "site": site})
 }
 
 // Publish promotes the current draft to live. Caller must own the page's site.
