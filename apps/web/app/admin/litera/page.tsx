@@ -484,6 +484,15 @@ type LiteraPreview = {
   };
   canonical_url: string;
   payload_preview: Record<string, unknown> | null;
+  // null = hostname belum pernah didaftarkan ke CORS allowlist Litera.
+  litera_domain: {
+    hostname: string;
+    status: string; // "registered" | "failed"
+    auto_approved: boolean;
+    last_error: string;
+    registered_at: string | null;
+    checked_at: string;
+  } | null;
   error: {
     message: string;
     category: string;
@@ -982,6 +991,50 @@ function DetailModal({
                         dibeli. Litera pakai domain itu sebagai canonical URL.
                         Guru bisa override di Settings site → Domain kalau mau.
                       </p>
+                    </div>
+                  )}
+
+                  {data.site.has_hostname && (
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="mb-1.5 text-[11px] font-bold uppercase text-muted-foreground">
+                        CORS allowlist Litera
+                      </div>
+                      {!data.litera_domain ? (
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          Domain ini belum pernah didaftarkan ke Litera. Itu
+                          normal — pendaftaran berjalan otomatis saat artikel
+                          pertama dari domain ini dipublikasikan.
+                        </p>
+                      ) : data.litera_domain.status === "registered" ? (
+                        <p className="text-xs text-emerald-900 leading-relaxed">
+                          <strong>✓ Terdaftar</strong>
+                          {data.litera_domain.auto_approved
+                            ? " (auto-approved)"
+                            : " (menunggu persetujuan Litera)"}
+                          {data.litera_domain.registered_at && (
+                            <>
+                              {" "}
+                              pada{" "}
+                              {new Date(
+                                data.litera_domain.registered_at,
+                              ).toLocaleString("id-ID")}
+                            </>
+                          )}
+                          .
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-rose-900 leading-relaxed">
+                            <strong>Pendaftaran gagal.</strong> Artikel tidak
+                            akan dikirim sampai domain masuk allowlist.
+                          </p>
+                          {data.litera_domain.last_error && (
+                            <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap rounded bg-rose-50 p-2 font-mono text-[11px] text-rose-900">
+                              {data.litera_domain.last_error}
+                            </pre>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

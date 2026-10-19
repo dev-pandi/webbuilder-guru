@@ -490,6 +490,29 @@ func (h *Handler) registerLitera(ctx context.Context, a *Article) {
 			"domain "+host+" masih dalam proses ("+src+") — Litera akan daftar otomatis setelah domain aktif")
 		return
 	}
+	// Pastikan hostname ada di CORS allowlist Litera SEBELUM kirim artikel.
+	// Tanpa ini register artikel balas 403, dan 403 berulang memicu
+	// AUTO_MINT_SUSPENDED di sisi Litera. Pendaftaran lazy (saat publish
+	// pertama dari domain ini) — bukan saat domain dibeli, karena tidak semua
+	// guru memakai Litera.
+	if err := h.litera.EnsureDomain(ctx, host); err != nil {
+		if errors.Is(err, litera.ErrDisabled) {
+			slog.Info("litera register skipped: integration disabled", "article", a.ID)
+			return
+		}
+		slog.Warn("litera register: domain allowlist failed",
+			"article", a.ID, "hostname", host, "err", err)
+		msg := "gagal mendaftarkan domain " + host + " ke Litera: " + err.Error()
+		if errors.Is(err, litera.ErrDomainOutOfScope) {
+			msg = "domain " + host + " di luar scope root domain API key Litera — periksa API key di /admin/litera"
+		}
+		if len(msg) > 500 {
+			msg = msg[:500]
+		}
+		_ = h.repo.MarkLiteraFailed(ctx, a.ID, msg)
+		return
+	}
+
 	canonicalURL := litera.CanonicalArticleURL(host, a.Rubric, a.Slug)
 	// Author = nama site (platform guru pakai nama guru sebagai nama site).
 	author := site.Name
@@ -523,6 +546,13 @@ func (h *Handler) registerLitera(ctx context.Context, a *Article) {
 		slog.Warn("litera register: API call failed",
 			"article", a.ID, "url", canonicalURL, "err", err)
 		msg := err.Error()
+		if errors.Is(err, litera.ErrDomainNotAllowed) {
+			// Catatan allowlist kita ternyata basi — buang supaya percobaan
+			// berikutnya mendaftarkan ulang, bukan menembak 403 lagi.
+			h.litera.InvalidateDomain(ctx, host, "register artikel ditolak 403")
+			msg = "domain " + host + " ditolak Litera (403) walau sudah didaftarkan. " +
+				"Allowlist butuh ≤60 detik untuk aktif — tunggu lalu Retry SATU kali saja."
+		}
 		if len(msg) > 500 {
 			msg = msg[:500]
 		}
@@ -642,6 +672,14 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 		}
 	}
 
+	// Catatan allowlist CORS — dibaca dari DB, bukan hit Litera API. Memanggil
+	// endpoint status untuk domain yang belum terdaftar balas 403, dan 403
+	// berulang memicu suspend API key.
+	var literaDomain *litera.DomainRecord
+	if h.litera != nil && hasHostname {
+		literaDomain, _ = h.litera.DomainRecord(c.Context(), hostname)
+	}
+
 	// Error analysis — classify + suggest fix.
 	errorCategory := ""
 	errorHint := ""
@@ -654,9 +692,15 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 		case strings.Contains(msg, "unauthorized") || strings.Contains(msg, "401"):
 			errorCategory = "litera_apikey"
 			errorHint = "API key Litera invalid/expired. Buka /admin/litera → tab Konfigurasi, periksa API key dari dashboard Literaa."
+		case strings.Contains(msg, "di luar scope root domain"):
+			errorCategory = "litera_apikey"
+			errorHint = "API key Litera di-scope ke root domain lain, jadi hostname ini tidak akan pernah bisa didaftarkan. Minta Litera lebarkan scope key, atau pakai key yang sesuai."
+		case strings.Contains(msg, "gagal mendaftarkan domain"):
+			errorCategory = "litera_cors"
+			errorHint = "Pendaftaran domain ke allowlist Litera gagal. Periksa pesan aslinya di bawah — kalau 401 berarti API key, kalau network berarti Litera sedang down. Retry setelah penyebabnya beres."
 		case strings.Contains(msg, "domain not in cors") || strings.Contains(msg, "403"):
 			errorCategory = "litera_cors"
-			errorHint = "Domain site belum di-whitelist CORS Litera. Tunggu 60 detik lalu Retry — biasanya auto-approve. Kalau tetap 403, hubungi Litera support."
+			errorHint = "Domain sudah kita daftarkan tapi Litera masih menolak. Allowlist butuh ≤60 detik untuk aktif — tunggu, lalu Retry SATU kali. JANGAN retry berulang: ≥5 penolakan dalam 10 menit men-suspend API key kita (pemulihan harus manual lewat wallet)."
 		case strings.Contains(msg, "rate limit") || strings.Contains(msg, "429"):
 			errorCategory = "api"
 			errorHint = "Rate limit Litera (60 req/menit). Tunggu beberapa saat lalu Retry."
@@ -705,6 +749,9 @@ func (h *Handler) LiteraAdminPreview(c *fiber.Ctx) error {
 		},
 		"canonical_url":    canonicalURL,
 		"payload_preview":  payloadPreview,
+		// Catatan allowlist CORS Litera untuk hostname ini. null = belum pernah
+		// didaftarkan (akan otomatis didaftarkan saat publish berikutnya).
+		"litera_domain": literaDomain,
 		"error": fiber.Map{
 			"message":  a.LiteraRegisterError,
 			"category": errorCategory,

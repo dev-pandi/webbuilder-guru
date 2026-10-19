@@ -17,16 +17,18 @@ import (
 // Client — HTTP wrapper untuk Litera CMS endpoints. Config dibaca per-request
 // via ConfigRepo supaya rotate API key langsung efektif (max TTL cache 60s).
 type Client struct {
-	cfg  *ConfigRepo
-	http *http.Client
+	cfg     *ConfigRepo
+	domains *DomainRepo
+	http    *http.Client
 }
 
 // NewClient — wire. HTTP client dengan 30s timeout per request (sesuai doc
 // "60 req/menit" rate limit, tidak perlu long poll).
-func NewClient(cfg *ConfigRepo) *Client {
+func NewClient(cfg *ConfigRepo, domains *DomainRepo) *Client {
 	return &Client{
-		cfg:  cfg,
-		http: &http.Client{Timeout: 30 * time.Second},
+		cfg:     cfg,
+		domains: domains,
+		http:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -82,6 +84,110 @@ func (c *Client) Register(ctx context.Context, req RegisterRequest) (*RegisterRe
 	default:
 		return nil, &APIError{StatusCode: resp.StatusCode, CorrelationID: corrID, Body: string(respBody)}
 	}
+}
+
+// RegisterDomain — POST /cms/domains/register. Masukkan hostname ke CORS
+// allowlist Litera. Idempoten menurut doc, jadi aman dipanggil ulang.
+// Aktivasi allowlist butuh ≤60 detik setelah response sukses.
+func (c *Client) RegisterDomain(ctx context.Context, hostname string) (*DomainRegisterResponse, error) {
+	cfg, err := c.cfg.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("litera: load config: %w", err)
+	}
+	if !cfg.IsReady() {
+		return nil, ErrDisabled
+	}
+	host := NormalizeHost(hostname)
+	if host == "" {
+		return nil, errors.New("litera: hostname kosong")
+	}
+
+	body, err := json.Marshal(DomainRegisterRequest{Domains: []string{host}})
+	if err != nil {
+		return nil, fmt.Errorf("litera: marshal domain register: %w", err)
+	}
+
+	endpoint := strings.TrimRight(cfg.BaseURL, "/") + "/cms/domains/register"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("litera: build domain request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("litera: http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	corrID := extractCorrelationID(respBody)
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated:
+		var out DomainRegisterResponse
+		if err := json.Unmarshal(respBody, &out); err != nil {
+			return nil, fmt.Errorf("litera: decode domain response: %w", err)
+		}
+		slog.Info("litera domain registered",
+			"hostname", host, "auto_approved", out.Data.AutoApproved, "correlation", corrID)
+		return &out, nil
+	case http.StatusUnauthorized:
+		return nil, errors.Join(ErrUnauthorized, &APIError{StatusCode: resp.StatusCode, CorrelationID: corrID, Body: string(respBody)})
+	case http.StatusBadRequest:
+		// Doc: 400 = "API key dibatasi untuk root domain tertentu".
+		return nil, errors.Join(ErrDomainOutOfScope, &APIError{StatusCode: resp.StatusCode, CorrelationID: corrID, Body: string(respBody)})
+	case http.StatusTooManyRequests:
+		return nil, errors.Join(ErrRateLimit, &APIError{StatusCode: resp.StatusCode, CorrelationID: corrID, Body: string(respBody)})
+	default:
+		return nil, &APIError{StatusCode: resp.StatusCode, CorrelationID: corrID, Body: string(respBody)}
+	}
+}
+
+// EnsureDomain — pastikan hostname ada di CORS allowlist sebelum register
+// artikel. Hit API hanya kalau kita belum punya catatan sukses, supaya publish
+// artikel berikutnya dari domain yang sama tidak boros round-trip.
+func (c *Client) EnsureDomain(ctx context.Context, hostname string) error {
+	host := NormalizeHost(hostname)
+	if host == "" {
+		return errors.New("litera: hostname kosong")
+	}
+	if c.domains != nil {
+		rec, err := c.domains.Get(ctx, host)
+		if err == nil && rec != nil && rec.Status == DomainStatusRegistered {
+			return nil
+		}
+	}
+	res, err := c.RegisterDomain(ctx, host)
+	if err != nil {
+		if c.domains != nil && !errors.Is(err, ErrDisabled) {
+			_ = c.domains.MarkFailed(ctx, host, err.Error())
+		}
+		return err
+	}
+	if c.domains != nil {
+		_ = c.domains.MarkRegistered(ctx, host, res.Data.AutoApproved)
+	}
+	return nil
+}
+
+// InvalidateDomain — tandai catatan allowlist sebagai basi supaya percobaan
+// berikutnya mendaftarkan ulang. Dipanggil saat register artikel kena 403:
+// artinya domain ternyata tidak (lagi) ada di allowlist.
+func (c *Client) InvalidateDomain(ctx context.Context, hostname, reason string) {
+	if c.domains == nil {
+		return
+	}
+	_ = c.domains.Invalidate(ctx, hostname, reason)
+}
+
+// DomainRecord — expose catatan allowlist untuk admin debug panel.
+func (c *Client) DomainRecord(ctx context.Context, hostname string) (*DomainRecord, error) {
+	if c.domains == nil {
+		return nil, nil
+	}
+	return c.domains.Get(ctx, hostname)
 }
 
 // ResolveStatus — representasi minimal GET /articles/resolve response untuk

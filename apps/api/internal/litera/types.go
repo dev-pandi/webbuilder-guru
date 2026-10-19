@@ -77,6 +77,23 @@ type RegisterRequest struct {
 	Quiz                    *QuizPayload `json:"quiz,omitempty"`
 }
 
+// DomainRegisterRequest — payload POST /cms/domains/register.
+type DomainRegisterRequest struct {
+	Domains []string `json:"domains"`
+}
+
+// DomainRegisterResponse — envelope sukses pendaftaran domain.
+type DomainRegisterResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		AutoApproved bool     `json:"autoApproved"`
+		Added        []string `json:"added"`
+	} `json:"data"`
+	Meta struct {
+		CorrelationID string `json:"correlationId"`
+	} `json:"meta"`
+}
+
 // RegisterResponse — envelope sukses dari Litera.
 type RegisterResponse struct {
 	Success bool `json:"success"`
@@ -103,9 +120,14 @@ var (
 	ErrDisabled = errors.New("litera: integration disabled or not configured")
 	// ErrUnauthorized — 401. API key invalid/revoked.
 	ErrUnauthorized = errors.New("litera: unauthorized (invalid API key)")
-	// ErrDomainNotAllowed — 403. Domain artikel belum di CORS whitelist.
-	// Doc bilang "Auto-Approved ≤60s" — retry 1x setelah delay bisa works.
+	// ErrDomainNotAllowed — 403. Domain artikel belum di CORS allowlist.
+	// JANGAN retry membabi buta: doc menyebut >=5 pelanggaran dalam 10 menit
+	// memicu AUTO_MINT_SUSPENDED yang hanya pulih lewat wallet signature.
+	// Penanganan benar = daftarkan domain via RegisterDomain lalu coba sekali.
 	ErrDomainNotAllowed = errors.New("litera: domain not in CORS whitelist")
+	// ErrDomainOutOfScope — 400 saat daftar domain. API key di-scope ke root
+	// domain lain, jadi hostname ini tidak akan pernah bisa didaftarkan.
+	ErrDomainOutOfScope = errors.New("litera: hostname di luar scope root domain API key")
 	// ErrRateLimit — 429. Backoff retry.
 	ErrRateLimit = errors.New("litera: rate limit exceeded")
 	// ErrNotFound — 404. Khusus endpoint Resolve: artikel belum di-mint.

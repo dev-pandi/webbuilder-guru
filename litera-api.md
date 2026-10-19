@@ -237,10 +237,17 @@ Jika login email/Google gagal di domain pihak ketiga, widget menampilkan transis
 
 | Kode | Arti | Tindakan |
 |------|------|----------|
+| `400` | API key dibatasi ke root domain lain | Jangan retry. Hostname ini tidak akan pernah bisa didaftarkan dengan key tersebut. |
 | `401` | Key salah/revoked atau signature tidak valid | Jangan retry. Tempel ulang key atau tanda tangani ulang. |
-| `403` | Domain artikel belum live di CORS | Daftarkan domain dulu, tunggu 60 detik, retry sekali. |
+| `403` | Domain artikel belum live di CORS | Daftarkan domain via `POST /cms/domains/register`, tunggu ≤60 detik, retry **sekali**. |
+| `403 AUTO_MINT_SUSPENDED` | ≥5 pelanggaran dalam 10 menit | Key ter-suspend. Pulihkan lewat `POST /cms/keys/{keyId}/resume-auto-mint` (butuh wallet signature). |
 | `429` | Melebihi 60 request/menit | Backoff dan retry. |
 | `404` (resolve) | URL belum di-mint on-chain | Bukan error. Selesaikan mint di `/creator`. |
+
+> ⚠️ **Jangan retry berulang saat 403.** Lima penolakan dalam 10 menit men-suspend
+> API key publisher dan pemulihannya harus manual dengan wallet signature. Karena
+> itu BikinWeb mendaftarkan domain lebih dulu, lalu mencoba register artikel
+> maksimal sekali per percobaan.
 
 > **Aturan URL:** Harus **kanonis dan byte-persis sama** di semua langkah (beda satu garis miring = tidak cocok). Setiap respons membawa `meta.correlationId` — sertakan saat melapor kendala.
 
@@ -269,12 +276,35 @@ Jika server web BikinWeb menerapkan header CSP, tambahkan domain layanan Litera 
 
 | Method | Endpoint | Fungsi |
 |--------|----------|--------|
+| `POST` | `/cms/domains/register` | Masukkan hostname ke CORS allowlist (idempoten, aktif ≤60 detik) |
+| `GET` | `/cms/integration/status?domain=...` | Cek sinkronisasi allowlist sebuah domain |
+| `DELETE` | `/cms/domains/{domainId}` | Hapus domain dari allowlist |
+| `PATCH` | `/cms/domains/{domainId}/sponsor` | Set sponsor banner per domain (wallet signature) |
 | `POST` | `/cms/articles/register` | Registrasi artikel baru (dari BikinWeb) |
 | `POST` | `/cms/articles/:id/configure` | Update konfigurasi artikel setelah registrasi |
+| `GET` | `/cms/articles/status?url=...` | Cek status registrasi artikel |
 | `GET` | `/cms/articles/intents` | Antrian intent yang belum di-mint |
+| `GET` | `/cms/tokenomics` | Default price/fee/reward tingkat platform |
 | `POST` | `/cms/keys/revoke` | Cabut API key |
+| `POST` | `/cms/keys/{keyId}/resume-auto-mint` | Pulihkan key yang ter-suspend (wallet signature) |
 | `GET` | `/api/v1/articles/resolve?url=...` | Cek status mint artikel berdasarkan URL |
 | `POST` | `/quiz/submit` | Submit jawaban kuis (penilaian di server) |
+
+### Pendaftaran Domain di BikinWeb
+
+Domain **tidak** didaftarkan saat guru membeli domain — tidak semua guru memakai
+Litera. Pendaftaran bersifat *lazy*: saat artikel pertama dari sebuah hostname
+dipublikasikan, backend memanggil `POST /cms/domains/register` lalu menyimpan
+hasilnya di tabel `litera_domains`. Publikasi berikutnya dari hostname yang sama
+melewati langkah ini. Kalau register artikel tetap kena 403, catatan hostname
+di-invalidasi supaya percobaan berikutnya mendaftarkan ulang.
+
+```json
+POST /cms/domains/register
+{ "domains": ["penulis.sekolah.id"] }
+
+→ { "success": true, "data": { "autoApproved": true, "added": ["penulis.sekolah.id"] } }
+```
 
 ---
 
