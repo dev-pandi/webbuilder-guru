@@ -18,7 +18,7 @@ import {
   Inbox,
   RefreshCw,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, errMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,10 @@ type Summary = {
 
 type Form = { id: string; name: string };
 
+// "en-CA" menghasilkan format YYYY-MM-DD, cocok dengan bucket DATE backend.
+const jakartaFmt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" });
+const jakartaDateKey = (ms: number) => jakartaFmt.format(new Date(ms));
+
 export default function AnalyticsPage() {
   const params = useParams<{ id: string }>();
   const siteID = params.id;
@@ -45,14 +49,15 @@ export default function AnalyticsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [formCount, setFormCount] = useState<{ forms: number; submissions: number } | null>(null);
 
-  async function refresh() {
+  async function refresh(signal?: AbortSignal) {
     setLoading(true);
     setErr(null);
     try {
       const [s, forms] = await Promise.all([
-        api<Summary>(`/api/v1/sites/${siteID}/analytics?days=${days}`),
-        api<Form[]>(`/api/v1/sites/${siteID}/forms`).catch(() => [] as Form[]),
+        api<Summary>(`/api/v1/sites/${siteID}/analytics?days=${days}`, { signal }),
+        api<Form[]>(`/api/v1/sites/${siteID}/forms`, { signal }).catch(() => [] as Form[]),
       ]);
+      if (signal?.aborted) return;
       setSummary(s);
       // Count submissions across all forms — parallel fetch.
       if (forms.length > 0) {
@@ -60,9 +65,11 @@ export default function AnalyticsPage() {
           forms.map((f) =>
             api<{ items: unknown[]; total: number }>(
               `/api/v1/forms/${f.id}/submissions?page=1&page_size=1`,
+              { signal },
             ),
           ),
         );
+        if (signal?.aborted) return;
         const totalSub = results.reduce(
           (acc, r) => acc + (r.status === "fulfilled" ? (r.value.total ?? 0) : 0),
           0,
@@ -72,31 +79,40 @@ export default function AnalyticsPage() {
         setFormCount({ forms: 0, submissions: 0 });
       }
     } catch (e) {
-      setErr((e as Error).message);
+      if (signal?.aborted) return;
+      setSummary(null); // jangan sisakan angka window lama di layar saat gagal
+      setErr(errMessage(e));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }
 
+  // Abort request lama saat window diganti — tanpa ini, toggle cepat 7→30→90
+  // bisa menampilkan hasil request 7d yang datang belakangan di label "90 hari".
   useEffect(() => {
-    void refresh();
+    const ac = new AbortController();
+    void refresh(ac.signal);
+    return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteID, days]);
 
   // Isi date gap dengan 0 supaya chart tidak sparse.
+  //
+  // Key harus tanggal WIB, sama dengan bucket yang dipakai backend. Versi lama
+  // pakai toISOString() (selalu UTC), jadi antara 00:00–07:00 WIB seluruh chart
+  // bergeser satu hari dan batang "hari ini" selalu kosong.
   const filled = useMemo(() => {
     if (!summary) return [];
     const map = new Map<string, number>();
     for (const p of summary.daily) {
-      const key = new Date(p.date).toISOString().slice(0, 10);
-      map.set(key, p.views);
+      // p.date = DATE polos dari Postgres ("2026-10-19T00:00:00Z") — ambil
+      // apa adanya, jangan di-parse ke Date supaya tidak kena geser timezone.
+      map.set(p.date.slice(0, 10), p.views);
     }
     const out: DailyPoint[] = [];
-    const now = new Date();
+    const now = Date.now();
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = jakartaDateKey(now - i * 86_400_000);
       out.push({ date: key, views: map.get(key) ?? 0 });
     }
     return out;
@@ -149,7 +165,7 @@ export default function AnalyticsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={refresh}
+            onClick={() => void refresh()}
             disabled={loading}
             className="gap-2"
           >
@@ -158,13 +174,35 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      {/* Saat gagal, sembunyikan seluruh angka. Menampilkan kartu "0" di
+          samping pesan error bikin user mengira situsnya memang sepi, padahal
+          datanya cuma tidak berhasil diambil. */}
       {err && (
-        <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-          <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          <span>{err}</span>
-        </div>
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <AlertCircle className="size-8 text-destructive" />
+            <div>
+              <p className="font-medium text-destructive">
+                Gagal memuat data analitik
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">{err}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void refresh()}
+              disabled={loading}
+              className="gap-2"
+            >
+              <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
+              Coba lagi
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
+      {!err && (
+        <>
       {/* Headline stat cards */}
       <div className="grid gap-3 sm:grid-cols-3">
         <StatCard
@@ -260,6 +298,8 @@ export default function AnalyticsPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }
@@ -329,9 +369,13 @@ function BarChart({ data, max }: { data: DailyPoint[]; max: number }) {
   );
 }
 
+// Kunci chart adalah tanggal WIB ("2026-10-19"), dan new Date() membacanya
+// sebagai tengah malam UTC. Render balik pakai timeZone Jakarta supaya label
+// tidak mundur sehari untuk pembaca di luar WIB.
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString("id-ID", {
+      timeZone: "Asia/Jakarta",
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -344,6 +388,7 @@ function formatDate(iso: string): string {
 function formatDateShort(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString("id-ID", {
+      timeZone: "Asia/Jakarta",
       day: "numeric",
       month: "numeric",
     });

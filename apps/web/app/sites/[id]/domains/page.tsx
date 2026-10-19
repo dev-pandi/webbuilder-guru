@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
+  BarChart3,
   CalendarClock,
   CheckCircle2,
   Copy,
@@ -244,6 +245,33 @@ export default function DomainsPage() {
             </div>
           </Link>
         </Button>
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Setelah situs online
+        </p>
+        {/* Link "Ekspor Situs" sengaja belum ditampilkan: exporter hanya
+            mengenal 38 dari ~104 tipe blok dan nol blok Guru, jadi template
+            guru ter-export jadi halaman kosong tapi ZIP tetap dilaporkan
+            sukses. Munculkan lagi setelah coverage blok diperbaiki. */}
+        <div className="grid gap-3">
+          <Button
+            variant="outline"
+            className="h-auto justify-start gap-3 p-4 text-left"
+            asChild
+          >
+            <Link href={`/sites/${siteID}/analytics`}>
+              <BarChart3 className="size-4 shrink-0" />
+              <div>
+                <p className="font-medium">Statistik Kunjungan</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Lihat jumlah pengunjung dan halaman terpopuler.
+                </p>
+              </div>
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {anchor && (

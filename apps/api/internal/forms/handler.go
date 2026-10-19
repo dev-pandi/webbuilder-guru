@@ -156,7 +156,7 @@ func (h *Handler) ListSubmissions(c *fiber.Ctx) error {
 	if err != nil {
 		return httpx.BadRequest(c, "invalid form id")
 	}
-	if _, err := h.repo.GetOwned(c.Context(), formID, uid); err != nil {
+	if _, err := h.repo.GetOwnedOrAdmin(c.Context(), formID, uid, auth.IsAdminFrom(c)); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return httpx.NotFound(c, "form not found")
 		}

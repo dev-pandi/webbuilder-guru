@@ -124,6 +124,23 @@ func (r *Repo) GetOwned(ctx context.Context, id, userID uuid.UUID) (*Form, error
 	return &f, err
 }
 
+// GetOwnedOrAdmin = GetOwned yang di-bypass untuk role admin, supaya admin bisa
+// membuka submissions situs user saat support/debug — pola yang sama dipakai
+// sites.GetOwnedOrAdmin.
+func (r *Repo) GetOwnedOrAdmin(ctx context.Context, id, userID uuid.UUID, isAdmin bool) (*Form, error) {
+	var f Form
+	err := scanForm(r.pool.QueryRow(ctx, `
+		SELECT `+formCols+` FROM forms f
+		 WHERE f.id = $1
+		   AND ($3 OR EXISTS (SELECT 1 FROM sites s WHERE s.id = f.site_id AND s.user_id = $2))`,
+		id, userID, isAdmin,
+	), &f)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return &f, err
+}
+
 func (r *Repo) Create(ctx context.Context, f *Form) error {
 	fieldsJSON, err := json.Marshal(f.Fields)
 	if err != nil {

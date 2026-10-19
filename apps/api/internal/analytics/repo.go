@@ -12,6 +12,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// today = "hari ini" menurut WIB, bukan menurut timezone server Postgres.
+// `CURRENT_DATE` ikut TZ server (umumnya UTC di VPS), jadi kunjungan antara
+// 00:00–07:00 WIB akan masuk bucket kemarin — "Views hari ini" terlihat
+// tertinggal sampai siang. Konstanta compile-time, bukan input user, jadi
+// aman digabung ke string SQL.
+//
+// Indonesia punya 3 zona; WIB dipilih karena mayoritas pengguna. Kalau nanti
+// butuh per-situs, jadikan ini kolom di `sites` dan pass sebagai parameter.
+const today = `(now() AT TIME ZONE 'Asia/Jakarta')::date`
+
 type Repo struct{ pool *pgxpool.Pool }
 
 func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
@@ -25,7 +35,7 @@ func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
 func (r *Repo) RecordView(ctx context.Context, siteID uuid.UUID, pageSlug string) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO analytics_page_views (site_id, page_slug, date, view_count)
-		VALUES ($1, $2, CURRENT_DATE, 1)
+		VALUES ($1, $2, `+today+`, 1)
 		ON CONFLICT (site_id, date, page_slug)
 		DO UPDATE SET view_count = analytics_page_views.view_count + 1
 	`, siteID, pageSlug)
@@ -62,11 +72,16 @@ func (r *Repo) GetSummary(ctx context.Context, siteID uuid.UUID, days int) (*Sum
 
 	// Daily trend — fill missing dates dengan 0 di caller (loop di frontend
 	// atau di sini). Untuk MVP, biar frontend fill karena responsive rendering.
+	//
+	// `$2::int` wajib: versi lama pakai `($2 || ' days')::interval`, yang bikin
+	// Postgres infer $2 sebagai text dan pgx gagal encode Go int ke OID text —
+	// seluruh endpoint summary balas 500. `>` (bukan `>=`) supaya window-nya pas
+	// N hari termasuk hari ini, bukan N+1.
 	dailyRows, err := r.pool.Query(ctx, `
 		SELECT date, SUM(view_count)::bigint AS total
 		  FROM analytics_page_views
 		 WHERE site_id = $1
-		   AND date >= CURRENT_DATE - ($2 || ' days')::interval
+		   AND date > `+today+` - $2::int
 		 GROUP BY date
 		 ORDER BY date ASC
 	`, siteID, days)
@@ -84,13 +99,16 @@ func (r *Repo) GetSummary(ctx context.Context, siteID uuid.UUID, days int) (*Sum
 		daily = append(daily, p)
 		total += p.Views
 	}
+	if err := dailyRows.Err(); err != nil {
+		return nil, err
+	}
 
 	// Top pages — sum per page_slug dalam window.
 	topRows, err := r.pool.Query(ctx, `
 		SELECT page_slug, SUM(view_count)::bigint AS total
 		  FROM analytics_page_views
 		 WHERE site_id = $1
-		   AND date >= CURRENT_DATE - ($2 || ' days')::interval
+		   AND date > `+today+` - $2::int
 		 GROUP BY page_slug
 		 ORDER BY total DESC
 		 LIMIT 10
@@ -107,16 +125,19 @@ func (r *Repo) GetSummary(ctx context.Context, siteID uuid.UUID, days int) (*Sum
 		}
 		tops = append(tops, t)
 	}
+	if err := topRows.Err(); err != nil {
+		return nil, err
+	}
 
 	// Quick counters today + yesterday untuk headline card.
 	var viewsToday, viewsYesterday int64
 	_ = r.pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(view_count), 0) FROM analytics_page_views
-		  WHERE site_id = $1 AND date = CURRENT_DATE`, siteID,
+		  WHERE site_id = $1 AND date = `+today, siteID,
 	).Scan(&viewsToday)
 	_ = r.pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(view_count), 0) FROM analytics_page_views
-		  WHERE site_id = $1 AND date = CURRENT_DATE - INTERVAL '1 day'`, siteID,
+		  WHERE site_id = $1 AND date = `+today+` - 1`, siteID,
 	).Scan(&viewsYesterday)
 
 	return &Summary{
