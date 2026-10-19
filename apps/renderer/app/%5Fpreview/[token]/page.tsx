@@ -6,6 +6,11 @@ import { composePageWithLayout } from "@/components/SiteLayout";
 import { getPagePreview } from "@/lib/api";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
+// Folder is named %5Fpreview, not _preview: App Router treats underscore-prefixed
+// folders as private and drops them from routing, so /_preview/<token> fell through
+// to [...slug] and 404'd. %5F is the documented escape yielding a literal underscore
+// in the URL — keep the prefix so the segment can't collide with a tenant page slug.
+//
 // Preview is always-fresh — drafts evolve every few seconds during review.
 export const dynamic = "force-dynamic";
 
