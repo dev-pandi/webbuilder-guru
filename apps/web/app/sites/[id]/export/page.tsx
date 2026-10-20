@@ -12,6 +12,7 @@ import {
   Palette,
   Link2,
   Blocks,
+  Image as ImageIcon,
 } from "lucide-react";
 import { getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,18 @@ const FEATURES = [
   {
     icon: Link2,
     text: "Link antar halaman otomatis diubah jadi path relatif",
+  },
+  {
+    icon: ImageIcon,
+    text: (
+      <>
+        Gambar diunduh ke{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
+          assets/img/
+        </code>{" "}
+        supaya hasil ekspor tidak bergantung pada situs asli
+      </>
+    ),
   },
   {
     icon: Blocks,
@@ -124,6 +137,7 @@ export default function ExportPage() {
 ├── tentang/index.html
 ├── ...
 ├── assets/css/styles.css
+├── assets/img/...
 ├── robots.txt
 └── sitemap.xml`}</pre>
       </div>
