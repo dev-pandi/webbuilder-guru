@@ -124,6 +124,23 @@ marked.use({
       if ("text" in token) return token.text ?? "";
       return "";
     },
+    // Task list `- [ ]`. Default marked emit <ul><li><input>, tidak punya
+    // data-type yang dicari parseHTML TaskList/TaskItem — hasilnya jadi bullet
+    // list biasa. Return false untuk list non-task supaya jatuh ke renderer
+    // bawaan (ordered list + atribut start).
+    list(token: Tokens.List) {
+      if (!token.items.some((item) => item.task)) return false;
+      const items = token.items
+        .map((item) => {
+          const checked = !!item.checked;
+          // parse(tokens, true) → paksa <p>, karena content TaskItem
+          // `paragraph block*` dan contentElement-nya querySelector("div").
+          const body = this.parser.parse(item.tokens, true);
+          return `<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox"${checked ? " checked" : ""}><span></span></label><div>${body}</div></li>`;
+        })
+        .join("");
+      return `<ul data-type="taskList">${items}</ul>`;
+    },
     // Image dengan URL fragment `#w=N` → render dengan style max-width:N%.
     // `data-size` disimpan supaya editor node bisa parseHTML lalu tombol
     // ukuran tetap active (highlight preset yang cocok).
@@ -165,7 +182,8 @@ marked.use({
 // --- Turndown configuration ---
 //
 // Base: headingStyle=atx + fenced code + `-` bullets. GFM plugin adds
-// support untuk table (`| col | col |`), strikethrough, task lists.
+// support untuk table (`| col | col |`) + strikethrough. Task list ditangani
+// rule sendiri di bawah — rule bawaan plugin tidak cocok dengan DOM TipTap.
 // Custom rules convert iframe (YouTube) + <audio> → fenced code kita.
 const td = new TurndownService({
   headingStyle: "atx",
@@ -173,6 +191,22 @@ const td = new TurndownService({
   bulletListMarker: "-",
 });
 td.use(turndownGfm);
+
+// Checkbox task list. Rule `taskListItems` dari turndown-plugin-gfm tidak
+// pernah cocok karena syaratnya input.parentNode === 'LI', sedangkan TipTap
+// membungkus input di <label> — efeknya tanda centang hilang tiap simpan.
+// Rule ini ambil alih seluruh <li> supaya hasilnya satu baris `- [x] teks`,
+// bukan marker dan teks terpisah seperti kalau hanya <input> yang di-handle.
+td.addRule("taskListItem", {
+  filter: (node) =>
+    node.nodeName === "LI" && (node as HTMLElement).getAttribute("data-type") === "taskItem",
+  replacement: (content, node, options) => {
+    const checked = (node as HTMLElement).getAttribute("data-checked") === "true";
+    const body = content.trim().replace(/\n/g, "\n    ");
+    const prefix = `${options.bulletListMarker} [${checked ? "x" : " "}] `;
+    return prefix + body + (node.nextSibling ? "\n" : "");
+  },
+});
 
 // Preserve <span style="..."> dari color/font-family/font-size.
 // Default turndown drop span. Rule: kalau span punya style, keep as HTML.
@@ -790,7 +824,8 @@ export function RichEditor({
       TableRow,
       TableHeader,
       TableCell,
-      // Task list — checkbox `- [ ]` markdown roundtrip via GFM plugin.
+      // Task list — roundtrip `- [ ]` lewat rule `taskListItem` + renderer
+      // `list` di atas, bukan GFM plugin (lihat alasannya di sana).
       TaskList,
       TaskItem.configure({ nested: true }),
       // Custom audio block node.

@@ -81,6 +81,12 @@
 .wb-prose ol { list-style: decimal; }
 .wb-prose li { margin: 0.15em 0; }
 .wb-prose li > p { margin: 0; display: inline; }
+/* Task list: checkbox menggantikan bullet, jadi disc-nya dimatikan. Selector
+   lewat <ul> karena nodeView TipTap tidak menaruh data-type di <li>. */
+.wb-prose ul[data-type="taskList"] { list-style: none; padding-left: 0.25em; }
+.wb-prose ul[data-type="taskList"] > li { display: flex; align-items: flex-start; gap: 0.5em; }
+.wb-prose ul[data-type="taskList"] > li > label { margin-top: 0.25em; }
+.wb-prose ul[data-type="taskList"] > li > div { flex: 1; }
 .wb-prose blockquote { border-left: 3px solid hsl(var(--primary)); padding-left: 1em; opacity: 0.85; font-style: italic; }
 .wb-prose code { background: hsl(var(--muted)); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.875em; font-family: ui-monospace, monospace; }
 .wb-prose pre { background: hsl(var(--foreground)); color: hsl(var(--background)); padding: 1em; border-radius: 0.5em; overflow-x: auto; font-size: 0.875rem; }
@@ -159,6 +165,10 @@
 .article-prose ol { list-style: decimal; }
 .article-prose li { margin: 0.35em 0; }
 .article-prose li > p { margin: 0; display: inline; }
+/* Task list GFM — marked emit <li><input type=checkbox>, tanpa data-type
+   seperti di editor, jadi deteksinya lewat :has(). */
+.article-prose ul:has(input[type="checkbox"]) { list-style: none; padding-left: 0.25em; }
+.article-prose input[type="checkbox"] { margin-right: 0.45em; vertical-align: middle; }
 .article-prose blockquote {
   border-left: 3px solid #d73f45;
   padding: 0.15em 0 0.15em 1.2em;
