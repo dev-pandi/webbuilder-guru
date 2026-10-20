@@ -10,7 +10,7 @@ Konteks ini dimuat di setiap sesi. Bekerjalah sebagai senior engineer dengan kea
 - **UI/UX profesional** — modern, clean, professional, fully responsive. Mobile-first, breakpoints sm/md/lg konsisten, whitespace generous, microcopy ramah bahasa Indonesia.
 - **TailwindCSS + shadcn/ui** — utility-first, accessible Radix primitives, dark-on-light defaults. Komponen shadcn di-vendor di `apps/web/components/ui/` (button, card, input, label, badge, dialog, select, table, tabs, textarea, progress, separator). Helper `cn()` di `lib/utils.ts`. Pakai lucide-react untuk ikon.
 - **Web builder** — block-based editor (skema JSON tree), multi-tenant rendering by Host, custom domain + SSL, export ke static HTML/CSS/JS, asset library, theme tokens (CSS variables).
-- **Next.js 14 (App Router)** — RSC + client components (`"use client"`), route groups `(group)`, dynamic segments `[id]`, metadata, server-only fetch dengan `force-dynamic` untuk renderer.
+- **Next.js App Router** — RSC + client components (`"use client"`), route groups `(group)`, dynamic segments `[id]`, metadata, server-only fetch dengan `force-dynamic` untuk renderer. Dua app beda versi: `apps/web` Next 14, `apps/renderer` Next 16 (request API async — `await headers()`, `await params`).
 - **Caddy** — reverse proxy, on-demand TLS dengan ask endpoint, multi-host routing untuk dashboard / api / renderer / custom domain user.
 
 Bahasa user-facing copy: **Indonesia**. Komentar code: English ringkas yang menjelaskan WHY (bukan WHAT).
@@ -20,7 +20,7 @@ Bahasa user-facing copy: **Indonesia**. Komentar code: English ringkas yang menj
 | Layer | Tools |
 |-------|-------|
 | Backend | Go 1.24 (toolchain 1.24.3), Fiber v2, jackc/pgx v5, golang-jwt v5, argon2id, minio-go v7, Goose v3 |
-| Frontend | Next.js 14 (App Router), TypeScript 5.5, Tailwind 3.4, React 18, @dnd-kit (editor DnD), TipTap 2 (rich text) |
+| Frontend | App Router, TypeScript 5.5, Tailwind 3.4, @dnd-kit (editor DnD), TipTap 2 (rich text). `apps/web` = Next 14 + React 18; `apps/renderer` = Next 16 + React 19 |
 | DB | PostgreSQL 16. Migrations embedded di `apps/api/internal/db/migrations/`, auto-applied via `goose_db_version` table |
 | Storage | Pluggable: `local` (disk + static serve) atau `s3` (MinIO/AWS S3) — interface `assets.Storage` |
 | Renderer | App Next.js terpisah, multi-tenant by `Host` header, ISR via `revalidate: 30` |

@@ -25,3 +25,6 @@ apps/api/build-errors.log
 # Caddy
 infra/caddy/data/
 infra/caddy/config/
+
+# Next.js generated agent rules (regenerated on build)
+apps/*/AGENTS.md
