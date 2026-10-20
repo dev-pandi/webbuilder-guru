@@ -1,4 +1,4 @@
-// Global middleware — generate nonce per request + set strict CSP header
+// Global proxy (eks-middleware) — generate nonce per request + set strict CSP header
 // supaya scan security (WEBSEC03) tidak flag 'unsafe-inline'/'unsafe-eval'
 // di script-src.
 //
@@ -14,7 +14,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   // Generate nonce — 16 bytes = 128 bit entropy, base64 ~22 char.
   // Crypto.randomUUID juga OK (36 char) tapi UUID visual terkesan "ID",
   // bukan opaque secret. Pakai random bytes.

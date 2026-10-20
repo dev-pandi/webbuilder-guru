@@ -1,4 +1,4 @@
-// Global middleware — jalankan per-request untuk SEMUA route renderer.
+// Global proxy (eks-middleware) — jalankan per-request untuk SEMUA route renderer.
 // Dua tugas:
 //   1. Set `Vary: Host` → cegah downstream cache cross-tenant leak
 //   2. Generate nonce + CSP header → fix WEBSEC03 (W3C CSP3) — tidak lagi
@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   // Nonce — 16 bytes base64 ≈ 22 char, 128-bit entropy. Fresh per request.
   const nonce = btoa(
     String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))),
