@@ -19,19 +19,12 @@ import {
   type NodeViewProps,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import LinkExt from "@tiptap/extension-link";
 import ImageExt from "@tiptap/extension-image";
-import Placeholder from "@tiptap/extension-placeholder";
 import Youtube from "@tiptap/extension-youtube";
-import Table from "@tiptap/extension-table";
-import TableRow from "@tiptap/extension-table-row";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
-import TextStyle from "@tiptap/extension-text-style";
-import Color from "@tiptap/extension-color";
-import FontFamily from "@tiptap/extension-font-family";
+import { Placeholder } from "@tiptap/extensions";
+import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
+import { TaskList, TaskItem } from "@tiptap/extension-list";
+import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
 import TextAlign from "@tiptap/extension-text-align";
 import { Extension, Node, mergeAttributes } from "@tiptap/core";
 import { marked, type Tokens } from "marked";
@@ -779,10 +772,11 @@ export function RichEditor({
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
-      }),
-      LinkExt.configure({
-        openOnClick: false,
-        HTMLAttributes: { rel: "noopener noreferrer nofollow" },
+        // Link ikut StarterKit sejak v3 — daftar manual bikin duplicate mark.
+        link: {
+          openOnClick: false,
+          HTMLAttributes: { rel: "noopener noreferrer nofollow" },
+        },
       }),
       ImageWithSize.configure({ inline: false }),
       Placeholder.configure({ placeholder: placeholder ?? "Mulai menulis…" }),
@@ -871,7 +865,9 @@ export function RichEditor({
     if (value === lastEmitted.current) return;
     const html = mdToHtml(value);
     if (editor.getHTML() !== html) {
-      editor.commands.setContent(html, false);
+      // emitUpdate:false — sinkron nilai dari luar tidak boleh memicu onUpdate,
+      // nanti balik lagi ke parent sebagai perubahan user (loop).
+      editor.commands.setContent(html, { emitUpdate: false });
       lastEmitted.current = value;
     }
   }, [value, editor]);

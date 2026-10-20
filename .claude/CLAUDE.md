@@ -20,7 +20,7 @@ Bahasa user-facing copy: **Indonesia**. Komentar code: English ringkas yang menj
 | Layer | Tools |
 |-------|-------|
 | Backend | Go 1.24 (toolchain 1.24.3), Fiber v2, jackc/pgx v5, golang-jwt v5, argon2id, minio-go v7, Goose v3 |
-| Frontend | Next.js 16 (App Router) + React 19 di `apps/web` dan `apps/renderer`, TypeScript 5.5, Tailwind 3.4, @dnd-kit (editor DnD), TipTap 2 (rich text) |
+| Frontend | Next.js 16 (App Router) + React 19 di `apps/web` dan `apps/renderer`, TypeScript 5.5, Tailwind 3.4, @dnd-kit (editor DnD), TipTap 3 (rich text) |
 | DB | PostgreSQL 16. Migrations embedded di `apps/api/internal/db/migrations/`, auto-applied via `goose_db_version` table |
 | Storage | Pluggable: `local` (disk + static serve) atau `s3` (MinIO/AWS S3) — interface `assets.Storage` |
 | Renderer | App Next.js terpisah, multi-tenant by `Host` header, ISR via `revalidate: 30` |
