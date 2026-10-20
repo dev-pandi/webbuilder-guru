@@ -30,8 +30,8 @@ export const dynamic = "force-dynamic";
 // marked config di @/lib/markdown (shared) — sudah setOptions + custom code
 // renderer untuk fence `youtube`/`audio`. Import di sini side-effect free.
 
-function host() {
-  return (headers().get("host") ?? "").toLowerCase().split(":")[0];
+async function host() {
+  return ((await headers()).get("host") ?? "").toLowerCase().split(":")[0];
 }
 
 function fmtDate(iso: string | null): string {
@@ -92,15 +92,16 @@ function ResponseItemView({ r }: { r: PublicResponse }) {
   );
 }
 
-export default async function ArticleDetail({
-  params,
-}: {
-  params: { rubric: string; slug: string };
-}) {
+export default async function ArticleDetail(
+  props: {
+    params: Promise<{ rubric: string; slug: string }>;
+  }
+) {
+  const params = await props.params;
   if (!isGuruRubric(params.rubric)) notFound();
   const rubric = params.rubric as GuruRubric;
 
-  const site = await getSiteByHost(host());
+  const site = await getSiteByHost(await host());
   if (!site) notFound();
 
   const detail = await getArticle(site.id, rubric, params.slug);
@@ -185,7 +186,7 @@ export default async function ArticleDetail({
             "sedang diproses" sampai admin mint di dashboard Literaa. */}
         {article.litera_enabled && article.litera_intent_id && (
           <LiteraWidget
-            canonicalURL={canonicalArticleURL(host(), rubric, article.slug)}
+            canonicalURL={canonicalArticleURL(await host(), rubric, article.slug)}
           />
         )}
 
@@ -211,14 +212,15 @@ export default async function ArticleDetail({
   );
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { rubric: string; slug: string };
-}) {
+export async function generateMetadata(
+  props: {
+    params: Promise<{ rubric: string; slug: string }>;
+  }
+) {
+  const params = await props.params;
   if (!isGuruRubric(params.rubric)) return {};
   const rubric = params.rubric as GuruRubric;
-  const site = await getSiteByHost(host());
+  const site = await getSiteByHost(await host());
   if (!site) return {};
   const detail = await getArticle(site.id, rubric, params.slug);
   if (!detail) return {};

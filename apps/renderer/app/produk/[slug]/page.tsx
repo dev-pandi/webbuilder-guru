@@ -8,19 +8,20 @@ import { SiteBodyEndCode, SiteHeadCode } from "@/components/CustomCode";
 
 export const dynamic = "force-dynamic";
 
-function host() {
-  return (headers().get("host") ?? "").toLowerCase().split(":")[0];
+async function host() {
+  return ((await headers()).get("host") ?? "").toLowerCase().split(":")[0];
 }
 
-export default async function ProductDetail({ params }: { params: { slug: string } }) {
-  const site = await getSiteByHost(host());
+export default async function ProductDetail(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const site = await getSiteByHost(await host());
   if (!site) notFound();
   const product = await getProduct(site.id, params.slug);
   if (!product) notFound();
 
   const fontHref = googleFontsUrl(site.theme);
   const gallery = Array.isArray(product.gallery) ? product.gallery : [];
-  const baseURL = `https://${host()}`;
+  const baseURL = `https://${await host()}`;
   const productLD = wrap([buildProduct(product, baseURL)]);
 
   return (
@@ -94,8 +95,9 @@ export default async function ProductDetail({ params }: { params: { slug: string
   );
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const site = await getSiteByHost(host());
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const site = await getSiteByHost(await host());
   if (!site) return {};
   const product = await getProduct(site.id, params.slug);
   if (!product) return {};

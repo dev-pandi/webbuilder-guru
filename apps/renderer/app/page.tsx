@@ -11,7 +11,7 @@ import { googleFontsUrl, themeToCss } from "@/lib/theme";
 export const dynamic = "force-dynamic";
 
 export default async function HomeRender() {
-  const host = sanitizeHost(headers().get("host") ?? "");
+  const host = sanitizeHost((await headers()).get("host") ?? "");
   const lookup = await lookupSiteByHost(host);
   if (lookup.kind !== "found") return <FallbackLanding host={host} lookup={lookup} />;
   const site = lookup.site;

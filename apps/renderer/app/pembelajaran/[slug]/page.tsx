@@ -35,8 +35,8 @@ import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
 
 export const dynamic = "force-dynamic";
 
-function host() {
-  return (headers().get("host") ?? "").toLowerCase().split(":")[0];
+async function host() {
+  return ((await headers()).get("host") ?? "").toLowerCase().split(":")[0];
 }
 
 function fmtDate(iso: string | null): string {
@@ -131,12 +131,13 @@ function buildPrevNext(
   };
 }
 
-export default async function LearningMaterialDetail({
-  params,
-}: {
-  params: { slug: string };
-}) {
-  const site = await getSiteByHost(host());
+export default async function LearningMaterialDetail(
+  props: {
+    params: Promise<{ slug: string }>;
+  }
+) {
+  const params = await props.params;
+  const site = await getSiteByHost(await host());
   if (!site) notFound();
   const detail = await getLearningMaterial(site.id, params.slug);
   if (!detail) notFound();
@@ -178,7 +179,7 @@ export default async function LearningMaterialDetail({
 
   // BreadcrumbList JSON-LD untuk SERP. Build dari data (bukan URL), supaya
   // breadcrumb visual + schema konsisten.
-  const baseURL = `https://${host()}`;
+  const baseURL = `https://${await host()}`;
   const crumbs: Array<{ name: string; url?: string }> = [
     { name: "Pembelajaran", url: `${baseURL}/pembelajaran` },
   ];
@@ -372,12 +373,13 @@ export default async function LearningMaterialDetail({
   );
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { slug: string };
-}) {
-  const site = await getSiteByHost(host());
+export async function generateMetadata(
+  props: {
+    params: Promise<{ slug: string }>;
+  }
+) {
+  const params = await props.params;
+  const site = await getSiteByHost(await host());
   if (!site) return {};
   const detail = await getLearningMaterial(site.id, params.slug);
   if (!detail) return {};

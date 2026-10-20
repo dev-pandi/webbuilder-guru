@@ -11,11 +11,12 @@ import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
 export const revalidate = 10;
 
-export default async function TemplatePreviewPageSub({
-  params,
-}: {
-  params: { slug: string; pageSlug: string };
-}) {
+export default async function TemplatePreviewPageSub(
+  props: {
+    params: Promise<{ slug: string; pageSlug: string }>;
+  }
+) {
+  const params = await props.params;
   const tpl = await getTemplatePreview(params.slug);
   if (!tpl) notFound();
 
@@ -85,11 +86,12 @@ export default async function TemplatePreviewPageSub({
   );
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { slug: string; pageSlug: string };
-}) {
+export async function generateMetadata(
+  props: {
+    params: Promise<{ slug: string; pageSlug: string }>;
+  }
+) {
+  const params = await props.params;
   const tpl = await getTemplatePreview(params.slug);
   if (!tpl) return {};
   const page = findTemplatePage(tpl, params.pageSlug);

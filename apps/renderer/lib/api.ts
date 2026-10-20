@@ -13,9 +13,9 @@ const API = process.env.API_INTERNAL_URL ?? "http://localhost:8080";
 //
 // Return "" kalau tidak dipanggil dari server component (mis. static
 // generation di build time) — API skip guard kalau header kosong.
-function currentHost(): string {
+async function currentHost(): Promise<string> {
   try {
-    const h = headers().get("host") ?? "";
+    const h = (await headers()).get("host") ?? "";
     // Strip port + lowercase.
     return h.toLowerCase().split(":")[0];
   } catch {
@@ -156,7 +156,7 @@ async function fetchJson<T>(
   path: string,
   revalidateSec = 5,
 ): Promise<{ ok: true; data: T } | { ok: false; status: number; code?: string }> {
-  const host = currentHost();
+  const host = await currentHost();
   const noCache = revalidateSec <= 0;
 
   let lastErr: unknown = null;

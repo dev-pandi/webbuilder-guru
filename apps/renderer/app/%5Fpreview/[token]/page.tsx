@@ -21,11 +21,12 @@ export const metadata = {
   title: "Pratinjau",
 };
 
-export default async function PreviewPage({
-  params,
-}: {
-  params: { token: string };
-}) {
+export default async function PreviewPage(
+  props: {
+    params: Promise<{ token: string }>;
+  }
+) {
+  const params = await props.params;
   const data = await getPagePreview(params.token);
   if (!data) notFound();
   const { page, site } = data;

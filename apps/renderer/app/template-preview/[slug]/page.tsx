@@ -20,11 +20,12 @@ import { googleFontsUrl, themeToCss } from "@/lib/theme";
 // tidak perlu real-time; refresh browser cukup.
 export const revalidate = 10;
 
-export default async function TemplatePreviewPage({
-  params,
-}: {
-  params: { slug: string };
-}) {
+export default async function TemplatePreviewPage(
+  props: {
+    params: Promise<{ slug: string }>;
+  }
+) {
+  const params = await props.params;
   const tpl = await getTemplatePreview(params.slug);
   if (!tpl) notFound();
 
@@ -89,7 +90,8 @@ export default async function TemplatePreviewPage({
   );
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const tpl = await getTemplatePreview(params.slug);
   if (!tpl) return {};
   return {

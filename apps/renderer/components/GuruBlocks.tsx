@@ -150,6 +150,7 @@ export function GuruHero(p: {
 // Client component sudah SSR-friendly: slide pertama render tanpa JS.
 // ---------------------------------------------------------------------------
 
+import type { ReactElement } from "react";
 import { GuruPromoCarouselClient } from "./GuruPromoCarouselClient";
 
 export function GuruPromoCarousel(p: {
@@ -172,7 +173,7 @@ export function GuruPromoCarousel(p: {
 // ---------------------------------------------------------------------------
 
 // Inline SVG icons (bukan lucide) supaya match mockup's stroke style.
-const RUBRIC_ICONS: Record<string, JSX.Element> = {
+const RUBRIC_ICONS: Record<string, ReactElement> = {
   book: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M5 4h14v16H5z" />

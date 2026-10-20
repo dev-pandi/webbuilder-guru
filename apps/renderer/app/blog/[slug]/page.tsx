@@ -11,8 +11,8 @@ import { SiteFooterBlocks, SiteHeaderBlocks } from "@/components/SiteLayout";
 
 export const dynamic = "force-dynamic";
 
-function host() {
-  return (headers().get("host") ?? "").toLowerCase().split(":")[0];
+async function host() {
+  return ((await headers()).get("host") ?? "").toLowerCase().split(":")[0];
 }
 
 // XSS hardening:
@@ -24,8 +24,9 @@ function host() {
 // - Kalau butuh allow subset HTML lain (mis. <img width/height>), pipe
 //   marked output ke DOMPurify / sanitize-html sebagai layer tambahan.
 
-export default async function BlogPostDetail({ params }: { params: { slug: string } }) {
-  const site = await getSiteByHost(host());
+export default async function BlogPostDetail(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const site = await getSiteByHost(await host());
   if (!site) notFound();
   const post = await getBlogPost(site.id, params.slug);
   if (!post) notFound();
@@ -33,7 +34,7 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
   const fontHref = googleFontsUrl(site.theme);
   const html = await marked.parse(post.content_md ?? "");
   const tags = Array.isArray(post.tags) ? post.tags : [];
-  const baseURL = `https://${host()}`;
+  const baseURL = `https://${await host()}`;
   const articleLD = wrap([buildArticle(post, site, baseURL)]);
 
   return (
@@ -100,8 +101,9 @@ export default async function BlogPostDetail({ params }: { params: { slug: strin
   );
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const site = await getSiteByHost(host());
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const site = await getSiteByHost(await host());
   if (!site) return {};
   const post = await getBlogPost(site.id, params.slug);
   if (!post) return {};

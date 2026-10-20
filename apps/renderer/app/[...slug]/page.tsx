@@ -11,8 +11,9 @@ import { buildOrganization, buildWebSite, wrap } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
-export default async function CatchAll({ params }: { params: { slug: string[] } }) {
-  const host = (headers().get("host") ?? "").toLowerCase().split(":")[0];
+export default async function CatchAll(props: { params: Promise<{ slug: string[] }> }) {
+  const params = await props.params;
+  const host = ((await headers()).get("host") ?? "").toLowerCase().split(":")[0];
   const site = await getSiteByHost(host);
   if (!site) notFound();
   const slug = params.slug.join("/");
@@ -52,8 +53,9 @@ export default async function CatchAll({ params }: { params: { slug: string[] } 
   );
 }
 
-export async function generateMetadata({ params }: { params: { slug: string[] } }) {
-  const host = (headers().get("host") ?? "").toLowerCase().split(":")[0];
+export async function generateMetadata(props: { params: Promise<{ slug: string[] }> }) {
+  const params = await props.params;
+  const host = ((await headers()).get("host") ?? "").toLowerCase().split(":")[0];
   const site = await getSiteByHost(host);
   if (!site) return {};
   const slug = params.slug.join("/");
