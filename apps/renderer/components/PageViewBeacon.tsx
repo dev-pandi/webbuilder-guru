@@ -1,8 +1,7 @@
 "use client";
 
 // PageViewBeacon — client component yang POST 1 hit ke API tiap page mount.
-// Pakai navigator.sendBeacon kalau tersedia (survive page-leave), fallback ke
-// fetch keepalive. Fire-and-forget: fail silent supaya render tidak block.
+// Fire-and-forget: fail silent supaya render tidak block.
 //
 // Session dedup 30-menit: sessionStorage key `pv:<siteId>:<slug>` mencegah
 // counter over-inflate saat user refresh page berkali-kali dalam short session.
@@ -35,17 +34,21 @@ export function PageViewBeacon({ siteId, pageSlug }: { siteId: string; pageSlug:
     const url = `${API}/public/analytics/pageview`;
 
     try {
-      // sendBeacon: browser kirim walau tab close. Blob dengan Content-Type
-      // supaya server parse JSON dengan benar.
-      if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
-        const blob = new Blob([body], { type: "application/json" });
-        if (navigator.sendBeacon(url, blob)) return;
-      }
-      // Fallback fetch keepalive.
+      // Bukan sendBeacon: spec-nya memaksa credentials mode "include", dan
+      // publicCORS tidak pernah balas `Access-Control-Allow-Credentials: true`
+      // (endpoint publik, tidak butuh session). Akibatnya preflight ditolak,
+      // POST tidak pernah terkirim, dan sendBeacon tetap balas true sehingga
+      // gagalnya tidak terdeteksi — seluruh page view hilang diam-diam.
+      //
+      // no-cors + text/plain = simple request: tanpa preflight dan tanpa
+      // pengecekan CORS pada respons, jadi konsol pengunjung bersih. Respons
+      // jadi opaque, tapi ini fire-and-forget. keepalive bikin request tetap
+      // jalan kalau user langsung pindah halaman.
       void fetch(url, {
         method: "POST",
         body,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        mode: "no-cors",
         keepalive: true,
       }).catch(() => {});
     } catch {

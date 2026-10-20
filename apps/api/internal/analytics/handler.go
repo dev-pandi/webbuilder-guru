@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -37,7 +38,10 @@ type recordReq struct {
 // budget). Bounded page_slug length supaya tidak jadi vektor DB attack.
 func (h *Handler) RecordView(c *fiber.Ctx) error {
 	var req recordReq
-	if err := c.BodyParser(&req); err != nil {
+	// Unmarshal body mentah, bukan BodyParser: renderer kirim Content-Type
+	// text/plain supaya sendBeacon lolos tanpa CORS preflight, dan BodyParser
+	// menolak content type yang tidak dikenal.
+	if err := json.Unmarshal(c.Body(), &req); err != nil {
 		return httpx.BadRequest(c, "invalid json")
 	}
 	siteID, err := uuid.Parse(strings.TrimSpace(req.SiteID))
