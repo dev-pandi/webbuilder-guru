@@ -575,7 +575,7 @@ func main() {
 			Banners:   bannersRepo,
 			Responses: responsesRepo,
 
-			AssetBaseURL: cfg.ExportAssetBaseURL,
+			StoragePublicURL: storagePublicURL(cfg),
 		}),
 		Usage:            usage.NewHandler(usageRepo, siteRepo),
 		Caddy:            caddy.NewHandler(domainRepo, cfg.RendererDefaultHost, cfg.PublicAppHost, cfg.PublicAPIHost, cfg.CaddyAskSecret),
@@ -703,4 +703,14 @@ func (a resellerStatsAdapter) ListByPurchaser(ctx context.Context, purchaserID u
 		})
 	}
 	return out, nil
+}
+
+// storagePublicURL mengembalikan URL publik driver storage yang aktif. Exporter
+// memakainya untuk meng-allowlist host storage: guard SSRF-nya memblokir alamat
+// privat, sedangkan MinIO/uploads lokal memang beralamat internal.
+func storagePublicURL(cfg config.Config) string {
+	if cfg.StorageDriver == "s3" {
+		return cfg.StorageS3PublicURL
+	}
+	return cfg.StorageLocalPublicURL
 }

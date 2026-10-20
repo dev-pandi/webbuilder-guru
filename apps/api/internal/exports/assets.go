@@ -54,17 +54,15 @@ func collectImageSrcs(docs []exportDoc) []string {
 	return out
 }
 
-// resolveAssetURL mengubah src jadi URL absolut yang bisa diunduh. Path
-// root-relative (/uploads/..., /templates/...) butuh base; tanpa base kita
-// lewati saja — lebih baik src tetap menunjuk live daripada jadi link mati.
-func resolveAssetURL(src, base string) (string, bool) {
+// resolveAssetURL hanya menerima URL absolut. Gambar unggahan user selalu
+// ber-URL absolut dari storage, dan aset template dilayani dari binary — jadi
+// src root-relative sisanya tidak punya basis yang bisa dipercaya untuk
+// diunduh, dan lebih baik dibiarkan menunjuk live daripada jadi link mati.
+func resolveAssetURL(src string) (string, bool) {
 	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
 		return src, true
 	}
-	if base == "" || !strings.HasPrefix(src, "/") {
-		return "", false
-	}
-	return strings.TrimRight(base, "/") + src, true
+	return "", false
 }
 
 var imageExts = map[string]string{
@@ -148,7 +146,7 @@ func isPublicIP(ip net.IP) bool {
 // src-asli → path di ZIP plus daftar src yang gagal. Kegagalan satu gambar
 // tidak membatalkan export: src-nya dibiarkan menunjuk URL live, bukan jadi
 // link mati — tapi user tetap harus diberi tahu lewat laporan.
-func downloadImages(ctx context.Context, z *zip.Writer, srcs []string, base string, client *http.Client) (map[string]string, []string) {
+func downloadImages(ctx context.Context, z *zip.Writer, srcs []string, client *http.Client) (map[string]string, []string) {
 	out := map[string]string{}
 	var failed []string
 	var total int64
@@ -157,12 +155,7 @@ func downloadImages(ctx context.Context, z *zip.Writer, srcs []string, base stri
 			failed = append(failed, srcs[i:]...)
 			break
 		}
-		abs, ok := resolveAssetURL(src, base)
-		if !ok {
-			failed = append(failed, src)
-			continue
-		}
-		body, ctype, err := fetchImage(ctx, client, abs)
+		abs, body, ctype, err := loadImage(ctx, client, src)
 		if err != nil {
 			failed = append(failed, src)
 			continue
@@ -176,6 +169,24 @@ func downloadImages(ctx context.Context, z *zip.Writer, srcs []string, base stri
 		out[src] = "/" + zp
 	}
 	return out, failed
+}
+
+// loadImage mengambil satu gambar dari sumber terbaik yang tersedia: aset
+// bawaan dilayani dari binary, sisanya diunduh. Mengembalikan juga URL/kunci
+// kanonik supaya penamaan file di ZIP tetap content-addressed.
+func loadImage(ctx context.Context, client *http.Client, src string) (string, []byte, string, error) {
+	if body, ctype, ok := builtinAsset(src); ok {
+		return src, body, ctype, nil
+	}
+	abs, ok := resolveAssetURL(src)
+	if !ok {
+		return "", nil, "", errors.New("src tidak bisa diresolusi: " + src)
+	}
+	body, ctype, err := fetchImage(ctx, client, abs)
+	if err != nil {
+		return "", nil, "", err
+	}
+	return abs, body, ctype, nil
 }
 
 func fetchImage(ctx context.Context, client *http.Client, rawURL string) ([]byte, string, error) {

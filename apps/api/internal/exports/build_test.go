@@ -208,21 +208,71 @@ func TestCollectImageSrcs_SkipsIframeAndData(t *testing.T) {
 
 func TestResolveAssetURL(t *testing.T) {
 	cases := []struct {
-		src, base, want string
-		ok              bool
+		src, want string
+		ok        bool
 	}{
-		{"https://cdn.test/a.png", "", "https://cdn.test/a.png", true},
-		{"/templates/x/a.png", "https://situs.id", "https://situs.id/templates/x/a.png", true},
-		{"/templates/x/a.png", "https://situs.id/", "https://situs.id/templates/x/a.png", true},
-		{"/templates/x/a.png", "", "", false},
-		{"relatif.png", "https://situs.id", "", false},
+		{"https://cdn.test/a.png", "https://cdn.test/a.png", true},
+		{"http://cdn.test/a.png", "http://cdn.test/a.png", true},
+		{"/templates/x/a.png", "", false},
+		{"relatif.png", "", false},
 	}
 	for _, c := range cases {
-		got, ok := resolveAssetURL(c.src, c.base)
+		got, ok := resolveAssetURL(c.src)
 		if got != c.want || ok != c.ok {
-			t.Errorf("resolveAssetURL(%q,%q) = %q,%v mau %q,%v", c.src, c.base, got, ok, c.want, c.ok)
+			t.Errorf("resolveAssetURL(%q) = %q,%v mau %q,%v", c.src, got, ok, c.want, c.ok)
 		}
 	}
+}
+
+// Aset template harus dilayani dari binary. Kalau ini regresi, setiap export
+// template guru kehilangan gambarnya tanpa cara memperbaiki lewat konfigurasi.
+func TestBuiltinAsset_ServesTemplateImagesFromBinary(t *testing.T) {
+	body, ctype, ok := builtinAsset("/templates/guru-pandi-upi/teacher.png")
+	if !ok {
+		t.Fatal("aset template bawaan tidak ter-embed")
+	}
+	if len(body) == 0 {
+		t.Error("isi aset kosong")
+	}
+	if !strings.HasPrefix(ctype, "image/") {
+		t.Errorf("content-type %q bukan gambar", ctype)
+	}
+
+	for _, bad := range []string{"/uploads/a.png", "/templates/../secret", "relatif.png"} {
+		if _, _, ok := builtinAsset(bad); ok {
+			t.Errorf("builtinAsset(%q) seharusnya ditolak", bad)
+		}
+	}
+}
+
+// Gambar template tidak boleh menyentuh jaringan sama sekali: client yang
+// selalu gagal pun harus tetap menghasilkan file di dalam ZIP.
+func TestDownloadImages_BundlesTemplateAssetsWithoutNetwork(t *testing.T) {
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	got, failed := downloadImages(context.Background(), z,
+		[]string{"/templates/guru-pandi-upi/teacher.png"}, newAssetClient(nil))
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(failed) != 0 {
+		t.Fatalf("aset bawaan seharusnya tidak gagal, dapat %v", failed)
+	}
+	zp, ok := got["/templates/guru-pandi-upi/teacher.png"]
+	if !ok || !strings.HasPrefix(zp, "/assets/img/") {
+		t.Fatalf("mau path assets/img/, dapat %q", zp)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range zr.File {
+		if "/"+f.Name == zp {
+			return
+		}
+	}
+	t.Errorf("file %q tidak ada di dalam ZIP", zp)
 }
 
 // Rewrite hanya boleh menyentuh <img src>. URL yang sama di <a href> atau
@@ -289,7 +339,7 @@ func TestDownloadImages_RejectsNonImageAndOversize(t *testing.T) {
 	z := zip.NewWriter(&buf)
 	got, failed := downloadImages(context.Background(), z,
 		[]string{srv.URL + "/ok.png", srv.URL + "/besar.png", srv.URL + "/halaman.html"},
-		"", srv.Client())
+		srv.Client())
 	z.Close()
 
 	if len(got) != 1 {
@@ -316,16 +366,16 @@ func TestNewAssetClient_BlocksLoopbackUnlessAllowlisted(t *testing.T) {
 
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
-	got, _ := downloadImages(context.Background(), z, []string{srv.URL + "/a.png"}, "", newAssetClient(nil))
+	got, _ := downloadImages(context.Background(), z, []string{srv.URL + "/a.png"}, newAssetClient(nil))
 	z.Close()
 	if len(got) != 0 {
 		t.Fatalf("loopback seharusnya diblokir, tapi terunduh: %v", got)
 	}
 
-	// Base yang dikonfigurasi operator tetap boleh walau alamatnya internal —
-	// di Docker, renderer memang beralamat privat.
+	// Host storage yang dikonfigurasi operator tetap boleh walau alamatnya
+	// internal — MinIO dan /uploads lokal memang beralamat privat.
 	z2 := zip.NewWriter(&bytes.Buffer{})
-	got2, _ := downloadImages(context.Background(), z2, []string{srv.URL + "/a.png"}, "",
+	got2, _ := downloadImages(context.Background(), z2, []string{srv.URL + "/a.png"},
 		newAssetClient(allowedInternalHosts(srv.URL)))
 	z2.Close()
 	if len(got2) != 1 {

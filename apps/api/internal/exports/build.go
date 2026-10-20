@@ -35,9 +35,11 @@ type Builder struct {
 	Banners   *banners.Repo
 	Responses *responses.Repo
 
-	// Basis untuk src gambar root-relative (/uploads/..., /templates/...).
-	// Kosong = gambar tersebut tidak diunduh dan src-nya dibiarkan apa adanya.
-	AssetBaseURL string
+	// StoragePublicURL adalah URL publik tempat gambar unggahan user disajikan.
+	// Guard SSRF memblokir alamat privat, sedangkan storage sering memang
+	// internal (MinIO di localhost:9000, /uploads di api.localhost) — host ini
+	// perlu di-allowlist supaya foto user tidak ikut terblokir.
+	StoragePublicURL string
 	// HTTPClient hanya untuk test; produksi memakai client ber-guard SSRF.
 	HTTPClient *http.Client
 }
@@ -160,7 +162,7 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 		}
 	}
 
-	imgs, failedImgs := downloadImages(ctx, z, collectImageSrcs(docs), b.AssetBaseURL, b.assetClient())
+	imgs, failedImgs := downloadImages(ctx, z, collectImageSrcs(docs), b.assetClient())
 	for _, d := range docs {
 		// Urutan wajib: rewrite dulu (menghasilkan path root-absolute
 		// /assets/img/...), baru relativize menyesuaikannya ke kedalaman file.
@@ -189,7 +191,7 @@ func (b *Builder) assetClient() *http.Client {
 	if b.HTTPClient != nil {
 		return b.HTTPClient
 	}
-	return newAssetClient(allowedInternalHosts(b.AssetBaseURL))
+	return newAssetClient(allowedInternalHosts(b.StoragePublicURL))
 }
 
 // loadGuru memuat seluruh konten modul guru sekali di muka. Nil kalau repo
