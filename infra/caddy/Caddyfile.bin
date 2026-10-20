@@ -66,9 +66,10 @@ kubaca.id {
 
 	import security_base
 
-	# CSP di-set oleh Next.js middleware (apps/web/middleware.ts) — generate
-	# nonce per request + `script-src 'nonce-XXX' 'strict-dynamic'` sesuai
-	# W3C CSP3 (no unsafe-inline/unsafe-eval di script-src). Caddy TIDAK
+	# CSP di-set oleh Next.js proxy (apps/web/proxy.ts) — generate nonce per
+	# request + `script-src 'self' 'nonce-XXX'` sesuai W3C CSP3 (no
+	# unsafe-inline/unsafe-eval di script-src). Bukan 'strict-dynamic': page
+	# SSG punya chunk tag tanpa nonce, 'self' yang meloloskannya. Caddy TIDAK
 	# override — kalau set CSP di sini, duplikat header akan merge paling
 	# strict dan nonce dari Next.js bisa invalidate.
 
@@ -154,7 +155,7 @@ preview.kubaca.id {
 		# window.opener/postMessage dari parent dashboard tetap jalan.
 		Cross-Origin-Opener-Policy "unsafe-none"
 		Cross-Origin-Resource-Policy "cross-origin"
-		# CSP di-set oleh Next.js renderer middleware (apps/renderer/middleware.ts)
+		# CSP di-set oleh Next.js renderer proxy (apps/renderer/proxy.ts)
 		# dengan nonce per request. Caddy tidak override.
 	}
 
@@ -205,12 +206,13 @@ www.kubaca.id {
 		Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()"
 		Cross-Origin-Opener-Policy "same-origin-allow-popups"
 		Cross-Origin-Resource-Policy "cross-origin"
-		# CSP di-set oleh Next.js renderer middleware (apps/renderer/middleware.ts)
-		# dengan nonce per request + 'strict-dynamic'. Caddy tidak override.
+		# CSP di-set oleh Next.js renderer proxy (apps/renderer/proxy.ts)
+		# dengan nonce per request + 'self'. Caddy tidak override.
 	}
 
-	# Vary: Host untuk cegah downstream cache cross-tenant leak (double-safe,
-	# renderer middleware juga set).
+	# Vary: Host untuk cegah downstream cache cross-tenant leak. Sejak Next 16
+	# ini SATU-SATUNYA lapisan: Next menimpa Vary dengan daftar RSC-nya sendiri,
+	# jadi header dari renderer proxy maupun next.config tidak pernah lolos.
 	header Vary Host
 
 	reverse_proxy 10.1.12.46:4001 {

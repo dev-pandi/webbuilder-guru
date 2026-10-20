@@ -69,16 +69,10 @@ export function proxy(req: NextRequest) {
 
   const res = NextResponse.next({ request: { headers: reqHeaders } });
 
-  // Vary: Host — defensive cache isolation (multi-tenant). Append (bukan
-  // replace) supaya kalau route sudah set Vary lain, keep + append Host.
-  const existing = res.headers.get("Vary");
-  if (existing) {
-    if (!existing.toLowerCase().split(",").map((s) => s.trim()).includes("host")) {
-      res.headers.set("Vary", `${existing}, Host`);
-    }
-  } else {
-    res.headers.set("Vary", "Host");
-  }
+  // Vary: Host tidak di-set di sini. Next 16 selalu menimpa Vary dengan daftar
+  // RSC-nya sendiri, jadi apa pun yang di-set dari proxy (atau next.config
+  // headers) tidak pernah sampai ke klien. Cache isolation multi-tenant
+  // ditegakkan di Caddy — lihat `header Vary Host` di infra/caddy/Caddyfile.bin.
 
   res.headers.set("Content-Security-Policy", csp);
 
