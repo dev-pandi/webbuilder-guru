@@ -358,3 +358,106 @@ const proCSS = `
   .wb-pro-orbit .wb-pro-orbit-item { animation: none !important; }
 }
 `
+
+// proExtraCSS menata blok yang di-port di render_pro.go. Terpisah dari proCSS
+// supaya mudah dibedakan: proCSS untuk blok efek visual, ini untuk blok konten.
+const proExtraCSS = `
+.wb-section { max-width: 64rem; margin: 0 auto; padding: 4rem 1.5rem; }
+.wb-pro-title { text-align: center; font-size: 1.875rem; font-weight: 700; letter-spacing: -0.02em; }
+.wb-pro-title--left { text-align: left; font-size: 1.5rem; }
+.wb-pro-sub { max-width: 42rem; margin: 0.75rem auto 0; text-align: center; opacity: 0.7; }
+.wb-pro-title--left + .wb-pro-sub { margin-left: 0; text-align: left; }
+
+.wb-ctabanner { padding: 3rem 1.5rem; }
+.wb-ctabanner-inner { max-width: 64rem; margin: 0 auto; padding: 4rem 2rem; text-align: center; color: #fff;
+  border-radius: 1.5rem; background: linear-gradient(135deg, var(--color-primary), var(--color-secondary)); }
+.wb-ctabanner-title { font-size: clamp(1.75rem, 3vw, 2.25rem); font-weight: 700; letter-spacing: -0.02em; }
+.wb-ctabanner-sub { max-width: 42rem; margin: 0.75rem auto 0; opacity: 0.9; }
+.wb-ctabanner-btn { display: inline-flex; margin-top: 2rem; padding: 0.75rem 1.75rem; border-radius: 999px;
+  background: #fff; color: var(--color-fg); font-weight: 500; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); }
+
+.wb-bento-grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 10rem; gap: 1rem; margin-top: 2.5rem; }
+.wb-bento-cell { border: 1px solid #e5e7eb; border-radius: 1rem; padding: 1.5rem; background: rgba(0,0,0,0.02); }
+.wb-bento-cell h4 { font-size: 1.125rem; font-weight: 600; }
+.wb-bento-cell p { margin: 0.5rem 0 0; font-size: 0.875rem; opacity: 0.8; }
+.wb-bento-cell--large { grid-column: span 2; grid-row: span 2; }
+.wb-bento-cell--wide { grid-column: span 2; }
+.wb-bento-cell--tall { grid-row: span 2; }
+
+.wb-faq-list { margin-top: 2.5rem; border: 1px solid #e5e7eb; border-radius: 1rem; overflow: hidden; }
+.wb-faq-item + .wb-faq-item { border-top: 1px solid #e5e7eb; }
+.wb-faq-item > summary { list-style: none; cursor: pointer; padding: 1.25rem 1.5rem; font-weight: 500; }
+.wb-faq-item > summary::-webkit-details-marker { display: none; }
+.wb-faq-item > summary::after { content: "▾"; float: right; opacity: 0.5; }
+.wb-faq-item[open] > summary::after { content: "▴"; }
+.wb-faq-answer { padding: 0 1.5rem 1.25rem; font-size: 0.875rem; opacity: 0.8; }
+
+.wb-timeline-list { list-style: none; margin: 3rem 0 0; padding: 0 0 0 2rem; border-left: 2px solid rgba(0,0,0,0.1); }
+.wb-timeline-item { position: relative; }
+.wb-timeline-item + .wb-timeline-item { margin-top: 2rem; }
+.wb-timeline-dot { position: absolute; left: -2.625rem; display: grid; place-items: center; width: 1.5rem; height: 1.5rem;
+  border-radius: 999px; background: var(--color-primary); color: #fff; font-size: 0.75rem; font-weight: 700; }
+.wb-timeline-date { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-primary); }
+.wb-timeline-item h4 { margin-top: 0.25rem; font-size: 1.25rem; font-weight: 600; }
+.wb-timeline-item p { margin: 0.25rem 0 0; opacity: 0.8; }
+
+.wb-steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 3rem; }
+.wb-steps-num { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; margin: 0 auto;
+  border-radius: 1rem; background: var(--color-primary); color: #fff; font-size: 1.25rem; font-weight: 700; }
+.wb-steps-item h4 { margin-top: 1rem; text-align: center; font-size: 1.125rem; font-weight: 600; }
+.wb-steps-item p { margin: 0.25rem 0 0; text-align: center; font-size: 0.875rem; opacity: 0.8; }
+
+.wb-team-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-top: 3rem; }
+.wb-team-item { text-align: center; }
+.wb-team-photo { width: 8rem; height: 8rem; margin: 0 auto; border-radius: 999px; object-fit: cover; border: 4px solid var(--color-bg); }
+.wb-team-initial { display: grid; place-items: center; width: 8rem; height: 8rem; margin: 0 auto;
+  border-radius: 999px; background: var(--color-primary); color: #fff; font-size: 1.875rem; font-weight: 700; }
+.wb-team-item h4 { margin-top: 1rem; font-weight: 600; }
+.wb-team-role { margin: 0; font-size: 0.875rem; color: var(--color-primary); }
+
+.wb-iconlist { max-width: 48rem; }
+.wb-iconlist-items { list-style: none; margin: 1.5rem 0 0; padding: 0; }
+.wb-iconlist-items li { display: flex; align-items: flex-start; gap: 0.75rem; }
+.wb-iconlist-items li + li { margin-top: 0.75rem; }
+.wb-iconlist-badge { display: grid; place-items: center; flex: 0 0 auto; width: 1.75rem; height: 1.75rem;
+  border-radius: 999px; background: var(--color-primary); color: #fff; font-size: 0.875rem; font-weight: 700; }
+
+.wb-embed-frame { margin-top: 1.5rem; border: 1px solid #e5e7eb; border-radius: 1rem; overflow: hidden; aspect-ratio: 16 / 9; }
+.wb-embed-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.wb-gallery { max-width: 72rem; }
+.wb-gallery-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-top: 2rem; }
+.wb-gallery-item { position: relative; margin: 0; border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden; }
+.wb-gallery-item img, .wb-gallery-placeholder { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: rgba(0,0,0,0.05); }
+.wb-gallery-item figcaption { position: absolute; inset-inline: 0; bottom: 0; padding: 0.75rem;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent); color: #fff; font-size: 0.75rem; }
+
+.wb-social { max-width: 48rem; text-align: center; padding-block: 2.5rem; }
+.wb-social-title { margin: 0 0 1rem; font-size: 0.875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; }
+.wb-social-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.75rem; }
+.wb-social-link { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: 999px;
+  border: 1px solid #e5e7eb; color: var(--color-primary); }
+
+.wb-newsletter { max-width: 48rem; }
+.wb-newsletter-card { border: 1px solid #e5e7eb; border-radius: 1.5rem; padding: 2.5rem; text-align: center; }
+.wb-newsletter-form { display: flex; gap: 0.5rem; max-width: 28rem; margin: 2rem auto 0; }
+.wb-newsletter-form input { flex: 1; border: 1px solid #e5e7eb; border-radius: var(--radius); padding: 0.75rem 1rem; font: inherit; font-size: 0.875rem; }
+.wb-newsletter-note { margin-top: 0.75rem; font-size: 0.75rem; opacity: 0.6; }
+
+.wb-contact { max-width: 42rem; }
+.wb-contact-head { text-align: center; }
+.wb-contact-form { margin-top: 2.5rem; border: 1px solid #e5e7eb; border-radius: 1rem; padding: 1.5rem; }
+.wb-contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.wb-contact-form label { display: block; }
+.wb-contact-form label + label, .wb-contact-row + label { margin-top: 1rem; }
+.wb-contact-form label > span { font-size: 0.875rem; font-weight: 500; }
+.wb-contact-form input, .wb-contact-form textarea { width: 100%; margin-top: 0.375rem; border: 1px solid #e5e7eb;
+  border-radius: var(--radius); padding: 0.625rem 0.75rem; font: inherit; font-size: 0.875rem; }
+.wb-contact-form button { width: 100%; margin-top: 1rem; }
+
+@media (max-width: 768px) {
+  .wb-bento-grid, .wb-steps-grid { grid-template-columns: 1fr; }
+  .wb-team-grid, .wb-gallery-grid { grid-template-columns: repeat(2, 1fr); }
+  .wb-newsletter-form, .wb-contact-row { grid-template-columns: 1fr; flex-direction: column; }
+}
+`

@@ -251,6 +251,32 @@ func (r *Repo) CountApprovedByMaterial(ctx context.Context, materialID uuid.UUID
 	return n, err
 }
 
+// ApprovedCountsBySite — satu query untuk seluruh artikel sebuah situs.
+// Static export perlu jumlah tanggapan tiap kartu sekaligus; memanggil
+// CountApprovedByArticle per artikel akan jadi N+1 untuk situs besar.
+func (r *Repo) ApprovedCountsBySite(ctx context.Context, siteID uuid.UUID) (map[uuid.UUID]int64, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT article_id, COUNT(*)
+		FROM responses
+		WHERE site_id = $1 AND status = 'approved' AND article_id IS NOT NULL
+		GROUP BY article_id
+	`, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[uuid.UUID]int64{}
+	for rows.Next() {
+		var id uuid.UUID
+		var n int64
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
 // PendingCountBySite — dashboard ringkasan.
 func (r *Repo) StatusCountsBySite(ctx context.Context, siteID uuid.UUID) (pending, approved, rejected int64, err error) {
 	err = r.pool.QueryRow(ctx, `

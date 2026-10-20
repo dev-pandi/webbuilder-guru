@@ -6,13 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/webbuilder/api/internal/articles"
+	"github.com/webbuilder/api/internal/banners"
 	"github.com/webbuilder/api/internal/blog"
+	"github.com/webbuilder/api/internal/learning"
 	"github.com/webbuilder/api/internal/pages"
 	"github.com/webbuilder/api/internal/products"
+	"github.com/webbuilder/api/internal/responses"
 	"github.com/webbuilder/api/internal/sites"
 )
 
@@ -21,6 +27,19 @@ type Builder struct {
 	Pages    *pages.Repo
 	Products *products.Repo
 	Blog     *blog.Repo
+
+	// Konten "Rumah Digital Guru". Nil untuk deployment tanpa modul guru —
+	// blok Guru*Dynamic lalu render empty state, bukan panic.
+	Articles  *articles.Repo
+	Learning  *learning.Repo
+	Banners   *banners.Repo
+	Responses *responses.Repo
+
+	// Basis untuk src gambar root-relative (/uploads/..., /templates/...).
+	// Kosong = gambar tersebut tidak diunduh dan src-nya dibiarkan apa adanya.
+	AssetBaseURL string
+	// HTTPClient hanya untuk test; produksi memakai client ber-guard SSRF.
+	HTTPClient *http.Client
 }
 
 // Write produces a zip bundle for the given site:
@@ -28,6 +47,7 @@ type Builder struct {
 //   - one HTML file per active product (under produk/<slug>/)
 //   - one HTML file per published blog post (under blog/<slug>/)
 //   - assets/css/styles.css, robots.txt, sitemap.xml
+//
 // Streamed directly to w — no temp files.
 func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.UUID) error {
 	site, err := b.Sites.GetOwned(ctx, siteID, ownerID)
@@ -40,14 +60,33 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 	}
 
 	// Preload active products + published posts so dynamic blocks can render inline.
+	// Error di-propagate, bukan dibuang: versi lama pakai `prods, _, _ =` sehingga
+	// query gagal menghasilkan ZIP "sukses" yang isinya diam-diam kurang — user
+	// baru sadar setelah situsnya live.
 	var prods []products.Product
 	if b.Products != nil {
-		prods, _, _ = b.Products.ListPage(ctx, siteID, "%", "active", "newest", 100, 0)
+		prods, err = listAll(func(limit, offset int) ([]products.Product, int, error) {
+			return b.Products.ListPage(ctx, siteID, "%", "active", "newest", limit, offset)
+		})
+		if err != nil {
+			return err
+		}
 	}
 	var posts []blog.Post
 	if b.Blog != nil {
-		posts, _, _ = b.Blog.ListPage(ctx, siteID, "%", "published", "published_desc", 100, 0)
+		posts, err = listAll(func(limit, offset int) ([]blog.Post, int, error) {
+			return b.Blog.ListPage(ctx, siteID, "%", "published", "published_desc", limit, offset)
+		})
+		if err != nil {
+			return err
+		}
 	}
+
+	guru, err := b.loadGuru(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	data := &siteData{products: prods, posts: posts, guru: guru}
 
 	z := zip.NewWriter(w)
 	defer z.Close()
@@ -65,35 +104,165 @@ func (b *Builder) Write(ctx context.Context, w io.Writer, siteID, ownerID uuid.U
 	// Shared layout (header/footer) — parse sekali, dipakai untuk semua page,
 	// product detail, dan blog detail supaya konsisten dengan live renderer.
 	headerBlocks, footerBlocks := parseLayout(site.Layout)
+	// Rewrite link layout sekali di sini, bukan di renderPageHTML. Halaman detail
+	// produk/blog memakai header yang sama tapi tidak pernah lewat rewriteLinks,
+	// jadi navbar-nya masih menunjuk path in-app dan 404 di hasil export.
+	// Idempotent: hasil rewrite tidak lagi cocok dengan key mana pun.
+	rewriteLinks(&Tree{Blocks: headerBlocks}, ps)
+	rewriteLinks(&Tree{Blocks: footerBlocks}, ps)
 
-	// Pages
+	// Render dulu ke memori, tulis belakangan: src gambar baru bisa ditulis
+	// ulang ke path lokal setelah semua halaman diketahui dan file-nya terunduh.
+	var docs []exportDoc
+	var guruHeader, guruFooterBlocks []Block
 	for _, p := range ps {
-		path := pageZipPath(p)
-		html := renderPageHTML(site, p, ps, prods, posts, headerBlocks, footerBlocks)
-		if err := writeFile(z, path, html); err != nil {
-			return err
+		tree := parseTree(p.Tree)
+		// Template guru menaruh navbar/footer di dalam tree halaman, bukan di
+		// site.layout_json. Halaman detail artikel/materi yang kita bangkitkan
+		// sendiri tidak punya sumber chrome lain, jadi pinjam dari beranda.
+		if guruHeader == nil && guruFooterBlocks == nil {
+			guruHeader, guruFooterBlocks = guruChrome(tree)
 		}
+		docs = append(docs, exportDoc{
+			path: pageZipPath(p),
+			html: renderPageHTML(site, p, tree, ps, headerBlocks, footerBlocks, data),
+		})
 	}
+	rewriteLinks(&Tree{Blocks: guruHeader}, ps)
+	rewriteLinks(&Tree{Blocks: guruFooterBlocks}, ps)
 
-	// Product detail pages
 	for _, pr := range prods {
-		path := "produk/" + pr.Slug + "/index.html"
-		html := renderProductHTML(site, pr, headerBlocks, footerBlocks)
-		if err := writeFile(z, path, html); err != nil {
-			return err
-		}
+		docs = append(docs, exportDoc{
+			path: "produk/" + pr.Slug + "/index.html",
+			html: renderProductHTML(site, pr, headerBlocks, footerBlocks, data),
+		})
 	}
-
-	// Blog detail pages
 	for _, post := range posts {
-		path := "blog/" + post.Slug + "/index.html"
-		html := renderBlogPostHTML(site, post, headerBlocks, footerBlocks)
-		if err := writeFile(z, path, html); err != nil {
+		docs = append(docs, exportDoc{
+			path: "blog/" + post.Slug + "/index.html",
+			html: renderBlogPostHTML(site, post, headerBlocks, footerBlocks, data),
+		})
+	}
+	if guru != nil {
+		// Artikel + materi guru: tanpa halaman detail, setiap "Baca
+		// selengkapnya" di hasil export menunjuk file yang tidak ada.
+		for _, a := range guru.articles {
+			docs = append(docs, exportDoc{
+				path: a.Rubric + "/" + a.Slug + "/index.html",
+				html: renderGuruArticleHTML(site, a, guruHeader, guruFooterBlocks, data),
+			})
+		}
+		for _, m := range guru.materials {
+			docs = append(docs, exportDoc{
+				path: "pembelajaran/" + m.Slug + "/index.html",
+				html: renderGuruMaterialHTML(site, m, guruHeader, guruFooterBlocks, data),
+			})
+		}
+	}
+
+	imgs, failedImgs := downloadImages(ctx, z, collectImageSrcs(docs), b.AssetBaseURL, b.assetClient())
+	for _, d := range docs {
+		// Urutan wajib: rewrite dulu (menghasilkan path root-absolute
+		// /assets/img/...), baru relativize menyesuaikannya ke kedalaman file.
+		if err := writeFile(z, d.path, relativize(rewriteImageSrcs(d.html, imgs), d.path)); err != nil {
 			return err
 		}
 	}
 
+	report := &exportReport{
+		unknownBlocks: collectUnknownBlocks(docs),
+		failedImages:  failedImgs,
+	}
+	if !report.empty() {
+		slog.WarnContext(ctx, "export selesai dengan peringatan",
+			"site_id", siteID,
+			"unknown_blocks", report.unknownBlocks,
+			"failed_images", len(report.failedImages))
+		if err := writeFile(z, warningFileName, buildWarningFile(report)); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (b *Builder) assetClient() *http.Client {
+	if b.HTTPClient != nil {
+		return b.HTTPClient
+	}
+	return newAssetClient(allowedInternalHosts(b.AssetBaseURL))
+}
+
+// loadGuru memuat seluruh konten modul guru sekali di muka. Nil kalau repo
+// guru tidak dipasang atau situs ini memang tidak punya artikel sama sekali.
+func (b *Builder) loadGuru(ctx context.Context, siteID uuid.UUID) (*guruData, error) {
+	if b.Articles == nil {
+		return nil, nil
+	}
+	arts, err := listAll(func(limit, offset int) ([]articles.Article, int, error) {
+		return b.Articles.ListPage(ctx, siteID, "%", "", "published", "published_desc", limit, offset)
+	})
+	if err != nil {
+		return nil, err
+	}
+	stats, err := b.Articles.SiteStats(ctx, siteID)
+	if err != nil {
+		return nil, err
+	}
+	g := &guruData{articles: arts, stats: stats}
+	if b.Learning != nil {
+		g.materials, err = listAll(func(limit, offset int) ([]learning.Material, int, error) {
+			return b.Learning.ListPage(ctx, siteID, "%", "published", "newest", limit, offset)
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if b.Banners != nil {
+		if g.banners, err = b.Banners.ListEligibleBySite(ctx, siteID); err != nil {
+			return nil, err
+		}
+	}
+	if b.Responses != nil {
+		if g.responses, err = b.Responses.ApprovedCountsBySite(ctx, siteID); err != nil {
+			return nil, err
+		}
+	}
+	return g, nil
+}
+
+// relativize converts root-absolute href/src into paths relative to docPath.
+//
+// Semua renderer menulis path sebagai `/assets/...` dan `/slug/index.html`
+// supaya seragam; di sinilah bentuk final ditentukan. Tanpa ini ZIP hanya jalan
+// kalau di-host persis di root domain — dibuka langsung dari disk atau ditaruh
+// di subfolder, CSS dan seluruh navigasi mati.
+//
+// `//host/...` (protocol-relative) dan URL absolut dilewati.
+func relativize(html, docPath string) string {
+	// `/` telanjang tidak punya padanan relatif yang valid (`href=""`).
+	html = strings.ReplaceAll(html, `href="/"`, `href="/index.html"`)
+
+	prefix := strings.Repeat("../", strings.Count(docPath, "/"))
+	for _, attr := range []string{`href="`, `src="`} {
+		var b strings.Builder
+		b.Grow(len(html))
+		rest := html
+		for {
+			i := strings.Index(rest, attr)
+			if i < 0 {
+				b.WriteString(rest)
+				break
+			}
+			b.WriteString(rest[:i+len(attr)])
+			rest = rest[i+len(attr):]
+			if strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, "//") {
+				b.WriteString(prefix)
+				rest = rest[1:]
+			}
+		}
+		html = b.String()
+	}
+	return html
 }
 
 // parseLayout decodes sites.layout_json into header + footer block slices.
@@ -125,6 +294,24 @@ func parseLayout(raw json.RawMessage) ([]Block, []Block) {
 	return header, footer
 }
 
+// listAll pages through a repo ListPage sampai habis. Versi lama meminta 100
+// item sekali jalan tanpa paging, jadi produk/artikel ke-101 dan seterusnya
+// hilang dari export tanpa peringatan apa pun.
+func listAll[T any](page func(limit, offset int) ([]T, int, error)) ([]T, error) {
+	const batch = 200
+	var out []T
+	for offset := 0; ; offset += batch {
+		items, total, err := page(batch, offset)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+		if len(items) < batch || len(out) >= total {
+			return out, nil
+		}
+	}
+}
+
 func writeFile(z *zip.Writer, name, content string) error {
 	f, err := z.CreateHeader(&zip.FileHeader{
 		Name:     name,
@@ -152,8 +339,14 @@ func pageRelHref(p pages.Page) string {
 	return "/" + p.Slug + "/"
 }
 
-func renderPageHTML(site *sites.Site, p pages.Page, all []pages.Page, prods []products.Product, posts []blog.Post, headerBlocks, footerBlocks []Block) string {
-	tree := parseTree(p.Tree)
+// pageDocHref menunjuk file-nya langsung, bukan direktorinya. Link ke `slug/`
+// mengandalkan server yang meresolusi index.html; dibuka dari disk via file://
+// tidak ada yang meresolusi dan navigasi mati.
+func pageDocHref(p pages.Page) string {
+	return "/" + pageZipPath(p)
+}
+
+func renderPageHTML(site *sites.Site, p pages.Page, tree Tree, all []pages.Page, headerBlocks, footerBlocks []Block, d *siteData) string {
 	// Shared layout wrap — prepend header + append footer supaya exported HTML
 	// konsisten dengan live renderer. Concat sebelum rewriteLinks agar link
 	// di navbar header ikut di-rewrite ke relative path exported.
@@ -168,7 +361,7 @@ func renderPageHTML(site *sites.Site, p pages.Page, all []pages.Page, prods []pr
 	rewriteLinks(&tree, all)
 
 	var body strings.Builder
-	renderTreeWithData(&body, tree, prods, posts)
+	renderTree(&body, tree, d)
 
 	seo := parseSEO(p.SEO)
 	title := seo.Title
@@ -178,39 +371,33 @@ func renderPageHTML(site *sites.Site, p pages.Page, all []pages.Page, prods []pr
 	if title == "" {
 		title = site.Name
 	}
-	desc := seo.Description
-
-	var head strings.Builder
-	fmt.Fprintf(&head, `<meta charset="utf-8" />`)
-	fmt.Fprintf(&head, `<meta name="viewport" content="width=device-width,initial-scale=1" />`)
-	fmt.Fprintf(&head, `<title>%s</title>`, esc(title))
-	if desc != "" {
-		fmt.Fprintf(&head, `<meta name="description" content="%s" />`, escAttr(desc))
-		fmt.Fprintf(&head, `<meta property="og:description" content="%s" />`, escAttr(desc))
-	}
-	fmt.Fprintf(&head, `<meta property="og:title" content="%s" />`, escAttr(title))
-	head.WriteString(`<link rel="stylesheet" href="/assets/css/styles.css" />`)
-
-	return fmt.Sprintf(`<!doctype html>
-<html lang="id">
-<head>%s</head>
-<body>%s</body>
-</html>`, head.String(), body.String())
+	// wrapHTML, bukan <head> sendiri: salinan lokal sebelumnya tidak menyertakan
+	// CustomHeadCode/CustomBodyEndCode, jadi halaman biasa kehilangan script
+	// analytics/pixel milik user padahal halaman detail produk tetap punya.
+	return wrapHTML(site, title, seo.Description, body.String())
 }
 
 func rewriteLinks(t *Tree, all []pages.Page) {
 	// Build slug -> rel href map
 	hrefBySlug := map[string]string{}
 	for _, p := range all {
-		hrefBySlug["/"+p.Slug] = pageRelHref(p)
-		hrefBySlug["/"+p.Slug+"/"] = pageRelHref(p)
+		hrefBySlug["/"+p.Slug] = pageDocHref(p)
+		hrefBySlug["/"+p.Slug+"/"] = pageDocHref(p)
 		if p.IsHome {
-			hrefBySlug["/"] = "/"
+			hrefBySlug["/"] = pageDocHref(p)
 		}
 	}
-	for i := range t.Blocks {
-		props := t.Blocks[i].Props
+	rewriteBlockLinks(t.Blocks, hrefBySlug)
+}
+
+// rewriteBlockLinks turun sampai ke children. Versi lama hanya menyentuh blok
+// level atas, jadi menu di dalam Container/Columns tetap menunjuk path in-app
+// dan 404 begitu ZIP di-host.
+func rewriteBlockLinks(blocks []Block, hrefBySlug map[string]string) {
+	for i := range blocks {
+		props := blocks[i].Props
 		if props == nil {
+			rewriteBlockLinks(blocks[i].Children, hrefBySlug)
 			continue
 		}
 		if links, ok := props["links"].([]any); ok {
@@ -229,6 +416,7 @@ func rewriteLinks(t *Tree, all []pages.Page) {
 				props["ctaHref"] = rep
 			}
 		}
+		rewriteBlockLinks(blocks[i].Children, hrefBySlug)
 	}
 }
 

@@ -98,6 +98,11 @@ type Config struct {
 	// password-reset and email-verify links sent to users.
 	AppBaseURL string
 
+	// ExportAssetBaseURL resolves root-relative image paths (the /templates/*
+	// seed assets served by the renderer) when baking a static export. Empty =
+	// those images keep pointing at the live site instead of being bundled.
+	ExportAssetBaseURL string
+
 	// SentryDSN enables error tracking when set; empty = disabled.
 	SentryDSN string
 
@@ -163,6 +168,8 @@ func Load() Config {
 		SMTPStartTLS: env("SMTP_STARTTLS", "true") == "true",
 
 		AppBaseURL: env("APP_BASE_URL", "http://app.localhost"),
+
+		ExportAssetBaseURL: env("EXPORT_ASSET_BASE_URL", ""),
 
 		SentryDSN: env("SENTRY_DSN", ""),
 

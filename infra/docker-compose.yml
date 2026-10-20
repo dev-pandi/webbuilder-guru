@@ -48,6 +48,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       HTTP_ADDR: ":8080"
       APP_BASE_URL: ${APP_BASE_URL:-http://app.localhost}
+      EXPORT_ASSET_BASE_URL: ${EXPORT_ASSET_BASE_URL:-}
       # --- Database ---
       DATABASE_URL: postgres://${POSTGRES_USER:-webbuilder}:${POSTGRES_PASSWORD:-webbuilder}@postgres:5432/${POSTGRES_DB:-webbuilder}?sslmode=disable
       DB_MAX_CONNS: ${DB_MAX_CONNS:-10}

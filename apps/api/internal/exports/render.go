@@ -84,9 +84,18 @@ func parseTree(raw json.RawMessage) Tree {
 	return t
 }
 
+// siteData adalah konten DB yang sudah dimuat di muka supaya blok dinamis bisa
+// di-materialisasi tanpa query per blok. Boleh nil: blok dinamis lalu render
+// sebagai empty state, bukan panic.
+type siteData struct {
+	products []products.Product
+	posts    []blog.Post
+	guru     *guruData
+}
+
 // renderTree writes block HTML mirroring apps/renderer/components/Blocks.tsx output,
 // but using class names from styles.css instead of Tailwind utilities.
-func renderTree(b *strings.Builder, t Tree) {
+func renderTree(b *strings.Builder, t Tree, d *siteData) {
 	// Emit the per-block responsive @media CSS as a single <style> tag at the
 	// top so static HTML stays self-contained.
 	if css := buildResponsiveCSS(t.Blocks); css != "" {
@@ -94,7 +103,7 @@ func renderTree(b *strings.Builder, t Tree) {
 	}
 	for i, blk := range t.Blocks {
 		openLayoutWrap(b, blk, i)
-		renderBlock(b, blk)
+		renderBlock(b, blk, d)
 		closeLayoutWrap(b, blk)
 	}
 }
@@ -289,7 +298,7 @@ func maxWidthInnerStyle(blk Block) string {
 	return "max-width:" + w + ";margin-left:auto;margin-right:auto;width:100%"
 }
 
-func renderBlock(b *strings.Builder, blk Block) {
+func renderBlock(b *strings.Builder, blk Block, d *siteData) {
 	p := blk.Props
 	switch blk.Type {
 	case "Navbar":
@@ -422,7 +431,7 @@ func renderBlock(b *strings.Builder, blk Block) {
 		gap := strOr(p, "gap", "1rem")
 		fmt.Fprintf(b, `<section class="wb-container-block"><div class="wb-container-inner" style="display:flex;flex-direction:column;gap:%s">`, escAttr(gap))
 		for _, child := range blk.Children {
-			renderBlock(b, child)
+			renderBlock(b, child, d)
 		}
 		b.WriteString(`</div></section>`)
 
@@ -448,7 +457,7 @@ func renderBlock(b *strings.Builder, blk Block) {
 		for _, col := range cells {
 			b.WriteString(`<div style="display:flex;flex-direction:column;gap:1rem">`)
 			for _, child := range col {
-				renderBlock(b, child)
+				renderBlock(b, child, d)
 			}
 			b.WriteString(`</div>`)
 		}
@@ -747,10 +756,48 @@ func renderBlock(b *strings.Builder, blk Block) {
 		b.WriteString(`<div class="wb-form-placeholder-note">Form ini hanya aktif pada versi online — submit butuh backend Web Builder.</div>`)
 		b.WriteString(`</section>`)
 
+	// Blok dinamis di-handle di sini (bukan hanya di level atas) supaya tetap
+	// jalan saat di-nest di dalam Container/Columns.
+	case "ProductGridDynamic":
+		renderProductGridDynamic(b, blk, d.productList())
+
+	case "BlogListDynamic":
+		renderBlogListDynamic(b, blk, d.postList())
+
 	default:
+		if renderGuruDynamicBlock(b, blk, d.guruContent()) {
+			return
+		}
+		if renderGuruBlock(b, blk) {
+			return
+		}
+		if renderProBlock(b, blk) {
+			return
+		}
 		// Unknown block: render comment marker, don't fail.
 		fmt.Fprintf(b, `<!-- block:%s -->`, esc(blk.Type))
 	}
+}
+
+func (d *siteData) productList() []products.Product {
+	if d == nil {
+		return nil
+	}
+	return d.products
+}
+
+func (d *siteData) postList() []blog.Post {
+	if d == nil {
+		return nil
+	}
+	return d.posts
+}
+
+func (d *siteData) guruContent() *guruData {
+	if d == nil {
+		return nil
+	}
+	return d.guru
 }
 
 // ---- helpers ----
@@ -853,27 +900,6 @@ func thousands(n int64) string {
 	return string(out)
 }
 
-// renderTreeWithData renders a tree but uses pre-loaded DB data to materialize
-// dynamic blocks (ProductGridDynamic, BlogListDynamic). Calls the base renderTree
-// for non-dynamic blocks.
-func renderTreeWithData(b *strings.Builder, t Tree, prods []products.Product, posts []blog.Post) {
-	if css := buildResponsiveCSS(t.Blocks); css != "" {
-		fmt.Fprintf(b, `<style>%s</style>`, css)
-	}
-	for i, blk := range t.Blocks {
-		openLayoutWrap(b, blk, i)
-		switch blk.Type {
-		case "ProductGridDynamic":
-			renderProductGridDynamic(b, blk, prods)
-		case "BlogListDynamic":
-			renderBlogListDynamic(b, blk, posts)
-		default:
-			renderBlock(b, blk)
-		}
-		closeLayoutWrap(b, blk)
-	}
-}
-
 func renderProductGridDynamic(b *strings.Builder, blk Block, prods []products.Product) {
 	p := blk.Props
 	limit := intOr(p, "limit", 12)
@@ -891,7 +917,7 @@ func renderProductGridDynamic(b *strings.Builder, blk Block, prods []products.Pr
 		n = limit
 	}
 	for _, pr := range prods[:n] {
-		fmt.Fprintf(b, `<a class="wb-product" href="/produk/%s/">`, esc(pr.Slug))
+		fmt.Fprintf(b, `<a class="wb-product" href="/produk/%s/index.html">`, esc(pr.Slug))
 		if pr.ImageURL != "" {
 			fmt.Fprintf(b, `<img src="%s" alt="%s" loading="lazy" decoding="async" />`, escAttr(pr.ImageURL), escAttr(pr.Name))
 		} else {
@@ -921,7 +947,7 @@ func renderBlogListDynamic(b *strings.Builder, blk Block, posts []blog.Post) {
 		n = limit
 	}
 	for _, post := range posts[:n] {
-		fmt.Fprintf(b, `<a class="wb-blog-item" href="/blog/%s/">`, esc(post.Slug))
+		fmt.Fprintf(b, `<a class="wb-blog-item" href="/blog/%s/index.html">`, esc(post.Slug))
 		fmt.Fprintf(b, `<h3>%s</h3>`, esc(post.Title))
 		if post.Excerpt != "" {
 			fmt.Fprintf(b, `<p>%s</p>`, esc(post.Excerpt))
@@ -932,11 +958,11 @@ func renderBlogListDynamic(b *strings.Builder, blk Block, posts []blog.Post) {
 }
 
 // renderProductHTML produces a standalone product detail page.
-func renderProductHTML(site *sites.Site, pr products.Product, headerBlocks, footerBlocks []Block) string {
+func renderProductHTML(site *sites.Site, pr products.Product, headerBlocks, footerBlocks []Block, d *siteData) string {
 	var body strings.Builder
-	renderLayoutBlocks(&body, headerBlocks)
+	renderLayoutBlocks(&body, headerBlocks, d)
 	body.WriteString(`<main class="wb-detail">`)
-	body.WriteString(`<nav class="wb-breadcrumb"><a href="/">← Beranda</a></nav>`)
+	body.WriteString(`<nav class="wb-breadcrumb"><a href="/index.html">← Beranda</a></nav>`)
 	body.WriteString(`<div class="wb-detail-grid">`)
 
 	// Image
@@ -976,17 +1002,17 @@ func renderProductHTML(site *sites.Site, pr products.Product, headerBlocks, foot
 		fmt.Fprintf(&body, `<div class="wb-detail-desc">%s</div>`, escMultiline(pr.Description))
 	}
 	body.WriteString(`</div></div></main>`)
-	renderLayoutBlocks(&body, footerBlocks)
+	renderLayoutBlocks(&body, footerBlocks, d)
 
 	return wrapHTML(site, pr.Name+" — "+site.Name, descFromText(pr.Description, 160), body.String())
 }
 
 // renderBlogPostHTML produces a standalone blog post page (markdown → HTML).
-func renderBlogPostHTML(site *sites.Site, post blog.Post, headerBlocks, footerBlocks []Block) string {
+func renderBlogPostHTML(site *sites.Site, post blog.Post, headerBlocks, footerBlocks []Block, d *siteData) string {
 	var body strings.Builder
-	renderLayoutBlocks(&body, headerBlocks)
+	renderLayoutBlocks(&body, headerBlocks, d)
 	body.WriteString(`<main class="wb-article">`)
-	body.WriteString(`<nav class="wb-breadcrumb"><a href="/">← Beranda</a></nav>`)
+	body.WriteString(`<nav class="wb-breadcrumb"><a href="/index.html">← Beranda</a></nav>`)
 	if post.CoverImageURL != "" {
 		fmt.Fprintf(&body, `<img src="%s" alt="%s" class="wb-article-cover" fetchpriority="high" decoding="async" />`, escAttr(post.CoverImageURL), escAttr(post.Title))
 	}
@@ -1015,7 +1041,7 @@ func renderBlogPostHTML(site *sites.Site, post blog.Post, headerBlocks, footerBl
 	// Body (markdown → HTML, already escaped by parser)
 	fmt.Fprintf(&body, `<article class="wb-prose">%s</article>`, renderMarkdown(post.ContentMD))
 	body.WriteString(`</main>`)
-	renderLayoutBlocks(&body, footerBlocks)
+	renderLayoutBlocks(&body, footerBlocks, d)
 
 	return wrapHTML(site, post.Title+" — "+site.Name, descFromText(post.Excerpt, 160), body.String())
 }
@@ -1024,11 +1050,11 @@ func renderBlogPostHTML(site *sites.Site, post blog.Post, headerBlocks, footerBl
 // the same layout-wrap + responsive CSS pipeline as the page renderer so
 // exported HTML for detail pages (product/blog) matches live output.
 // No-op when blocks is empty — safe to call unconditionally.
-func renderLayoutBlocks(b *strings.Builder, blocks []Block) {
+func renderLayoutBlocks(b *strings.Builder, blocks []Block, d *siteData) {
 	if len(blocks) == 0 {
 		return
 	}
-	renderTree(b, Tree{Blocks: blocks})
+	renderTree(b, Tree{Blocks: blocks}, d)
 }
 
 func descFromText(s string, max int) string {
