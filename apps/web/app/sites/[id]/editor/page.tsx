@@ -2130,8 +2130,8 @@ function LayoutReadonlyStrip({
       */}
       <div
         className="pointer-events-none opacity-90"
-        // @ts-expect-error — `inert` is a valid HTML attr, TS types lag
-        inert=""
+        // React 19 treats `inert=""` as false — must pass the boolean.
+        inert
         aria-hidden="true"
       >
         {blocks.map((b, i) => (

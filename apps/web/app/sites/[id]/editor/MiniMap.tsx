@@ -29,7 +29,7 @@ export function MiniMap({
   selectedIndices?: Set<number>;
   // Called when user clicks a mini-bar — caller scrolls the actual canvas.
   onJump: (i: number) => void;
-  scrollContainerRef?: React.RefObject<HTMLDivElement>;
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
 }) {
   if (blocks.length < 4) return null; // Pointless for short pages.
 

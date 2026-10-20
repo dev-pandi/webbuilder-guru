@@ -292,7 +292,7 @@ export function GuruStylesEditor() {
 // ---------------------------------------------------------------------------
 // Inline icons — sama seperti renderer, biar rubric card icon konsisten
 // ---------------------------------------------------------------------------
-const RUBRIC_ICONS: Record<string, JSX.Element> = {
+const RUBRIC_ICONS: Record<string, React.JSX.Element> = {
   book: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M5 4h14v16H5z" /><path d="M8 8h8M8 12h8M8 16h5" />
