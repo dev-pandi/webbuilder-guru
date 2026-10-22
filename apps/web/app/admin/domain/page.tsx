@@ -23,11 +23,16 @@ import {
   ExternalLink,
   ListChecks,
   CalendarClock,
+  Unlink,
+  LayoutTemplate,
+  Copy,
+  Check,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Pagination, useDebounced, type PaginatedResult } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -59,6 +64,11 @@ type Row = {
   user_email: string;
   user_name: string;
   purchased_by?: string | null;
+};
+
+type Stats = {
+  total_active: number;
+  active_without_site: number;
 };
 
 const STATUS_OPTIONS = [
@@ -94,6 +104,9 @@ export default function AdminDomainsPage() {
   const debouncedQ = useDebounced(q, 300);
   const [status, setStatus] = useState("all");
   const [expiring, setExpiring] = useState("all");
+  const [withoutSite, setWithoutSite] = useState(false);
+
+  const [stats, setStats] = useState<Stats | null>(null);
 
   const [data, setData] = useState<PaginatedResult<Row> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +114,22 @@ export default function AdminDomainsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, expiring]);
+  }, [debouncedQ, status, expiring, withoutSite]);
+
+  // Stats tidak ikut filter — angkanya total platform, fetch sekali saja.
+  useEffect(() => {
+    let cancelled = false;
+    api<Stats>("/api/v1/admin/domains/stats")
+      .then((res) => {
+        if (!cancelled) setStats(res);
+      })
+      .catch(() => {
+        /* kartu stats opsional — jangan blok tabel kalau gagal */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +143,7 @@ export default function AdminDomainsPage() {
       if (debouncedQ) params.set("q", debouncedQ);
       if (status !== "all") params.set("status", status);
       if (expiring !== "all") params.set("expiring_days", expiring);
+      if (withoutSite) params.set("without_site", "true");
       try {
         const res = await api<PaginatedResult<Row>>(
           `/api/v1/admin/domains?${params.toString()}`,
@@ -130,7 +159,7 @@ export default function AdminDomainsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, pageSize, debouncedQ, status, expiring]);
+  }, [page, pageSize, debouncedQ, status, expiring, withoutSite]);
 
   const items = data?.items ?? [];
   const activeFilterCount = useMemo(() => {
@@ -138,13 +167,23 @@ export default function AdminDomainsPage() {
     if (debouncedQ) n++;
     if (status !== "all") n++;
     if (expiring !== "all") n++;
+    if (withoutSite) n++;
     return n;
-  }, [debouncedQ, status, expiring]);
+  }, [debouncedQ, status, expiring, withoutSite]);
 
   function clearFilters() {
     setQ("");
     setStatus("all");
     setExpiring("all");
+    setWithoutSite(false);
+  }
+
+  // Kartu "tanpa situs" sekaligus jadi toggle filter tabel di bawahnya —
+  // klik = langsung lihat domain mana saja yang dimaksud.
+  function toggleWithoutSite() {
+    const next = !withoutSite;
+    setWithoutSite(next);
+    if (next) setStatus("active");
   }
 
   return (
@@ -187,6 +226,63 @@ export default function AdminDomainsPage() {
         </div>
       )}
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <CardContent className="p-5">
+            <div className="mb-3 flex items-start justify-between">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Domain Aktif
+              </span>
+              <div className="flex size-9 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <Globe2 className="size-4" />
+              </div>
+            </div>
+            <p className="text-3xl font-bold tabular-nums tracking-tight">
+              {stats ? stats.total_active.toLocaleString("id-ID") : "—"}
+            </p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Status aktif di seluruh platform
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card
+          className={
+            "transition-colors " +
+            (withoutSite ? "border-amber-500 ring-1 ring-amber-500/30" : "")
+          }
+        >
+          <CardContent className="p-5">
+            <div className="mb-3 flex items-start justify-between">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Aktif Tanpa Situs
+              </span>
+              <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <Unlink className="size-4" />
+              </div>
+            </div>
+            <p className="text-3xl font-bold tabular-nums tracking-tight">
+              {stats ? stats.active_without_site.toLocaleString("id-ID") : "—"}
+            </p>
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Sudah dibeli, belum dipakai bikin situs
+              </p>
+              {stats !== null && stats.active_without_site > 0 && (
+                <Button
+                  variant={withoutSite ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={toggleWithoutSite}
+                  className="h-7 shrink-0 gap-1 text-xs"
+                >
+                  {withoutSite ? "Tutup" : "Lihat detail"}
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="overflow-hidden p-0">
         <div className="flex flex-wrap items-center gap-2 border-b p-3">
           <div className="relative min-w-[200px] flex-1">
@@ -222,6 +318,16 @@ export default function AdminDomainsPage() {
               ))}
             </SelectContent>
           </Select>
+          <Button
+            variant={withoutSite ? "secondary" : "outline"}
+            size="sm"
+            onClick={toggleWithoutSite}
+            className="h-9 gap-1.5"
+            title="Tampilkan hanya domain aktif yang belum punya situs"
+          >
+            <Unlink className="size-3.5" />
+            Tanpa situs
+          </Button>
           {activeFilterCount > 0 && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5">
               <RefreshCw className="size-3.5" />
@@ -237,6 +343,7 @@ export default function AdminDomainsPage() {
                 <TableHead>Domain</TableHead>
                 <TableHead>Owner</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Situs</TableHead>
                 <TableHead>Contact ID</TableHead>
                 <TableHead>Expire</TableHead>
                 <TableHead>Terdaftar</TableHead>
@@ -246,7 +353,7 @@ export default function AdminDomainsPage() {
             <TableBody>
               {loading && items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center">
+                  <TableCell colSpan={8} className="py-10 text-center">
                     <span className="inline-flex items-center gap-2 text-muted-foreground">
                       <Loader2 className="size-4 animate-spin" /> Memuat…
                     </span>
@@ -254,10 +361,12 @@ export default function AdminDomainsPage() {
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                    {activeFilterCount > 0
-                      ? "Tidak ada hasil untuk filter tersebut."
-                      : "Belum ada domain — user belum register apapun."}
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                    {withoutSite
+                      ? "Semua domain aktif sudah punya situs."
+                      : activeFilterCount > 0
+                        ? "Tidak ada hasil untuk filter tersebut."
+                        : "Belum ada domain — user belum register apapun."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -266,7 +375,18 @@ export default function AdminDomainsPage() {
                   return (
                     <TableRow key={r.name}>
                       <TableCell className="align-top">
-                        <code className="text-sm font-medium">{r.name}</code>
+                        <div className="flex items-center gap-1.5">
+                          <a
+                            href={`https://${r.name}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Buka https://${r.name}`}
+                            className="text-sm font-medium underline-offset-4 transition-colors hover:text-primary hover:underline"
+                          >
+                            <code>{r.name}</code>
+                          </a>
+                          <CopyButton value={r.name} />
+                        </div>
                         {r.last_renewed_at && (
                           <div className="mt-0.5 text-[10px] text-muted-foreground">
                             renew terakhir {formatDate(r.last_renewed_at)}
@@ -291,6 +411,23 @@ export default function AdminDomainsPage() {
                         <Badge variant={statusVariant(r.status)} className="text-xs">
                           {statusLabel(r.status)}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="align-top">
+                        {r.site_id ? (
+                          <Link
+                            href={`/sites/${r.site_id}/editor`}
+                            className="inline-flex items-center gap-1 text-xs text-primary underline-offset-4 hover:underline"
+                            title="Buka editor situs (admin view)"
+                          >
+                            <LayoutTemplate className="size-3" />
+                            Ada situs
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                            <Unlink className="size-3" />
+                            Belum ada
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="align-top">
                         <code className="text-[11px] text-muted-foreground">
@@ -344,6 +481,45 @@ export default function AdminDomainsPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+// CopyButton — ikon salin di samping nama domain. Pakai state lokal supaya
+// admin dapat konfirmasi visual langsung, tidak cuma toast yang bisa kelewat.
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      toast.success("Nama domain disalin");
+    } catch {
+      // clipboard API butuh secure context — jangan klaim sukses kalau gagal.
+      toast.error("Gagal menyalin — salin manual dari kolom domain.");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={`Salin ${value}`}
+      title="Salin nama domain"
+      className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      {copied ? (
+        <Check className="size-3 text-emerald-600 dark:text-emerald-400" />
+      ) : (
+        <Copy className="size-3" />
+      )}
+    </button>
   );
 }
 

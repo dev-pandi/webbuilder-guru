@@ -1577,7 +1577,7 @@ func (h *Handler) AdminListPurchases(c *fiber.Ctx) error {
 // Aggregate view lintas user — 1 row per FQDN dari tabel registered_domains.
 // Beda dari AdminListPurchases yang transaction log.
 //
-// Filter: q (name/email), status, expiring_days.
+// Filter: q (name/email), status, expiring_days, without_site.
 // Pagination: page, page_size.
 func (h *Handler) AdminListDomains(c *fiber.Ctx) error {
 	p := httpx.ParsePagination(c)
@@ -1586,6 +1586,7 @@ func (h *Handler) AdminListDomains(c *fiber.Ctx) error {
 		Q:            strings.TrimSpace(c.Query("q")),
 		Status:       strings.TrimSpace(c.Query("status")),
 		ExpiringDays: expiringDays,
+		WithoutSite:  c.Query("without_site") == "true",
 		Page:         p.Page,
 		PageSize:     p.PageSize,
 	}
@@ -1637,6 +1638,21 @@ func (h *Handler) AdminListDomains(c *fiber.Ctx) error {
 		out = append(out, r)
 	}
 	return httpx.OK(c, httpx.MakePaginated(out, p, total))
+}
+
+// AdminDomainStats — GET /api/v1/admin/domains/stats
+// Kartu ringkasan di /admin/domain. "Tanpa situs" = domain aktif yang belum
+// pernah di-attach ke sites row — sinyal onboarding user mandek setelah bayar.
+func (h *Handler) AdminDomainStats(c *fiber.Ctx) error {
+	st, err := h.repo.AdminDomainStats(c.Context())
+	if err != nil {
+		slog.Error("admin domain stats failed", "error", err)
+		return httpx.Internal(c, "stats failed")
+	}
+	return httpx.OK(c, fiber.Map{
+		"total_active":        st.TotalActive,
+		"active_without_site": st.ActiveWithoutSite,
+	})
 }
 
 // AdminGetDomain — GET /api/v1/admin/domains/:name

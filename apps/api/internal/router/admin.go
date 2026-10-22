@@ -62,10 +62,14 @@ func MountAdmin(app *fiber.App, deps Deps) {
 
 	// Admin observability untuk domain (read-only cross-user).
 	//   - /domains        → aggregate list dari registered_domains (1 row/FQDN)
+	//   - /domains/stats  → counter domain aktif + yang belum punya situs
 	//   - /domains/:name/… → detail 1 domain lintas user (troubleshoot access)
 	//   - /registrar/purchases → transaction log (register + renew per event)
 	if deps.DomainPurchase != nil {
 		g.Get("/domains", deps.DomainPurchase.AdminListDomains)
+		// Harus sebelum /domains/:name — kalau tidak, "stats" ke-tangkap
+		// sebagai nama domain.
+		g.Get("/domains/stats", deps.DomainPurchase.AdminDomainStats)
 		g.Get("/domains/:name", deps.DomainPurchase.AdminGetDomain)
 		g.Get("/domains/:name/whois", deps.DomainPurchase.AdminWhois)
 		g.Get("/domains/:name/nameservers", deps.DomainPurchase.AdminGetNameservers)

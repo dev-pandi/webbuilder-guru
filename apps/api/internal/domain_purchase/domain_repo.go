@@ -51,21 +51,24 @@ const domainCols = `id, user_id, purchased_by, name, contact_id, expires_at,
 	dns_attach_status, dns_attach_error, dns_attach_at, dns_zone_id,
 	dns_provider, dns_provider_config_id`
 
-// domainColsWithSiteFallback — SELECT list dengan COALESCE site_id dari
-// domain_purchases. `registered_domains.site_id` historis tidak selalu
-// di-populate (templates handler cuma update domain_purchases.site_id),
-// jadi list view fallback ke sumber authoritative supaya UI tidak salah
-// tampil "Belum ada situs" padahal site sudah ada.
-const domainColsWithSiteFallback = `rd.id, rd.user_id, rd.purchased_by, rd.name,
-	rd.contact_id, rd.expires_at, rd.registered_at, rd.last_renewed_at, rd.status,
-	COALESCE(rd.site_id, (
+// effectiveSiteIDSQL — site_id dengan fallback ke domain_purchases.
+// `registered_domains.site_id` historis tidak selalu di-populate (templates
+// handler cuma update domain_purchases.site_id), jadi read path fallback ke
+// sumber authoritative supaya UI tidak salah tampil "Belum ada situs"
+// padahal site sudah ada. Wajib dipakai juga oleh filter + hitungan stats,
+// kalau tidak angka "tanpa situs" jadi over-count.
+const effectiveSiteIDSQL = `COALESCE(rd.site_id, (
 		SELECT dp.site_id FROM domain_purchases dp
 		WHERE dp.domain = rd.name
 		  AND dp.kind = 'register'
 		  AND dp.site_id IS NOT NULL
 		ORDER BY dp.created_at DESC
 		LIMIT 1
-	)) AS site_id,
+	))`
+
+const domainColsWithSiteFallback = `rd.id, rd.user_id, rd.purchased_by, rd.name,
+	rd.contact_id, rd.expires_at, rd.registered_at, rd.last_renewed_at, rd.status,
+	` + effectiveSiteIDSQL + ` AS site_id,
 	rd.registrar_job_id, rd.created_at, rd.updated_at,
 	rd.dns_attach_status, rd.dns_attach_error, rd.dns_attach_at, rd.dns_zone_id,
 	rd.dns_provider, rd.dns_provider_config_id`
@@ -334,6 +337,7 @@ type AdminDomainFilter struct {
 	Q            string // search di name atau owner email
 	Status       string // "" = semua
 	ExpiringDays int    // > 0 → active + expires_at ≤ now + N days
+	WithoutSite  bool   // true → hanya domain yang belum ter-attach ke situs
 	Page         int
 	PageSize     int
 }
@@ -359,6 +363,9 @@ func (r *Repo) AdminListDomains(ctx context.Context, f AdminDomainFilter) ([]Adm
 		where += " AND rd.status = 'active' AND rd.expires_at IS NOT NULL"
 		where += fmt.Sprintf(" AND rd.expires_at <= now() + ($%d || ' days')::interval", len(args))
 	}
+	if f.WithoutSite {
+		where += " AND " + effectiveSiteIDSQL + " IS NULL"
+	}
 	if f.Q != "" {
 		args = append(args, "%"+f.Q+"%")
 		where += fmt.Sprintf(" AND (rd.name ILIKE $%d OR u.email ILIKE $%d OR u.name ILIKE $%d)",
@@ -376,7 +383,8 @@ func (r *Repo) AdminListDomains(ctx context.Context, f AdminDomainFilter) ([]Adm
 	args = append(args, f.PageSize, offset)
 	q := `SELECT
 			rd.id, rd.user_id, rd.purchased_by, rd.name, rd.contact_id, rd.expires_at,
-			rd.registered_at, rd.last_renewed_at, rd.status, rd.site_id, rd.registrar_job_id,
+			rd.registered_at, rd.last_renewed_at, rd.status,
+			` + effectiveSiteIDSQL + ` AS site_id, rd.registrar_job_id,
 			rd.created_at, rd.updated_at,
 			COALESCE(u.email, ''), COALESCE(u.name, '')
 		FROM registered_domains rd
@@ -403,6 +411,28 @@ func (r *Repo) AdminListDomains(ctx context.Context, f AdminDomainFilter) ([]Adm
 		out = append(out, a)
 	}
 	return out, total, rows.Err()
+}
+
+// AdminDomainStats — ringkasan kartu di /admin/domain.
+type AdminDomainStats struct {
+	TotalActive       int
+	ActiveWithoutSite int
+}
+
+// AdminDomainStats — dua angka dalam satu scan supaya kartu tidak butuh
+// dua round-trip. Scope-nya status='active' saja: domain expired/suspended
+// tanpa situs bukan actionable buat ops.
+func (r *Repo) AdminDomainStats(ctx context.Context) (AdminDomainStats, error) {
+	var out AdminDomainStats
+	err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE `+effectiveSiteIDSQL+` IS NULL)
+		  FROM registered_domains rd
+		 WHERE rd.status = 'active'`).Scan(&out.TotalActive, &out.ActiveWithoutSite)
+	if err != nil {
+		return AdminDomainStats{}, err
+	}
+	return out, nil
 }
 
 // AttachDomainSite — link domain ke sites row.
