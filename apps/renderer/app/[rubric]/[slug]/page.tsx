@@ -187,6 +187,7 @@ export default async function ArticleDetail(
         {article.litera_enabled && article.litera_intent_id && (
           <LiteraWidget
             canonicalURL={canonicalArticleURL(await host(), rubric, article.slug)}
+            title={article.title}
           />
         )}
 

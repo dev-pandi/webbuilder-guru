@@ -66,14 +66,19 @@ func (c *Client) Register(ctx context.Context, req RegisterRequest) (*RegisterRe
 	corrID := extractCorrelationID(respBody)
 
 	// Status mapping — translate HTTP status ke sentinel error.
+	//
+	// 202 ikut jalur sukses: Litera balas {"success":true} dengan intent
+	// lengkap, statusnya REGISTERED (belum di-mint admin). Dulu 202 jatuh ke
+	// default dan tercatat "Gagal" padahal artikel sudah terdaftar.
 	switch resp.StatusCode {
-	case http.StatusOK, http.StatusCreated:
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
 		var out RegisterResponse
 		if err := json.Unmarshal(respBody, &out); err != nil {
 			return nil, fmt.Errorf("litera: decode response: %w", err)
 		}
 		slog.Info("litera register success",
-			"intent_id", out.Data.Intent.ID, "correlation", corrID)
+			"intent_id", out.Data.Intent.ID, "intent_status", out.Data.Intent.Status,
+			"http_status", resp.StatusCode, "correlation", corrID)
 		return &out, nil
 	case http.StatusUnauthorized:
 		return nil, &APIError{StatusCode: resp.StatusCode, CorrelationID: corrID, Body: string(respBody)}
@@ -125,7 +130,10 @@ func (c *Client) RegisterDomain(ctx context.Context, hostname string) (*DomainRe
 	corrID := extractCorrelationID(respBody)
 
 	switch resp.StatusCode {
-	case http.StatusOK, http.StatusCreated:
+	// 202 sejalan dengan doc "aktivasi allowlist butuh ≤60 detik" — accepted,
+	// bukan gagal. Kalau ditolak jadi error, EnsureDomain memblokir register
+	// artikel berikutnya padahal domain sudah masuk antrean.
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
 		var out DomainRegisterResponse
 		if err := json.Unmarshal(respBody, &out); err != nil {
 			return nil, fmt.Errorf("litera: decode domain response: %w", err)
