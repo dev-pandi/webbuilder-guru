@@ -136,6 +136,12 @@ export default async function ArticleDetail(
       <SiteHeaderBlocks site={site} />
 
       <article className="guru-article-detail">
+        {/* Back ke listing rubrik, bukan history.back() — pembaca sering masuk
+            dari share link atau search, jadi history-nya kosong. */}
+        <a className="guru-article-detail__back" href={`/${rubric}`}>
+          <span aria-hidden="true">←</span> Kembali ke {GURU_RUBRIC_LABEL[rubric]}
+        </a>
+
         <div className="guru-article-detail__meta">
           <a href={`/${rubric}`}>{GURU_RUBRIC_LABEL[rubric]}</a>
           {article.published_at ? <span>{fmtDate(article.published_at)}</span> : null}

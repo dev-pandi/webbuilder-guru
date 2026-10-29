@@ -308,6 +308,8 @@ const guruCSS = `
    Semua warna di-wire ke --guru-* vars supaya ikut berubah waktu user
    ganti theme (primary / secondary / bg / fg). */
 .guru-article-detail{max-width:760px;margin:0 auto;padding:60px 24px}
+.guru-article-detail__back{display:inline-flex;align-items:center;gap:6px;color:var(--guru-muted);font-size:14px;font-weight:600;text-decoration:none;margin-bottom:18px;transition:color .15s}
+.guru-article-detail__back:hover{color:var(--guru-red);text-decoration:underline}
 .guru-article-detail__meta{color:var(--guru-muted);font-size:13px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .guru-article-detail__meta a{color:var(--guru-red);text-decoration:none}
 .guru-article-detail__meta a:hover{text-decoration:underline}
