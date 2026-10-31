@@ -38,8 +38,8 @@ register_activation_hook(
 	__FILE__,
 	static function (): void {
 		Post_Types::register();
-		Rewrites::add_rules();
-		flush_rewrite_rules();
+		Post_Types::seed_rubrik();
+		Rewrites::refresh_slugs();
 	}
 );
 

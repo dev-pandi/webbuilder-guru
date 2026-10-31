@@ -69,13 +69,24 @@ Regex memakai daftar rubrik eksplisit, bukan `([^/]+)`, supaya URL satu segmen
 lain tidak tertangkap. Sudah diuji terisolasi: `/tentang-kami`,
 `/pembelajaran`, `/blog/2026/judul`, `/ceritakuXX` semuanya tidak cocok.
 
-### Belum diverifikasi
+### Status verifikasi
 
-Regex sudah diuji, tapi **perakitan WordPress-nya belum** — tidak ada
-instalasi WP di mesin pengembangan ini. Yang masih harus dicek di WP nyata:
+Diuji di WordPress 6.7 + MariaDB 10.11 (Docker), plugin di-bind-mount langsung
+dari repo. Hasil:
 
-1. `flush_rewrite_rules()` saat aktivasi benar-benar memasang ketiga aturan.
-2. `index.php?guru_article={slug}` me-resolve dengan `rewrite => false`.
-3. Permalink di admin menampilkan `/{rubrik}/{slug}`, bukan `?post_type=`.
-4. Rubrik tambahan buatan guru (di luar 6 baku) tidak 404 — saat ini aturan
-   hanya dibuat untuk 6 slug tetap.
+| Uji | Hasil |
+|---|---|
+| CPT `guru_article`, `guru_materi`, `guru_banner` terdaftar | lolos |
+| 6 rubrik ter-seed, idempoten | lolos |
+| Permalink artikel = `/{rubrik}/{slug}` | lolos |
+| `/{rubrik}/{slug}` resolve 200 | lolos |
+| `/{rubrik}` arsip resolve 200 | lolos |
+| `/tentang-kami` tetap 404 (tidak tertelan aturan rubrik) | lolos |
+| Rubrik buatan guru di luar 6 baku | lolos setelah diperbaiki |
+
+**Trailing slash menentukan parity.** Struktur permalink harus `/%postname%`
+(tanpa trailing slash). Dengan `/%postname%/` WordPress menghasilkan
+`/forum-diskusi/judul/`, sedangkan renderer memakai `/forum-diskusi/judul`.
+Litera mencocokkan URL kanonis byte-exact, jadi beda satu garis miring =
+artikel tidak dikenali. Instalasi WP baku memakai `/%postname%/`, jadi ini
+harus dicek saat onboarding guru.
