@@ -85,8 +85,8 @@ final class Post_Types {
 				'taxonomies'   => array( 'rubrik', 'post_tag' ),
 				'show_in_rest' => true,
 				// rewrite=false + aturan eksplisit di Rewrites. URL tetap
-				// /{rubrik}/{slug} seperti renderer — parity ini mengikat
-				// karena Litera mencocokkan URL kanonis byte-exact.
+				// /{rubrik}/{slug} seperti renderer supaya guru yang pindah
+				// dari kubaca.id tidak kehilangan alamat artikelnya.
 				'rewrite'      => false,
 			)
 		);

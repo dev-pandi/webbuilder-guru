@@ -42,8 +42,9 @@ rusak gara-gara telat bayar, dan penguncian semacam itu toh bisa dilucuti.
 
 ## Kontrak URL
 
-Dijaga sama dengan renderer karena Litera mencocokkan URL kanonis byte-exact,
-dan supaya migrasi situs dari kubaca.id tidak mengubah alamat artikel.
+Dijaga sama dengan renderer supaya guru yang pindah dari kubaca.id ke
+WordPress tidak kehilangan alamat artikelnya — tautan lama dan hasil
+pencarian tetap mengarah ke tempat yang benar.
 
 | Pola | Isi |
 |---|---|
@@ -84,9 +85,8 @@ dari repo. Hasil:
 | `/tentang-kami` tetap 404 (tidak tertelan aturan rubrik) | lolos |
 | Rubrik buatan guru di luar 6 baku | lolos setelah diperbaiki |
 
-**Trailing slash menentukan parity.** Struktur permalink harus `/%postname%`
-(tanpa trailing slash). Dengan `/%postname%/` WordPress menghasilkan
-`/forum-diskusi/judul/`, sedangkan renderer memakai `/forum-diskusi/judul`.
-Litera mencocokkan URL kanonis byte-exact, jadi beda satu garis miring =
-artikel tidak dikenali. Instalasi WP baku memakai `/%postname%/`, jadi ini
-harus dicek saat onboarding guru.
+**Trailing slash — opsional, bukan syarat.** Struktur `/%postname%` membuat
+URL identik dengan renderer; default WP `/%postname%/` menghasilkan
+`/forum-diskusi/judul/`. Keduanya berfungsi: tautan lama tanpa slash tetap
+sampai lewat 301 bawaan WordPress, yang aman untuk pembaca maupun SEO.
+Pilih `/%postname%` hanya kalau ingin alamatnya benar-benar sama persis.
