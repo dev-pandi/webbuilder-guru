@@ -35,6 +35,7 @@ final class Post_Types {
 		add_action( 'init', array( self::class, 'register' ) );
 		add_action( 'init', array( self::class, 'seed_rubrik' ), 11 );
 		add_filter( 'post_type_link', array( self::class, 'article_permalink' ), 10, 2 );
+		add_filter( 'term_link', array( self::class, 'rubrik_link' ), 10, 3 );
 	}
 
 	public static function register(): void {
@@ -58,8 +59,10 @@ final class Post_Types {
 				'hierarchical'      => true,
 				'show_in_rest'      => true,
 				'show_admin_column' => true,
-				// Arsip rubrik tampil di /{rubrik} supaya sama dengan renderer.
-				'rewrite'           => array( 'slug' => '', 'with_front' => false ),
+				// rewrite=false: WP mengganti slug kosong dengan nama taxonomy
+				// ("/rubrik/ceritaku"), padahal renderer memakai "/ceritaku".
+				// Aturannya dipasang manual di Rewrites.
+				'rewrite'           => false,
 			)
 		);
 	}
@@ -81,10 +84,10 @@ final class Post_Types {
 				'supports'     => array( 'title', 'editor', 'excerpt', 'thumbnail', 'revisions', 'author', 'custom-fields' ),
 				'taxonomies'   => array( 'rubrik', 'post_tag' ),
 				'show_in_rest' => true,
-				// %rubrik% di-resolve di article_permalink(). Hasilnya
-				// /{rubrik}/{slug}, identik dengan URL di renderer — penting
+				// rewrite=false + aturan eksplisit di Rewrites. URL tetap
+				// /{rubrik}/{slug} seperti renderer — parity ini mengikat
 				// karena Litera mencocokkan URL kanonis byte-exact.
-				'rewrite'      => array( 'slug' => '%rubrik%', 'with_front' => false ),
+				'rewrite'      => false,
 			)
 		);
 	}
@@ -177,11 +180,11 @@ final class Post_Types {
 	}
 
 	/**
-	 * Ganti placeholder %rubrik% dengan slug term yang terpasang. Tanpa ini
-	 * permalink artikel keluar sebagai "/%rubrik%/judul".
+	 * Bangun permalink artikel: /{rubrik}/{slug}. Dipanggil karena post type
+	 * didaftarkan dengan rewrite=false, jadi WP tidak membentuknya sendiri.
 	 */
 	public static function article_permalink( string $link, \WP_Post $post ): string {
-		if ( 'guru_article' !== $post->post_type || ! str_contains( $link, '%rubrik%' ) ) {
+		if ( 'guru_article' !== $post->post_type ) {
 			return $link;
 		}
 
@@ -189,6 +192,17 @@ final class Post_Types {
 		// Artikel tanpa rubrik tetap harus punya URL valid, jangan 404.
 		$slug = ( is_array( $terms ) && isset( $terms[0] ) ) ? $terms[0]->slug : 'lainnya';
 
-		return str_replace( '%rubrik%', $slug, $link );
+		return home_url( user_trailingslashit( $slug . '/' . $post->post_name ) );
+	}
+
+	/**
+	 * Arsip rubrik di /{slug}, bukan /rubrik/{slug}.
+	 */
+	public static function rubrik_link( string $link, \WP_Term $term, string $taxonomy ): string {
+		if ( 'rubrik' !== $taxonomy ) {
+			return $link;
+		}
+
+		return home_url( user_trailingslashit( $term->slug ) );
 	}
 }

@@ -27,8 +27,10 @@ const VERSION     = '0.1.0';
 const PLUGIN_FILE = __FILE__;
 
 require_once __DIR__ . '/includes/class-post-types.php';
+require_once __DIR__ . '/includes/class-rewrites.php';
 
 Post_Types::init();
+Rewrites::init();
 
 // Rewrite rule CPT baru terdaftar setelah flush. Hanya saat aktivasi — flush
 // tiap request itu mahal dan tidak perlu.
@@ -36,6 +38,7 @@ register_activation_hook(
 	__FILE__,
 	static function (): void {
 		Post_Types::register();
+		Rewrites::add_rules();
 		flush_rewrite_rules();
 	}
 );
