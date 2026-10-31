@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/theme.json",
+  "version": 3,
+  "settings": {
+    "appearanceTools": true,
+    "layout": { "contentSize": "760px", "wideSize": "1180px" },
+    "color": {
+      "custom": true,
+      "defaultPalette": false,
+      "palette": [
+        { "slug": "primary",   "color": "#14233b", "name": "Navy" },
+        { "slug": "secondary", "color": "#b6423d", "name": "Merah Bata" },
+        { "slug": "bg",        "color": "#fbf8f1", "name": "Krem" },
+        { "slug": "fg",        "color": "#263247", "name": "Tinta" }
+      ]
+    },
+    "typography": {
+      "fluid": true,
+      "fontFamilies": [
+        {
+          "slug": "heading",
+          "name": "Judul",
+          "fontFamily": "Georgia, 'Times New Roman', serif"
+        },
+        {
+          "slug": "body",
+          "name": "Teks",
+          "fontFamily": "Inter, system-ui, -apple-system, sans-serif"
+        }
+      ]
+    },
+    "spacing": { "units": [ "px", "rem", "%", "vw" ] }
+  },
+  "styles": {
+    "color": {
+      "background": "var(--wp--preset--color--bg)",
+      "text": "var(--wp--preset--color--fg)"
+    },
+    "typography": {
+      "fontFamily": "var(--wp--preset--font-family--body)",
+      "lineHeight": "1.75"
+    },
+    "elements": {
+      "h1": { "typography": { "fontFamily": "var(--wp--preset--font-family--heading)" } },
+      "h2": { "typography": { "fontFamily": "var(--wp--preset--font-family--heading)" } },
+      "h3": { "typography": { "fontFamily": "var(--wp--preset--font-family--heading)" } },
+      "link": { "color": { "text": "var(--wp--preset--color--secondary)" } }
+    }
+  }
+}
