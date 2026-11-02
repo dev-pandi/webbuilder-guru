@@ -797,7 +797,9 @@ function TemplatePicker({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Badge variant="secondary" className="text-xs">
+              {/* gap-1: Badge inline-flex, jadi text node berisi spasi tidak
+                  dirender sebagai flex item dan ketiganya menempel. */}
+              <Badge variant="secondary" className="gap-1 text-xs">
                 Domain <code>{domain}</code> otomatis di-attach
               </Badge>
               <Button onClick={onCreate} disabled={creating || !name.trim()} className="gap-2">
