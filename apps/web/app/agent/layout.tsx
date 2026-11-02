@@ -11,6 +11,7 @@ import {
   DollarSign,
   Globe2,
   Home,
+  LayoutGrid,
   LogOut,
   Receipt,
   Settings,
@@ -138,6 +139,15 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Portal agent tidak punya daftar situs sendiri. Tanpa jalan balik
+                ke /dashboard, agent terputus dari situs miliknya. */}
+            <Button variant="outline" size="sm" asChild className="gap-1.5">
+              <Link href="/dashboard">
+                <LayoutGrid className="size-4" />
+                <span className="hidden sm:inline">Situs Saya</span>
+              </Link>
+            </Button>
+
             <Button
               variant="ghost"
               size="sm"

@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   ChevronDown,
   Globe2,
+  UserCircle,
 } from "lucide-react";
 import { api, clearTokens, getAccessToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -44,18 +45,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     api<Me>("/api/v1/auth/me")
       .then((u) => {
-        // Reseller/agent punya portal terpisah dengan sidebar sendiri.
-        // Kalau mereka nyasar ke /dashboard (client-style), redirect balik ke
-        // portalnya supaya menu tetap terlihat. Admin dibiarkan (bisa navigate
-        // ke mana saja untuk troubleshoot).
+        // Reseller punya portal terpisah dengan sidebar sendiri; kalau nyasar
+        // ke /dashboard, balikkan supaya menunya tetap terlihat.
         if (u.role === "reseller") {
           router.replace("/reseller/dashboard");
           return;
         }
-        if (u.role === "agent") {
-          router.replace("/agent/dashboard");
-          return;
-        }
+        // Agent TIDAK di-redirect: portal agent tidak punya daftar situs
+        // sendiri, jadi memaksa keluar dari sini membuat agent kehilangan
+        // akses ke situs miliknya — terutama client yang baru dipromosikan
+        // jadi agent. Jalan ke portal agent disediakan lewat tombol header.
+        // Admin dibiarkan juga (bebas navigate untuk troubleshoot).
         setMe(u);
       })
       .catch(() => {
@@ -92,6 +92,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link href="/admin">
                   <ShieldCheck className="size-4" />
                   <span className="hidden sm:inline">Admin</span>
+                </Link>
+              </Button>
+            )}
+            {me?.role === "agent" && (
+              <Button variant="outline" size="sm" asChild className="gap-1.5">
+                <Link href="/agent/dashboard">
+                  <UserCircle className="size-4" />
+                  <span className="hidden sm:inline">Portal Agent</span>
                 </Link>
               </Button>
             )}
