@@ -90,6 +90,10 @@ func NewRepo(p *pgxpool.Pool) *Repo { return &Repo{pool: p} }
 var ErrNotFound = errors.New("not found")
 var ErrEmailTaken = errors.New("email already registered")
 
+// ErrAgentAttachBlocked — user tidak memenuhi syarat jadi agent (sudah punya
+// reseller induk, atau rolenya bukan client/agent). Lihat AttachAgent.
+var ErrAgentAttachBlocked = errors.New("user tidak bisa dijadikan agent")
+
 func (r *Repo) CreateUser(ctx context.Context, email, hash, name string) (*User, error) {
 	var u User
 	err := r.pool.QueryRow(ctx,
@@ -123,6 +127,32 @@ func (r *Repo) GetByEmail(ctx context.Context, email string) (*User, error) {
 func (r *Repo) SetRole(ctx context.Context, userID uuid.UUID, role string) error {
 	_, err := r.pool.Exec(ctx, `UPDATE users SET role = $1, updated_at = now() WHERE id = $2`, role, userID)
 	return err
+}
+
+// AttachAgent menjadikan user existing sebagai agent milik resellerID.
+//
+// Dipakai saat reseller mengundang email yang sudah terdaftar. Sebelum ini,
+// parent_reseller_id hanya pernah ditulis saat INSERT, jadi user lama tidak
+// pernah bisa jadi agent.
+//
+// Syarat ditegakkan di WHERE, bukan di handler, supaya dua reseller yang
+// mengundang orang yang sama bersamaan tidak bisa saling menimpa — hanya satu
+// UPDATE yang kena baris.
+func (r *Repo) AttachAgent(ctx context.Context, userID, resellerID uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE users
+		   SET role = 'agent', parent_reseller_id = $2, updated_at = now()
+		 WHERE id = $1
+		   AND parent_reseller_id IS NULL
+		   AND role IN ('client', 'agent')
+	`, userID, resellerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrAgentAttachBlocked
+	}
+	return nil
 }
 
 // EnsureAdmin upserts a user with role='admin'. If the email exists, the

@@ -228,11 +228,20 @@ function InviteAgentDialog({
     }
     setSaving(true);
     try {
-      await api("/api/v1/reseller/agents/invite", {
-        method: "POST",
-        body: JSON.stringify({ email: email.toLowerCase().trim(), name: name.trim() }),
-      });
-      toast.success("Undangan terkirim");
+      // Email yang sudah terdaftar langsung dipromosikan jadi agent — tidak
+      // ada undangan yang dikirim, jadi pesannya tidak boleh menjanjikan email.
+      const res = await api<{ is_new_user?: boolean }>(
+        "/api/v1/reseller/agents/invite",
+        {
+          method: "POST",
+          body: JSON.stringify({ email: email.toLowerCase().trim(), name: name.trim() }),
+        },
+      );
+      toast.success(
+        res?.is_new_user === false
+          ? "Akun yang sudah terdaftar ditambahkan sebagai agent"
+          : "Undangan terkirim",
+      );
       onInvited();
     } catch (e) {
       setErr((e as Error).message);
@@ -247,8 +256,9 @@ function InviteAgentDialog({
         <DialogHeader>
           <DialogTitle>Undang Agent</DialogTitle>
           <DialogDescription>
-            Agent akan terima email invitation untuk set password + aktifkan
-            akun. Berlaku 7 hari.
+            Email baru akan menerima undangan untuk set password (berlaku 7
+            hari). Email yang sudah punya akun langsung ditambahkan sebagai
+            agent, tanpa undangan.
           </DialogDescription>
         </DialogHeader>
 

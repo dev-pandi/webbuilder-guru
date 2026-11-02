@@ -175,9 +175,23 @@ func (h *Handler) InviteAgent(c *fiber.Ctx) error {
 	if !strings.Contains(req.Email, "@") {
 		return httpx.BadRequest(c, "email tidak valid")
 	}
-	// Guard: email sudah pernah jadi user? Reject supaya tidak konflik role.
+	// Email sudah terdaftar → promosikan user itu jadi agent, bukan tolak.
+	// User lama sudah punya password, jadi tidak ada invitation yang dikirim.
 	if existing, _ := h.authRepo.GetByEmail(c.Context(), req.Email); existing != nil {
-		return httpx.Conflict(c, "email sudah terdaftar sebagai user")
+		if err := h.attachExistingAgent(c, caller, existing); err != nil {
+			return err
+		}
+		h.logAudit(c.Context(), caller.User.ID, audit.EventAgentInvited, "user", existing.ID.String(), map[string]any{
+			"email":       req.Email,
+			"is_new_user": false,
+			"from_role":   existing.Role,
+		})
+		return httpx.OK(c, fiber.Map{
+			"agent_id":    existing.ID.String(),
+			"email":       existing.Email,
+			"is_new_user": false,
+			"invite_sent": false,
+		})
 	}
 
 	raw, _, err := h.authRepo.CreateInvitation(
@@ -195,9 +209,39 @@ func (h *Handler) InviteAgent(c *fiber.Ctx) error {
 	})
 	return httpx.Created(c, fiber.Map{
 		"email":       req.Email,
+		"is_new_user": true,
 		"invite_sent": true,
 		"expires_in":  "7 hari",
 	})
+}
+
+// attachExistingAgent — jadikan user existing sebagai agent caller.
+//
+// Ditolak kalau: sudah agent (milik caller atau reseller lain), rolenya
+// reseller/admin, atau masih dikelola sebagai client oleh manager lain —
+// jadi agent sekaligus client orang lain itu status yang bertentangan.
+func (h *Handler) attachExistingAgent(c *fiber.Ctx, caller *callerCtx, existing *auth.User) error {
+	if existing.Role == auth.RoleAgent && existing.ParentResellerID != nil {
+		if *existing.ParentResellerID == caller.User.ID {
+			return httpx.Conflict(c, "email ini sudah menjadi agent Anda")
+		}
+		return httpx.Conflict(c, "email ini sudah menjadi agent reseller lain")
+	}
+	if existing.Role != auth.RoleClient && existing.Role != auth.RoleAgent {
+		return httpx.Conflict(c, "email sudah terdaftar sebagai "+existing.Role+", tidak bisa dijadikan agent")
+	}
+	if assign, _ := h.repo.FindActiveAssignmentByClient(c.Context(), existing.ID); assign != nil {
+		return httpx.Conflict(c, "email ini sedang dikelola sebagai client oleh manager lain — lepaskan dulu sebelum dijadikan agent")
+	}
+
+	if err := h.authRepo.AttachAgent(c.Context(), existing.ID, caller.User.ID); err != nil {
+		if errors.Is(err, auth.ErrAgentAttachBlocked) {
+			// Kalah balapan dengan reseller lain antara cek di atas dan UPDATE.
+			return httpx.Conflict(c, "user ini baru saja menjadi agent reseller lain")
+		}
+		return httpx.Internal(c, "attach agent failed")
+	}
+	return nil
 }
 
 // ---------------- List Agents ----------------
