@@ -81,10 +81,11 @@ type updateReq struct {
 
 func (h *Handler) List(c *fiber.Ctx) error {
 	uid := auth.UserIDFrom(c)
-	// Union: owned + collaborator (via site_members). Reseller/agent lihat
-	// situs klien yang di-assign ke mereka; client tetap lihat cuma milik
-	// sendiri (yang otomatis include mereka sebagai 'owner' role).
-	out, err := h.repo.ListSitesAccessibleTo(c.Context(), uid)
+	// Owner saja. Dulu ikut menyertakan situs yang cuma di-kolaborasikan, jadi
+	// agent melihat situs kliennya bercampur dengan situsnya sendiri di
+	// "Situs Saya". Situs klien tetap terjangkau lewat /collaborations
+	// (halaman Kolaborator di portal agent/reseller).
+	out, err := h.repo.ListSitesAccessibleTo(c.Context(), uid, RoleOwner)
 	if err != nil {
 		return httpx.Internal(c, "list failed")
 	}
