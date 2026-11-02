@@ -6,9 +6,8 @@
 // Endpoint sama untuk kedua role (backend /reseller/clients dan /agent/clients
 // keduanya route ke handler yang sama + ownership check via assignment).
 
-import { useEffect, useMemo, useState } from "react";
+import {useEffect, useState} from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -18,18 +17,14 @@ import {
   Globe2,
   Loader2,
   Mail,
-  Save,
+  Pencil,
   User,
 } from "lucide-react";
-import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 
 type Client = {
   id: string;
@@ -161,10 +156,7 @@ export function ClientDetail({
           <TabsTrigger value="domains">Domain</TabsTrigger>
         </TabsList>
         <TabsContent value="profile" className="mt-4">
-          <ProfileTab
-            client={client}
-            onSaved={(updated) => setClient(updated)}
-          />
+          <ProfileTab client={client} basePath={basePath} />
         </TabsContent>
         <TabsContent value="domains" className="mt-4">
           <DomainsTab
@@ -190,224 +182,54 @@ function BackLink({ basePath }: { basePath: string }) {
 
 // -------- Tab 1: Profil (edit) --------
 
+// ProfileTab — tampilan saja. Penyuntingan pindah ke halaman tersendiri
+// supaya Provinsi/Kota bisa memakai ProvinceSelect/CitySelect, yang terlalu
+// sesak di dalam tab.
 function ProfileTab({
   client,
-  onSaved,
+  basePath,
 }: {
   client: Client;
-  onSaved: (c: Client) => void;
+  basePath: string;
 }) {
-  const router = useRouter();
-  const [form, setForm] = useState({
-    name: client.name ?? "",
-    phone_number: client.phone_number ?? "",
-    address: client.address ?? "",
-    city: client.city ?? "",
-    state: client.state ?? "",
-    postal_code: client.postal_code ?? "",
-    nik: client.nik ?? "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    setForm({
-      name: client.name ?? "",
-      phone_number: client.phone_number ?? "",
-      address: client.address ?? "",
-      city: client.city ?? "",
-      state: client.state ?? "",
-      postal_code: client.postal_code ?? "",
-      nik: client.nik ?? "",
-    });
-  }, [client]);
-
-  function set<K extends keyof typeof form>(k: K, v: string) {
-    setForm((f) => ({ ...f, [k]: v }));
-  }
-
-  const dirty = useMemo(() => {
-    return (
-      form.name !== (client.name ?? "") ||
-      form.phone_number !== (client.phone_number ?? "") ||
-      form.address !== (client.address ?? "") ||
-      form.city !== (client.city ?? "") ||
-      form.state !== (client.state ?? "") ||
-      form.postal_code !== (client.postal_code ?? "") ||
-      form.nik !== (client.nik ?? "")
-    );
-  }, [form, client]);
-
-  async function submit() {
-    setErr(null);
-    if (!form.name.trim()) {
-      setErr("Nama wajib diisi");
-      return;
-    }
-    if (form.nik && !/^\d{16}$/.test(form.nik)) {
-      setErr("NIK harus tepat 16 digit angka");
-      return;
-    }
-    setSaving(true);
-    try {
-      // Endpoint sama untuk reseller & agent (route handler shared).
-      const updated = await api<Client>(`/api/v1/reseller/clients/${client.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(form),
-      });
-      toast.success("Profil klien diperbarui");
-      onSaved(updated);
-      router.refresh();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
+  const rows: Array<[string, string]> = [
+    ["Nama", client.name || "—"],
+    ["Email", client.email],
+    ["Nomor HP", client.phone_number || "—"],
+    ["NIK", client.nik || "—"],
+    ["Alamat", client.address || "—"],
+    ["Provinsi", client.state || "—"],
+    ["Kota/Kabupaten", client.city || "—"],
+    ["Kode Pos", client.postal_code || "—"],
+  ];
 
   return (
     <Card>
-      <CardContent className="space-y-5 p-5 sm:p-6">
-        <div>
-          <h3 className="text-base font-semibold">Data Kontak</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Dipakai untuk WHOIS + invoice registrasi domain. Provinsi & NIK
-            wajib untuk TLD .id per regulasi Kemenkominfo.
-          </p>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-name">Nama *</Label>
-            <Input
-              id="cd-name"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-email">Email</Label>
-            <Input
-              id="cd-email"
-              value={client.email}
-              disabled
-              className="font-mono text-xs"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Email tidak bisa diubah dari sini.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-phone">Nomor HP</Label>
-            <Input
-              id="cd-phone"
-              type="tel"
-              value={form.phone_number}
-              onChange={(e) => set("phone_number", e.target.value)}
-              placeholder="+62812xxxxxxx"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-nik">
-              NIK (KTP){" "}
-              <span className="text-[10px] font-normal text-muted-foreground">
-                — wajib untuk .id
-              </span>
-            </Label>
-            <Input
-              id="cd-nik"
-              value={form.nik}
-              onChange={(e) =>
-                set("nik", e.target.value.replace(/\D/g, "").slice(0, 16))
-              }
-              placeholder="16 digit NIK"
-              inputMode="numeric"
-              maxLength={16}
-              className="font-mono"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="cd-address">Alamat</Label>
-          <Textarea
-            id="cd-address"
-            rows={2}
-            value={form.address}
-            onChange={(e) => set("address", e.target.value)}
-            placeholder="Jl. Contoh No. 10..."
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-city">Kota</Label>
-            <Input
-              id="cd-city"
-              value={form.city}
-              onChange={(e) => set("city", e.target.value)}
-              placeholder="Jakarta"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-state">
-              Provinsi{" "}
-              <span className="text-[10px] font-normal text-muted-foreground">
-                *
-              </span>
-            </Label>
-            <Input
-              id="cd-state"
-              value={form.state}
-              onChange={(e) => set("state", e.target.value)}
-              placeholder="DKI Jakarta"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cd-postal">Kode Pos</Label>
-            <Input
-              id="cd-postal"
-              value={form.postal_code}
-              onChange={(e) => set("postal_code", e.target.value)}
-              placeholder="10110"
-            />
-          </div>
-        </div>
-
-        {err && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            {err}
-          </div>
-        )}
-
-        <div className="flex items-center justify-end gap-2 border-t pt-4">
-          {dirty && (
-            <span className="mr-auto text-xs text-muted-foreground">
-              Ada perubahan belum disimpan.
-            </span>
-          )}
-          <Button
-            onClick={submit}
-            disabled={!dirty || saving}
-            className="gap-1.5"
-          >
-            {saving ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Save className="size-3.5" />
-            )}
-            Simpan Perubahan
+      <CardContent className="space-y-4 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-sm font-semibold">Data Klien</h2>
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link href={`${basePath}/${client.id}/edit`}>
+              <Pencil className="size-3.5" />
+              Ubah
+            </Link>
           </Button>
         </div>
+
+        <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+          {rows.map(([label, value]) => (
+            <div key={label} className="min-w-0">
+              <dt className="text-xs uppercase tracking-wider text-muted-foreground">
+                {label}
+              </dt>
+              <dd className="mt-0.5 break-words text-sm">{value}</dd>
+            </div>
+          ))}
+        </dl>
       </CardContent>
     </Card>
   );
 }
-
-// -------- Tab 2: Domain --------
 
 function DomainsTab({
   clientID,
