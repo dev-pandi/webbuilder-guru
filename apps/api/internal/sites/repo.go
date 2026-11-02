@@ -64,19 +64,27 @@ func (r *Repo) CountByUser(ctx context.Context, userID uuid.UUID) (int, error) {
 	return n, err
 }
 
-func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, templateID *uuid.UUID, theme json.RawMessage) (*Site, error) {
+// EnforceSiteLimit — batas jumlah situs, dipakai HANYA oleh jalur tanpa
+// domain (POST /sites). Situs yang lahir dari pembelian domain tidak dibatasi:
+// tiap situs di sana sudah dibayar lewat domainnya sendiri (1 domain = 1
+// situs), jadi menolak situs ke-6 berarti menolak domain yang sudah dibeli.
+func (r *Repo) EnforceSiteLimit(ctx context.Context, userID uuid.UUID) error {
 	n, err := r.CountByUser(ctx, userID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if n >= MaxSitesPerUser {
-		return nil, ErrLimitReached
+		return ErrLimitReached
 	}
+	return nil
+}
+
+func (r *Repo) Create(ctx context.Context, userID uuid.UUID, slug, name string, templateID *uuid.UUID, theme json.RawMessage) (*Site, error) {
 	if theme == nil {
 		theme = json.RawMessage(`{}`)
 	}
 	var s Site
-	err = r.pool.QueryRow(ctx, `
+	err := r.pool.QueryRow(ctx, `
 		INSERT INTO sites (user_id, slug, name, template_id, theme_json)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING `+siteCols+`

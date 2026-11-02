@@ -111,6 +111,14 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if req.Slug == "" {
 		req.Slug = Slugify(req.Name)
 	}
+	// Jalur ini membuat situs tanpa pembelian domain, jadi batas per user
+	// tetap berlaku di sini. Jalur beli-domain (sites/from-template) tidak.
+	if err := h.repo.EnforceSiteLimit(c.Context(), uid); err != nil {
+		if errors.Is(err, ErrLimitReached) {
+			return httpx.Forbidden(c, "site limit reached")
+		}
+		return httpx.Internal(c, "create failed")
+	}
 	s, err := h.createWithSlugRetry(c, uid, req)
 	if err != nil {
 		return err
@@ -138,9 +146,6 @@ func (h *Handler) createWithSlugRetry(c *fiber.Ctx, uid uuid.UUID, req createReq
 			}
 			req.Slug = base + "-" + randomSuffix()
 			continue
-		}
-		if errors.Is(err, ErrLimitReached) {
-			return nil, httpx.Forbidden(c, "site limit reached")
 		}
 		return nil, httpx.Internal(c, "create failed")
 	}
