@@ -8,7 +8,7 @@
 //   4. setTokens + redirect ke portal sesuai role
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -33,11 +33,12 @@ type InviteMeta = {
   expires_at: string;
 };
 
-export default function AcceptInvitePage({
-  params,
-}: {
-  params: { token: string };
-}) {
+export default function AcceptInvitePage() {
+  // useParams(), bukan prop `params`: sejak Next 16 params adalah Promise,
+  // jadi membaca .token dari prop itu menghasilkan undefined di client —
+  // request jadi /invitations/undefined dan halaman selalu bilang undangan
+  // tidak berlaku. 41 halaman dinamis lain sudah memakai hook ini.
+  const { token } = useParams<{ token: string }>();
   const router = useRouter();
   const [meta, setMeta] = useState<InviteMeta | null>(null);
   const [loadingMeta, setLoadingMeta] = useState(true);
@@ -52,7 +53,7 @@ export default function AcceptInvitePage({
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api<InviteMeta>(`/api/v1/invitations/${params.token}`, { auth: false })
+    api<InviteMeta>(`/api/v1/invitations/${token}`, { auth: false })
       .then((m) => {
         setMeta(m);
         // Nothing to prefill for name — inviter tidak isi nama untuk agent invite.
@@ -65,7 +66,7 @@ export default function AcceptInvitePage({
         }
       })
       .finally(() => setLoadingMeta(false));
-  }, [params.token]);
+  }, [token]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,7 +86,7 @@ export default function AcceptInvitePage({
     setSubmitting(true);
     try {
       const res = await api<{ access_token: string; refresh_token: string }>(
-        `/api/v1/invitations/${params.token}/accept`,
+        `/api/v1/invitations/${token}/accept`,
         {
           method: "POST",
           auth: false,
