@@ -7,5 +7,5 @@
 import { MyCollaborationsList } from "@/components/collaborators/MyCollaborationsList";
 
 export default function AgentCollaboratorsPage() {
-  return <MyCollaborationsList />;
+  return <MyCollaborationsList basePath="/agent" />;
 }

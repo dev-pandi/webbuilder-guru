@@ -8,5 +8,5 @@
 import { MyCollaborationsList } from "@/components/collaborators/MyCollaborationsList";
 
 export default function ResellerCollaboratorsPage() {
-  return <MyCollaborationsList />;
+  return <MyCollaborationsList basePath="/reseller" />;
 }
