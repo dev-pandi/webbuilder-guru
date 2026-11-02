@@ -43,8 +43,12 @@ apps/api/        Go Fiber API
 
 apps/web/        Dashboard + visual editor (private, JWT)
 apps/renderer/   Public multi-tenant SSR
+apps/wp/         Port WordPress (theme + plugin) — lihat apps/wp/README.md
 infra/caddy/     Caddyfile
 ```
+
+Kedua app Next memakai `proxy.ts`, bukan `middleware.ts` — konvensi Next 16
+(nama lama deprecated). Di situlah nonce + CSP per-request dibuat.
 
 ## Konvensi API
 
@@ -188,6 +192,43 @@ npm run typecheck
 npm run build        # butuh API_URL
 ```
 
+**WordPress (`apps/wp/`)** — tidak ada di CI, verifikasi manual:
+
+```bash
+php -l apps/wp/plugin-basic/rumah-digital-guru.php   # syntax saja
+```
+
+`php -l` TIDAK membuktikan apa-apa soal perilaku WordPress. Rewrite rule,
+registrasi CPT, dan block template hanya bisa dipercaya setelah dijalankan.
+Resep uji (butuh Docker), bind-mount langsung dari repo supaya edit langsung
+terlihat:
+
+```bash
+docker network create rdgnet
+docker run -d --name rdg-db --network rdgnet \
+  -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=wp \
+  -e MARIADB_USER=wp -e MARIADB_PASSWORD=wp mariadb:10.11
+docker run -d --name rdg-wp --network rdgnet -p 8099:80 \
+  -e WORDPRESS_DB_HOST=rdg-db -e WORDPRESS_DB_USER=wp \
+  -e WORDPRESS_DB_PASSWORD=wp -e WORDPRESS_DB_NAME=wp \
+  -v "$PWD/apps/wp/plugin-basic:/var/www/html/wp-content/plugins/rumah-digital-guru" \
+  -v "$PWD/apps/wp/theme:/var/www/html/wp-content/themes/rumah-digital-guru" \
+  wordpress:6.7-apache
+```
+
+WP-CLI jalan lewat container terpisah, dan WAJIB diberi env DB yang sama —
+`wp-config.php` membacanya saat runtime, kalau tidak ia fallback ke host
+`mysql` dan gagal konek:
+
+```bash
+docker run --rm --network rdgnet --volumes-from rdg-wp --user 33:33 \
+  -e WORDPRESS_DB_HOST=rdg-db -e WORDPRESS_DB_USER=wp \
+  -e WORDPRESS_DB_PASSWORD=wp -e WORDPRESS_DB_NAME=wp \
+  wordpress:cli wp <perintah>
+```
+
+Bersihkan dengan `docker rm -f rdg-wp rdg-db && docker network rm rdgnet`.
+
 Tidak perlu start dev server otomatis kecuali user minta. Kalau perlu dev:
 `go run ./cmd/server` (API) atau `air` (hot-reload — install `go install github.com/air-verse/air@latest`, config di [apps/api/.air.toml](../apps/api/.air.toml)), `npm run dev` (web), `npm run dev -- -p 3001` (renderer).
 
@@ -316,6 +357,74 @@ Blog platform-level (bukan per-site) untuk SEO + onboarding guru. Terpisah dari
 - Seed idempotent `platform_articles.SeedIfEmpty` — 6 artikel contoh (Kenapa Guru
   Perlu Website, Cara Memulai 15 Menit, Tips Menulis, Memilih Domain .id, Peluncuran
   PANDI × UPI, Cerita Guru Desa). Dipanggil goroutine di `main.go` dengan 30s timeout.
+
+## Akses Situs Kolaborator (`site_members`)
+
+Siapa boleh mengedit sebuah situs TIDAK ditentukan oleh hubungan bisnis
+(assignment reseller/agent ke klien), melainkan oleh baris di `site_members`.
+Ini sering disalahpahami.
+
+Hanya ada dua cara masuk ke `site_members`:
+
+1. **Owner** — `EnsureOwner` saat situs dibuat.
+2. **Editor** — `AddMember`, dan fungsi itu punya **satu** pemanggil di seluruh
+   codebase: [templates/handler.go](../apps/api/internal/templates/handler.go),
+   saat situs dibuat dari pembelian domain on-behalf-of. Syaratnya
+   `purchase.PurchasedBy != nil && != ownerID`.
+
+Konsekuensi yang perlu diingat sebelum menjanjikan fitur:
+
+- Agent hanya bisa mengedit situs klien **yang dia buatkan lewat alur beli
+  domain on-behalf-of** — bukan semua situs klien yang di-assign kepadanya.
+- Klien yang beli domain dan membuat situsnya sendiri tidak bisa dibantu
+  agennya, dan ini tidak bisa diperbaiki lewat UI.
+- Situs yang lahir sebelum migration `0028_site_members.sql` hanya di-backfill
+  baris `owner` — tidak ada agent/reseller yang ikut surut.
+- **Tidak ada endpoint tambah-member.** Route yang ada cuma `GET
+  /sites/:id/members`, `DELETE .../:user_id`, dan `POST /sites/:id/leave`.
+  Pemilik situs pun tidak bisa mengundang kolaborator.
+
+`ListManagedClientIDs` di `reseller/repo.go` memang mengambil klien se-tim,
+tapi itu untuk aggregate view (invoice, purchase) — bukan izin edit.
+
+## Agent & Reseller
+
+`users.parent_reseller_id` adalah satu-satunya penghubung agent ke reseller,
+dan kolom itu HANYA ditulis di `INSERT INTO users` di
+[auth/invitation_repo.go](../apps/api/internal/auth/invitation_repo.go). Tidak
+ada `UPDATE ... SET parent_reseller_id` di mana pun.
+
+Artinya reseller hanya bisa invite email yang **belum terdaftar** — handler
+menolak 409 kalau user sudah ada. User existing tidak bisa dijadikan agent
+tanpa menambah jalur UPDATE yang belum pernah ada.
+
+Jalur client berbeda dan lebih matang: client memakai tabel `client_assignments`
+terpisah, jadi user existing ber-role client bisa diambil alih (dengan guard
+kalau sudah dikelola manager lain).
+
+## Port WordPress (`apps/wp/`)
+
+Tema PANDI × UPI di-port ke WordPress. Detail lengkap di
+[apps/wp/README.md](../apps/wp/README.md); yang wajib diketahui sebelum
+menyentuh folder ini:
+
+- **Tiga artefak terpisah**, bukan satu plugin ber-flag: theme gratis, plugin
+  Basic gratis, plugin Pro berbayar. Ini syarat repo wordpress.org — plugin di
+  sana dilarang memuat fitur yang dikunci sampai dibayar, jadi paket gratis
+  harus NOL kode Pro.
+- **CPT didaftarkan dari plugin, tidak pernah dari theme.** Kalau dari theme,
+  guru yang berganti theme kehilangan seluruh artikel dan materinya.
+- **URL `/{rubrik}/{slug}`** dibentuk manual lewat `add_rewrite_rule` +
+  filter `post_type_link`/`term_link`, bukan argumen `rewrite` bawaan: core
+  mengganti slug taxonomy kosong dengan nama taxonomy, dan `%placeholder%` di
+  slug post type tidak disubstitusi. Aturan dibangun dari term asli (di-cache
+  di option) — pernah ada bug 404 saat guru menambah rubrik sendiri.
+- **Rantai CSS**: `GuruStyles` (renderer) → `exports/guru_css.go` →
+  `apps/wp/theme/assets/guru.css`. Ubah satu, salin ke semua, kalau tidak
+  tampilan WP/export menyimpang dari situs live.
+- **Empat warna, 17 token**: `theme.json` hanya mengekspos primary/secondary/
+  bg/fg; sisa token `--guru-*` diturunkan lewat `color-mix()`. Jangan
+  membekukan 17 warna satu per satu.
 
 ## Admin Impersonation Pattern (`GetOwnedOrAdmin`)
 
