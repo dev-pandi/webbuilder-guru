@@ -475,10 +475,10 @@ func schoolPages(cv variantCopy, variant string) []map[string]any {
 				{"title": "Alumni berprestasi", "desc": "85% diterima di PTN top (UI, ITB, UGM) atau universitas luar negeri (NUS, Monash, RMIT)."},
 			}),
 			block("BentoGrid", map[string]any{
-				"title": "Tiga jalur belajar — pilih yang cocok untuk anak Anda",
+				"title": "Jalur belajar & layanan pendukung",
 				"items": []map[string]any{
-					{"title": "Kelas Reguler", "desc": "Kurikulum Nasional + bahasa Inggris & coding intensif.", "size": "large"},
-					{"title": "Kelas Bilingual", "desc": "Dwibahasa Indonesia/Inggris — persiapan sekolah internasional.", "size": "wide"},
+					{"title": "Kelas Reguler", "desc": "Kurikulum Nasional + bahasa Inggris & coding intensif.", "size": "wide"},
+					{"title": "Kelas Bilingual", "desc": "Dwibahasa Indonesia/Inggris — persiapan sekolah internasional."},
 					{"title": "Kelas Akselerasi", "desc": "Percepatan untuk siswa berbakat istimewa (CIBI)."},
 					{"title": "Home Visit", "desc": "Kunjungan guru ke rumah setiap semester."},
 					{"title": "Konseling", "desc": "Psikolog anak siap 5 hari/minggu."},
@@ -561,7 +561,7 @@ func schoolPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Empat pilar nilai yang kami pegang",
 				"items": []map[string]any{
-					{"title": "Integritas", "desc": "Jujur dan bertanggung jawab dalam setiap tindakan — di kelas, di lapangan, di rumah.", "size": "large"},
+					{"title": "Integritas", "desc": "Jujur dan bertanggung jawab dalam setiap tindakan — di kelas, di lapangan, di rumah.", "size": "wide"},
 					{"title": "Inovasi", "desc": "Selalu mencari cara yang lebih baik untuk belajar dan mengajar."},
 					{"title": "Inklusi", "desc": "Pendidikan untuk semua tanpa memandang latar belakang.", "size": "wide"},
 					{"title": "Kolaborasi", "desc": "Bekerja sama membangun komunitas belajar yang positif."},
@@ -598,9 +598,9 @@ func schoolPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "15+ ekstrakurikuler — cari passion kamu",
 				"items": []map[string]any{
-					{"title": "Robotika", "desc": "Juara nasional 2023 & 2024", "size": "large"},
+					{"title": "Robotika", "desc": "Juara nasional 2023 & 2024"},
 					{"title": "Futsal & Basket", "desc": "Latihan rutin + kompetisi"},
-					{"title": "Paduan Suara", "desc": "Tampil di kompetisi kota", "size": "wide"},
+					{"title": "Paduan Suara", "desc": "Tampil di kompetisi kota"},
 					{"title": "Pramuka", "desc": "Wajib kls 4–9"},
 					{"title": "Seni Lukis", "desc": "Ekspresi kreatif"},
 					{"title": "Olimpiade", "desc": "Mat/IPA/Bahasa"},
@@ -987,8 +987,8 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Project pilihan",
 				"items": []map[string]any{
-					{"title": "Web Builder SaaS", "desc": "Multi-tenant platform · 500+ active users · Next.js + Go", "size": "large"},
-					{"title": "E-commerce UMKM", "desc": "50+ merchant · payment gateway · Rp 2M GMV/bulan", "size": "wide"},
+					{"title": "Web Builder SaaS", "desc": "Multi-tenant platform · 500+ active users · Next.js + Go", "size": "wide"},
+					{"title": "E-commerce UMKM", "desc": "50+ merchant · payment gateway · Rp 2M GMV/bulan"},
 					{"title": "Dashboard Analytics", "desc": "Realtime · <100ms latency · ClickHouse"},
 					{"title": "LMS", "desc": "5.000+ siswa aktif"},
 					{"title": "Klinik Digital", "desc": "Rekam medis + jadwal dokter"},
@@ -1043,8 +1043,8 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Web Applications — client work",
 				"items": []map[string]any{
-					{"title": "E-commerce UMKM", "desc": "50+ merchant · Rp 2M GMV/bulan · Next.js + Stripe", "size": "large"},
-					{"title": "Dashboard Analytics", "desc": "Realtime · <100ms · React + Go + ClickHouse", "size": "wide"},
+					{"title": "E-commerce UMKM", "desc": "50+ merchant · Rp 2M GMV/bulan · Next.js + Stripe", "size": "wide"},
+					{"title": "Dashboard Analytics", "desc": "Realtime · <100ms · React + Go + ClickHouse"},
 					{"title": "LMS Platform", "desc": "5.000+ siswa · Next.js + Node"},
 					{"title": "Sistem Klinik", "desc": "Rekam medis · Vue + Laravel"},
 					{"title": "Fintech MVP", "desc": "OJK sandbox · Go + Postgres"},
@@ -1153,8 +1153,8 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Selain coding",
 				"items": []map[string]any{
-					{"title": "Fotografi", "desc": "Street photography weekend — Instagram @namasaya.photo · 40+ kota", "size": "large"},
-					{"title": "Gaming", "desc": "RPG & indie games", "size": "wide"},
+					{"title": "Fotografi", "desc": "Street photography weekend — Instagram @namasaya.photo · 40+ kota", "size": "wide"},
+					{"title": "Gaming", "desc": "RPG & indie games"},
 					{"title": "Membaca", "desc": "Sci-fi, bisnis, psychology"},
 					{"title": "Berbagi", "desc": "Mentor komunitas dev lokal"},
 					{"title": "Lari", "desc": "5K/week · half-marathon 2024"},
@@ -1317,10 +1317,10 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Learning path yang saya rekomendasikan",
 				"items": []map[string]any{
-					{"title": "Kelas 10 — Fondasi", "desc": "Aljabar → persamaan → fungsi. 3 bulan konsisten cukup untuk fondasi solid.", "size": "lg"},
-					{"title": "Kelas 11 — Trigonometri + Limit", "desc": "Fase transisi yang bikin banyak siswa kesulitan. Wajib pelan-pelan.", "size": "md"},
-					{"title": "Kelas 12 — Kalkulus + UTBK", "desc": "Latihan soal HOTS 200+ dengan target skor UTBK 700+.", "size": "md"},
-					{"title": "Olimpiade — Extra Track", "desc": "Untuk yang serius kompetisi. Sesi tambahan tiap Sabtu.", "size": "lg"},
+					{"title": "Kelas 10 — Fondasi", "desc": "Aljabar → persamaan → fungsi. 3 bulan konsisten cukup untuk fondasi solid.", "size": "wide"},
+					{"title": "Kelas 11 — Trigonometri + Limit", "desc": "Fase transisi yang bikin banyak siswa kesulitan. Wajib pelan-pelan."},
+					{"title": "Kelas 12 — Kalkulus + UTBK", "desc": "Latihan soal HOTS 200+ dengan target skor UTBK 700+."},
+					{"title": "Olimpiade — Extra Track", "desc": "Untuk yang serius kompetisi. Sesi tambahan tiap Sabtu.", "size": "wide"},
 				},
 			}),
 			proTestimonials("Cerita siswa yang pakai materi gratis", []map[string]any{
@@ -1382,10 +1382,10 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Jadwal reguler mingguan",
 				"items": []map[string]any{
-					{"title": "Senin/Rabu/Jumat sore", "desc": "16.00–17.30 Kelas 10 · 18.00–19.30 Kelas 11 · 19.30–21.00 Kelas 12", "size": "lg"},
-					{"title": "Selasa/Kamis siang", "desc": "09.00–10.30 & 13.00–14.30 slot privat 1-on-1", "size": "md"},
-					{"title": "Sabtu pagi", "desc": "08.00–10.00 Kelas Olimpiade · 10.30–12.00 Pembahasan Soal Sulit", "size": "md"},
-					{"title": "Minggu libur", "desc": "Family day — WhatsApp masih standby untuk emergency PR", "size": "lg"},
+					{"title": "Senin/Rabu/Jumat sore", "desc": "16.00–17.30 Kelas 10 · 18.00–19.30 Kelas 11 · 19.30–21.00 Kelas 12", "size": "wide"},
+					{"title": "Selasa/Kamis siang", "desc": "09.00–10.30 & 13.00–14.30 slot privat 1-on-1"},
+					{"title": "Sabtu pagi", "desc": "08.00–10.00 Kelas Olimpiade · 10.30–12.00 Pembahasan Soal Sulit"},
+					{"title": "Minggu libur", "desc": "Family day — WhatsApp masih standby untuk emergency PR", "size": "wide"},
 				},
 			}),
 			block("BorderBeamCard", map[string]any{
@@ -1465,10 +1465,10 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Pencapaian yang paling saya syukuri",
 				"items": []map[string]any{
-					{"title": "1.200+ siswa lulus PTN", "desc": "94% masuk pilihan pertama. Yang paling berkesan: siswa dari Papua yang nggak pernah les online sebelumnya, akhirnya masuk FKG UGM.", "size": "lg"},
-					{"title": "12 medali OSN Nasional", "desc": "3 emas · 5 perak · 4 perunggu. Semua siswa reguler yang saya coach.", "size": "md"},
-					{"title": "Kenaikan rata-rata 30 poin", "desc": "Dalam 3 bulan kelas reguler. Diverifikasi dari 200+ data siswa 2023–2025.", "size": "md"},
-					{"title": "700+ siswa 'lifetime'", "desc": "Siswa yang tetap chat WhatsApp minta saran karir bahkan setelah lulus PTN. Ini yang paling bikin bangga.", "size": "lg"},
+					{"title": "1.200+ siswa lulus PTN", "desc": "94% masuk pilihan pertama. Yang paling berkesan: siswa dari Papua yang nggak pernah les online sebelumnya, akhirnya masuk FKG UGM.", "size": "wide"},
+					{"title": "12 medali OSN Nasional", "desc": "3 emas · 5 perak · 4 perunggu. Semua siswa reguler yang saya coach."},
+					{"title": "Kenaikan rata-rata 30 poin", "desc": "Dalam 3 bulan kelas reguler. Diverifikasi dari 200+ data siswa 2023–2025."},
+					{"title": "700+ siswa 'lifetime'", "desc": "Siswa yang tetap chat WhatsApp minta saran karir bahkan setelah lulus PTN. Ini yang paling bikin bangga.", "size": "wide"},
 				},
 			}),
 			proTestimonials("Kata orang-orang yang kenal saya", []map[string]any{
@@ -1668,12 +1668,12 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Peta topik blog",
 				"items": []map[string]any{
-					{"title": "Teknologi & Coding", "desc": "42 essay. Bukan tutorial 'how-to' — lebih ke 'kapan dipakai, kapan jangan'. Contoh: kenapa saya berhenti pakai TypeScript untuk side project.", "size": "lg"},
-					{"title": "Produktivitas", "desc": "38 essay. Workflow yang tested, bukan hype. Contoh: cara saya baca 40 buku setahun tanpa jadi Goodreads slave.", "size": "md"},
-					{"title": "Buku & Belajar", "desc": "32 essay. Review buku + framework belajar. Contoh: 5 buku non-fiksi wajib untuk software engineer 2026.", "size": "md"},
-					{"title": "Karir Tech", "desc": "28 essay. Negosiasi salary, memilih company, cari mentor. Contoh: kapan resign — dan kapan bertahan.", "size": "lg"},
-					{"title": "Refleksi Pribadi", "desc": "22 essay. Pelajaran dari kegagalan, keputusan salah, dan momen 'aha' yang lucu-nya baru datang setahun kemudian.", "size": "md"},
-					{"title": "Mental Model", "desc": "18 essay. Framework berpikir dari Munger, Kahneman, Taleb — diterapkan ke keputusan nyata (bukan cuma diquote).", "size": "md"},
+					{"title": "Teknologi & Coding", "desc": "42 essay. Bukan tutorial 'how-to' — lebih ke 'kapan dipakai, kapan jangan'. Contoh: kenapa saya berhenti pakai TypeScript untuk side project."},
+					{"title": "Produktivitas", "desc": "38 essay. Workflow yang tested, bukan hype. Contoh: cara saya baca 40 buku setahun tanpa jadi Goodreads slave."},
+					{"title": "Buku & Belajar", "desc": "32 essay. Review buku + framework belajar. Contoh: 5 buku non-fiksi wajib untuk software engineer 2026."},
+					{"title": "Karir Tech", "desc": "28 essay. Negosiasi salary, memilih company, cari mentor. Contoh: kapan resign — dan kapan bertahan."},
+					{"title": "Refleksi Pribadi", "desc": "22 essay. Pelajaran dari kegagalan, keputusan salah, dan momen 'aha' yang lucu-nya baru datang setahun kemudian."},
+					{"title": "Mental Model", "desc": "18 essay. Framework berpikir dari Munger, Kahneman, Taleb — diterapkan ke keputusan nyata (bukan cuma diquote)."},
 				},
 			}),
 			proFeatureGrid(variant, "Baru pertama kali? Mulai dari 5 essay favorit saya", []map[string]any{
@@ -1733,10 +1733,10 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 			block("BentoGrid", map[string]any{
 				"title": "Setup & tools yang saya pakai (jujur)",
 				"items": []map[string]any{
-					{"title": "Hardware", "desc": "MacBook Air M3 2024 · monitor Dell U2723QE · keyboard Keychron Q1 Pro · headphone Sony WH-1000XM5", "size": "lg"},
-					{"title": "Menulis", "desc": "Draft: Obsidian · Editing: iA Writer · Publish: Ghost (self-hosted)", "size": "md"},
-					{"title": "Second brain", "desc": "Obsidian + Readwise + Zotero · 3.400 highlights sync-ed", "size": "md"},
-					{"title": "Productivity", "desc": "Task: Things 3 · Calendar: Fantastical · Kanban: Linear (kerja)", "size": "lg"},
+					{"title": "Hardware", "desc": "MacBook Air M3 2024 · monitor Dell U2723QE · keyboard Keychron Q1 Pro · headphone Sony WH-1000XM5", "size": "wide"},
+					{"title": "Menulis", "desc": "Draft: Obsidian · Editing: iA Writer · Publish: Ghost (self-hosted)"},
+					{"title": "Second brain", "desc": "Obsidian + Readwise + Zotero · 3.400 highlights sync-ed"},
+					{"title": "Productivity", "desc": "Task: Things 3 · Calendar: Fantastical · Kanban: Linear (kerja)", "size": "wide"},
 				},
 			}),
 			statsRow("Yang bikin saya bangga (bukan angka pembaca)", []map[string]any{
