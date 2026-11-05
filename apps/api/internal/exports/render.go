@@ -774,7 +774,12 @@ func renderBlock(b *strings.Builder, blk Block, d *siteData) {
 		if renderProBlock(b, blk) {
 			return
 		}
-		// Unknown block: render comment marker, don't fail.
+		if renderExtraBlock(b, blk) {
+			return
+		}
+		// Blok tak dikenal: marker komentar, jangan gagal. collectUnknownBlocks
+		// (build.go) memindai marker ini dan menulisnya ke berkas peringatan
+		// di dalam zip.
 		fmt.Fprintf(b, `<!-- block:%s -->`, esc(blk.Type))
 	}
 }

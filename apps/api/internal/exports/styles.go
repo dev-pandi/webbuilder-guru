@@ -195,6 +195,7 @@ img { max-width: 100%%; height: auto; display: block; }
 	// so exported HTML matches the live preview.
 	b.WriteString(proCSS)
 	b.WriteString(proExtraCSS)
+	b.WriteString(extraCSS)
 
 	return b.String()
 }
