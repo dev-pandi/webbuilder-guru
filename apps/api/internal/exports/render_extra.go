@@ -6,8 +6,9 @@ package exports
 // TestimonialCard, TestimonialMarquee, FeatureSide.
 //
 // Markup mencerminkan apps/renderer/components/Blocks.tsx; gaya di
-// extraCSS (styles_extra.go). Sisanya yang belum diport adalah keluarga
-// GuruPlus* — itu dilaporkan ke user lewat warning export, bukan senyap.
+// extraCSS (styles_extra.go). Keluarga GuruPlus* sengaja TIDAK diport
+// (keputusan 2026-11-06): interaktif, hanya hidup di situs live, dan
+// dilaporkan ke user lewat PERINGATAN.txt di dalam zip.
 
 import (
 	"fmt"

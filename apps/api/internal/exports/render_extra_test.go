@@ -101,8 +101,10 @@ func TestRenderExtraBlock_AllClassesStyled(t *testing.T) {
 }
 
 // Penjaga parity lintas-sisi: setiap tipe blok yang dirender preview editor
-// (apps/web) harus punya renderer export — kecuali keluarga GuruPlus yang
-// secara sadar dilaporkan lewat PERINGATAN.txt, bukan dirender.
+// (apps/web) harus punya renderer export — kecuali keluarga GuruPlus.
+// KEPUTUSAN (2026-11-06): GuruPlus TIDAK akan diport ke export; blok itu
+// interaktif dan hanya hidup di situs live. Export melaporkannya lewat
+// PERINGATAN.txt. Jangan "memperbaiki" ini tanpa keputusan produk baru.
 // Audit 2026-11-05 menemukan 37 tipe hilang senyap; test ini mencegah
 // kambuh saat blok baru ditambahkan di editor tanpa port ke exporter.
 func TestRenderBlock_CoversEditorPreviewBlocks(t *testing.T) {
@@ -120,7 +122,7 @@ func TestRenderBlock_CoversEditorPreviewBlocks(t *testing.T) {
 	}
 	for typ := range seen {
 		if strings.HasPrefix(typ, "GuruPlus") {
-			continue // belum diport; masuk PERINGATAN.txt by design
+			continue // keputusan produk: live-only, masuk PERINGATAN.txt
 		}
 		var b strings.Builder
 		renderBlock(&b, Block{Type: typ, Props: map[string]any{}}, &siteData{guru: &guruData{}})

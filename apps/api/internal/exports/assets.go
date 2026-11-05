@@ -309,13 +309,14 @@ func buildWarningFile(r *exportReport) string {
 	b.WriteString("Rincian di bawah ini supaya Anda tahu persis apa yang kurang.\n\n")
 
 	if len(r.unknownBlocks) > 0 {
-		b.WriteString("1. Blok yang belum didukung exporter\n")
-		b.WriteString("   Blok berikut tidak punya penerjemah ke HTML statis, jadi bagian\n")
-		b.WriteString("   tersebut kosong di hasil ekspor (di situs live tetap normal):\n")
+		b.WriteString("1. Blok yang tidak ikut terekspor\n")
+		b.WriteString("   Blok berikut hanya berjalan di situs live (butuh fitur interaktif\n")
+		b.WriteString("   yang tidak ada di HTML statis), jadi bagian tersebut kosong di\n")
+		b.WriteString("   hasil ekspor. Di situs live tampilannya tetap normal:\n")
 		for _, t := range r.unknownBlocks {
 			b.WriteString("     - " + t + "\n")
 		}
-		b.WriteString("   Laporkan tipe blok di atas ke tim agar ditambahkan.\n\n")
+		b.WriteString("\n")
 	}
 	if len(r.failedImages) > 0 {
 		b.WriteString("2. Gambar yang gagal diunduh\n")

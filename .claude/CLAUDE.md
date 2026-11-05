@@ -242,7 +242,12 @@ Block tree adalah `BlockData[]` (JSON) dengan bentuk `{ type, props, children?, 
 - **[SortableBlockList.tsx](../apps/web/app/sites/[id]/editor/SortableBlockList.tsx)** — @dnd-kit sortable, panggil `reorderSiblings`/`movePath`.
 - **[useBlocksHistory.ts](../apps/web/app/sites/[id]/editor/useBlocksHistory.ts)** — undo/redo stack, kapasitas fixed.
 
-Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2) renderer di `apps/renderer/app/[...slug]/page.tsx` block dispatch, (3) exporter di `apps/api/internal/exports/`, (4) `styles.go` (CSS) kalau butuh class `.wb-*` baru.
+Ketika menambah tipe blok baru, sentuh berurutan: (1) schema di `PropEditor`, (2) renderer di `apps/renderer/app/[...slug]/page.tsx` block dispatch, (3) exporter di `apps/api/internal/exports/`, (4) `styles.go` (CSS) kalau butuh class `.wb-*` baru. Test `TestRenderBlock_CoversEditorPreviewBlocks` gagal kalau langkah (3) dilewati.
+
+Pengecualian export yang disengaja: keluarga blok `GuruPlus*` TIDAK diport ke
+exporter (keputusan 2026-11-06) — interaktif, hanya hidup di situs live. Export
+melaporkannya ke user lewat `PERINGATAN.txt` di dalam zip. Jangan menulis
+renderer Go untuknya tanpa keputusan produk baru.
 
 ## Renderer (apps/renderer)
 
