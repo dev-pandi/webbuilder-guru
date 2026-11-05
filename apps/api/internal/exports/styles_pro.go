@@ -67,20 +67,18 @@ const proCSS = `
 }
 .wb-pro-lamp { position: relative; overflow: hidden; padding: 8rem 1.5rem 5rem; text-align: center; background: #050518; color: #fff; isolation: isolate; }
 .wb-pro-lamp::before {
-  content: ""; position: absolute; left: 50%; top: 0; transform: translateX(-50%);
-  width: 0; height: 0;
-  border-left: 320px solid transparent;
-  border-right: 320px solid transparent;
-  border-top: 240px solid color-mix(in srgb, var(--color-primary) 70%, transparent);
-  filter: blur(30px); opacity: 0.85; z-index: -1;
+  content: ""; position: absolute; left: 50%; top: -60px; transform: translateX(-50%);
+  width: 720px; height: 320px;
+  background: radial-gradient(ellipse 50% 70% at 50% 0%, color-mix(in srgb, var(--color-primary, #818cf8) 60%, transparent), transparent 72%);
+  filter: blur(24px); opacity: 0.9; z-index: -1;
   animation: wb-lamp-glow 4s ease-in-out infinite;
 }
 .wb-pro-lamp::after {
-  content: ""; position: absolute; left: 0; right: 0; top: 240px; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--color-primary) 50%, transparent);
-  box-shadow: 0 0 24px 4px var(--color-primary);
+  content: ""; position: absolute; left: 15%; right: 15%; top: 240px; height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-primary, #818cf8) 80%, transparent) 50%, transparent);
+  box-shadow: 0 0 16px 1px color-mix(in srgb, var(--color-primary, #818cf8) 55%, transparent);
 }
-.wb-pro-lamp h1 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(180deg, #fff, rgba(255,255,255,0.45)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.wb-pro-lamp h1 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(180deg, #fff 35%, rgba(255,255,255,0.78)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .wb-pro-lamp .wb-pro-sub { margin-top: 1rem; max-width: 32rem; margin-inline: auto; opacity: 0.7; }
 .wb-pro-lamp .wb-pro-cta { display: inline-block; margin-top: 2rem; padding: 0.75rem 1.5rem; border-radius: var(--radius); background: var(--color-primary); color: #fff; font-weight: 600; text-decoration: none; }
 
@@ -191,7 +189,7 @@ const proCSS = `
 @keyframes wb-glow-spin { to { transform: rotate(360deg); } }
 .wb-pro-glow-grid { padding: 4rem 1.5rem; }
 .wb-pro-glow-grid h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 2.5rem; }
-.wb-pro-glow-grid .wb-pro-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-width: 1100px; margin: 0 auto; }
+.wb-pro-glow-grid .wb-pro-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1100px; margin: 0 auto; }
 .wb-pro-glow-card { position: relative; padding: 2px; border-radius: 1rem; overflow: hidden; isolation: isolate; }
 .wb-pro-glow-card::before {
   content: ""; position: absolute; inset: -50%; z-index: -1;
@@ -205,7 +203,7 @@ const proCSS = `
 /* ---------- TiltCardGrid ---------- */
 .wb-pro-tilt-grid { padding: 4rem 1.5rem; }
 .wb-pro-tilt-grid h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 2.5rem; }
-.wb-pro-tilt-grid .wb-pro-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-width: 1100px; margin: 0 auto; perspective: 1200px; }
+.wb-pro-tilt-grid .wb-pro-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1100px; margin: 0 auto; perspective: 1200px; }
 .wb-pro-tilt-card {
   padding: 2rem 1.5rem; border-radius: 1rem; border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
   background: color-mix(in srgb, var(--color-fg) 3%, transparent);
@@ -226,7 +224,7 @@ const proCSS = `
 }
 .wb-pro-beam-card .wb-pro-beam-inner { background: var(--color-bg); color: var(--color-fg); padding: 2rem; border-radius: calc(1.25rem - 2px); }
 .wb-pro-beam-card .wb-pro-beam-price { font-size: 2.5rem; font-weight: 800; margin-top: 1rem; }
-.wb-pro-beam-card .wb-pro-beam-period { font-size: 0.875rem; opacity: 0.6; }
+.wb-pro-beam-card .wb-pro-beam-period { display: block; margin-top: 0.25rem; font-size: 0.875rem; font-weight: 400; letter-spacing: 0; opacity: 0.6; }
 .wb-pro-beam-card ul { margin-top: 1.5rem; padding: 0; list-style: none; }
 .wb-pro-beam-card li { padding: 0.4rem 0; font-size: 0.875rem; display: flex; gap: 0.5rem; align-items: center; }
 .wb-pro-beam-card li::before { content: "\2713"; color: var(--color-primary); font-weight: 700; }
@@ -256,7 +254,7 @@ const proCSS = `
 /* ---------- HoverGlowGrid ---------- */
 .wb-pro-hover-grid { padding: 4rem 1.5rem; }
 .wb-pro-hover-grid h2 { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; text-align: center; margin-bottom: 2.5rem; }
-.wb-pro-hover-grid .wb-pro-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-width: 1100px; margin: 0 auto; }
+.wb-pro-hover-grid .wb-pro-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1100px; margin: 0 auto; }
 .wb-pro-hover-card {
   position: relative; padding: 1.5rem; border-radius: 1rem; overflow: hidden;
   border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
@@ -460,4 +458,7 @@ const proExtraCSS = `
   .wb-team-grid, .wb-gallery-grid { grid-template-columns: repeat(2, 1fr); }
   .wb-newsletter-form, .wb-contact-row { grid-template-columns: 1fr; flex-direction: column; }
 }
+
+/* Judul hero pro: hindari satu kata yatim di baris terakhir. */
+.wb-pro-lamp h1, .wb-pro-aurora h1, .wb-pro-highlight h1, .wb-pro-gtext h1, .wb-pro-spotlight h1 { text-wrap: balance; }
 `
