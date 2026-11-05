@@ -2179,10 +2179,65 @@ function socialIcon(platform: string): string {
 
 // --- Dynamic blocks: fetch live data from API ---
 
+// Template preview (siteId "_template", sama dengan GuruBlocksDynamic) tidak
+// punya data sungguhan — tanpa sampel, template picker memamerkan "Belum ada
+// produk." polos. Gambar pakai picsum ber-seed supaya deterministik.
+const TEMPLATE_PREVIEW_SITE = "_template";
+
+const SAMPLE_PRODUCTS = [
+  { slug: "keripik-pisang-cokelat", name: "Keripik Pisang Cokelat", price: 28500 },
+  { slug: "kopi-gayo-house-blend", name: "Kopi Gayo House Blend 200g", price: 72000 },
+  { slug: "sambal-bawang-ibu-sari", name: "Sambal Bawang Ibu Sari", price: 33000 },
+  { slug: "madu-hutan-asli", name: "Madu Hutan Asli 350ml", price: 89000 },
+  { slug: "abon-sapi-premium", name: "Abon Sapi Premium", price: 54000 },
+  { slug: "teh-melati-tubruk", name: "Teh Melati Tubruk 100g", price: 24500 },
+].map((it, i) => ({
+  id: `sample-${i}`,
+  slug: it.slug,
+  name: it.name,
+  price: it.price,
+  currency: "IDR",
+  image_url: `https://picsum.photos/seed/${it.slug}/600/600`,
+}));
+
+const SAMPLE_POSTS = [
+  {
+    slug: "cerita-dapur-produksi",
+    title: "Dari dapur rumah ke 150 kota",
+    excerpt:
+      "Perjalanan tiga tahun membangun dapur produksi — dari pesanan tetangga sampai pengiriman rutin ke luar pulau.",
+    published_at: "2026-09-14T08:00:00Z",
+  },
+  {
+    slug: "cara-kami-memilih-bahan",
+    title: "Cara kami memilih bahan baku",
+    excerpt:
+      "Kenapa kami bertahan dengan petani langganan walau harganya tidak selalu paling murah.",
+    published_at: "2026-08-02T08:00:00Z",
+  },
+  {
+    slug: "di-balik-kemasan-baru",
+    title: "Di balik kemasan baru",
+    excerpt:
+      "Kemasan lama sering penyok di ekspedisi. Ini proses kami mendesain ulang tanpa menaikkan harga.",
+    published_at: "2026-06-21T08:00:00Z",
+  },
+].map((it, i) => ({
+  id: `sample-${i}`,
+  slug: it.slug,
+  title: it.title,
+  excerpt: it.excerpt,
+  published_at: it.published_at,
+  cover_image_url: `https://picsum.photos/seed/${it.slug}/900/300`,
+}));
+
 async function ProductGridDynamic({ block, siteId }: { block: Block; siteId: string }) {
   const p = block.props ?? {};
   const limit = Number(p.limit ?? 12);
-  const products = await listProducts(siteId, limit);
+  const products =
+    siteId === TEMPLATE_PREVIEW_SITE
+      ? SAMPLE_PRODUCTS.slice(0, limit)
+      : await listProducts(siteId, limit);
   return (
     <section className="mx-auto max-w-5xl px-6 py-10">
       {p.title ? <h3 className="mb-6 text-2xl font-semibold">{String(p.title)}</h3> : null}
@@ -2261,7 +2316,10 @@ async function FormBlockAsync({ block }: { block: Block }) {
 async function BlogListDynamicAsync({ block, siteId }: { block: Block; siteId: string }) {
   const p = block.props ?? {};
   const limit = Number(p.limit ?? 10);
-  const posts = await listBlogPosts(siteId, limit);
+  const posts =
+    siteId === TEMPLATE_PREVIEW_SITE
+      ? SAMPLE_POSTS.slice(0, limit)
+      : await listBlogPosts(siteId, limit);
   return (
     <section className="mx-auto max-w-3xl px-6 py-10">
       {p.title ? <h3 className="mb-6 text-2xl font-semibold">{String(p.title)}</h3> : null}
