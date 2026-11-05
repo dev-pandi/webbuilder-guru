@@ -453,9 +453,12 @@ func schoolPages(cv variantCopy, variant string) []map[string]any {
 				CTA:        "Daftar PPDB Sekarang",
 				CTAHref:    "#daftar",
 			}),
+			// Nama organisasi FIKTIF — sampel tidak boleh mengklaim afiliasi
+			// institusi nyata (Kemendikbud dkk.) sebelum user menggantinya.
 			trustBar("Dipercaya oleh lebih dari 3.000 keluarga sejak 2005", []string{
-				"Kemendikbudristek", "Kanwil DKI", "Google Educator", "Cambridge Assessment",
-				"ITB", "UI", "UGM", "NUS", "Monash",
+				"Yayasan Cahaya Ilmu", "Forum Sekolah Nusantara", "Klub Literasi Anak",
+				"Liga Matematika Pelajar", "Komunitas STEM Muda", "Jaringan Sekolah Hijau",
+				"Festival Sains Pelajar", "Sanggar Seni Pelangi", "Asosiasi Guru Inovatif",
 			}),
 			statsRow("Angka yang berbicara", []map[string]any{
 				{"value": "20", "label": "Tahun pengalaman"},
@@ -707,8 +710,9 @@ func umkmPages(cv variantCopy, variant string) []map[string]any {
 				CTAHref:    "https://wa.me/6281234567890",
 			}),
 			trustBar("Sudah dipercaya lebih dari 12.000 pelanggan di seluruh Indonesia", []string{
-				"Shopee", "Tokopedia", "Blibli", "BliBli", "TikTok Shop",
-				"Lazada", "Halodoc", "Grab", "Gofood",
+				"Pasar Kriya Nusantara", "Festival Pangan Lokal", "Bazar Akhir Pekan",
+				"Komunitas UMKM Naik Kelas", "Galeri Oleh-Oleh", "Koperasi Rasa Nusantara",
+				"Klub Jajan Lokal", "Pesta Kuliner Kota", "Dapur Kota",
 			}),
 			statsRow("Kepercayaan yang tumbuh setiap tahun", []map[string]any{
 				{"value": "12.000+", "label": "Pelanggan setia"},
@@ -963,8 +967,8 @@ func portfolioPages(cv variantCopy, variant string) []map[string]any {
 				CTAHref:    "/project",
 			}),
 			trustBar("Klien saya termasuk:", []string{
-				"TechCorp", "StartupID", "PayNusa", "EduTech", "HealthPlus",
-				"Kompas", "Traveloka", "Gojek", "Bibit",
+				"Arunika Studio", "PayNusa", "Lentera Analytics", "EduPintar",
+				"SehatDiri", "Nusantara Logistik", "RuangArsip", "Kopi Tetangga", "TaniMaju",
 			}),
 			statsRow("5 tahun · angka yang saya banggakan", []map[string]any{
 				{"value": "37", "label": "Project shipped"},
@@ -1233,9 +1237,12 @@ func teacherPages(cv variantCopy, variant string) []map[string]any {
 				CTA:        "Lihat materi gratis",
 				CTAHref:    "/materi",
 			}),
+			// Bidang studi, bukan nama kampus: sampel tidak mengklaim alumni
+			// di institusi nyata, dan kampus fiktif justru terlihat palsu.
 			trustBar("Alumni saya sekarang di:", []string{
-				"UI", "ITB", "UGM", "UNPAD", "UNAIR",
-				"Binus", "NTU", "NUS", "Monash",
+				"Kedokteran", "Teknik Informatika", "Teknik Elektro", "Farmasi",
+				"Sekolah Kedinasan", "Politeknik Negeri", "Arsitektur",
+				"Kampus Luar Negeri", "Fakultas Hukum",
 			}),
 			statsRow("15 tahun ngajar — rekapnya:", []map[string]any{
 				{"value": "1.200+", "label": "Siswa privat"},
@@ -1590,8 +1597,8 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 				{"title": "Mental model", "desc": "Framework berpikir dari Munger, Kahneman, dan Taleb — diterapkan ke keputusan sehari-hari."},
 			}),
 			proTestimonials("Kata pembaca setia", []map[string]any{
-				{"quote": "Tulisannya bermanfaat dan mudah dicerna — jarang saya ketemu blog Indonesia yang sekelas Farnam Street. Wajib follow untuk yang lagi belajar coding atau career development.", "name": "Rani Pratiwi", "role": "Software Engineer, Traveloka"},
-				{"quote": "Konten teknologinya selalu update dan disertai contoh nyata. Yang paling saya suka: dia berani bilang 'saya salah' kalau essay lama sudah tidak relevan.", "name": "Doni Kurniawan", "role": "Product Manager, Bibit"},
+				{"quote": "Tulisannya bermanfaat dan mudah dicerna — jarang saya ketemu blog Indonesia yang sekelas Farnam Street. Wajib follow untuk yang lagi belajar coding atau career development.", "name": "Rani Pratiwi", "role": "Software Engineer, Lentera Analytics"},
+				{"quote": "Konten teknologinya selalu update dan disertai contoh nyata. Yang paling saya suka: dia berani bilang 'saya salah' kalau essay lama sudah tidak relevan.", "name": "Doni Kurniawan", "role": "Product Manager, Arunika Studio"},
 				{"quote": "Newsletter Jumat pagi adalah highlight minggu saya. Selalu ada 1 kalimat yang saya screenshot atau kirim ke tim. Recommended banget.", "name": "Sari Wijaya", "role": "Founder, DesignStudio"},
 			}),
 			block("Section", map[string]any{
@@ -1682,8 +1689,8 @@ func blogPages(cv variantCopy, variant string) []map[string]any {
 				"limit": 6,
 			}),
 			proTestimonials("Yang pembaca bilang", []map[string]any{
-				{"quote": "Kategori 'Karir Tech' bikin saya berani negosiasi salary 30% naik saat pindah kerja tahun lalu. Framework 4-pertanyaannya beneran kepake.", "name": "Angga Putra", "role": "Backend Engineer, Gojek"},
-				{"quote": "Saya subscribe 100+ newsletter. Cuma 3 yang saya baca kata-per-kata. Blog ini salah satunya. Perbandingannya: substack Farnam Street & Ness Labs.", "name": "Dita Ramadhani", "role": "Product Designer, Tokopedia"},
+				{"quote": "Kategori 'Karir Tech' bikin saya berani negosiasi salary 30% naik saat pindah kerja tahun lalu. Framework 4-pertanyaannya beneran kepake.", "name": "Angga Putra", "role": "Backend Engineer, Nusantara Logistik"},
+				{"quote": "Saya subscribe 100+ newsletter. Cuma 3 yang saya baca kata-per-kata. Blog ini salah satunya. Perbandingannya: substack Farnam Street & Ness Labs.", "name": "Dita Ramadhani", "role": "Product Designer, EduPintar"},
 			}),
 			simpleCTA(
 				"Sudah tahu topik favorit? Baca essay-nya",
