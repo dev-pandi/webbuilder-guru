@@ -350,9 +350,11 @@
 .guru-article-detail__body pre code{background:none;padding:0;color:inherit}
 .guru-article-detail__body iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:12px;margin:1.4em 0}
 .guru-article-detail__body audio{display:block;width:100%;max-width:520px;margin:1.4em auto}
-.guru-article-detail__body ul[data-type="taskList"]{list-style:none;padding-left:0}
-.guru-article-detail__body ul[data-type="taskList"] li{display:flex;gap:.5em;align-items:flex-start}
-.guru-article-detail__body ul[data-type="taskList"] li input[type="checkbox"]{margin-top:.3em}
+/* Task list: markdown pipeline emit bentuk GFM (<ul><li><input type=checkbox>),
+   bukan data-type="taskList" milik TipTap — atribut itu tidak pernah sampai
+   sini karena storage-nya markdown. :has() menghapus bullet ganda. */
+.guru-article-detail__body ul:has(> li > input[type="checkbox"]){list-style:none;padding-left:.25em}
+.guru-article-detail__body li > input[type="checkbox"]{margin-right:.45em}
 .guru-article-detail__tags{display:flex;flex-wrap:wrap;gap:8px;margin:32px 0}
 .guru-article-detail__tags a{background:var(--guru-paper);color:var(--guru-ink);padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700;text-decoration:none}
 
