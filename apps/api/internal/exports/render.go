@@ -856,13 +856,16 @@ func escMultiline(s string) string {
 // renderMarkdown converts markdown body to HTML using gomarkdown.
 // We re-create parser/renderer per call because they're stateful; cheap to allocate.
 //
-// XSS hardening: SkipHTML drops raw HTML in markdown source. This mirrors the
-// renderer's marked configuration. User markdown can never inject <script>,
-// <iframe>, or event handlers into the static export.
+// XSS hardening pindah dari SkipHTML ke exportMDHook (markdown_hook.go):
+// HTML mentah tetap dibuang KECUALI whitelist sempit styling RichEditor —
+// SkipHTML lama ikut melenyapkan teks di dalam paragraf rata tengah. Hook
+// yang sama menyamakan youtube/audio fence, task list, dan ukuran gambar
+// dengan renderer live.
 func renderMarkdown(md string) string {
 	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock)
 	r := mdhtml.NewRenderer(mdhtml.RendererOptions{
-		Flags: mdhtml.CommonFlags | mdhtml.HrefTargetBlank | mdhtml.SkipHTML,
+		Flags:          mdhtml.CommonFlags | mdhtml.HrefTargetBlank,
+		RenderNodeHook: exportMDHook,
 	})
 	out := markdown.Render(p.Parse([]byte(md)), r)
 	return string(out)

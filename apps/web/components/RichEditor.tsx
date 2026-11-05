@@ -28,6 +28,7 @@ import { TextStyle, Color, FontFamily } from "@tiptap/extension-text-style";
 import TextAlign from "@tiptap/extension-text-align";
 import { Extension, Node, mergeAttributes } from "@tiptap/core";
 import { marked, type Tokens } from "marked";
+import { makeSafeHtmlRenderer } from "@/lib/safe-md-html";
 import TurndownService from "turndown";
 // @ts-expect-error — turndown-plugin-gfm ships no TS types.
 import { gfm as turndownGfm } from "turndown-plugin-gfm";
@@ -105,6 +106,8 @@ function joinSizeFragment(url: string, size: SizePreset): string {
   return `${clean}#w=${size}`;
 }
 
+const safeHtml = makeSafeHtmlRenderer((src) => marked.parseInline(src) as string);
+
 marked.setOptions({ gfm: true, breaks: false });
 marked.use({
   // WAJIB — supaya marked TIDAK auto-convert renderer function kita ke
@@ -114,16 +117,15 @@ marked.use({
   // saat mdToHtml, akibatnya media hilang dari editor & renderer.
   useNewRenderer: true,
   renderer: {
-    // Preserve inline HTML — dibutuhkan supaya styling (color/font/
-    // alignment/size) yang di-emit sebagai <span style="...">text</span>
-    // atau <p style="text-align:...">...</p> roundtrip aman via markdown.
-    // Risk XSS: kita trust karena content di-edit via TipTap yang punya
-    // schema whitelist (hanya mark/node yang didaftarkan diizinkan).
-    html: (token: Tokens.HTML | { text?: string } | string) => {
-      if (typeof token === "string") return token;
-      if ("text" in token) return token.text ?? "";
-      return "";
-    },
+    // HTML mentah (styling span + perataan p/h) lewat whitelist safe-md-html,
+    // BUKAN pass-through. Alasan utamanya bukan XSS (TipTap sudah membatasi
+    // schema) tapi bentuk datanya: isi blok <p style="text-align:..."> masih
+    // markdown mentah hasil turndown, jadi tanpa parse ulang `**tebal**`
+    // tampil literal begitu artikel dibuka kembali.
+    html: (token: Tokens.HTML | { text?: string } | string) =>
+      safeHtml(
+        typeof token === "string" ? token : ("text" in token ? (token.text ?? "") : ""),
+      ),
     // Task list `- [ ]`. Default marked emit <ul><li><input>, tidak punya
     // data-type yang dicari parseHTML TaskList/TaskItem — hasilnya jadi bullet
     // list biasa. Return false untuk list non-task supaya jatuh ke renderer

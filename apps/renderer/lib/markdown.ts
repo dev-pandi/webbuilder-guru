@@ -9,6 +9,8 @@
 
 import { marked, type Tokens } from "marked";
 
+import { makeSafeHtmlRenderer } from "./safe-md-html";
+
 // Preset ukuran yang di-honor. Nilai lain di-ignore (render full-width).
 const VALID_SIZES = new Set([25, 50, 75, 100]);
 
@@ -28,7 +30,11 @@ marked.use({
   // hilang saat marked.parse.
   useNewRenderer: true,
   renderer: {
-    html: () => "",
+    // Whitelist, bukan buang total: perataan (p/h dengan text-align) dan
+    // styling span dari editor dipertahankan; isi bloknya di-parse ulang.
+    // HTML lain tetap dibuang (XSS safety seperti sebelumnya).
+    html: (token: Tokens.HTML | Tokens.Tag | string) =>
+      safeHtml(typeof token === "string" ? token : (token.text ?? "")),
     image(this: unknown, token: Tokens.Image) {
       const src = token.href ?? "";
       const [, size] = splitSizeFragment(src);
@@ -62,6 +68,10 @@ marked.use({
     },
   },
 });
+
+const safeHtml = makeSafeHtmlRenderer(
+  (src) => marked.parseInline(src) as string,
+);
 
 export { marked };
 

@@ -8,6 +8,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
+
+import { makeSafeHtmlRenderer } from "@/lib/safe-md-html";
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,7 +25,16 @@ import { Button } from "@/components/ui/button";
 
 // Sanitize markdown — strip raw HTML supaya user-generated content aman.
 marked.setOptions({ gfm: true, breaks: false });
-marked.use({ renderer: { html: () => "" } });
+// Whitelist perataan + styling dari RichEditor; HTML lain tetap dibuang.
+// Dulu html dibuang total — paragraf rata tengah lenyap beserta teksnya.
+const safeHtml = makeSafeHtmlRenderer((src) => marked.parseInline(src) as string);
+marked.use({
+  useNewRenderer: true,
+  renderer: {
+    html: (token: { text?: string } | string) =>
+      safeHtml(typeof token === "string" ? token : (token.text ?? "")),
+  },
+});
 
 function fmtDate(iso: string | null) {
   if (!iso) return "";
