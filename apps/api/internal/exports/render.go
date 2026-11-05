@@ -302,8 +302,14 @@ func renderBlock(b *strings.Builder, blk Block, d *siteData) {
 	p := blk.Props
 	switch blk.Type {
 	case "Navbar":
+		// Burger murni-CSS (checkbox) — cermin renderer. Tanpa JS supaya
+		// tetap berfungsi di HTML statis; tanpa ini nav meluber di ponsel
+		// dan memicu horizontal scroll satu halaman.
 		b.WriteString(`<header class="wb-navbar"><div class="wb-container wb-navbar-inner">`)
 		fmt.Fprintf(b, `<strong class="wb-brand">%s</strong>`, esc(str(p, "brand")))
+		navID := fmt.Sprintf("wb-nav-%x", fnvHash(str(p, "brand")))
+		fmt.Fprintf(b, `<input type="checkbox" id="%s" class="wb-nav-toggle" aria-label="Buka menu navigasi">`, navID)
+		fmt.Fprintf(b, `<label for="%s" class="wb-nav-burger" aria-hidden="true"><span></span><span></span><span></span></label>`, navID)
 		b.WriteString(`<nav class="wb-nav">`)
 		for _, l := range arr(p, "links") {
 			if m, ok := l.(map[string]any); ok {

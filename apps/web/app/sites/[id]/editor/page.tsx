@@ -3191,11 +3191,18 @@ function BlockView({
   }
   switch (block.type) {
     case "Navbar":
+      // Cermin markup renderer (burger murni-CSS di mobile) supaya preview
+      // jujur; link tetap <span> non-aktif seperti preview lain.
       return (
-        <header className="border-b">
+        <header className="relative border-b">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
             <strong className="text-lg">{String(p.brand ?? "")}</strong>
-            <nav className="flex gap-6 text-sm">
+            <span className="-m-2 p-2 md:hidden" aria-hidden="true">
+              <span className="mb-1 block h-0.5 w-5 bg-current" />
+              <span className="mb-1 block h-0.5 w-5 bg-current" />
+              <span className="block h-0.5 w-5 bg-current" />
+            </span>
+            <nav className="hidden gap-6 text-sm md:flex">
               {(p.links as Array<{ label: string; href: string }> | undefined)?.map((l, i) => (
                 <span key={i}>{l.label}</span>
               ))}

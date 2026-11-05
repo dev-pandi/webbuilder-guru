@@ -291,6 +291,13 @@ func writeHeroCommon(b *strings.Builder, p map[string]any, hTag string) {
 	b.WriteString(`</div>`)
 }
 
+// fnvHash — id deterministik untuk elemen yang butuh pasangan input/label.
+func fnvHash(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return h.Sum32()
+}
+
 func firstChar(s, def string) string {
 	for _, r := range strings.TrimSpace(s) {
 		return string(r)

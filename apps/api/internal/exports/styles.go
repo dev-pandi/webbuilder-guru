@@ -70,6 +70,17 @@ img { max-width: 100%%; height: auto; display: block; }
 .wb-brand { font-size: 1.125rem; font-weight: 700; }
 .wb-nav { display: flex; gap: 1.5rem; font-size: 0.95rem; }
 .wb-nav a:hover { text-decoration: underline; }
+/* Menu mobile: checkbox murni-CSS, cermin renderer. */
+.wb-nav-toggle { position: absolute; opacity: 0; pointer-events: none; }
+.wb-nav-burger { display: none; cursor: pointer; padding: .5rem; margin: -.5rem; }
+.wb-nav-burger span { display: block; width: 20px; height: 2px; background: currentColor; margin: 4px 0; }
+@media (max-width: 767px) {
+  .wb-navbar-inner { position: relative; }
+  .wb-nav-burger { display: block; }
+  .wb-nav { display: none; position: absolute; top: 100%%; left: 0; right: 0; z-index: 20; flex-direction: column; gap: 0; background: var(--color-bg); border-bottom: 1px solid #e5e7eb; padding: .25rem 1.5rem 1rem; }
+  .wb-nav a { padding: .5rem 0; }
+  .wb-nav-toggle:checked ~ .wb-nav { display: flex; }
+}
 
 .wb-hero { max-width: 56rem; margin: 0 auto; padding: 5rem 1.5rem; text-align: center; }
 .wb-hero h1 { font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 800; letter-spacing: -0.02em; }

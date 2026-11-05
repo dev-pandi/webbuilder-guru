@@ -349,14 +349,41 @@ export async function RenderBlocks({
 function BlockView({ block }: { block: Block }) {
   const p = block.props ?? {};
   switch (block.type) {
-    case "Navbar":
+    case "Navbar": {
+      // Menu mobile pakai checkbox murni-CSS (pola GuruNavbar): tanpa JS,
+      // jadi tetap berfungsi di hasil export statis. Tanpa ini 5 link nav
+      // meluber di 390px dan SELURUH halaman bisa digeser horizontal.
+      const navLinks =
+        (p.links as Array<{ label: string; href: string }> | undefined) ?? [];
+      const navId = `wb-nav-${Math.abs(
+        hashString(String(p.brand ?? "") + JSON.stringify(navLinks)),
+      ).toString(36)}`;
       return (
-        <header className="border-b">
+        <header className="relative border-b">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
             <strong className="text-lg">{String(p.brand ?? "")}</strong>
-            <nav className="flex gap-6 text-sm">
-              {(p.links as Array<{ label: string; href: string }> | undefined)?.map((l, i) => (
-                <a key={i} href={l.href} className="hover:underline">
+            <input
+              type="checkbox"
+              id={navId}
+              className="peer sr-only"
+              aria-label="Buka menu navigasi"
+            />
+            <label
+              htmlFor={navId}
+              className="-m-2 cursor-pointer p-2 md:hidden"
+              aria-hidden="true"
+            >
+              <span className="mb-1 block h-0.5 w-5 bg-current" />
+              <span className="mb-1 block h-0.5 w-5 bg-current" />
+              <span className="block h-0.5 w-5 bg-current" />
+            </label>
+            <nav className="hidden text-sm max-md:absolute max-md:inset-x-0 max-md:top-full max-md:z-20 max-md:flex-col max-md:border-b max-md:bg-[var(--color-bg,#ffffff)] max-md:px-6 max-md:pb-3 max-md:peer-checked:flex md:flex md:gap-6">
+              {navLinks.map((l, i) => (
+                <a
+                  key={i}
+                  href={l.href}
+                  className="hover:underline max-md:py-2"
+                >
                   {l.label}
                 </a>
               ))}
@@ -364,6 +391,7 @@ function BlockView({ block }: { block: Block }) {
           </div>
         </header>
       );
+    }
     case "Hero":
       return (
         <section className="mx-auto max-w-4xl px-6 py-20 text-center">
