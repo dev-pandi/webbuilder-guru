@@ -71,6 +71,11 @@ img { max-width: 100%%; height: auto; display: block; }
 .wb-nav { display: flex; gap: 1.5rem; font-size: 0.95rem; }
 .wb-nav a:hover { text-decoration: underline; }
 /* Menu mobile: checkbox murni-CSS, cermin renderer. */
+.wb-section-body p { margin: .75rem 0; }
+.wb-section-body ul, .wb-section-body ol { margin: .75rem 0; padding-left: 1.25rem; }
+.wb-section-body ul { list-style: disc; }
+.wb-section-body ol { list-style: decimal; }
+.wb-section-body code { background: rgba(0,0,0,.05); border-radius: 4px; padding: 0 .3em; }
 .wb-nav-toggle { position: absolute; opacity: 0; pointer-events: none; }
 .wb-nav-burger { display: none; cursor: pointer; padding: .5rem; margin: -.5rem; }
 .wb-nav-burger span { display: block; width: 20px; height: 2px; background: currentColor; margin: 4px 0; }

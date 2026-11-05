@@ -131,3 +131,22 @@ func TestRenderBlock_CoversEditorPreviewBlocks(t *testing.T) {
 		}
 	}
 }
+
+// Section.body adalah markdown — pastikan bold/daftar dirender dan tidak ada
+// asterisk literal yang lolos ke hasil export.
+func TestRenderBlock_SectionRendersMarkdown(t *testing.T) {
+	var b strings.Builder
+	renderBlock(&b, Block{Type: "Section", Props: map[string]any{
+		"title": "Promo",
+		"body":  "Dapatkan **GRATIS ongkir** dengan kode `HEMAT10`.\n\n- Syarat satu\n- Syarat dua",
+	}}, nil)
+	out := b.String()
+	for _, want := range []string{"<strong>GRATIS ongkir</strong>", "<code>HEMAT10</code>", "<li>Syarat satu</li>", "wb-section-body"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("hilang %q\noutput: %s", want, out)
+		}
+	}
+	if strings.Contains(out, "**") {
+		t.Errorf("asterisk literal masih lolos:\n%s", out)
+	}
+}

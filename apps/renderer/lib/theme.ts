@@ -11,6 +11,18 @@ import type { ThemeJson } from "./api";
 // atas apapun yang di-emit GuruStyles setelahnya (same selector, later wins
 // per cascade — tapi karena nilainya DIRECT user color, bukan var() chain,
 // resolution deterministic di semua browser).
+// hexChannels — "#rrggbb"/"#rgb" → "R G B" untuk pola Tailwind
+// `rgb(var(--x-rgb) / <alpha-value>)`. Warna non-hex (mis. nama CSS) tidak
+// bisa dipecah kanal → pakai fallback supaya var tetap valid.
+function hexChannels(hex: string, fallback: string): string {
+  const m = hex.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!m) return fallback;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((ch) => ch + ch).join("");
+  const n = parseInt(h, 16);
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
+}
+
 export function themeToCss(theme: ThemeJson | null): string {
   const c = theme?.colors ?? {};
   const f = theme?.font ?? {};
@@ -24,6 +36,11 @@ export function themeToCss(theme: ThemeJson | null): string {
       --color-secondary: ${secondary};
       --color-bg: ${bg};
       --color-fg: ${fg};
+      /* Kanal RGB untuk token Tailwind (foreground/background/primary) —
+         tanpa ini kelas seperti bg-foreground/10 tidak bisa diberi alpha. */
+      --color-primary-rgb: ${hexChannels(primary, "37 99 235")};
+      --color-bg-rgb: ${hexChannels(bg, "255 255 255")};
+      --color-fg-rgb: ${hexChannels(fg, "15 23 42")};
       --radius: ${theme?.radius ?? "0.75rem"};
       --font-heading: "${f.heading ?? "Inter"}", system-ui, sans-serif;
       --font-body: "${f.body ?? "Inter"}", system-ui, sans-serif;

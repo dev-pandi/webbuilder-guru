@@ -346,11 +346,14 @@ func renderBlock(b *strings.Builder, blk Block, d *siteData) {
 		fmt.Fprintf(b, `<div class="wb-prose">%s</div>`, renderMarkdown(str(p, "body")))
 
 	case "Section":
+		// body adalah markdown (template builtin memakai **bold**, daftar,
+		// `kode`) — escMultiline lama menampilkan asterisknya literal.
+		// renderMarkdown sudah membawa hook whitelist XSS.
 		b.WriteString(`<section class="wb-section">`)
 		if t := str(p, "title"); t != "" {
 			fmt.Fprintf(b, `<h3>%s</h3>`, esc(t))
 		}
-		fmt.Fprintf(b, `<p>%s</p></section>`, escMultiline(str(p, "body")))
+		fmt.Fprintf(b, `<div class="wb-section-body">%s</div></section>`, renderMarkdown(str(p, "body")))
 
 	case "FeatureList":
 		b.WriteString(`<section class="wb-features">`)

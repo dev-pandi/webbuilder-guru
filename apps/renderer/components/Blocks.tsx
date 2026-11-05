@@ -1,4 +1,4 @@
-import { marked } from "marked";
+import { marked } from "@/lib/markdown";
 import { formatPrice, getPublicForm, listBlogPosts, listProducts, type Block } from "@/lib/api";
 import { FormBlock } from "@/components/FormBlock";
 import {
@@ -50,12 +50,11 @@ import {
   GuruStatsBarDynamic,
 } from "@/components/GuruBlocksDynamic";
 
-// marked configured once at module scope — strips raw HTML so a malicious
-// markdown payload (`<script>`) can't leak through. Matches the blog renderer
-// hardening at apps/renderer/app/blog/[slug]/page.tsx.
-marked.setOptions({ gfm: true, breaks: false });
-marked.use({ renderer: { html: () => "" } });
-
+// marked dipakai dari lib/markdown — SATU konfigurasi bersama. Dulu file ini
+// menumpuk `html: () => ""` miliknya sendiri di instance global yang sama;
+// renderer html mana yang menang jadi tergantung urutan evaluasi modul, dan
+// varian "buang total" itu pula yang melenyapkan teks paragraf rata tengah.
+// Whitelist di lib/safe-md-html kini berlaku untuk semua pemakai.
 function renderMarkdownSafe(md: string): string {
   if (!md) return "";
   return marked.parse(md, { async: false }) as string;
@@ -429,10 +428,18 @@ function BlockView({ block }: { block: Block }) {
       );
     }
     case "Section":
+      // body ditulis sebagai markdown (template builtin memakai **bold**,
+      // daftar, dan `kode`) — dulu dirender teks polos sehingga asterisknya
+      // tampil literal di situs. Pipeline lib/markdown sudah whitelist-aman.
       return (
         <section className="mx-auto max-w-5xl px-6 py-10">
           {p.title ? <h3 className="text-2xl font-semibold">{String(p.title)}</h3> : null}
-          <p className="mt-3 whitespace-pre-line opacity-80">{String(p.body ?? "")}</p>
+          <div
+            className="mt-3 space-y-3 opacity-80 [&_a]:underline [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
+            dangerouslySetInnerHTML={{
+              __html: marked.parse(String(p.body ?? ""), { async: false }) as string,
+            }}
+          />
         </section>
       );
     case "FeatureList":
