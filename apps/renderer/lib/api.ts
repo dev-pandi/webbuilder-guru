@@ -256,7 +256,8 @@ async function fetchJsonOrThrow<T>(path: string, revalidateSec = 5): Promise<T |
 // `reason` = "no_site_for_host" berarti host tidak ter-attach ke site mana pun.
 export type SiteLookup =
   | { kind: "found"; site: Site }
-  | { kind: "not_found"; reason: "site_not_published" | "no_site_for_host" | "unknown" };
+  | { kind: "not_found"; reason: "site_not_published" | "no_site_for_host" | "unknown" }
+  | { kind: "suspended"; reason: "site_suspended" | "domain_suspended" };
 
 export async function lookupSiteByHost(host: string): Promise<SiteLookup> {
   // revalidateSec=0 → cache:"no-store". Site lookup wajib hit backend tiap
@@ -267,6 +268,14 @@ export async function lookupSiteByHost(host: string): Promise<SiteLookup> {
     0,
   );
   if (r.ok) return { kind: "found", site: r.data };
+  // 451 = ditangguhkan admin. Dicek SEBELUM cabang 5xx di bawah — 451 bukan
+  // kegagalan backend, dan semua rute harus berhenti menyajikan konten.
+  if (r.status === 451) {
+    return {
+      kind: "suspended",
+      reason: r.code === "domain_suspended" ? "domain_suspended" : "site_suspended",
+    };
+  }
   // 5xx / network / timeout → throw ke error boundary. Jangan treat sebagai
   // "domain belum terhubung" (misleading — backend yang nganggur, bukan
   // domain-nya yang salah).

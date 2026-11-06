@@ -13,6 +13,9 @@ export const dynamic = "force-dynamic";
 export default async function HomeRender() {
   const host = sanitizeHost((await headers()).get("host") ?? "");
   const lookup = await lookupSiteByHost(host);
+  // Lewat not-found.tsx supaya status HTTP 404, bukan 200 — mesin pencari
+  // berhenti mengindeks konten situs yang ditangguhkan.
+  if (lookup.kind === "suspended") notFound();
   if (lookup.kind !== "found") return <FallbackLanding host={host} lookup={lookup} />;
   const site = lookup.site;
   const page = await getPage(site.id, "_home");

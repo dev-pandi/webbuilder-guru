@@ -909,6 +909,7 @@ export default function Home() {
               <ul className="space-y-2 text-sm">
                 <li><Link href="/daftar-reseller" className="hover:text-white">Reseller / Agency</Link></li>
                 <li><Link href="/register" className="hover:text-white">Bikin Website</Link></li>
+                <li><Link href="/aduan" className="hover:text-white">Laporkan Konten</Link></li>
               </ul>
             </div>
           </div>

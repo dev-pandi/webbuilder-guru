@@ -1,5 +1,9 @@
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://api.localhost";
 
+// API_BASE — untuk upload multipart: api() memaksa Content-Type JSON, yang
+// membuang boundary FormData. Pemanggil multipart memakai fetch langsung.
+export const API_BASE = BASE;
+
 export type ApiResult<T> = { data: T } | { error: { code: string; message: string } };
 
 // ApiError menambah `status` + `code` di atas Error biasa. Callers boleh
