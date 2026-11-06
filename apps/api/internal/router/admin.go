@@ -60,6 +60,19 @@ func MountAdmin(app *fiber.App, deps Deps) {
 	g.Post("/resellers/:id/approve", deps.Admin.ApproveReseller)
 	g.Post("/resellers/:id/suspend", deps.Admin.SuspendReseller)
 
+	// Aduan konten + penangguhan. Suspend domain = berhenti disajikan di
+	// platform; bukan serverHold di registry.
+	if deps.Abuse != nil {
+		g.Get("/abuse-reports", deps.Abuse.List)
+		g.Get("/abuse-reports/:id", deps.Abuse.Get)
+		g.Get("/abuse-reports/:id/files/:fileId", deps.Abuse.File)
+		g.Patch("/abuse-reports/:id", deps.Abuse.Review)
+		g.Post("/sites/:id/suspend", deps.Abuse.SuspendSite)
+		g.Post("/sites/:id/unsuspend", deps.Abuse.UnsuspendSite)
+		g.Post("/domains/:name/suspend", deps.Abuse.SuspendDomain)
+		g.Post("/domains/:name/unsuspend", deps.Abuse.UnsuspendDomain)
+	}
+
 	// Admin observability untuk domain (read-only cross-user).
 	//   - /domains        → aggregate list dari registered_domains (1 row/FQDN)
 	//   - /domains/stats  → counter domain aktif + yang belum punya situs

@@ -1,6 +1,8 @@
 package router
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/webbuilder/api/internal/auth"
 )
@@ -38,6 +40,13 @@ func MountUser(app *fiber.App, deps Deps) {
 	// bulk-account abuse). Admin approve nanti sebelum bisa login.
 	v1.Post("/auth/reseller/apply",
 		RateLimitIP(registerPerWindow, registerWindow), deps.Auth.ResellerApply)
+
+	// Aduan konten — anonim, multipart dengan bukti berkas. Rate-limit ketat
+	// per IP: endpoint upload tanpa login adalah sasaran spam dan pengisian
+	// storage. Honeypot + sniff tipe berkas ada di handler.
+	if deps.Abuse != nil {
+		v1.Post("/abuse-reports", RateLimitIP(5, time.Hour), deps.Abuse.Submit)
+	}
 
 	// Invitation accept — anonymous (auth via token). Dipakai agent/client
 	// terima invite dari reseller/agent → set password → auto-login.

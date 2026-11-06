@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/webbuilder/api/internal/abuse"
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/analytics"
 	"github.com/webbuilder/api/internal/articles"
@@ -175,6 +176,9 @@ type Deps struct {
 	// untuk domain register di TLD yang butuh verifikasi identitas. Nil
 	// kalau assetStorage tidak tersedia — routes skip.
 	Documents *documents_local.Handler
+
+	// Abuse — aduan konten publik + penangguhan situs/domain oleh admin.
+	Abuse *abuse.Handler
 
 	// Promos — Phase 3 kupon diskon. Admin CRUD + user validate endpoint.
 	Promos *promos.Handler

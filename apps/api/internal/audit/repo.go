@@ -38,6 +38,12 @@ const (
 	EventAdminUserPromoted   = "admin.user_promoted"
 	EventAdminUserDemoted    = "admin.user_demoted"
 	EventAdminUserDeleted    = "admin.user_deleted"
+	EventAbuseReported       = "abuse.reported"
+	EventAbuseReviewed       = "abuse.reviewed"
+	EventSiteSuspended       = "site.suspended"
+	EventSiteUnsuspended     = "site.unsuspended"
+	EventDomainSuspended     = "domain.suspended"
+	EventDomainUnsuspended   = "domain.unsuspended"
 	EventAdminUserUpdated    = "admin.user_updated"
 	EventAdminSiteDeleted    = "admin.site_deleted"
 	// Banner moderation (spec §27) — admin override guru promotion banner.

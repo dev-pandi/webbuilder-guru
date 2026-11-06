@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
+	"github.com/webbuilder/api/internal/abuse"
 	"github.com/webbuilder/api/internal/admin"
 	"github.com/webbuilder/api/internal/analytics"
 	"github.com/webbuilder/api/internal/articles"
@@ -409,6 +410,12 @@ func main() {
 		documentsHandler = documents_local.NewHandler(documentsRepo, assetStorage)
 	}
 
+	// Abuse — aduan konten + penangguhan. Repo dipakai juga oleh public
+	// handler untuk menegakkan penangguhan di site-by-host.
+	abuseRepo := abuse.NewRepo(pool)
+	abuseHandler := abuse.NewHandler(abuseRepo, assetStorage, auditRepo)
+	publicHandler.SetSuspensionChecker(abuseRepo)
+
 	// Promos — Phase 3 kupon diskon (validate + redeem saat purchase/renew).
 	// Admin CRUD di /admin/promos, user validate di /promos/validate.
 	promosRepo := promos.NewRepo(pool)
@@ -599,6 +606,7 @@ func main() {
 		PaymentWebhook:   paymentWebhookHandler,
 		WalletLocal:      walletLocalHandler,
 		Documents:        documentsHandler,
+		Abuse:            abuseHandler,
 		Promos:           promosHandler,
 		SiteBYODomains:   byoHandler,
 		Articles:         articlesHandler,

@@ -1,6 +1,7 @@
 package public
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -19,16 +20,26 @@ import (
 // Public read-only endpoints consumed by the renderer.
 
 type Handler struct {
-	sites     *sites.Repo
-	pages     *pages.Repo
-	products  *products.Repo
-	blog      *blog.Repo
-	templates *templates.Repo // nil = template-preview endpoint 503
+	sites      *sites.Repo
+	pages      *pages.Repo
+	products   *products.Repo
+	blog       *blog.Repo
+	templates  *templates.Repo // nil = template-preview endpoint 503
+	suspension SuspensionChecker
+}
+
+// SuspensionChecker — diimplementasi abuse.Repo. Interface supaya paket
+// public tidak bergantung ke paket abuse.
+type SuspensionChecker interface {
+	SuspensionFor(ctx context.Context, host string, siteID uuid.UUID) (string, error)
 }
 
 func NewHandler(s *sites.Repo, p *pages.Repo, pr *products.Repo, b *blog.Repo) *Handler {
 	return &Handler{sites: s, pages: p, products: pr, blog: b}
 }
+
+// SetSuspensionChecker — nil-safe; tanpa checker penangguhan tidak ditegakkan.
+func (h *Handler) SetSuspensionChecker(c SuspensionChecker) { h.suspension = c }
 
 // SetTemplates — inject template repo pasca-construction (avoid circular
 // dep di NewHandler signature). Nil-safe.
@@ -50,6 +61,23 @@ func (h *Handler) SiteByHost(c *fiber.Ctx) error {
 		return httpx.BadRequest(c, "host required")
 	}
 	if s, err := h.sites.GetByHost(c.Context(), host); err == nil {
+		// Satu-satunya titik penegakan penangguhan: SEMUA rute renderer
+		// (beranda, halaman, artikel, blog, produk, materi, sitemap)
+		// me-resolve situs lewat endpoint ini, dan semuanya berhenti
+		// menyajikan konten begitu respons tidak OK. Gagal lookup = tutup
+		// (503), bukan terbuka — situs yang ditangguhkan tidak boleh muncul
+		// kembali hanya karena query cek-nya error.
+		if h.suspension != nil {
+			code, serr := h.suspension.SuspensionFor(c.Context(), host, s.ID)
+			if serr != nil {
+				return httpx.Err(c, fiber.StatusServiceUnavailable, "suspension_check_failed",
+					"Status situs tidak dapat diperiksa.")
+			}
+			if code != "" {
+				return httpx.Err(c, fiber.StatusUnavailableForLegalReasons, code,
+					"Situs ini ditangguhkan karena pelanggaran kebijakan konten.")
+			}
+		}
 		return httpx.OK(c, s)
 	} else if !errors.Is(err, sites.ErrNotFound) {
 		return httpx.Internal(c, "lookup failed")
