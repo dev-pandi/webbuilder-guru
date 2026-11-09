@@ -338,8 +338,12 @@ type AdminDomainFilter struct {
 	Status       string // "" = semua
 	ExpiringDays int    // > 0 → active + expires_at ≤ now + N days
 	WithoutSite  bool   // true → hanya domain yang belum ter-attach ke situs
-	Page         int
-	PageSize     int
+	// Rentang registered_at, [From, To) — To sudah eksklusif (awal hari
+	// berikutnya) supaya tanggal akhir yang dipilih admin ikut terhitung.
+	RegisteredFrom *time.Time
+	RegisteredTo   *time.Time
+	Page           int
+	PageSize       int
 }
 
 // AdminListDomains — paginated + filter, join users. Dipakai halaman
@@ -352,30 +356,9 @@ func (r *Repo) AdminListDomains(ctx context.Context, f AdminDomainFilter) ([]Adm
 		f.PageSize = 30
 	}
 
-	where := "WHERE 1=1"
-	args := []any{}
-	if f.Status != "" {
-		args = append(args, f.Status)
-		where += fmt.Sprintf(" AND rd.status = $%d", len(args))
-	}
-	if f.ExpiringDays > 0 {
-		args = append(args, f.ExpiringDays)
-		where += " AND rd.status = 'active' AND rd.expires_at IS NOT NULL"
-		where += fmt.Sprintf(" AND rd.expires_at <= now() + ($%d || ' days')::interval", len(args))
-	}
-	if f.WithoutSite {
-		where += " AND " + effectiveSiteIDSQL + " IS NULL"
-	}
-	if f.Q != "" {
-		args = append(args, "%"+f.Q+"%")
-		where += fmt.Sprintf(" AND (rd.name ILIKE $%d OR u.email ILIKE $%d OR u.name ILIKE $%d)",
-			len(args), len(args), len(args))
-	}
-
-	var total int
-	countQ := `SELECT COUNT(*) FROM registered_domains rd
-		LEFT JOIN users u ON u.id = rd.user_id ` + where
-	if err := r.pool.QueryRow(ctx, countQ, args...).Scan(&total); err != nil {
+	where, args := adminDomainWhere(f)
+	total, err := r.adminCountDomains(ctx, where, args)
+	if err != nil {
 		return nil, 0, err
 	}
 
@@ -411,6 +394,109 @@ func (r *Repo) AdminListDomains(ctx context.Context, f AdminDomainFilter) ([]Adm
 		out = append(out, a)
 	}
 	return out, total, rows.Err()
+}
+
+// adminDomainWhere — satu sumber filter untuk list dan export, supaya CSV
+// selalu berisi persis baris yang admin lihat di tabel.
+func adminDomainWhere(f AdminDomainFilter) (string, []any) {
+	where := "WHERE 1=1"
+	args := []any{}
+	if f.Status != "" {
+		args = append(args, f.Status)
+		where += fmt.Sprintf(" AND rd.status = $%d", len(args))
+	}
+	if f.ExpiringDays > 0 {
+		args = append(args, f.ExpiringDays)
+		where += " AND rd.status = 'active' AND rd.expires_at IS NOT NULL"
+		where += fmt.Sprintf(" AND rd.expires_at <= now() + ($%d || ' days')::interval", len(args))
+	}
+	if f.WithoutSite {
+		where += " AND " + effectiveSiteIDSQL + " IS NULL"
+	}
+	if f.RegisteredFrom != nil {
+		args = append(args, *f.RegisteredFrom)
+		where += fmt.Sprintf(" AND rd.registered_at >= $%d", len(args))
+	}
+	if f.RegisteredTo != nil {
+		args = append(args, *f.RegisteredTo)
+		where += fmt.Sprintf(" AND rd.registered_at < $%d", len(args))
+	}
+	if f.Q != "" {
+		args = append(args, "%"+f.Q+"%")
+		where += fmt.Sprintf(" AND (rd.name ILIKE $%d OR u.email ILIKE $%d OR u.name ILIKE $%d)",
+			len(args), len(args), len(args))
+	}
+	return where, args
+}
+
+func (r *Repo) adminCountDomains(ctx context.Context, where string, args []any) (int, error) {
+	var total int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM registered_domains rd
+		LEFT JOIN users u ON u.id = rd.user_id `+where, args...).Scan(&total)
+	return total, err
+}
+
+// AdminCountDomains — total baris untuk progress export.
+func (r *Repo) AdminCountDomains(ctx context.Context, f AdminDomainFilter) (int, error) {
+	where, args := adminDomainWhere(f)
+	return r.adminCountDomains(ctx, where, args)
+}
+
+// AdminExportRow — AdminDomain plus email pembeli on-behalf-of, yang di
+// spreadsheet lebih berguna daripada UUID mentah.
+type AdminExportRow struct {
+	AdminDomain
+	PurchaserEmail string
+}
+
+// ExportCursor — posisi keyset (registered_at, id) baris terakhir yang sudah
+// dikirim. Keyset, bukan OFFSET: tiap potongan tetap cepat di halaman jauh,
+// dan domain yang baru terdaftar saat export berjalan tidak menggeser baris
+// sehingga tidak ada yang dobel atau terlewat.
+type ExportCursor struct {
+	RegisteredAt time.Time
+	ID           uuid.UUID
+}
+
+// AdminExportDomains — satu potongan export, urut (registered_at, id).
+func (r *Repo) AdminExportDomains(ctx context.Context, f AdminDomainFilter, after *ExportCursor, limit int) ([]AdminExportRow, error) {
+	where, args := adminDomainWhere(f)
+	if after != nil {
+		args = append(args, after.RegisteredAt, after.ID)
+		where += fmt.Sprintf(" AND (rd.registered_at, rd.id) > ($%d, $%d)", len(args)-1, len(args))
+	}
+	args = append(args, limit)
+	q := `SELECT
+			rd.id, rd.user_id, rd.purchased_by, rd.name, rd.contact_id, rd.expires_at,
+			rd.registered_at, rd.last_renewed_at, rd.status,
+			` + effectiveSiteIDSQL + ` AS site_id, rd.registrar_job_id,
+			rd.created_at, rd.updated_at,
+			COALESCE(u.email, ''), COALESCE(u.name, ''), COALESCE(pb.email, '')
+		FROM registered_domains rd
+		LEFT JOIN users u ON u.id = rd.user_id
+		LEFT JOIN users pb ON pb.id = rd.purchased_by ` + where + `
+		ORDER BY rd.registered_at ASC, rd.id ASC
+		LIMIT $` + fmt.Sprint(len(args))
+
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]AdminExportRow, 0, limit)
+	for rows.Next() {
+		var a AdminExportRow
+		if err := rows.Scan(
+			&a.ID, &a.UserID, &a.PurchasedBy, &a.Name, &a.ContactID, &a.ExpiresAt,
+			&a.RegisteredAt, &a.LastRenewedAt, &a.Status, &a.SiteID, &a.RegistrarJobID,
+			&a.CreatedAt, &a.UpdatedAt,
+			&a.OwnerEmail, &a.OwnerName, &a.PurchaserEmail,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // AdminDomainStats — ringkasan kartu di /admin/domain.

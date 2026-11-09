@@ -46,6 +46,8 @@ const (
 	EventDomainUnsuspended   = "domain.unsuspended"
 	EventAdminUserUpdated    = "admin.user_updated"
 	EventAdminSiteDeleted    = "admin.site_deleted"
+	// Export berisi email pemilik — dicatat supaya pengunduhan PII terlacak.
+	EventAdminDomainsExported = "admin.domains_exported"
 	// Banner moderation (spec §27) — admin override guru promotion banner.
 	EventAdminBannerEnabled  = "admin.banner_enabled"
 	EventAdminBannerDisabled = "admin.banner_disabled"

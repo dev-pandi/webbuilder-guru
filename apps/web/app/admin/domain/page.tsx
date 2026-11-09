@@ -27,6 +27,8 @@ import {
   LayoutTemplate,
   Copy,
   Check,
+  Download,
+  CalendarRange,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -50,6 +52,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+import { ExportDomainsDialog } from "./ExportDomainsDialog";
 
 type Row = {
   name: string;
@@ -105,6 +109,10 @@ export default function AdminDomainsPage() {
   const [status, setStatus] = useState("all");
   const [expiring, setExpiring] = useState("all");
   const [withoutSite, setWithoutSite] = useState(false);
+  // YYYY-MM-DD (nilai <input type="date">), ditafsirkan WIB oleh API.
+  const [regFrom, setRegFrom] = useState("");
+  const [regTo, setRegTo] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
 
   const [stats, setStats] = useState<Stats | null>(null);
 
@@ -112,9 +120,22 @@ export default function AdminDomainsPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  // Satu sumber query filter untuk tabel dan export, supaya CSV selalu
+  // berisi baris yang sama dengan yang admin lihat.
+  const filterQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (debouncedQ) params.set("q", debouncedQ);
+    if (status !== "all") params.set("status", status);
+    if (expiring !== "all") params.set("expiring_days", expiring);
+    if (withoutSite) params.set("without_site", "true");
+    if (regFrom) params.set("registered_from", regFrom);
+    if (regTo) params.set("registered_to", regTo);
+    return params.toString();
+  }, [debouncedQ, status, expiring, withoutSite, regFrom, regTo]);
+
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, expiring, withoutSite]);
+  }, [filterQuery]);
 
   // Stats tidak ikut filter — angkanya total platform, fetch sekali saja.
   useEffect(() => {
@@ -136,14 +157,9 @@ export default function AdminDomainsPage() {
     async function fetchData() {
       setLoading(true);
       setErr(null);
-      const params = new URLSearchParams({
-        page: String(page),
-        page_size: String(pageSize),
-      });
-      if (debouncedQ) params.set("q", debouncedQ);
-      if (status !== "all") params.set("status", status);
-      if (expiring !== "all") params.set("expiring_days", expiring);
-      if (withoutSite) params.set("without_site", "true");
+      const params = new URLSearchParams(filterQuery);
+      params.set("page", String(page));
+      params.set("page_size", String(pageSize));
       try {
         const res = await api<PaginatedResult<Row>>(
           `/api/v1/admin/domains?${params.toString()}`,
@@ -159,7 +175,7 @@ export default function AdminDomainsPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, pageSize, debouncedQ, status, expiring, withoutSite]);
+  }, [page, pageSize, filterQuery]);
 
   const items = data?.items ?? [];
   const activeFilterCount = useMemo(() => {
@@ -168,14 +184,17 @@ export default function AdminDomainsPage() {
     if (status !== "all") n++;
     if (expiring !== "all") n++;
     if (withoutSite) n++;
+    if (regFrom || regTo) n++;
     return n;
-  }, [debouncedQ, status, expiring, withoutSite]);
+  }, [debouncedQ, status, expiring, withoutSite, regFrom, regTo]);
 
   function clearFilters() {
     setQ("");
     setStatus("all");
     setExpiring("all");
     setWithoutSite(false);
+    setRegFrom("");
+    setRegTo("");
   }
 
   // Kartu "tanpa situs" sekaligus jadi toggle filter tabel di bawahnya —
@@ -211,13 +230,27 @@ export default function AdminDomainsPage() {
             .
           </p>
         </div>
-        <Button asChild variant="outline" size="sm" className="gap-1.5">
-          <Link href="/admin/domain/purchases">
-            <ListChecks className="size-3.5" />
-            Riwayat Transaksi
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} className="gap-1.5">
+            <Download className="size-3.5" />
+            Export CSV
+          </Button>
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link href="/admin/domain/purchases">
+              <ListChecks className="size-3.5" />
+              Riwayat Transaksi
+            </Link>
+          </Button>
+        </div>
       </div>
+
+      <ExportDomainsDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        filterQuery={filterQuery}
+        filterCount={activeFilterCount}
+        filteredTotal={data?.total ?? null}
+      />
 
       {err && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
@@ -328,6 +361,31 @@ export default function AdminDomainsPage() {
             <Unlink className="size-3.5" />
             Tanpa situs
           </Button>
+          <div
+            className="flex items-center gap-1.5"
+            role="group"
+            aria-label="Rentang tanggal terdaftar"
+            title="Rentang tanggal terdaftar (WIB)"
+          >
+            <CalendarRange className="size-3.5 shrink-0 text-muted-foreground" />
+            <Input
+              type="date"
+              aria-label="Terdaftar dari"
+              value={regFrom}
+              max={regTo || undefined}
+              onChange={(e) => setRegFrom(e.target.value)}
+              className="h-9 w-[140px]"
+            />
+            <span className="text-xs text-muted-foreground">s.d.</span>
+            <Input
+              type="date"
+              aria-label="Terdaftar sampai"
+              value={regTo}
+              min={regFrom || undefined}
+              onChange={(e) => setRegTo(e.target.value)}
+              className="h-9 w-[140px]"
+            />
+          </div>
           {activeFilterCount > 0 && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5">
               <RefreshCw className="size-3.5" />

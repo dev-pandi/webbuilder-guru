@@ -1581,15 +1581,11 @@ func (h *Handler) AdminListPurchases(c *fiber.Ctx) error {
 // Pagination: page, page_size.
 func (h *Handler) AdminListDomains(c *fiber.Ctx) error {
 	p := httpx.ParsePagination(c)
-	expiringDays, _ := strconv.Atoi(c.Query("expiring_days", "0"))
-	f := AdminDomainFilter{
-		Q:            strings.TrimSpace(c.Query("q")),
-		Status:       strings.TrimSpace(c.Query("status")),
-		ExpiringDays: expiringDays,
-		WithoutSite:  c.Query("without_site") == "true",
-		Page:         p.Page,
-		PageSize:     p.PageSize,
+	f, msg := parseAdminDomainFilter(c)
+	if msg != "" {
+		return httpx.BadRequest(c, msg)
 	}
+	f.Page, f.PageSize = p.Page, p.PageSize
 	items, total, err := h.repo.AdminListDomains(c.Context(), f)
 	if err != nil {
 		slog.Error("admin list domains failed", "error", err)
