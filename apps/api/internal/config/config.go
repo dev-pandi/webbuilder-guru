@@ -108,6 +108,13 @@ type Config struct {
 	GoogleOAuthClientSecret string
 	GoogleOAuthRedirectURL  string
 
+	// e.id SSO. Client ID + secret dari developer dashboard e.id; kosong =
+	// fitur nonaktif. Callback URL diturunkan dari PUBLIC_API_HOST
+	// (EIDCallbackURL), jadi tidak perlu env sendiri.
+	EIDOAuthClientID     string
+	EIDOAuthClientSecret string
+	EIDAPIBase           string
+
 	// --- api-registry (EPP service) ---
 	//
 	// APIRegistryURL wajib untuk enable domain flow (check/register/renew/
@@ -170,6 +177,10 @@ func Load() Config {
 		GoogleOAuthClientSecret: env("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 		GoogleOAuthRedirectURL:  env("GOOGLE_OAUTH_REDIRECT_URL", ""),
 
+		EIDOAuthClientID:     env("EID_OAUTH_CLIENT_ID", ""),
+		EIDOAuthClientSecret: env("EID_OAUTH_CLIENT_SECRET", ""),
+		EIDAPIBase:           env("EID_API_BASE", "https://api-wallet.e.id"),
+
 		APIRegistryURL:        env("API_REGISTRY_URL", ""),
 		APIRegistryHMACSecret: env("API_REGISTRY_HMAC_SECRET", ""),
 		APIRegistryTimeout:    envDuration("API_REGISTRY_TIMEOUT", 30*time.Second),
@@ -194,6 +205,16 @@ func Load() Config {
 // In production (APP_ENV=production) we refuse to boot with default secrets,
 // weak secrets, or missing critical env that would otherwise silently fall back
 // to insecure dev defaults.
+// EIDCallbackURL — URL callback yang didaftarkan di dashboard e.id. Skema
+// mengikuti APP_BASE_URL (http di dev, https di prod).
+func (c Config) EIDCallbackURL() string {
+	scheme := "https"
+	if strings.HasPrefix(c.AppBaseURL, "http://") {
+		scheme = "http"
+	}
+	return scheme + "://" + c.PublicAPIHost + "/api/v1/auth/eid/callback"
+}
+
 func (c Config) Validate() error {
 	if c.AppEnv != "production" {
 		return nil

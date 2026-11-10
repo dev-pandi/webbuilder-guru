@@ -62,6 +62,14 @@ func MountUser(app *fiber.App, deps Deps) {
 			RateLimitIP(loginPerWindow, loginWindow), deps.AuthGoogle.Authorize)
 		v1.Get("/auth/google/callback", deps.AuthGoogle.Callback)
 	}
+	// e.id SSO — pola sama dengan Google. Route selalu terpasang; kalau belum
+	// dikonfigurasi, authorize mengarahkan balik ke /login dengan pesan.
+	if deps.AuthEID != nil {
+		v1.Get("/auth/eid/authorize",
+			RateLimitIP(loginPerWindow, loginWindow), deps.AuthEID.Authorize)
+		v1.Get("/auth/eid/callback", deps.AuthEID.Callback)
+	}
+	v1.Get("/auth/providers", auth.ProvidersHandler(deps.AuthGoogle, deps.AuthEID))
 
 	v1.Get("/templates", deps.Templates.List)
 	v1.Get("/template-meta", deps.Templates.Meta)

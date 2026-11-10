@@ -363,6 +363,18 @@ Blog platform-level (bukan per-site) untuk SEO + onboarding guru. Terpisah dari
   Perlu Website, Cara Memulai 15 Menit, Tips Menulis, Memilih Domain .id, Peluncuran
   PANDI × UPI, Cerita Guru Desa). Dipanggil goroutine di `main.go` dengan 30s timeout.
 
+## Login e.id (SSO)
+
+[auth/eid.go](../apps/api/internal/auth/eid.go) — pola sama dengan Google
+(cookie state, redirect fragment ke `/auth/callback`), tapi e.id bukan OIDC:
+tidak ada `state` balik maupun ID permanen, jadi akun dicocokkan lewat **email**
+dan disimpan di tabel umum `user_identities` (provider, subject). Semua tier
+e.id boleh login (keputusan produk); tier ≥ 1 menandai email terverifikasi.
+Nama/HP/alamat dari e.id hanya mengisi kolom kosong; NIK tidak pernah diisi.
+Callback URL diturunkan dari `APP_BASE_URL` + `PUBLIC_API_HOST`, bukan env.
+Tombol (`EidButton`) menyembunyikan diri lewat `GET /auth/providers` kalau
+`EID_OAUTH_CLIENT_ID/SECRET` kosong. Kajian docs: [e-id.md](../e-id.md).
+
 ## Akses Situs Kolaborator (`site_members`)
 
 Siapa boleh mengedit sebuah situs TIDAK ditentukan oleh hubungan bisnis
