@@ -86,6 +86,7 @@ func (h *EIDHandler) Authorize(c *fiber.Ctx) error {
 	q := url.Values{}
 	q.Set("client_id", h.clientID)
 	q.Set("callback_url", h.callbackURL)
+	fmt.Println(h.apiBase + "/api/v1.1/oauth/verify?" + q.Encode())
 	return c.Redirect(h.apiBase+"/api/v1.1/oauth/verify?"+q.Encode(), fiber.StatusFound)
 }
 
