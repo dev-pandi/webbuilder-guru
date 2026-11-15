@@ -287,20 +287,50 @@ func (h *Handler) executeRenew(
 			}
 		}
 	}
-	// Sync new expiry ke tabel `domains` — extend expires_at + record
-	// last_renewed_at. Bukan bikin row baru (renew hanya extend).
+	// Sync ke registered_domains — extend expires_at + last_renewed_at.
+	// Info gagal tidak boleh membuat expiry basi: perpanjang perkiraan
+	// `years`, nilai registry menimpanya saat sync berikutnya.
 	info, infoErr := h.registrar.InfoDomain(ctx, domain)
-	if infoErr != nil {
-		slog.Warn("execute_after_payment: info domain (renew) gagal",
-			"domain", domain, "error", infoErr)
-	} else if info != nil && !info.ExpiresAt.IsZero() {
-		if err := h.repo.UpdateDomainExpiry(ctx, domain, info.ExpiresAt); err != nil {
-			slog.Warn("execute_after_payment: update domain expiry gagal",
-				"domain", domain, "error", err)
-		}
+	infoOK := infoErr == nil && info != nil && !info.ExpiresAt.IsZero()
+	var syncErr error
+	if infoOK {
+		syncErr = h.repo.UpdateDomainExpiry(ctx, domain, info.ExpiresAt)
 		// Sync juga ke purchase row (kind=renew) buat konsistensi.
 		exp := info.ExpiresAt
 		_, _ = h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", &exp)
+	} else {
+		slog.Warn("execute_after_payment: info domain (renew) gagal, perpanjang perkiraan",
+			"domain", domain, "error", infoErr)
+		syncErr = h.repo.ExtendDomainExpiry(ctx, domain, years)
+	}
+	// Domain tanpa baris (register-nya tidak tercatat) tetap domain aktif
+	// yang harus muncul di /admin/domain dan laporan — buat barisnya.
+	if errors.Is(syncErr, ErrNotFound) {
+		d := Domain{
+			UserID:         inv.UserID,
+			PurchasedBy:    inv.PurchasedBy,
+			Name:           domain,
+			Status:         "active",
+			RegistrarJobID: resp.JobID,
+		}
+		exp := time.Now().AddDate(years, 0, 0)
+		if infoOK {
+			d.ContactID = info.Registrant
+			exp = info.ExpiresAt
+			if !info.CreatedAt.IsZero() {
+				d.RegisteredAt = info.CreatedAt
+			}
+		}
+		d.ExpiresAt = &exp
+		if _, err := h.repo.UpsertDomain(ctx, d); err != nil {
+			slog.Error("execute_after_payment: upsert domain (renew) gagal",
+				"domain", domain, "error", err)
+		} else {
+			_ = h.repo.UpdateDomainExpiry(ctx, domain, exp) // catat last_renewed_at
+		}
+	} else if syncErr != nil {
+		slog.Warn("execute_after_payment: update domain expiry gagal",
+			"domain", domain, "error", syncErr)
 	}
 
 	metrics.Default.CounterInc(metricExecuteAfterPayment,

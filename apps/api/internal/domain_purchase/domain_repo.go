@@ -140,6 +140,26 @@ func (r *Repo) UpdateDomainExpiry(ctx context.Context, name string, expiresAt ti
 	return nil
 }
 
+// ExtendDomainExpiry — fallback renew saat EPP info gagal: tambah `years`
+// ke expires_at (atau dari sekarang kalau kosong). ErrNotFound kalau baris
+// domain belum ada.
+func (r *Repo) ExtendDomainExpiry(ctx context.Context, name string, years int) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE registered_domains SET
+			expires_at      = COALESCE(expires_at, now()) + make_interval(years => $2),
+			last_renewed_at = now(),
+			updated_at      = now()
+		 WHERE name = $1
+	`, name, years)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DNS attach status constants — mirror kolom dns_attach_status enum.
 const (
 	DNSAttachPending = "pending" // belum di-attempt (default row baru)
