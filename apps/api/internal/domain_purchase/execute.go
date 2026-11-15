@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -181,22 +182,26 @@ func (h *Handler) executeRegister(
 		}
 	}
 
-	// Sync current-state ke tabel `domains` — fetch expires_at + contact_id
-	// dari EPP info. Best-effort: kalau info fail, purchase tetap active,
-	// user bisa re-sync manual via detail page (fallback ke WHOIS live).
+	// Sync current-state ke tabel `registered_domains` — expires_at +
+	// contact_id dari EPP info. Baris domain WAJIB tercipta walaupun info
+	// gagal: dulu langkah ini di-skip, sehingga domain yang sudah terdaftar
+	// hilang dari /admin/domain dan laporan per tanggal.
+	d := Domain{
+		UserID:         inv.UserID,
+		PurchasedBy:    inv.PurchasedBy,
+		Name:           domain,
+		Status:         "active",
+		RegistrarJobID: resp.JobID,
+	}
 	info, infoErr := h.registrar.InfoDomain(ctx, domain)
-	if infoErr != nil {
-		slog.Warn("execute_after_payment: info domain gagal (skip domain sync)",
+	if infoErr != nil || info == nil {
+		slog.Warn("execute_after_payment: info domain gagal, simpan dari data pembelian",
 			"domain", domain, "error", infoErr)
-	} else if info != nil {
-		d := Domain{
-			UserID:         inv.UserID,
-			PurchasedBy:    inv.PurchasedBy,
-			Name:           domain,
-			ContactID:      info.Registrant,
-			Status:         "active",
-			RegistrarJobID: resp.JobID,
-		}
+		// Perkiraan; nilai registry menimpanya saat sync ulang (retry/detail).
+		exp := time.Now().AddDate(years, 0, 0)
+		d.ExpiresAt = &exp
+	} else {
+		d.ContactID = info.Registrant
 		if !info.ExpiresAt.IsZero() {
 			exp := info.ExpiresAt
 			d.ExpiresAt = &exp
@@ -204,16 +209,16 @@ func (h *Handler) executeRegister(
 		if !info.CreatedAt.IsZero() {
 			d.RegisteredAt = info.CreatedAt
 		}
-		if _, err := h.repo.UpsertDomain(ctx, d); err != nil {
-			slog.Error("execute_after_payment: upsert domain gagal",
-				"domain", domain, "error", err)
-		}
-		// Juga sync expires_at ke purchase row supaya list/dashboard yg
-		// masih baca dari domain_purchases tetap up-to-date.
-		if d.ExpiresAt != nil {
-			exp := *d.ExpiresAt
-			_, _ = h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", &exp)
-		}
+	}
+	if _, err := h.repo.UpsertDomain(ctx, d); err != nil {
+		slog.Error("execute_after_payment: upsert domain gagal",
+			"domain", domain, "error", err)
+	}
+	// Juga sync expires_at ke purchase row supaya list/dashboard yg masih
+	// baca dari domain_purchases tetap up-to-date — hanya nilai registry.
+	if infoErr == nil && info != nil && d.ExpiresAt != nil {
+		exp := *d.ExpiresAt
+		_, _ = h.repo.UpdateStatus(ctx, idemKey, StatusActive, "", &exp)
 	}
 
 	// Trigger Cloudflare auto-attach best-effort — same pattern dengan

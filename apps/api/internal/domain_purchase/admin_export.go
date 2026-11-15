@@ -37,25 +37,35 @@ func parseAdminDomainFilter(c *fiber.Ctx) (AdminDomainFilter, string) {
 		ExpiringDays: expiringDays,
 		WithoutSite:  c.Query("without_site") == "true",
 	}
-	if v := strings.TrimSpace(c.Query("registered_from")); v != "" {
+	from, to, msg := parseDateRange(c, "registered_from", "registered_to")
+	f.RegisteredFrom, f.RegisteredTo = from, to
+	return f, msg
+}
+
+// parseDateRange — rentang tanggal WIB "YYYY-MM-DD" dari query, jadi
+// [from, to) dengan to = awal hari setelah tanggal akhir. Dipakai list
+// domain (registered_at) dan riwayat transaksi (created_at).
+func parseDateRange(c *fiber.Ctx, fromKey, toKey string) (*time.Time, *time.Time, string) {
+	var from, to *time.Time
+	if v := strings.TrimSpace(c.Query(fromKey)); v != "" {
 		d, err := time.ParseInLocation("2006-01-02", v, wib)
 		if err != nil {
-			return f, "registered_from harus berformat YYYY-MM-DD"
+			return nil, nil, fromKey + " harus berformat YYYY-MM-DD"
 		}
-		f.RegisteredFrom = &d
+		from = &d
 	}
-	if v := strings.TrimSpace(c.Query("registered_to")); v != "" {
+	if v := strings.TrimSpace(c.Query(toKey)); v != "" {
 		d, err := time.ParseInLocation("2006-01-02", v, wib)
 		if err != nil {
-			return f, "registered_to harus berformat YYYY-MM-DD"
+			return nil, nil, toKey + " harus berformat YYYY-MM-DD"
 		}
 		end := d.AddDate(0, 0, 1)
-		f.RegisteredTo = &end
+		to = &end
 	}
-	if f.RegisteredFrom != nil && f.RegisteredTo != nil && !f.RegisteredFrom.Before(*f.RegisteredTo) {
-		return f, "tanggal awal tidak boleh setelah tanggal akhir"
+	if from != nil && to != nil && !from.Before(*to) {
+		return nil, nil, "tanggal awal tidak boleh setelah tanggal akhir"
 	}
-	return f, ""
+	return from, to, ""
 }
 
 // AdminExportDomains — GET /api/v1/admin/domains/export. Mengembalikan SATU

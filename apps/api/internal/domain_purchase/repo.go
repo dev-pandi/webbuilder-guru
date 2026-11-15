@@ -422,10 +422,13 @@ type AdminPurchase struct {
 type AdminListFilter struct {
 	Status string // exact match ("" = semua)
 	Kind   string // exact match ("" = semua)
-	Like   string // LIKE pattern (dari httpx.LikePattern) — match domain OR user email
+	Like   string // LIKE pattern (dari httpx.LikePattern) — match domain, email, atau nama user
 	Sort   string // whitelist di orderSQL, default "created_at DESC"
-	Limit  int
-	Offset int
+	// Rentang created_at (tanggal transaksi), [From, To) — To eksklusif.
+	CreatedFrom *time.Time
+	CreatedTo   *time.Time
+	Limit       int
+	Offset      int
 }
 
 // orderAdminPurchasesSQL whitelist untuk sort preset. JANGAN interpolasi
@@ -463,10 +466,22 @@ func (r *Repo) AdminList(ctx context.Context, f AdminListFilter) ([]AdminPurchas
 		i++
 	}
 	if f.Like != "" && f.Like != "%%" {
-		// Search domain ATAU user email — 1 argument (pattern) dipakai dua kali.
+		// Search domain, email, atau nama user — sama dengan /admin/domains,
+		// supaya pencarian yang sama memberi hasil sebanding di kedua halaman.
 		where = append(where,
-			"(LOWER(dp.domain) LIKE $"+itoaPos(i)+" OR LOWER(u.email) LIKE $"+itoaPos(i)+")")
+			"(LOWER(dp.domain) LIKE $"+itoaPos(i)+" OR LOWER(u.email) LIKE $"+itoaPos(i)+
+				" OR LOWER(u.name) LIKE $"+itoaPos(i)+")")
 		args = append(args, f.Like)
+		i++
+	}
+	if f.CreatedFrom != nil {
+		where = append(where, "dp.created_at >= $"+itoaPos(i))
+		args = append(args, *f.CreatedFrom)
+		i++
+	}
+	if f.CreatedTo != nil {
+		where = append(where, "dp.created_at < $"+itoaPos(i))
+		args = append(args, *f.CreatedTo)
 		i++
 	}
 

@@ -23,6 +23,7 @@ import {
   ExternalLink,
   ChevronLeft,
   RotateCcw,
+  CalendarRange,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -107,6 +108,10 @@ export default function AdminPurchasesPage() {
   const [status, setStatus] = useState("all");
   const [kind, setKind] = useState("all");
   const [sort, setSort] = useState("default");
+  // Tanggal transaksi (created_at), YYYY-MM-DD WIB — beda dengan halaman
+  // Domain Aktif yang memfilter tanggal terdaftar di registry.
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
 
   const [data, setData] = useState<PaginatedResult<Row> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,7 +142,7 @@ export default function AdminPurchasesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQ, status, kind, sort]);
+  }, [debouncedQ, status, kind, sort, createdFrom, createdTo]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +157,8 @@ export default function AdminPurchasesPage() {
       if (status !== "all") params.set("status", status);
       if (kind !== "all") params.set("kind", kind);
       if (sort && sort !== "default") params.set("sort", sort);
+      if (createdFrom) params.set("created_from", createdFrom);
+      if (createdTo) params.set("created_to", createdTo);
       try {
         const res = await api<PaginatedResult<Row>>(
           `/api/v1/admin/registrar/purchases?${params.toString()}`,
@@ -167,7 +174,7 @@ export default function AdminPurchasesPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, pageSize, debouncedQ, status, kind, sort, refetchTick]);
+  }, [page, pageSize, debouncedQ, status, kind, sort, createdFrom, createdTo, refetchTick]);
 
   const items = data?.items ?? [];
   const activeFilterCount = useMemo(() => {
@@ -176,14 +183,17 @@ export default function AdminPurchasesPage() {
     if (status !== "all") n++;
     if (kind !== "all") n++;
     if (sort && sort !== "default") n++;
+    if (createdFrom || createdTo) n++;
     return n;
-  }, [debouncedQ, status, kind, sort]);
+  }, [debouncedQ, status, kind, sort, createdFrom, createdTo]);
 
   function clearFilters() {
     setQ("");
     setStatus("all");
     setKind("all");
     setSort("default");
+    setCreatedFrom("");
+    setCreatedTo("");
   }
 
   return (
@@ -225,7 +235,7 @@ export default function AdminPurchasesPage() {
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Cari domain atau email…"
+              placeholder="Cari domain, email, atau nama…"
               className="h-9 pl-8"
             />
           </div>
@@ -265,6 +275,32 @@ export default function AdminPurchasesPage() {
               ))}
             </SelectContent>
           </Select>
+          <div
+            className="flex items-center gap-1.5"
+            role="group"
+            aria-label="Rentang tanggal transaksi"
+            title="Tanggal transaksi dibuat (WIB), bukan tanggal domain terdaftar di registry"
+          >
+            <CalendarRange className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Transaksi</span>
+            <Input
+              type="date"
+              aria-label="Transaksi dari"
+              value={createdFrom}
+              max={createdTo || undefined}
+              onChange={(e) => setCreatedFrom(e.target.value)}
+              className="h-9 w-[140px]"
+            />
+            <span className="text-xs text-muted-foreground">s.d.</span>
+            <Input
+              type="date"
+              aria-label="Transaksi sampai"
+              value={createdTo}
+              min={createdFrom || undefined}
+              onChange={(e) => setCreatedTo(e.target.value)}
+              className="h-9 w-[140px]"
+            />
+          </div>
           {activeFilterCount > 0 && (
             <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5">
               <RefreshCw className="size-3.5" />

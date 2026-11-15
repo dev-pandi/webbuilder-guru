@@ -368,6 +368,7 @@ export default function AdminDomainsPage() {
             title="Rentang tanggal terdaftar (WIB)"
           >
             <CalendarRange className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Terdaftar</span>
             <Input
               type="date"
               aria-label="Terdaftar dari"

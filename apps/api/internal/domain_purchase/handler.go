@@ -1514,13 +1514,19 @@ func (h *Handler) Attach(c *fiber.Ctx) error {
 //   page, page_size, sort (default created_at DESC)
 func (h *Handler) AdminListPurchases(c *fiber.Ctx) error {
 	p := httpx.ParsePagination(c)
+	from, to, msg := parseDateRange(c, "created_from", "created_to")
+	if msg != "" {
+		return httpx.BadRequest(c, msg)
+	}
 	f := AdminListFilter{
-		Status: c.Query("status"),
-		Kind:   c.Query("kind"),
-		Like:   p.LikePattern(),
-		Sort:   p.Sort,
-		Limit:  p.PageSize,
-		Offset: p.Offset(),
+		Status:      c.Query("status"),
+		Kind:        c.Query("kind"),
+		Like:        p.LikePattern(),
+		Sort:        p.Sort,
+		CreatedFrom: from,
+		CreatedTo:   to,
+		Limit:       p.PageSize,
+		Offset:      p.Offset(),
 	}
 	items, total, err := h.repo.AdminList(c.Context(), f)
 	if err != nil {
