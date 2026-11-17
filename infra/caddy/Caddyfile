@@ -29,9 +29,17 @@ api.localhost {
 	reverse_proxy api:8080
 }
 
+# Vary: Host mencegah cache downstream (CDN/proxy) menyajikan halaman satu
+# tenant ke host lain. Sejak Next 16 ini satu-satunya lapisan: Next menimpa
+# Vary dengan daftar RSC-nya, jadi header dari renderer tidak pernah lolos.
+(renderer_headers) {
+	import renderer_csp
+	header Vary Host
+}
+
 # Default localhost = renderer (so http://localhost works in dev)
 localhost {
-	import renderer_csp
+	import renderer_headers
 	reverse_proxy renderer:3000
 }
 
@@ -41,11 +49,11 @@ localhost {
 	tls {
 		on_demand
 	}
-	import renderer_csp
+	import renderer_headers
 	reverse_proxy renderer:3000
 }
 
 :80 {
-	import renderer_csp
+	import renderer_headers
 	reverse_proxy renderer:3000
 }

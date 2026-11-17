@@ -72,7 +72,7 @@ export function proxy(req: NextRequest) {
   // Vary: Host tidak di-set di sini. Next 16 selalu menimpa Vary dengan daftar
   // RSC-nya sendiri, jadi apa pun yang di-set dari proxy (atau next.config
   // headers) tidak pernah sampai ke klien. Cache isolation multi-tenant
-  // ditegakkan di Caddy — lihat `header Vary Host` di infra/caddy/Caddyfile.bin.
+  // ditegakkan di Caddy — lihat `header Vary Host` di infra/caddy/Caddyfile.
 
   res.headers.set("Content-Security-Policy", csp);
 

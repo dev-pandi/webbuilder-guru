@@ -1,6 +1,6 @@
 # Web Builder
 
-Multi-tenant web builder. Lihat [plan.md](plan.md) untuk arsitektur lengkap.
+Multi-tenant web builder: beli domain .id, pilih template, edit dengan editor blok, dan tayang dengan HTTPS otomatis.
 
 ## Struktur
 
