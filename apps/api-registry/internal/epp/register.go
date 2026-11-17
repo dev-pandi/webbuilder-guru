@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/al0fayz/epp-pandi-client/frames"
+	"github.com/teknispandi/epp-pandi-client/v2/frames"
 	"github.com/webbuilder/api-registry/internal/provider"
 )
 
@@ -42,16 +42,11 @@ func (p *EPPDirectProvider) RegisterDomain(ctx context.Context, req provider.Reg
 		return nil, mapEPPErr(err)
 	}
 
-	frame := &frames.DomainCreateType{}
-	frame.SetDomain(strings.ToLower(req.Domain))
-	frame.SetPeriod(frames.Period{Value: req.Years, Unit: frames.PeriodUnitYear})
-	frame.SetRegistrant(registrantHandle)
-	for _, role := range []string{"admin", "tech", "billing"} {
-		frame.AddContact(frames.Contact{Name: registrantHandle, Type: role})
+	authInfo, err := newDomainAuthInfo()
+	if err != nil {
+		return nil, fmt.Errorf("epp: generate authInfo: %w", err)
 	}
-	for _, ns := range req.Nameservers {
-		frame.AddAddr(ns)
-	}
+	frame := buildDomainCreate(strings.ToLower(req.Domain), req.Years, registrantHandle, authInfo, req.Nameservers)
 
 	p.c.DumpRequest("domain:create", frame, "domain", req.Domain, "years", req.Years)
 	raw, err := p.c.client.CreateDomain(ctx, frame)
@@ -146,4 +141,22 @@ func (p *EPPDirectProvider) RetryRegister(ctx context.Context, jobID string) (*p
 // CancelRegister — EPP sync, tidak ada pending job untuk di-cancel.
 func (p *EPPDirectProvider) CancelRegister(ctx context.Context, jobID string) error {
 	return fmt.Errorf("%w: EPP sync — no pending job to cancel", provider.ErrCapabilityMissing)
+}
+
+// buildDomainCreate — frame domain:create. Dipisah supaya test bisa
+// memastikan frame lolos Validate() library v2 tanpa koneksi EPP.
+func buildDomainCreate(domain string, years int, registrant, authInfo string, nameservers []string) *frames.DomainCreateType {
+	frame := &frames.DomainCreateType{}
+	frame.SetDomain(domain)
+	frame.SetPeriod(frames.Period{Value: years, Unit: frames.PeriodUnitYear})
+	frame.SetRegistrant(registrant)
+	for _, role := range []frames.ContactType{frames.ContactTypeAdmin, frames.ContactTypeTech, frames.ContactTypeBilling} {
+		frame.AddContact(frames.Contact{Name: registrant, Type: role})
+	}
+	// authInfo wajib di domain-1.0.xsd; library v2 menolak create tanpa ini.
+	frame.SetAuthInfo(authInfo)
+	for _, ns := range nameservers {
+		frame.AddHostObj(ns)
+	}
+	return frame
 }

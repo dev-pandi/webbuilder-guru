@@ -1,7 +1,9 @@
 package epp
 
 import (
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"strings"
 )
 
@@ -90,4 +92,53 @@ func extractDomainFromJobID(jobID string) string {
 		rest = rest[:idx]
 	}
 	return strings.ReplaceAll(rest, "_", ".")
+}
+
+// Huruf ambigu (0/O, 1/l/I) dibuang supaya kode transfer aman didiktekan.
+const (
+	authUpper   = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	authLower   = "abcdefghijkmnopqrstuvwxyz"
+	authDigits  = "23456789"
+	authSpecial = "!#$%*+-=?@"
+)
+
+// newDomainAuthInfo — kode transfer (authInfo) domain, 16 karakter acak dari
+// crypto/rand dengan minimal satu huruf besar, kecil, angka, dan simbol.
+// Tidak boleh diturunkan dari data domain/user: siapa pun yang tahu kodenya
+// bisa memindahkan domain ke registrar lain.
+func newDomainAuthInfo() (string, error) {
+	const length = 16
+	all := authUpper + authLower + authDigits + authSpecial
+	out := make([]byte, 0, length)
+	for _, set := range []string{authUpper, authLower, authDigits, authSpecial} {
+		ch, err := randChar(set)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, ch)
+	}
+	for len(out) < length {
+		ch, err := randChar(all)
+		if err != nil {
+			return "", err
+		}
+		out = append(out, ch)
+	}
+	// Acak posisi supaya empat karakter wajib tidak selalu di depan.
+	for i := len(out) - 1; i > 0; i-- {
+		j, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return "", err
+		}
+		out[i], out[j.Int64()] = out[j.Int64()], out[i]
+	}
+	return string(out), nil
+}
+
+func randChar(set string) (byte, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(set))))
+	if err != nil {
+		return 0, err
+	}
+	return set[n.Int64()], nil
 }
