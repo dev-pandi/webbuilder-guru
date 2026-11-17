@@ -244,3 +244,12 @@ cd apps/web       && npm ci && npm run build
 cd apps/renderer  && npm ci && npm run build
 
 ```
+
+## Lisensi
+
+Kode di repositori ini dirilis di bawah [lisensi MIT](LICENSE),
+© 2026 Pengelola Nama Domain Internet Indonesia (PANDI).
+
+Pengecualian: tema dan plugin WordPress di [`apps/wp/`](apps/wp/) memakai
+GPLv2 atau yang lebih baru (lihat [`apps/wp/LICENSE`](apps/wp/LICENSE)),
+sesuai syarat direktori wordpress.org.
