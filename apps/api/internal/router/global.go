@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cache"
+	"github.com/gofiber/fiber/v2/utils"
 
 	"github.com/webbuilder/api/internal/assets"
 	"github.com/webbuilder/api/internal/metrics"
@@ -114,14 +115,8 @@ func MountGlobal(app *fiber.App, deps Deps) {
 	// endpoint /preview/:token yang bypass cache (dynamic per-token). Untuk
 	// invalidation on-demand (dashboard save → purge), butuh implementasi
 	// terpisah (TODO Phase 4).
-	shortCache := cache.New(cache.Config{
-		Expiration:   5 * time.Second,
-		CacheControl: true,
-	})
-	longCache := cache.New(cache.Config{
-		Expiration:   30 * time.Second,
-		CacheControl: true,
-	})
+	shortCache := publicCache(5 * time.Second)
+	longCache := publicCache(30 * time.Second)
 
 	pubBase := app.Group("/public", pubCORS)
 
@@ -255,4 +250,17 @@ func readiness(c *fiber.Ctx, deps Deps) error {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(out)
 	}
 	return c.JSON(out)
+}
+
+// publicCache keys on path AND query. Fiber's default key is the path only,
+// which served one host's site for /site-by-host?host=<another> and one
+// rubric's articles for every ?rubric= within the TTL.
+func publicCache(ttl time.Duration) fiber.Handler {
+	return cache.New(cache.Config{
+		Expiration:   ttl,
+		CacheControl: true,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return utils.CopyString(c.OriginalURL())
+		},
+	})
 }

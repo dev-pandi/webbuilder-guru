@@ -1,0 +1,743 @@
+{
+  "site": {
+    "name": "Bu Maha · Guru Matematika",
+    "theme": {
+      "colors": {
+        "primary": "#173a40",
+        "secondary": "#c4532d",
+        "bg": "#f7f3ea",
+        "fg": "#1f2b2e"
+      },
+      "font": {
+        "heading": "Fraunces",
+        "body": "Plus Jakarta Sans"
+      },
+      "radius": "1.25rem"
+    },
+    "header": [
+      {
+        "type": "GuruNavbar",
+        "props": {
+          "brandName": "Ahmad Rofai",
+          "brandRole": "Guru Matematika SMP",
+          "brandMark": "M",
+          "links": [
+            { "label": "Beranda", "href": "/" },
+            { "label": "Profil", "href": "/profil" },
+            { "label": "Ruang Kelas", "href": "/kelas" },
+            { "label": "Ceritaku", "href": "/ceritaku" },
+            { "label": "Bacaanku", "href": "/bacaanku" },
+            { "label": "Inspirasiku", "href": "/inspirasiku" },
+            { "label": "Bangsaku", "href": "/bangsaku" },
+            { "label": "Peradaban", "href": "/peradaban" },
+            { "label": "Forum", "href": "/forum-diskusi" },
+            { "label": "Pembelajaran", "href": "/pembelajaran" }
+          ]
+        }
+      }
+    ],
+    "footer": [
+      {
+        "type": "GuruFooter",
+        "props": {
+          "brandName": "Ahmad Rofai",
+          "brandRole": "Guru Matematika SMP",
+          "brandMark": "M",
+          "copyText": "Catatan seorang guru matematika: cerita kelas, bacaan, materi, dan pertanyaan yang belum selesai dijawab. Di sini, jawaban salah dihitung sebagai data, bukan aib.",
+          "builderTitle": "Web Builder Guru",
+          "builderBrand": "PANDI × UPI",
+          "builderNote": "Situs contoh kubaca.id. Tokoh, kelas, dan cerita di dalamnya fiktif.",
+          "links": [
+            { "label": "Profil", "href": "/profil" },
+            { "label": "Ruang Kelas", "href": "/kelas" },
+            { "label": "Pembelajaran", "href": "/pembelajaran" },
+            { "label": "Forum Diskusi", "href": "/forum-diskusi" },
+            { "label": "Ceritaku", "href": "/ceritaku" },
+            { "label": "Peradaban", "href": "/peradaban" }
+          ],
+          "bottomLeft": "© 2026 Ahmad Rofai · mahagurux.my.id",
+          "bottomRight": "Dibuat dengan Web Builder Guru kubaca.id"
+        }
+      }
+    ]
+  },
+
+  "profile": {
+    "subject_or_field": "Guru Matematika SMP",
+    "profile_image": "./img/avatar.webp",
+    "bio_short": "Guru Matematika SMP di Bandung. Menulis tentang kelas, buku, dan cara membuat siswa berani mencari x.",
+    "bio_long": "Saya mengajar Matematika untuk kelas VII sampai IX sejak 2014. Situs ini saya pakai untuk menyimpan cerita kelas, catatan bacaan, dan materi yang saya susun sendiri.\n\nSaya percaya jawaban salah adalah data. Dari sanalah kami tahu bagian mana yang perlu dijelaskan ulang.",
+    "hero_statement": "Matematika adalah mencari x bersama siswa.",
+    "quote": "Saya tidak sedang mencari siswa yang tidak pernah salah. Saya mencari siswa yang berani menunjukkan hitungannya.",
+    "social_links": []
+  },
+
+  "banners": [
+    {
+      "title": "Seri materi: Mulai dari pecahan",
+      "image": "./img/banner/mulai-dari-pecahan.webp",
+      "href": "https://mahagurux.my.id/pembelajaran/pecahan-dalam-kehidupan-sehari-hari",
+      "alt": "Mulai dari pecahan, pelan-pelan saja. Materi Bab Bilangan kelas VII lengkap dengan contoh soal dan kunci jawaban."
+    },
+    {
+      "title": "Tantangan x pekan ini",
+      "image": "./img/banner/tantangan-x-pekan-ini.webp",
+      "href": "https://mahagurux.my.id/forum-diskusi",
+      "alt": "Tantangan pekan ini: sebuah bilangan dikali 3 lalu ditambah 7 hasilnya 34. Berapa bilangan itu? Jawab di Forum Diskusi."
+    },
+    {
+      "title": "Materi baru: Teorema Pythagoras",
+      "image": "./img/banner/materi-baru-pythagoras.webp",
+      "href": "https://mahagurux.my.id/pembelajaran/teorema-pythagoras",
+      "alt": "Materi baru kelas VIII: Teorema Pythagoras, dari tangga sampai layar ponsel."
+    }
+  ],
+
+  "pages": [
+    {
+      "slug": "home",
+      "title": "Beranda",
+      "is_home": true,
+      "seo": {
+        "title": "Bu Maha · Guru Matematika SMP — mencari x bersama siswa",
+        "description": "Cerita kelas, catatan bacaan, dan materi Matematika SMP dari Ahmad Rofai, guru di Bandung."
+      },
+      "blocks": [
+        {
+          "type": "GuruHero",
+          "props": {
+            "eyebrow": "Matematika SMP · Bandung",
+            "title": "Halo, saya Bu Maha.",
+            "titleEm": "Kita cari x bersama.",
+            "subtitle": "Di sini saya menyimpan cerita kelas, catatan bacaan, dan materi Matematika SMP. Jawaban salah boleh mampir: di kelas ini, ia dihitung sebagai data, bukan aib.",
+            "ctaLabel": "Buka materi belajar",
+            "ctaHref": "/pembelajaran",
+            "ctaSecondaryLabel": "Kenalan dulu",
+            "ctaSecondaryHref": "/profil",
+            "image": "/templates/guru-pandi-upi/teacher.png",
+            "imageAlt": "Ilustrasi Bu Maha memegang buku dan pena di depan rak buku",
+            "stats": [
+              { "value": "12", "label": "Tahun mengajar" },
+              { "value": "VII–IX", "label": "Kelas yang diampu" },
+              { "value": "∞", "label": "Pertanyaan boleh diajukan" }
+            ],
+            "noteAText": "Matematika SMP",
+            "noteASub": "Aljabar · Geometri · Data",
+            "noteBText": "Catatan hari ini",
+            "noteBSub": "x = 9, dan kelas bersorak."
+          }
+        },
+        {
+          "type": "GuruPlusMarquee",
+          "props": {
+            "speed": "slow",
+            "items": ["Pecahan", "Bilangan bulat", "Persamaan linear", "Pola bilangan", "Teorema Pythagoras", "Statistika", "Literasi data", "Sejarah matematika", "Geometri batik"]
+          }
+        },
+        { "type": "GuruPromoCarouselDynamic", "props": {} },
+        {
+          "type": "GuruRubricGrid",
+          "props": {
+            "eyebrow": "Enam ruang",
+            "title": "Apa yang bisa kamu temukan di sini?",
+            "subtitle": "Sebagian berupa cerita, sebagian catatan bacaan, sebagian lagi pertanyaan yang ingin saya bicarakan bersama pembaca.",
+            "items": [
+              { "title": "Ceritaku", "desc": "Kejadian di kelas yang membuat saya belajar ulang cara mengajar.", "href": "/ceritaku", "icon": "book" },
+              { "title": "Bacaanku", "desc": "Buku yang mengubah cara saya memandang matematika dan siswa.", "href": "/bacaanku", "icon": "bookmark" },
+              { "title": "Inspirasiku", "desc": "Rutinitas kecil dan ide dari rekan guru yang bisa langsung dicoba.", "href": "/inspirasiku", "icon": "sparkle" },
+              { "title": "Bangsaku", "desc": "Matematika untuk warga: membaca grafik, menghitung diskon, menimbang bunga.", "href": "/bangsaku", "icon": "flag" },
+              { "title": "Peradaban", "desc": "Jejak angka nol di prasasti, geometri di kain batik, dan asal kata algoritma.", "href": "/peradaban", "icon": "temple" },
+              { "title": "Forum Diskusi", "desc": "Kalkulator, PR, dan rasa takut pada angka. Ayo bicarakan bersama.", "href": "/forum-diskusi", "icon": "chat" }
+            ]
+          }
+        },
+        {
+          "type": "GuruLatestGridDynamic",
+          "props": {
+            "eyebrow": "Tulisan terbaru",
+            "title": "Dari papan tulis, buku, dan pasar.",
+            "subtitle": "Catatan yang paling baru saya tulis. Bukan jawaban akhir, tapi jejak proses belajar."
+          }
+        },
+        {
+          "type": "GuruPlusLessonCard",
+          "props": {
+            "eyebrow": "Mulai belajar",
+            "title": "Materi pilihan pekan ini",
+            "items": [
+              {
+                "title": "Persamaan Linear Satu Variabel",
+                "level": "Kelas VII",
+                "duration": "± 25 menit",
+                "description": "Mencari x dengan model timbangan seimbang, lalu memakainya untuk soal cerita.",
+                "icon": "🔍",
+                "href": "/pembelajaran/persamaan-linear-satu-variabel",
+                "ctaLabel": "Pelajari"
+              },
+              {
+                "title": "Teorema Pythagoras",
+                "level": "Kelas VIII",
+                "duration": "± 30 menit",
+                "description": "Bukti dengan menyusun persegi, tripel yang sering muncul, dan tangga yang bersandar di dinding.",
+                "icon": "📐",
+                "href": "/pembelajaran/teorema-pythagoras",
+                "ctaLabel": "Pelajari"
+              },
+              {
+                "title": "Mean, Median, Modus",
+                "level": "Kelas VIII",
+                "duration": "± 25 menit",
+                "description": "Kapan rata-rata menipu, dan kenapa median sering lebih jujur.",
+                "icon": "📊",
+                "href": "/pembelajaran/mean-median-modus",
+                "ctaLabel": "Pelajari"
+              }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusStudentWall",
+          "props": {
+            "eyebrow": "Dari kelas",
+            "title": "Kalimat-kalimat yang saya simpan",
+            "items": [
+              { "message": "Ternyata x itu cuma kotak yang lagi sembunyi, Bu.", "author": "Siswa", "grade": "Kelas VII", "color": "amber" },
+              { "message": "Saya salah tiga kali, tapi yang ketiga saya tahu salahnya di mana.", "author": "Siswa", "grade": "Kelas VIII", "color": "green" },
+              { "message": "Grafik harga cabai di berita itu sumbunya dipotong, makanya kelihatan seram.", "author": "Siswa", "grade": "Kelas IX", "color": "blue" },
+              { "message": "Martabaknya jangan dipotong sembarangan. Itu pecahan!", "author": "Siswa", "grade": "Kelas VII", "color": "pink" }
+            ]
+          }
+        },
+        {
+          "type": "GuruQuote",
+          "props": {
+            "text": "Saya tidak sedang mencari siswa yang tidak pernah salah. Saya mencari siswa yang berani menunjukkan hitungannya.",
+            "author": "Bu Maha · catatan mengajar"
+          }
+        },
+        {
+          "type": "GuruPlusContactCTA",
+          "props": {
+            "variant": "cream",
+            "eyebrow": "Ayo ngobrol",
+            "title": "Punya pertanyaan soal belajar matematika?",
+            "subtitle": "Tulis di Forum Diskusi. Guru, siswa, dan orang tua boleh ikut, dan setiap tanggapan saya baca sebelum ditampilkan.",
+            "ctaLabel": "Buka Forum Diskusi",
+            "ctaHref": "/forum-diskusi",
+            "ctaSecondaryLabel": "Lihat Ruang Kelas",
+            "ctaSecondaryHref": "/kelas",
+            "contacts": [
+              { "icon": "📍", "label": "Mengajar di", "value": "Bandung, Jawa Barat" },
+              { "icon": "🕒", "label": "Konsultasi orang tua", "value": "Kamis, 15.00–16.30", "href": "/kelas" },
+              { "icon": "💬", "label": "Forum", "value": "Dibalas paling lambat 2 hari", "href": "/forum-diskusi" }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "profil",
+      "title": "Profil",
+      "seo": {
+        "title": "Profil · Ahmad Rofai, Guru Matematika SMP",
+        "description": "Kenalan dengan Bu Maha: dua belas tahun mengajar Matematika SMP di Bandung, dan cara ia membuat siswa berani bertanya."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Profil",
+            "title": "Saya mengajar matematika supaya siswa berani bertanya.",
+            "subtitle": "Nama saya Ahmad Rofai. Siswa memanggil saya Bu Maha. Sejak 2014 saya mengajar Matematika untuk kelas VII sampai IX di Bandung.",
+            "iconKey": "sparkle"
+          }
+        },
+        {
+          "type": "GuruProfileCard",
+          "props": {
+            "image": "/templates/guru-pandi-upi/teacher.png",
+            "name": "Ahmad Rofai",
+            "role": "Guru Matematika SMP · Bandung",
+            "contacts": [
+              { "icon": "📍", "label": "Bandung, Jawa Barat" },
+              { "icon": "🎓", "label": "S1 Pendidikan Matematika" },
+              { "icon": "🌐", "label": "mahagurux.my.id" }
+            ],
+            "panels": [
+              {
+                "eyebrow": "Tentang saya",
+                "title": "Huruf x tidak perlu ditakuti.",
+                "body": "Tahun pertama mengajar, saya kira tugas guru matematika adalah menjelaskan dengan rapi. Ternyata siswa jarang tersesat karena penjelasan yang kurang rapi. Mereka tersesat karena takut salah, lalu berhenti mencoba. Sejak itu saya mengubah cara mengajar: lebih banyak bertanya, lebih banyak benda nyata, dan lebih banyak ruang untuk menunjukkan hitungan yang belum selesai. Nama situs ini, mahagurux, berasal dari sana. Di kelas kami, x adalah sesuatu yang dicari bersama."
+              },
+              {
+                "title": "Yang saya pegang",
+                "body": "Jawaban salah adalah data. Pertanyaan yang terdengar sepele sering kali paling penting. Dan matematika paling mudah dipahami ketika ia muncul di tempat yang dikenal siswa: pasar, dapur, lapangan bola, dan kain batik di lemari rumah."
+              }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusStats",
+          "props": {
+            "eyebrow": "Dalam angka",
+            "title": "Dua belas tahun di depan papan tulis",
+            "items": [
+              { "value": 12, "label": "Tahun mengajar" },
+              { "value": 24, "label": "Jam pelajaran per pekan" },
+              { "value": 160, "suffix": "+", "label": "Soal latihan buatan sendiri" },
+              { "value": 1, "label": "Prinsip: salah itu data" }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusSkillBars",
+          "props": {
+            "eyebrow": "Isi satu jam pelajaran",
+            "title": "Ke mana waktu di kelas saya pergi",
+            "items": [
+              { "label": "Diskusi dan bertanya", "value": 35, "note": "Bagian terbesar: siswa menjelaskan caranya sendiri." },
+              { "label": "Latihan terbimbing", "value": 30, "note": "Saya berkeliling, siswa mengerjakan." },
+              { "label": "Eksplorasi dengan benda nyata", "value": 20, "note": "Kertas lipat, dadu, timbangan, martabak." },
+              { "label": "Penjelasan guru", "value": 15, "note": "Sengaja paling sedikit." }
+            ]
+          }
+        },
+        {
+          "type": "GuruTagList",
+          "props": {
+            "title": "Fokus & minat",
+            "tags": ["Aljabar", "Geometri", "Literasi data", "Sejarah matematika", "Asesmen formatif", "Matematika dan budaya"]
+          }
+        },
+        {
+          "type": "GuruTimeline",
+          "props": {
+            "title": "Jejak mengajar",
+            "items": [
+              { "date": "2014—2017", "title": "Guru Matematika kelas VII", "desc": "Belajar bahwa menjelaskan dengan rapi saja tidak cukup." },
+              { "date": "2018—2021", "title": "Pembina klub matematika", "desc": "Teka-teki, permainan, dan lomba kecil antarkelas setiap Jumat." },
+              { "date": "2022—2024", "title": "Penyusun modul ajar bersama MGMP", "desc": "Menulis modul aljabar dan statistika bersama guru dari sekolah lain." },
+              { "date": "2025—Kini", "title": "Guru dan penulis mahagurux.my.id", "desc": "Membuka catatan kelas untuk siswa, orang tua, dan sesama guru." }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusCertificateGrid",
+          "props": {
+            "eyebrow": "Terus belajar",
+            "title": "Pelatihan yang paling berpengaruh",
+            "items": [
+              { "title": "Pembelajaran Berbasis Masalah", "issuer": "Lokakarya MGMP Matematika", "date": "2023" },
+              { "title": "Asesmen Formatif di Kelas", "issuer": "Pelatihan daring guru", "date": "2024" },
+              { "title": "Literasi Data untuk Guru", "issuer": "Kelas komunitas guru", "date": "2025" }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusTestimonials",
+          "props": {
+            "eyebrow": "Kata mereka",
+            "title": "Dari rekan, orang tua, dan alumni",
+            "items": [
+              { "quote": "Bu Maha yang pertama memasang papan pertanyaan tanpa nama. Sekarang separuh ruang guru ikut memakainya.", "author": "Rekan guru IPA", "role": "Satu ruang guru sejak 2016" },
+              { "quote": "Anak saya dulu menangis tiap ada PR pecahan. Sekarang ia malah menjelaskan ke adiknya pakai martabak.", "author": "Orang tua siswa", "role": "Kelas VIII" },
+              { "quote": "Yang saya ingat bukan rumusnya, tapi kalimat beliau: tunjukkan hitunganmu, salah juga tidak apa-apa.", "author": "Alumni", "role": "Kini kuliah teknik sipil" }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "kelas",
+      "title": "Ruang Kelas",
+      "seo": {
+        "title": "Ruang Kelas · Bu Maha",
+        "description": "Kelas yang diampu Bu Maha, alur satu pertemuan, jam konsultasi orang tua, dan jawaban atas pertanyaan yang sering muncul."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Ruang kelas",
+            "title": "Ruang Kelas",
+            "subtitle": "Gambaran kelas yang saya ampu, cara saya membagi satu jam pelajaran, dan kapan orang tua bisa menemui saya.",
+            "iconKey": "book"
+          }
+        },
+        {
+          "type": "GuruPlusLessonCard",
+          "props": {
+            "eyebrow": "Tahun ajaran 2026/2027",
+            "title": "Kelas yang saya ampu",
+            "items": [
+              {
+                "title": "Kelas VII · Bilangan dan aljabar awal",
+                "level": "Fase D",
+                "duration": "5 JP per pekan",
+                "description": "Pecahan, bilangan bulat, lalu perkenalan pertama dengan x lewat persamaan linear.",
+                "icon": "🔢",
+                "href": "/pembelajaran/bilangan",
+                "ctaLabel": "Lihat Bab Bilangan"
+              },
+              {
+                "title": "Kelas VIII · Pola, Pythagoras, dan data",
+                "level": "Fase D",
+                "duration": "5 JP per pekan",
+                "description": "Pola bilangan, teorema Pythagoras, dan statistika dari data milik siswa sendiri.",
+                "icon": "📐",
+                "href": "/pembelajaran/geometri-dan-data",
+                "ctaLabel": "Lihat Bab Geometri dan Data"
+              },
+              {
+                "title": "Kelas IX · Transformasi dan peluang",
+                "level": "Fase D",
+                "duration": "5 JP per pekan",
+                "description": "Simetri dan transformasi lewat motif batik, lalu peluang lewat dadu dan undian.",
+                "icon": "🎲",
+                "href": "/peradaban/geometri-dalam-motif-batik-kawung",
+                "ctaLabel": "Baca cerita kelasnya"
+              }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusTimeline",
+          "props": {
+            "eyebrow": "Satu pertemuan",
+            "title": "Alur 80 menit di kelas saya",
+            "items": [
+              { "year": "Menit 0–5", "title": "Angka hari ini", "desc": "Satu soal pembuka di papan. Siswa menebak, berdebat, lalu membuktikan." },
+              { "year": "Menit 5–30", "title": "Eksplorasi", "desc": "Berkelompok dengan benda nyata: kertas lipat, dadu, timbangan, atau data dari kelas." },
+              { "year": "Menit 30–60", "title": "Latihan terbimbing", "desc": "Soal bertingkat. Saya berkeliling dan mencatat kesalahan yang menarik." },
+              { "year": "Menit 60–75", "title": "Galeri kesalahan", "desc": "Kesalahan dibahas tanpa nama. Kami mencari di langkah mana jalannya berbelok." },
+              { "year": "Menit 75–80", "title": "Satu kalimat refleksi", "desc": "Setiap siswa menulis satu hal yang sekarang ia pahami, dan satu yang belum." }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusBookingSlot",
+          "props": {
+            "eyebrow": "Untuk orang tua",
+            "title": "Jam konsultasi",
+            "subtitle": "Ingin membicarakan perkembangan belajar anak? Datang di jam berikut, di ruang guru.",
+            "slots": [
+              { "day": "Selasa", "time": "15.00–16.00", "status": "booked" },
+              { "day": "Kamis", "time": "15.00–15.45", "status": "available" },
+              { "day": "Kamis", "time": "15.45–16.30", "status": "available" },
+              { "day": "Sabtu", "time": "09.00–10.00", "status": "full" }
+            ],
+            "footerNote": "Kabari wali kelas sehari sebelumnya supaya jadwal tidak bertabrakan."
+          }
+        },
+        {
+          "type": "GuruPlusFAQ",
+          "props": {
+            "eyebrow": "Pertanyaan orang tua",
+            "title": "Yang paling sering ditanyakan",
+            "items": [
+              { "q": "Anak saya bilang tidak berbakat matematika. Apa yang bisa saya lakukan?", "a": "Hindari kalimat \"Ibu juga dulu tidak bisa matematika\". Tanyakan bagaimana ia mengerjakan soalnya, bukan hanya benar atau salah jawabannya. Kemampuan matematika tumbuh lewat latihan, bukan bakat yang dibawa sejak lahir." },
+              { "q": "Perlukah les tambahan?", "a": "Tidak selalu. Coba dulu 15 menit setiap hari bersama materi di halaman Pembelajaran. Kalau setelah sebulan anak tetap kesulitan di topik yang sama, datanglah ke jam konsultasi dan kita cari jalannya bersama." },
+              { "q": "Bolehkah anak memakai kalkulator di rumah?", "a": "Boleh untuk memeriksa jawaban atau soal dengan angka besar. Untuk latihan konsep, minta anak mengerjakan dulu tanpa kalkulator, lalu cek hasilnya." },
+              { "q": "Bagaimana PR dinilai?", "a": "PR adalah latihan, bukan ujian. Yang saya nilai adalah usaha dan langkah pengerjaan. Jawaban salah dengan langkah lengkap lebih berguna bagi saya daripada jawaban benar tanpa langkah." }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusContactCTA",
+          "props": {
+            "variant": "cream",
+            "eyebrow": "Lanjut belajar",
+            "title": "Siap mencoba latihan pertama?",
+            "subtitle": "Setiap materi punya contoh soal, latihan bertingkat, dan kunci jawaban.",
+            "ctaLabel": "Buka Pembelajaran",
+            "ctaHref": "/pembelajaran",
+            "ctaSecondaryLabel": "Tanya di Forum",
+            "ctaSecondaryHref": "/forum-diskusi"
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "ceritaku",
+      "title": "Ceritaku",
+      "seo": {
+        "title": "Ceritaku · Bu Maha",
+        "description": "Cerita dari kelas Matematika SMP: kotak kosong, martabak, dan kesalahan paling berharga di papan tulis."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Cerita kelas",
+            "title": "Ceritaku",
+            "subtitle": "Kejadian kecil di kelas yang membuat saya belajar ulang cara mengajar. Ditulis sebelum lupa.",
+            "iconKey": "book"
+          }
+        },
+        {
+          "type": "GuruArticleGridDynamic",
+          "props": {
+            "rubric": "ceritaku",
+            "sidebarTitle": "Tentang rubrik ini",
+            "sidebarBody": "Semua cerita ditulis tanpa nama siswa. Yang penting bukan siapa, tapi apa yang kami pelajari.",
+            "sidebarTags": ["Aljabar", "Pecahan", "Kelas VII", "Refleksi"],
+            "sidebarLinks": [
+              { "label": "Bacaanku", "href": "/bacaanku" },
+              { "label": "Inspirasiku", "href": "/inspirasiku" },
+              { "label": "Bangsaku", "href": "/bangsaku" },
+              { "label": "Peradaban", "href": "/peradaban" }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "bacaanku",
+      "title": "Bacaanku",
+      "seo": {
+        "title": "Bacaanku · Bu Maha",
+        "description": "Ulasan buku dari meja guru matematika: The Joy of x, Mathematical Mindsets, dan Lintang di Laskar Pelangi."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Catatan bacaan",
+            "title": "Bacaanku",
+            "subtitle": "Buku yang saya baca dengan pensil di tangan, lalu saya bawa kembali ke kelas dalam bentuk pertanyaan.",
+            "iconKey": "bookmark"
+          }
+        },
+        {
+          "type": "GuruArticleGridDynamic",
+          "props": {
+            "rubric": "bacaanku",
+            "sidebarTitle": "Cara saya membaca",
+            "sidebarBody": "Satu buku, satu pertanyaan untuk kelas. Kalau tidak ada yang bisa dibawa ke kelas, ulasannya tidak saya tulis.",
+            "sidebarTags": ["Ulasan Buku", "Pola Pikir", "Sastra"],
+            "sidebarLinks": [
+              { "label": "Ceritaku", "href": "/ceritaku" },
+              { "label": "Inspirasiku", "href": "/inspirasiku" },
+              { "label": "Peradaban", "href": "/peradaban" }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusBookshelf",
+          "props": {
+            "eyebrow": "Rak buku",
+            "title": "Yang sedang dan sudah saya baca",
+            "items": [
+              { "title": "The Joy of x", "author": "Steven Strogatz", "year": "2012", "cover": "./img/buku/the-joy-of-x.webp", "note": "Buku yang membuat saya jatuh cinta lagi pada matematika." },
+              { "title": "Mathematical Mindsets", "author": "Jo Boaler", "cover": "./img/buku/mathematical-mindsets.webp", "note": "Mengubah cara saya menanggapi jawaban salah." },
+              { "title": "Laskar Pelangi", "author": "Andrea Hirata", "year": "2005", "cover": "./img/buku/laskar-pelangi.webp", "note": "Lintang, dan kecerdasan yang butuh kesempatan." },
+              { "title": "How Not to Be Wrong", "author": "Jordan Ellenberg", "year": "2014", "cover": "./img/buku/how-not-to-be-wrong.webp", "note": "Sedang dibaca. Bahan untuk rubrik Bangsaku." },
+              { "title": "Flatland", "author": "Edwin A. Abbott", "year": "1884", "cover": "./img/buku/flatland.webp", "note": "Cerita dunia dua dimensi. Akan saya coba di kelas IX." }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "inspirasiku",
+      "title": "Inspirasiku",
+      "seo": {
+        "title": "Inspirasiku · Bu Maha",
+        "description": "Praktik baik dari kelas matematika: lima menit pembuka, papan pertanyaan anonim, dan proyek bazar sekolah."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Praktik baik",
+            "title": "Inspirasiku",
+            "subtitle": "Ide kecil yang bisa langsung dicoba besok pagi. Sebagian saya temukan sendiri, sebagian saya pinjam dari rekan guru.",
+            "iconKey": "sparkle"
+          }
+        },
+        {
+          "type": "GuruArticleGridDynamic",
+          "props": {
+            "rubric": "inspirasiku",
+            "sidebarTitle": "Boleh ditiru",
+            "sidebarBody": "Semua ide di sini boleh dipakai di kelas Anda. Ceritakan hasilnya di Forum Diskusi.",
+            "sidebarTags": ["Praktik Baik", "Rutinitas Kelas", "Proyek"],
+            "sidebarLinks": [
+              { "label": "Ceritaku", "href": "/ceritaku" },
+              { "label": "Forum Diskusi", "href": "/forum-diskusi" },
+              { "label": "Ruang Kelas", "href": "/kelas" }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "bangsaku",
+      "title": "Bangsaku",
+      "seo": {
+        "title": "Bangsaku · Bu Maha",
+        "description": "Matematika untuk warga: membaca grafik harga, membagi kerja dengan adil, dan menghitung diskon serta bunga pinjaman."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Matematika untuk warga",
+            "title": "Bangsaku",
+            "subtitle": "Warga yang bisa membaca grafik dan menghitung bunga lebih sulit dibohongi. Di rubrik ini matematika dipakai untuk urusan sehari-hari.",
+            "iconKey": "flag"
+          }
+        },
+        {
+          "type": "GuruArticleGridDynamic",
+          "props": {
+            "rubric": "bangsaku",
+            "sidebarTitle": "Kenapa rubrik ini ada",
+            "sidebarBody": "Berita, iklan, dan tawaran pinjaman penuh angka. Sekolah perlu menyiapkan siswa untuk membacanya dengan kritis.",
+            "sidebarTags": ["Literasi Data", "Literasi Keuangan", "Gotong Royong"],
+            "sidebarLinks": [
+              { "label": "Peradaban", "href": "/peradaban" },
+              { "label": "Pembelajaran", "href": "/pembelajaran" },
+              { "label": "Forum Diskusi", "href": "/forum-diskusi" }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "peradaban",
+      "title": "Peradaban",
+      "seo": {
+        "title": "Peradaban · Bu Maha",
+        "description": "Sejarah dan budaya matematika: angka nol di Prasasti Kedukan Bukit, geometri batik kawung, dan al-Khwarizmi."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Sejarah & budaya",
+            "title": "Peradaban",
+            "subtitle": "Matematika tidak turun dari langit dalam bentuk buku paket. Ia tumbuh di prasasti, kain, dan pasar selama ribuan tahun.",
+            "iconKey": "temple"
+          }
+        },
+        {
+          "type": "GuruArticleGridDynamic",
+          "props": {
+            "rubric": "peradaban",
+            "sidebarTitle": "Membaca jejak",
+            "sidebarBody": "Setiap tulisan di sini saya pakai sebagai pembuka pelajaran. Siswa lebih penasaran pada rumus kalau tahu siapa yang pertama memakainya.",
+            "sidebarTags": ["Sejarah Matematika", "Budaya", "Nusantara"],
+            "sidebarLinks": [
+              { "label": "Bangsaku", "href": "/bangsaku" },
+              { "label": "Bacaanku", "href": "/bacaanku" },
+              { "label": "Pembelajaran", "href": "/pembelajaran" }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusTimeline",
+          "props": {
+            "eyebrow": "Garis waktu",
+            "title": "Perjalanan angka sampai ke buku tulis kita",
+            "items": [
+              { "year": "± 1800 SM", "title": "Basis 60 di Babilonia", "desc": "Jejaknya masih kita pakai: 60 menit dalam satu jam, 360 derajat dalam satu putaran." },
+              { "year": "628 M", "title": "Brahmagupta menulis aturan nol", "desc": "Di India, nol mulai diperlakukan sebagai bilangan yang bisa dihitung." },
+              { "year": "682 M", "title": "Prasasti Kedukan Bukit", "desc": "Di Palembang, angka tahun Saka ditulis memakai nol. Salah satu jejak nol tertua di Asia Tenggara." },
+              { "year": "Abad ke-9", "title": "Al-Khwarizmi di Baghdad", "desc": "Bukunya melahirkan kata aljabar, dan namanya melahirkan kata algoritma." },
+              { "year": "1202", "title": "Liber Abaci karya Fibonacci", "desc": "Angka Hindu-Arab diperkenalkan ke Eropa dan pelan-pelan menggantikan angka Romawi." }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "forum-diskusi",
+      "title": "Forum Diskusi",
+      "seo": {
+        "title": "Forum Diskusi · Bu Maha",
+        "description": "Ruang diskusi guru, siswa, dan orang tua tentang kalkulator, PR, dan rasa takut pada matematika."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Ruang bersama",
+            "title": "Forum Diskusi",
+            "subtitle": "Satu topik, banyak sudut pandang. Guru, siswa, orang tua, dan pembaca boleh ikut menjawab.",
+            "iconKey": "chat"
+          }
+        },
+        {
+          "type": "GuruForumThreadListDynamic",
+          "props": {
+            "moderationNote": {
+              "badge": "Dimoderasi",
+              "title": "Ruang aman untuk berbeda pendapat",
+              "body": "Tanggapan tampil setelah saya baca. Jangan cantumkan nama lengkap atau data pribadi siswa, dan tanggapi gagasan, bukan orangnya."
+            },
+            "participants": ["Guru", "Siswa", "Orang tua", "Pembaca"],
+            "sidebarLinks": [
+              { "label": "Ruang Kelas", "href": "/kelas" },
+              { "label": "Pembelajaran", "href": "/pembelajaran" },
+              { "label": "Inspirasiku", "href": "/inspirasiku" }
+            ]
+          }
+        },
+        {
+          "type": "GuruPlusFAQ",
+          "props": {
+            "eyebrow": "Sebelum menulis",
+            "title": "Cara ikut berdiskusi",
+            "items": [
+              { "q": "Siapa saja yang boleh menanggapi?", "a": "Siapa pun: guru, siswa, orang tua, atau pembaca umum. Pilih peran Anda saat menulis tanggapan supaya pembaca lain tahu dari sudut mana Anda bicara." },
+              { "q": "Kenapa tanggapan saya belum muncul?", "a": "Semua tanggapan dibaca dulu sebelum ditampilkan, biasanya paling lambat dua hari." },
+              { "q": "Bolehkah mengirim jawaban tantangan x pekan ini?", "a": "Boleh sekali. Tulis jawabannya beserta langkahnya. Jawaban dengan langkah yang menarik akan saya bahas di kelas." }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "slug": "pembelajaran",
+      "title": "Pembelajaran",
+      "seo": {
+        "title": "Pembelajaran · Materi Matematika SMP dari Bu Maha",
+        "description": "Materi Matematika SMP kelas VII–VIII: pecahan, bilangan bulat, persamaan linear, pola bilangan, Pythagoras, dan statistika."
+      },
+      "blocks": [
+        {
+          "type": "GuruRubricHero",
+          "props": {
+            "eyebrow": "Materi",
+            "title": "Pembelajaran",
+            "subtitle": "Materi Matematika SMP yang saya susun sendiri: penjelasan singkat, contoh dekat keseharian, latihan bertingkat, dan kunci jawaban.",
+            "iconKey": "book"
+          }
+        },
+        {
+          "type": "GuruLearningGridDynamic",
+          "props": {
+            "sidebarTitle": "Cara memakai materi",
+            "sidebarBody": "Mulai dari bab, baca contoh soalnya, kerjakan latihan tanpa melihat kunci, baru periksa. Salah itu data.",
+            "sidebarTags": ["Kelas VII", "Kelas VIII", "Aljabar", "Geometri", "Statistika"],
+            "sidebarLinks": [
+              { "label": "Ruang Kelas", "href": "/kelas" },
+              { "label": "Forum Diskusi", "href": "/forum-diskusi" },
+              { "label": "Ceritaku", "href": "/ceritaku" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

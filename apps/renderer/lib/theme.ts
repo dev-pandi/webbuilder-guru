@@ -73,8 +73,10 @@ export function googleFontsUrl(theme: ThemeJson | null): string | null {
   if (h) fams.add(h);
   if (b) fams.add(b);
   if (fams.size === 0) return null;
+  // Encode first, then turn spaces into "+": encoding "+" yields "%2B", which
+  // Google rejects with 400 and takes every family in the request down with it.
   const families = [...fams]
-    .map((f) => `family=${encodeURIComponent(f.replace(/ /g, "+"))}:wght@400;500;600;700`)
+    .map((f) => `family=${encodeURIComponent(f.trim()).replace(/%20/g, "+")}:wght@400;500;600;700`)
     .join("&");
   return `https://fonts.googleapis.com/css2?${families}&display=swap`;
 }

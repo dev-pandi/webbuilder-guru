@@ -6,6 +6,7 @@ import { GuruStyles } from "@/components/GuruBlocks";
 import { PageViewBeacon } from "@/components/PageViewBeacon";
 import { composePageWithLayout } from "@/components/SiteLayout";
 import { getPage, lookupSiteByHost, type SiteLookup } from "@/lib/api";
+import { pageMetadata } from "@/lib/page-metadata";
 import { googleFontsUrl, themeToCss } from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,14 @@ export default async function HomeRender() {
       <SiteBodyEndCode site={site} />
     </>
   );
+}
+
+export async function generateMetadata() {
+  const host = sanitizeHost((await headers()).get("host") ?? "");
+  const lookup = await lookupSiteByHost(host);
+  if (lookup.kind !== "found") return {};
+  const page = await getPage(lookup.site.id, "_home");
+  return page ? pageMetadata(lookup.site, page) : {};
 }
 
 function sanitizeHost(h: string) {
